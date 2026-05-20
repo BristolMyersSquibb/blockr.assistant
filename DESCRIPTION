@@ -2,7 +2,11 @@ Package: blockr.assistant
 Title: An LLM Assistant Extension for 'blockr'
 Version: 0.0.0.9000
 Authors@R:
-    c(person(family = "Bristol Myers Squibb",
+    c(person(given = "Nicolas",
+             family = "Bennett",
+             role = c("aut", "cre"),
+             email = "nicolas@cynkra.com"),
+      person(family = "Bristol Myers Squibb",
              role = "fnd"))
 Description: Building on the docking layout manager provided by 'blockr.dock',
     this extension hosts an 'ellmer'-powered chat interface alongside a
