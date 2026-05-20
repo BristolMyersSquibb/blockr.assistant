@@ -1,0 +1,20 @@
+url: https://bristolmyerssquibb.github.io/blockr.assistant/
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, design]
+    right: [search, reference, news, github]
+  components:
+    home: ~
+
+    intro:
+      text: Roadmap
+      href: articles/p0-roadmap.html
+
+    design:
+      text: Design docs
+      menu:
+        - text: Roadmap
+          href: articles/p0-roadmap.html
