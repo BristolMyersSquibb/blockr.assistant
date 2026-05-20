@@ -1,8 +1,8 @@
 ---
-title: "0 — Roadmap"
+title: "Roadmap"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{0 — Roadmap}
+  %\VignetteIndexEntry{Roadmap}
   %\VignetteEngine{quarto::html}
   %\VignetteEncoding{UTF-8}
 ---
@@ -134,12 +134,14 @@ package; every mutation tool is a thin façade over it.
 ## Decomposition into phases
 
 Each phase corresponds to its own design-doc vignette, named
-`<n>-<topic>.qmd`. Phases are ordered so that the package compiles and
-demos something at the end of each one.
+`p<n>-<topic>.qmd` (the `p` prefix keeps the file names portable — R
+CMD check rejects vignette names starting with a digit). Phases are
+ordered so that the package compiles and demos something at the end of
+each one.
 
 ### Phase 1 — Extension shell with `ellmer` chat
 
-*File:* `1-shell.qmd`
+*File:* `p1-shell.qmd`
 
 `new_assistant_extension()` constructor, dock UI/server, a
 `shinychat::chat_mod_ui` / `chat_mod_server` panel, and an
@@ -160,7 +162,7 @@ No tools yet — the assistant can hold a conversation but is board-blind.
 
 ### Phase 2 — Read-only tool layer
 
-*File:* `2-read-tools.qmd`
+*File:* `p2-read-tools.qmd`
 
 Establish the "tool kit" abstraction: closures over `(board, update,
 session)`, JSON-schema argument definitions via `ellmer::type_*`, and
@@ -176,7 +178,7 @@ This phase locks in the patterns later mutation phases follow.
 
 ### Phase 3 — Staging and dispatch model
 
-*File:* `3-staging.qmd`
+*File:* `p3-staging.qmd`
 
 The architectural keystone. No new LLM-facing tools, but a clean
 foundation for Phase 4.
@@ -192,7 +194,7 @@ foundation for Phase 4.
 
 ### Phase 4 — Mutation tools
 
-*File:* `4-mutation-tools.qmd`
+*File:* `p4-mutation-tools.qmd`
 
 All thin façades over the Phase 3 staging layer:
 
@@ -209,7 +211,7 @@ blocks exist, target input exists, no cycles).
 
 ### Phase 5 — Context, examples and polish
 
-*File:* `5-polish.qmd`
+*File:* `p5-polish.qmd`
 
 - Dynamic board-summary in the system prompt (refreshed each turn).
 - Model-facing error formatting and recovery hints.
@@ -249,9 +251,9 @@ phases of the initial roadmap:
 
 | Phase | File | Topic |
 |------:|------|-------|
-| 0 | `0-roadmap.qmd` | This document |
-| 1 | `1-shell.qmd` | Extension shell with `ellmer` chat |
-| 2 | `2-read-tools.qmd` | Read-only tool layer |
-| 3 | `3-staging.qmd` | Staging & dispatch model |
-| 4 | `4-mutation-tools.qmd` | Mutation tools (blocks, links, stacks) |
-| 5 | `5-polish.qmd` | Context, examples, polish |
+| 0 | `p0-roadmap.qmd` | This document |
+| 1 | `p1-shell.qmd` | Extension shell with `ellmer` chat |
+| 2 | `p2-read-tools.qmd` | Read-only tool layer |
+| 3 | `p3-staging.qmd` | Staging & dispatch model |
+| 4 | `p4-mutation-tools.qmd` | Mutation tools (blocks, links, stacks) |
+| 5 | `p5-polish.qmd` | Context, examples, polish |
