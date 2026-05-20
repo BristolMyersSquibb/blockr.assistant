@@ -1,0 +1,12 @@
+^LICENSE\.md$
+^README\.(Rmd|html)$
+^\.github$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^index\.qmd$
+^index\.md$
+^vignettes/articles$
+^vignettes/.*_files$
+^vignettes/\.quarto$
+^\.lintr$

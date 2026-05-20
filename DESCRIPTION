@@ -1,0 +1,32 @@
+Package: blockr.assistant
+Title: An LLM Assistant Extension for 'blockr'
+Version: 0.0.0.9000
+Authors@R:
+    c(person(family = "Bristol Myers Squibb",
+             role = "fnd"))
+Description: Building on the docking layout manager provided by 'blockr.dock',
+    this extension hosts an 'ellmer'-powered chat interface alongside a
+    'blockr' board. The chat is equipped with tools that allow a large
+    language model to inspect and manipulate board state -- adding,
+    removing and modifying blocks, links and stacks -- via the same
+    update channel used by interactive user actions.
+License: GPL (>= 3)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    blockr.core (>= 0.1.2),
+    blockr.dock (>= 0.1.1),
+    shiny,
+    ellmer,
+    shinychat,
+    htmltools
+Suggests:
+    knitr,
+    rmarkdown,
+    quarto,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+URL: https://bristolmyerssquibb.github.io/blockr.assistant/
+VignetteBuilder:
+    quarto
