@@ -63,7 +63,7 @@ In:
   - `list_links`
   - `list_stacks`
   - `list_available_blocks`
-  - `get_block_result_preview`
+  - `get_block_result`
 - A revised default system prompt that drops the "you cannot, yet"
   hedge and instead introduces the inspection toolkit.
 - A demo app `inst/examples/02-read-tools/` mounting the extension on
@@ -208,10 +208,10 @@ summarise_result.default <- function(x, ...) {
 }
 ```
 
-`get_block_result_preview` consumes the generic:
+`get_block_result` consumes the generic:
 
 ```r
-tool_get_block_result_preview <- function(board, update, session) {
+tool_get_block_result <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
@@ -237,7 +237,7 @@ tool_get_block_result_preview <- function(board, update, session) {
 
       paste(summarise_result(res), collapse = "\n")
     },
-    name = "get_block_result_preview",
+    name = "get_block_result",
     description = paste(
       "Return a short text summary of a block's current evaluated",
       "output. Data frames are summarised with skimr-style stats;",
@@ -287,7 +287,7 @@ reactive board state, not a snapshot taken at registration time.
 return data.frames where structure helps the model (`list_blocks`,
 `list_links`, `list_stacks`, `list_available_blocks`) and plain
 strings where prose is clearer (`describe_block`,
-`get_block_result_preview`). We do **not** wrap tool returns in a
+`get_block_result`). We do **not** wrap tool returns in a
 custom envelope: ellmer's auto-conversion handles the JSON encoding,
 and a "looks like an error message" string is the cheapest possible
 recovery signal for the model when something goes wrong.
@@ -388,7 +388,7 @@ package-load-time state of the block registry, with no dependency on
 `board`. We still build it through the same factory shape for
 uniformity.
 
-### `get_block_result_preview`
+### `get_block_result`
 
 - **Description.** "Return a short text summary of a block's current
   evaluated output. Data frames are summarised with skimr-style
@@ -410,7 +410,7 @@ prompt with one that names the new toolkit explicitly:
 You are an assistant embedded next to a blockr data analysis board.
 You have a set of inspection tools that let you read the board's
 current state: list_blocks, describe_block, list_links, list_stacks,
-list_available_blocks, and get_block_result_preview. Prefer
+list_available_blocks, and get_block_result. Prefer
 calling a tool over guessing when the user asks about the board. You
 cannot modify the board yet; future versions will add tools for
 that. When you call a tool, wait for its result before continuing
@@ -459,7 +459,7 @@ assistant_tools.assistant_extension <- function(x,
     tool_list_links(board, update, session),
     tool_list_stacks(board, update, session),
     tool_list_available_blocks(board, update, session),
-    tool_get_block_result_preview(board, update, session)
+    tool_get_block_result(board, update, session)
   )
 }
 ```
@@ -616,7 +616,7 @@ tool_list_stacks <- function(board, update, session) {
 }
 
 # list_links, list_available_blocks, and
-# get_block_result_preview follow the same skeleton.
+# get_block_result follow the same skeleton.
 ```
 
 ### Extension server diff
@@ -732,10 +732,10 @@ revisit this when mutation errors carry structured payloads (e.g.
 - Demo app: user asks "what does block X do?" → model invokes
   `describe_block` and replies with constructor args.
 - Demo app: user asks "what does the result of X look like?" → model
-  invokes `get_block_result_preview` and returns a
+  invokes `get_block_result` and returns a
   `summarise_result()` summary.
 - Each tool's R-level implementation tested in isolation against a
-  static board fixture; `get_block_result_preview` tested via
+  static board fixture; `get_block_result` tested via
   `shiny::testServer()` because it needs a reactive context.
 - `devtools::check()` passes 0/0/0.
 - Phase 1 acceptance criteria still pass: ser/des round-trip,
