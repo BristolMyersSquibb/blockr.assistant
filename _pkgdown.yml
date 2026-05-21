@@ -11,10 +11,12 @@ navbar:
 
     intro:
       text: Roadmap
-      href: articles/p0-roadmap.html
+      href: articles/design/0-roadmap.html
 
     design:
       text: Design docs
       menu:
         - text: Roadmap
-          href: articles/p0-roadmap.html
+          href: articles/design/0-roadmap.html
+        - text: Phase 1 — Extension shell
+          href: articles/design/1-shell.html

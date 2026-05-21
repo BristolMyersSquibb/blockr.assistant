@@ -136,9 +136,14 @@ package; every mutation tool is a thin façade over it.
 
 ## Decomposition into phases
 
-Each phase corresponds to its own design-doc vignette, named
-`<n>-<topic>.qmd`. Phases are ordered so that the package compiles and
-demos something at the end of each one.
+Each phase corresponds to its own design doc under `vignettes/design/`,
+named `<n>-<topic>.qmd`. These files are deliberately excluded from
+the package tarball via `.Rbuildignore` — they are not installed
+vignettes (R CMD check rejects digit-prefixed vignette filenames)
+but `pkgdown` walks `vignettes/` recursively and picks them up as
+articles served at `articles/design/<n>-<topic>.html`. Phases are
+ordered so that the package compiles and demos something at the end
+of each one.
 
 ### Phase 1 — Extension shell with `ellmer` chat
 
