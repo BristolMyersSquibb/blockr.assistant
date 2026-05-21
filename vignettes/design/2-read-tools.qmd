@@ -1,0 +1,572 @@
+---
+title: "Read-only tool layer"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Read-only tool layer}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+## Goal
+
+Phase 2 turns the board-blind chat shell from Phase 1 into an assistant
+that can *look* at the board. We register a set of read-only `ellmer`
+tools on the chat client, each implemented as a closure over the
+extension server's `(board, update, session)` references. By the end of
+Phase 2 a user can ask "what blocks do I have?", "what does
+`my_subset` do?", or "what does the result of `my_filter` look like?"
+and get an answer grounded in the live board state. No mutation tools
+yet — those are Phase 4, and they ride on top of the staging layer
+added in Phase 3.
+
+The phase is deliberately small in tool count but introduces two
+abstractions that the rest of the package will lean on:
+
+1. A **tool-provider** abstraction (a function that returns a list of
+   `ellmer::ToolDef`s), so block packages — and any future
+   contributor — can extend the assistant without modifying
+   `blockr.assistant` itself.
+2. A **result-summarisation** convention based on `btw::btw_this()`,
+   so block outputs of arbitrary R types reach the LLM as terse,
+   informative text instead of an O(N) JSON dump.
+
+## Scope
+
+In:
+
+- A `tool_provider` registry: providers are functions
+  `function(board, update, session) -> list(ellmer::ToolDef, ...)`.
+  Packages register providers via `register_tool_provider()`; the
+  extension server invokes them all at session start.
+- The built-in provider shipped by `blockr.assistant`, returning the
+  read-only tools listed in the roadmap:
+  - `list_blocks`
+  - `describe_block`
+  - `list_links`
+  - `list_stacks`
+  - `list_available_block_types`
+  - `get_block_result_preview`
+- A revised default system prompt that drops the "you cannot, yet"
+  hedge and instead introduces the inspection toolkit.
+- A demo app `inst/examples/02-read-tools/` mounting the extension on
+  a board with a couple of connected blocks, so the assistant has
+  something concrete to describe.
+- Unit tests exercising each tool against a `testServer`-driven board
+  fixture and against fakes for the non-reactive parts.
+
+Out (deferred to later phases):
+
+- Any mutation. No `add_*` / `remove_*` / `modify_*` tools.
+- The staging layer (Phase 3). Read-only tools have no pending state
+  to merge against — they read board structure and live results
+  directly.
+- Dynamic board summary in the system prompt (Phase 5). The persona
+  is rewritten to mention tools, but the prompt itself is still
+  static — the model discovers the board through tool calls, not
+  through prompt injection.
+- Re-registration of tools when blocks are added or removed. The
+  provider list is evaluated once at server start; if a Phase 4
+  block-specific tool factory wants to track board changes, that's a
+  Phase 4 concern.
+
+## Architectural decisions
+
+### Tool providers as the extensibility surface
+
+Each tool is built by a *provider* — a function of signature
+`function(board, update, session) -> list(ellmer::ToolDef, ...)`. A
+provider can return one or many tools, and may inspect `board$board`
+to decide what to return (e.g. a `blockr.dplyr` provider could emit
+one `set_filter_expression` tool per `filter_block` on the board).
+
+Providers are kept in a package-internal registry populated by
+`register_tool_provider()`. `blockr.assistant`'s built-in provider is
+registered in `.onLoad()`; downstream packages do the same. At
+extension-server start we walk the registry, invoke each provider,
+and register every returned `ToolDef` on the chat client:
+
+```r
+register_tool_provider <- function(provider,
+                                   name = NULL,
+                                   package = NULL) {
+  validate_tool_provider(provider)
+  the$providers[[name %||% deparse(substitute(provider))]] <- list(
+    fn = provider,
+    package = package
+  )
+  invisible()
+}
+
+get_tool_providers <- function() the$providers
+```
+
+The choice of "providers are functions, not S3 methods on blocks" is
+deliberate. Three reasons:
+
+- A provider can return *board-level* tools (the Phase 2 set), or
+  *block-specific* tools, or both. An S3 generic dispatched on block
+  class would force everything into the per-block frame.
+- Providers can inspect the live board and the session, which an S3
+  method on a block class cannot do without an awkward extra context
+  argument.
+- Tool registration is intrinsically a session-startup concern, not a
+  "for-each-block" iteration. Modelling it as a top-level call keeps
+  the provider's mental model close to what actually happens at
+  runtime.
+
+The provider signature is closed (board / update / session). Adding
+arguments later breaks downstream providers, so the signature is the
+architectural contract; we will not extend it without a real reason.
+If a future provider needs more context, it should reach for it via
+the session (`get_board_option_value`, `session$userData`, …) rather
+than expecting more named arguments.
+
+### Result summarisation via `btw::btw_this()`
+
+A block's evaluated result is *any* R object — a data.frame, a
+`ggplot`, a list, a fitted model, a raster, a large list of large
+lists. Two consequences:
+
+1. JSON-serialising the full object is a non-starter. It blows up the
+   token budget and conveys nothing the model can act on.
+2. We need an LLM-shaped *summary* whose format depends on the
+   object's class.
+
+`btw::btw_this()` is exactly this generic. It returns a character
+vector of lines describing its argument, with class-specific methods
+already wired for data frames (`skimr`-style summary), tibbles, and
+matrices; the default falls back to a truncated `print()`. We use it
+as the summarisation layer for `get_block_result_preview`:
+
+```r
+tool_get_block_result_preview <- function(board, update, session) {
+
+  ellmer::tool(
+    function(id) {
+
+      blks <- board$blocks
+      if (!id %in% names(blks)) {
+        return(sprintf(
+          "No block with id %s. Call list_blocks first.", id
+        ))
+      }
+
+      res <- tryCatch(
+        blks[[id]]$server$result(),
+        error = function(e) e
+      )
+
+      if (inherits(res, "error")) {
+        return(sprintf(
+          "Block %s has not evaluated successfully: %s",
+          id, conditionMessage(res)
+        ))
+      }
+
+      paste(btw::btw_this(res), collapse = "\n")
+    },
+    name = "get_block_result_preview",
+    description = paste(
+      "Return a short text summary of a block's current evaluated",
+      "output. Data frames are summarised with skimr-style stats;",
+      "other objects fall back to a truncated print. Returns an",
+      "error string if the block has not evaluated successfully."
+    ),
+    arguments = list(
+      id = ellmer::type_string(
+        "Block id, as returned by list_blocks."
+      )
+    )
+  )
+}
+```
+
+`board$blocks` is reachable from the extension callback because
+`blockr.core`'s board server stores it on the same `reactiveValues`
+it later passes through `make_read_only()`
+(`blockr.core/R/board-server.R:60-70`, `R/utils-shiny.R:13`). The
+`make_read_only` wrapper preserves `reactiveValues` semantics, so
+`board$blocks[[id]]$server$result()` is a live reactive — calling it
+from inside the tool function (which runs in the chat module's
+reactive context during `chat_mod_server`'s turn handling) returns
+the current evaluated result.
+
+`btw` becomes a hard dependency. The alternative — vendoring an
+ad-hoc `summarise_for_llm()` — would reimplement methods `btw`
+already maintains, with the same future maintenance burden minus the
+upstream's coverage. The price is one extra `Imports:` entry; that's
+the right trade.
+
+### Read-only tools snapshot, they do not subscribe
+
+Every tool function returns a value derived from a *current* read of
+the board (`board$board`, `board$blocks`, the block registry). They
+do not set up `observe`/`reactive` machinery — there is nothing for
+them to push, only pull. This keeps the tool layer cheap and free of
+leaked observers when the chat client is rebuilt.
+
+A consequence: if the user adds a new block mid-conversation and
+then asks "what blocks do I have?", the next `list_blocks` call sees
+the new block correctly, because the tool reads the *current*
+reactive board state, not a snapshot taken at registration time.
+
+### Result shape: structured-but-stringy
+
+`ellmer` serialises tool return values to JSON for the model. We
+return data.frames where structure helps the model (`list_blocks`,
+`list_links`, `list_stacks`, `list_available_block_types`) and plain
+strings where prose is clearer (`describe_block`,
+`get_block_result_preview`). We do **not** wrap tool returns in a
+custom envelope: ellmer's auto-conversion handles the JSON encoding,
+and a "looks like an error message" string is the cheapest possible
+recovery signal for the model when something goes wrong.
+
+### Argument schemas via `ellmer::type_*`
+
+Tools that take arguments use `ellmer::type_string()` for the schema.
+We do not invent our own argument-validation layer — ellmer hands the
+schema to the model and routes the call. If a bad argument arrives,
+the tool's own checks (e.g. "is `id` in `board_block_ids()`?")
+surface the error, which is returned as a structured error string
+(see *Error formatting* below).
+
+## Tool catalogue
+
+Each entry below lists the tool name, the description shown to the
+model, the argument schema, and the return shape.
+
+### `list_blocks`
+
+- **Description.** "List all blocks on the board. Returns a data
+  frame with one row per block: `id`, `type`, `name`, `package`."
+- **Arguments.** none.
+- **Returns.** A data.frame with columns `id`, `type`, `name`,
+  `package`. `type` is `class(block)[[1L]]`; `name` and `package`
+  come from `block_metadata(block)` / `registry_metadata()`.
+
+### `describe_block`
+
+- **Description.** "Describe a single block in detail: its
+  constructor name, current parameter values, whether it is
+  externally controllable, and which other blocks feed into it."
+- **Arguments.** `id = ellmer::type_string("Block id, as returned by
+  list_blocks.")`.
+- **Returns.** A character scalar of multi-line text. Pre-formatted
+  prose works better for the model here than a nested list, because
+  the description naturally mixes structured fields (args, inputs,
+  external_ctrl flag) with free-form values (`format(arg_value)`).
+
+### `list_links`
+
+- **Description.** "List all links between blocks: each row gives
+  the link id, source block, destination block, and which input on
+  the destination is being fed."
+- **Arguments.** none.
+- **Returns.** `as.data.frame(board_links(board$board))` — columns
+  `id`, `from`, `to`, `input`.
+
+### `list_stacks`
+
+- **Description.** "List all stacks on the board. Each stack groups
+  blocks under a name; returns one row per stack with id, name, and
+  comma-separated block ids."
+- **Arguments.** none.
+- **Returns.** A data.frame with columns `id`, `name`, `blocks`
+  (the last being `paste(stack_blocks(s), collapse = ", ")`).
+
+### `list_available_block_types`
+
+- **Description.** "List every registered block constructor — block
+  types the user can add to the board. Returns id, package, name,
+  category, and description for each."
+- **Arguments.** none.
+- **Returns.** `registry_metadata(list_blocks(), c("name",
+  "description", "category", "package"))`. The id column is the
+  registry uid that `add_block` will accept in Phase 4.
+
+This is the one tool whose return value is fully determined by the
+package-load-time state of the block registry, with no dependency on
+`board`. We still build it through the provider for uniformity.
+
+### `get_block_result_preview`
+
+- **Description.** "Return a short text summary of a block's current
+  evaluated output. Data frames are summarised with skimr-style
+  stats; other objects fall back to a truncated print. Returns an
+  error string if the block has not evaluated successfully."
+- **Arguments.** `id = ellmer::type_string("Block id, as returned
+  by list_blocks.")`.
+- **Returns.** Character scalar — the concatenated output of
+  `btw::btw_this(result)`. See *Result summarisation via
+  `btw::btw_this()`* above for the rationale and the implementation
+  sketch.
+
+## System prompt revision
+
+The Phase 1 prompt ends with "Do not invent tool calls or claim to
+have changed the board — you cannot, yet." Phase 2 replaces the
+prompt with one that names the new toolkit explicitly:
+
+```
+You are an assistant embedded next to a blockr data analysis board.
+You have a set of inspection tools that let you read the board's
+current state: list_blocks, describe_block, list_links, list_stacks,
+list_available_block_types, and get_block_result_preview. Prefer
+calling a tool over guessing when the user asks about the board. You
+cannot modify the board yet; future versions will add tools for
+that. When you call a tool, wait for its result before continuing
+your reply.
+```
+
+The list of tools is hard-coded into the prompt rather than
+generated from the provider registry. We deliberately do *not*
+introduce dynamic prompt templating here — Phase 5 owns that. If a
+tool is added or removed between phases, updating this string is
+one find-and-replace.
+
+## Implementation sketch
+
+### Provider registry — `R/providers.R`
+
+```r
+the <- new.env(parent = emptyenv())
+the$providers <- list()
+
+register_tool_provider <- function(provider,
+                                   name = NULL,
+                                   package = NULL) {
+
+  if (!is.function(provider)) {
+    blockr_abort(
+      "`provider` must be a function.",
+      class = "tool_provider_not_function"
+    )
+  }
+
+  args <- names(formals(provider))
+  if (!identical(args[seq_len(3L)], c("board", "update", "session"))) {
+    blockr_abort(
+      "A tool provider must take (board, update, session) as its
+       first three arguments.",
+      class = "tool_provider_bad_signature"
+    )
+  }
+
+  the$providers[[name %||% deparse(substitute(provider))]] <- list(
+    fn = provider,
+    package = package
+  )
+
+  invisible()
+}
+
+get_tool_providers <- function() the$providers
+
+call_tool_providers <- function(board, update, session) {
+
+  tools <- list()
+
+  for (p in get_tool_providers()) {
+
+    these <- tryCatch(
+      p$fn(board, update, session),
+      error = function(e) {
+        blockr_warn(
+          "Tool provider from package {p$package} failed: {conditionMessage(e)}"
+        )
+        list()
+      }
+    )
+
+    if (!is.list(these)) {
+      next
+    }
+
+    tools <- c(tools, these)
+  }
+
+  tools
+}
+```
+
+### Built-in provider — `R/tools-read.R`
+
+```r
+read_tools_provider <- function(board, update, session) {
+  list(
+    tool_list_blocks(board, update, session),
+    tool_describe_block(board, update, session),
+    tool_list_links(board, update, session),
+    tool_list_stacks(board, update, session),
+    tool_list_available_block_types(board, update, session),
+    tool_get_block_result_preview(board, update, session)
+  )
+}
+
+tool_list_blocks <- function(board, update, session) {
+
+  ellmer::tool(
+    function() {
+
+      b <- board$board
+      ids <- board_block_ids(b)
+
+      if (!length(ids)) {
+        return(
+          data.frame(
+            id      = character(),
+            type    = character(),
+            name    = character(),
+            package = character()
+          )
+        )
+      }
+
+      blks <- board_blocks(b)
+      meta <- lapply(blks, block_metadata)
+
+      data.frame(
+        id      = ids,
+        type    = chr_ply(blks, function(x) class(x)[[1L]]),
+        name    = chr_xtr(meta, "name"),
+        package = chr_xtr(meta, "package"),
+        row.names = NULL
+      )
+    },
+    name        = "list_blocks",
+    description = "List all blocks on the board with id, type, name, package.",
+    arguments   = list()
+  )
+}
+
+# The other five factories follow the same skeleton.
+```
+
+### `.onLoad` registration — `R/zzz.R`
+
+```r
+.onLoad <- function(libname, pkgname) {
+  register_tool_provider(
+    read_tools_provider,
+    name    = "read_tools",
+    package = pkgname
+  )
+  invisible()
+}
+```
+
+### Extension server diff
+
+```r
+asst_ext_srv <- function(system_prompt, messages) {
+
+  function(id, board, update, ...) {
+
+    moduleServer(
+      id,
+      function(input, output, session) {
+
+        chat_ctor <- get_board_option_value("llm_model", session)
+        sys_prompt <- coal(system_prompt, default_system_prompt())
+
+        client <- chat_ctor(system_prompt = sys_prompt)
+
+        for (tool_def in call_tool_providers(board, update, session)) {
+          client$register_tool(tool_def)                              # new
+        }
+
+        if (length(messages)) {
+          client$set_turns(lapply(messages, ellmer::contents_replay))
+        }
+
+        # ... unchanged from Phase 1 ...
+      }
+    )
+  }
+}
+```
+
+Tool registration happens *after* the client is built and *before*
+`set_turns()`, so a restored conversation that referenced these
+tools resolves them correctly when replayed.
+
+## Error formatting
+
+Tools return errors as plain prose strings so the model can
+self-correct rather than seeing an opaque crash. The convention is:
+
+- Argument-level errors (unknown block id, unknown stack id) return
+  a short factual sentence pointing the model at the right
+  discovery tool ("No block with id X. Call list_blocks first.").
+- Implementation-level errors (a `block_metadata()` call throws, the
+  block result is in an error state) are caught with `tryCatch()`
+  and translated to "Tool X failed: `conditionMessage(e)`".
+
+The format is plain text, not a JSON envelope: the model already
+treats tool returns as text, and a structured-error type would have
+to be designed before Phase 4 mutations even arrive. Phase 4 will
+revisit this when mutation errors carry structured payloads (e.g.
+"validation failed on link {id}: cycle detected").
+
+## Files added / changed
+
+- `R/providers.R` *(new)* — provider registry,
+  `register_tool_provider()`, `call_tool_providers()`.
+- `R/tools-read.R` *(new)* — six tool factories plus the built-in
+  `read_tools_provider`.
+- `R/zzz.R` *(new)* — `.onLoad()` registers the built-in provider.
+- `R/extension.R` — one new loop calling `call_tool_providers()` and
+  registering returned `ToolDef`s on the client.
+- `R/system-prompt.R` — `default_system_prompt()` text revised.
+- `DESCRIPTION` — add `btw` to `Imports:`.
+- `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
+  connected blocks.
+- `tests/testthat/test-providers.R` *(new)* — registry validation,
+  provider error handling.
+- `tests/testthat/test-tools-read.R` *(new)* — one
+  `testthat::describe()` per tool: happy path against a fake board,
+  plus a failure path (unknown id, empty board).
+
+## Acceptance criteria
+
+- All six tools registered on the chat client at extension-server
+  start, verifiable by `length(client$get_tools())`.
+- A second, *fake* test-only provider registered via
+  `register_tool_provider()` appears alongside the built-in ones —
+  proves the extension surface.
+- Demo app: user asks "what blocks are on the board?" → model
+  invokes `list_blocks` and replies with the actual block ids.
+- Demo app: user asks "what does block X do?" → model invokes
+  `describe_block` and replies with constructor args.
+- Demo app: user asks "what does the result of X look like?" → model
+  invokes `get_block_result_preview` and returns a `btw::btw_this()`
+  summary.
+- Each tool's R-level implementation tested in isolation against a
+  static board fixture; `get_block_result_preview` tested via
+  `shiny::testServer()` because it needs a reactive context.
+- `devtools::check()` passes 0/0/0.
+- Phase 1 acceptance criteria still pass: ser/des round-trip,
+  streaming, stop button, token telemetry — adding tools must not
+  regress conversational behaviour.
+
+## Known limitations carried into later phases
+
+- No staging. Every tool reads `board$board` / `board$blocks`
+  directly; this is fine for read-only tools but is the explicit
+  motivation for Phase 3's pending-update layer.
+- No dynamic board context in the system prompt. The model only
+  sees the board when it explicitly calls a tool. Phase 5 will add
+  a board summary so the model can answer trivial "how many blocks?"
+  questions without a tool round-trip.
+- Providers are evaluated *once* per session. If a block-specific
+  tool wants to appear when a matching block is added mid-session,
+  the provider would need to be re-run on `update()`. Phase 4 will
+  decide whether to lift this limitation.
+- The tool list is hard-coded into the system prompt. Generating it
+  from the provider registry is a Phase 5 concern.
+- `btw` is added to `Imports`. If lighter alternatives appear that
+  cover the same generic-summary surface, this is cheap to swap.
