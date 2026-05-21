@@ -39,6 +39,7 @@ new_assistant_extension <- function(system_prompt = NULL,
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
+    options = new_board_options(new_llm_model_option()),
     ...
   )
 }
@@ -58,7 +59,7 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
-        chat_ctor <- get_board_option_value("llm_model", session)
+        chat_ctor <- isolate(get_board_option_value("llm_model", session))
         sys_prompt <- coal(system_prompt, default_system_prompt())
 
         client <- chat_ctor(system_prompt = sys_prompt)

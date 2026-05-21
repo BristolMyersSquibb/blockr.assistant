@@ -134,7 +134,7 @@ asst_ext_srv <- function(id, board, update, ...) {
     id,
     function(input, output, session) {
 
-      chat_ctor <- get_board_option_value("llm_model", session)
+      chat_ctor <- isolate(get_board_option_value("llm_model", session))
       sys_prompt <- system_prompt %||% default_system_prompt()
 
       client <- chat_ctor(system_prompt = sys_prompt)
@@ -186,7 +186,9 @@ A few notes on the structure:
 - `get_board_option_value("llm_model", session)` is `blockr.core`'s
   accessor for board options inside a Shiny module. It returns the chat
   constructor with a `chat_name` attribute we can surface later in
-  telemetry.
+  telemetry. The accessor reads a reactive value, so we wrap it in
+  `isolate()` -- the chat client is constructed once at module startup
+  and must not re-fire if the option later changes.
 - `messages` tracks the recorded form of the conversation. We
   *append* on each turn boundary (`mod$last_input` for the user's
   submit, `mod$last_turn` for the model's response completion) rather
@@ -297,7 +299,7 @@ board <- new_dock_board(
   extensions = list(new_assistant_extension())
 )
 
-shinyApp(board_ui("app", board), board_server("app", board))
+serve(board)
 ```
 
 Acceptance criteria for Phase 1:

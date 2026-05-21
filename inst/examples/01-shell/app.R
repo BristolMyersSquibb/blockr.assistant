@@ -7,4 +7,4 @@ board <- new_dock_board(
   extensions = list(new_assistant_extension())
 )
 
-shinyApp(board_ui("app", board), board_server("app", board))
+serve(board)
