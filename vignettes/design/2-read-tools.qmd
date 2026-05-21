@@ -478,18 +478,22 @@ assistant_tools.assistant_extension <- function(x,
 #' @param x A `block`.
 #' @param board The current board snapshot, for resolving link
 #'   metadata.
+#' @param id The id under which the block lives on the board (the
+#'   name attribute of the enclosing `blocks` object — block objects
+#'   themselves do not carry an id because ids must be unique while
+#'   block-level fields are user-supplied and need not be).
 #' @param ... For future use.
 #' @return Character scalar of multi-line text.
 #' @export
-describe_block <- function(x, ...) UseMethod("describe_block")
+describe_block <- function(x, board, id, ...) UseMethod("describe_block")
 
 #' @rdname describe_block
 #' @export
-describe_block.block <- function(x, board, ...) {
+describe_block.block <- function(x, board, id, ...) {
 
   meta <- block_metadata(x)
   args <- initial_block_state(x)
-  inc  <- board_links(board)[board_links(board)$to == x_id(x), ]
+  inc  <- board_links(board)[board_links(board)$to == id, ]
 
   # ... formats meta / args / external_ctrl / inc into prose ...
 }
@@ -574,7 +578,7 @@ tool_describe_block <- function(board, update, session) {
         ))
       }
 
-      describe_block(blks[[id]], board = board$board)
+      describe_block(blks[[id]], board = board$board, id = id)
     },
     name        = "describe_block",
     description = "Describe a block in detail: constructor, args, external_ctrl, incoming links.",
