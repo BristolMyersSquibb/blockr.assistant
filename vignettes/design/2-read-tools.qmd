@@ -137,7 +137,7 @@ extension mounted on the same board. We iterate, dispatch the
 generic on each, and register the returned tools on the chat client:
 
 ```r
-for (ext in dock_extensions(board$board)) {
+for (ext in dock_extensions(isolate(board$board))) {
 
   tools <- assistant_tools(
     ext,
@@ -217,7 +217,7 @@ tool_get_block_result <- function(board, update, session) {
   ellmer::tool(
     function(id) {
 
-      blks <- board$blocks
+      blks <- isolate(board$blocks)
       if (!id %in% names(blks)) {
         return(sprintf(
           "No block with id %s. Call list_blocks first.", id
@@ -225,7 +225,7 @@ tool_get_block_result <- function(board, update, session) {
       }
 
       res <- tryCatch(
-        blks[[id]]$server$result(),
+        isolate(blks[[id]]$server$result()),
         error = function(e) e
       )
 
@@ -277,10 +277,23 @@ do not set up `observe`/`reactive` machinery — there is nothing for
 them to push, only pull. This keeps the tool layer cheap and free of
 leaked observers when the chat client is rebuilt.
 
+All reactive reads inside tool bodies are wrapped in `isolate()`.
+`shinychat::chat_mod_server()` invokes tool functions from inside
+its own observer chain, so an un-isolated read of `board$board`
+would register the enclosing observer as a dependent of the board
+slot. Each subsequent board mutation would then re-fire the
+observer for the lifetime of that reactive context, which is not
+what we want — tools want a one-shot snapshot. Wrapping every
+reactive read (`board$board`, `board$blocks`,
+`...$server$result()`) in `isolate()` gives us the current value
+without the dependency. `isolate()` is also safe when called from
+non-reactive contexts (e.g. unit tests), so we can pay the
+wrapping cost uniformly.
+
 A consequence: if the user adds a new block mid-conversation and
 then asks "what blocks do I have?", the next `list_blocks` call sees
 the new block correctly, because the tool reads the *current*
-reactive board state, not a snapshot taken at registration time.
+reactive board state at call time (just without subscribing to it).
 
 ### Result shape: structured-but-stringy
 
@@ -538,7 +551,7 @@ tool_list_blocks <- function(board, update, session) {
   ellmer::tool(
     function() {
 
-      b <- board$board
+      b <- isolate(board$board)
       ids <- board_block_ids(b)
 
       if (!length(ids)) {
@@ -574,14 +587,15 @@ tool_describe_block <- function(board, update, session) {
   ellmer::tool(
     function(id) {
 
-      blks <- board_blocks(board$board)
+      brd <- isolate(board$board)
+      blks <- board_blocks(brd)
       if (!id %in% names(blks)) {
         return(sprintf(
           "No block with id %s. Call list_blocks first.", id
         ))
       }
 
-      describe_block(blks[[id]], board = board$board, id = id)
+      describe_block(blks[[id]], board = brd, id = id)
     },
     name        = "describe_block",
     description = "Describe a block in detail: constructor, args, external_ctrl, incoming links.",
@@ -596,7 +610,7 @@ tool_list_stacks <- function(board, update, session) {
   ellmer::tool(
     function() {
 
-      stks <- board_stacks(board$board)
+      stks <- board_stacks(isolate(board$board))
       if (!length(stks)) {
         return(
           data.frame(
@@ -642,7 +656,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         client <- chat_ctor(system_prompt = sys_prompt)
 
-        for (ext in dock_extensions(board$board)) {                 # new
+        for (ext in dock_extensions(isolate(board$board))) {        # new
           for (td in assistant_tools(ext, board = board,
                                      update = update,
                                      session = session)) {
