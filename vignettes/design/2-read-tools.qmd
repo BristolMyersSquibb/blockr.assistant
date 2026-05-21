@@ -65,9 +65,11 @@ In:
   - `get_block_result`
 - A revised default system prompt that drops the "you cannot, yet"
   hedge and instead introduces the inspection toolkit.
-- A demo app `inst/examples/02-read-tools/` mounting the extension on
-  a board with a couple of connected blocks, so the assistant has
-  something concrete to describe.
+- A demo app `inst/examples/02-read-tools/` mounting the extension
+  on a small concrete board: a `dataset_block("iris")` feeding into
+  a `subset_block`. Two blocks, one link, evaluated results on both
+  — enough to exercise `list_blocks`, `describe_block`,
+  `list_links`, and `get_block_result` end-to-end.
 - Unit tests exercising each tool against a `testServer`-driven board
   fixture and against fakes for the non-reactive parts.
 
@@ -165,6 +167,13 @@ something we'd rather replace:
 #' [btw::btw_this()]. Define methods to override the summary for
 #' specific result classes (e.g. when btw lacks a method or its
 #' output is too verbose for token budgets).
+#'
+#' Methods should keep their output bounded — roughly 1–2 KB of
+#' text per call is a sensible ceiling. The LLM pays in tokens for
+#' every line returned, and an unbounded `print()` of a large
+#' object will both blow the budget and bury the relevant
+#' structural information in noise. The default (`btw::btw_this()`)
+#' truncates aggressively; overrides should too.
 #'
 #' @param x A block result, as returned by the block's `result`
 #'   reactive.
@@ -447,9 +456,39 @@ describe_block.block <- function(x, board, id, ...) {
 
   meta <- block_metadata(x)
   args <- initial_block_state(x)
+  ctrl <- block_external_ctrl_vars(x)
   inc  <- board_links(board)[board_links(board)$to == id, ]
 
-  # ... formats meta / args / external_ctrl / inc into prose ...
+  c(
+    sprintf("Block %s (%s, from %s)", id, meta$name, meta$package),
+    sprintf("  %s", meta$description),
+    "",
+    "Arguments:",
+    if (length(args)) {
+      chr_ply(
+        names(args),
+        function(nm) sprintf("  %s: %s", nm, format(args[[nm]]))
+      )
+    } else {
+      "  (none)"
+    },
+    "",
+    sprintf(
+      "External control: %s",
+      if (!length(ctrl)) "no" else paste(ctrl, collapse = ", ")
+    ),
+    "",
+    "Incoming links:",
+    if (nrow(inc)) {
+      chr_ply(
+        seq_len(nrow(inc)),
+        function(i) sprintf("  %s <- %s (input: %s)",
+                            inc$id[i], inc$from[i], inc$input[i])
+      )
+    } else {
+      "  (none)"
+    }
+  )
 }
 ```
 
@@ -692,8 +731,8 @@ revisit this when mutation errors carry structured payloads (e.g.
 - `DESCRIPTION` — add `btw` to `Imports:`.
 - `NAMESPACE` — export `describe_block`, `describe_stack`,
   `summarise_result` plus their default methods.
-- `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
-  connected blocks.
+- `inst/examples/02-read-tools/app.R` *(new)* — `dataset_block("iris")`
+  → `subset_block`, the assistant extension mounted alongside.
 - `tests/testthat/test-describe-block.R` *(new)* — default method
   on a synthetic block; an override on a fake block subclass is
   honoured.
@@ -709,22 +748,18 @@ revisit this when mutation errors carry structured payloads (e.g.
 
 ## Acceptance criteria
 
+### Automated (CI / `devtools::check()`)
+
 - All six built-in tools registered on the chat client at
   extension-server start, verifiable by
-  `length(client$get_tools())`.
-- An override of `describe_block.<fake_block_class>` is reached when
-  the corresponding block is on the board — proves the per-block
-  generic surface.
+  `length(client$get_tools())` inside a `shiny::testServer()`
+  harness.
+- An override of `describe_block.<fake_block_class>` is reached
+  when the corresponding block is on the board — proves the
+  per-block generic surface.
 - An override of `describe_stack.<fake_stack_class>` appears in the
   `description` column of `list_stacks` — proves the per-stack
   generic surface.
-- Demo app: user asks "what blocks are on the board?" → model
-  invokes `list_blocks` and replies with the actual block ids.
-- Demo app: user asks "what does block X do?" → model invokes
-  `describe_block` and replies with constructor args.
-- Demo app: user asks "what does the result of X look like?" → model
-  invokes `get_block_result` and returns a
-  `summarise_result()` summary.
 - Each tool's R-level implementation tested in isolation against a
   static board fixture; `get_block_result` tested via
   `shiny::testServer()` because it needs a reactive context.
@@ -732,6 +767,21 @@ revisit this when mutation errors carry structured payloads (e.g.
 - Phase 1 acceptance criteria still pass: ser/des round-trip,
   streaming, stop button, token telemetry — adding tools must not
   regress conversational behaviour.
+
+### Manual (demo app, live LLM)
+
+These can't be exercised in CI — they need a real chat backend. They
+are the gate before merge, not before CI green.
+
+- Demo app launches without errors against the `default_chat`
+  fallback.
+- User asks "what blocks are on the board?" → model invokes
+  `list_blocks` and replies with the actual block ids.
+- User asks "what does block X do?" → model invokes
+  `describe_block` and replies with constructor args and current
+  values.
+- User asks "what does the result of X look like?" → model invokes
+  `get_block_result` and returns a `summarise_result()` summary.
 
 ## Known limitations carried into later phases
 
