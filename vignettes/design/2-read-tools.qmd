@@ -23,27 +23,21 @@ and get an answer grounded in the live board state. No mutation tools
 yet — those are Phase 4, and they ride on top of the staging layer
 added in Phase 3.
 
-The phase is deliberately small in tool count but introduces two
-abstractions that the rest of the package will lean on:
-
-1. A **tool-provider** abstraction (a function that returns a list of
-   `ellmer::ToolDef`s), so block packages — and any future
-   contributor — can extend the assistant without modifying
-   `blockr.assistant` itself.
-2. A **result-summarisation** convention based on `btw::btw_this()`,
-   so block outputs of arbitrary R types reach the LLM as terse,
-   informative text instead of an O(N) JSON dump.
+The phase introduces one abstraction the rest of the package will
+lean on: a **result-summarisation** convention based on
+`btw::btw_this()`, so block outputs of arbitrary R types reach the
+LLM as terse, informative text instead of an O(N) JSON dump.
 
 ## Scope
 
 In:
 
-- A `tool_provider` registry: providers are functions
-  `function(board, update, session) -> list(ellmer::ToolDef, ...)`.
-  Packages register providers via `register_tool_provider()`; the
-  extension server invokes them all at session start.
-- The built-in provider shipped by `blockr.assistant`, returning the
-  read-only tools listed in the roadmap:
+- Six tool factories of signature
+  `function(board, update, session) -> ellmer::ToolDef`, registered
+  on the chat client at extension-server start. The factories live
+  in `R/tools-read.R`; registration happens through a single
+  `register_read_tools()` helper.
+- Tools shipped:
   - `list_blocks`
   - `describe_block`
   - `list_links`
@@ -68,62 +62,44 @@ Out (deferred to later phases):
   is rewritten to mention tools, but the prompt itself is still
   static — the model discovers the board through tool calls, not
   through prompt injection.
-- Re-registration of tools when blocks are added or removed. The
-  provider list is evaluated once at server start; if a Phase 4
-  block-specific tool factory wants to track board changes, that's a
-  Phase 4 concern.
+- A registry for third-party tool contributions. Tool registration
+  stays inside `blockr.assistant`; see *Extensibility deferred*
+  below.
 
 ## Architectural decisions
 
-### Tool providers as the extensibility surface
+### Tools as closures over `(board, update, session)`
 
-Each tool is built by a *provider* — a function of signature
-`function(board, update, session) -> list(ellmer::ToolDef, ...)`. A
-provider can return one or many tools, and may inspect `board$board`
-to decide what to return (e.g. a `blockr.dplyr` provider could emit
-one `set_filter_expression` tool per `filter_block` on the board).
+Each tool is built by a factory of signature
+`function(board, update, session) -> ellmer::ToolDef`. The factory
+closes over the extension references and constructs the `ToolDef`
+once at server start. The implementation function inside the
+`ToolDef` is itself a closure over the *same* references, so it
+always sees the current board via `board$board` / `board$blocks`.
 
-Providers are kept in a package-internal registry populated by
-`register_tool_provider()`. `blockr.assistant`'s built-in provider is
-registered in `.onLoad()`; downstream packages do the same. At
-extension-server start we walk the registry, invoke each provider,
-and register every returned `ToolDef` on the chat client:
+All factories live in `R/tools-read.R`. A single
+`register_read_tools(client, board, update, session)` helper calls
+each factory and registers its returned `ToolDef` on the chat
+client. Adding or removing a tool means appending to or trimming
+that helper's body. Phase 4 mutation tools will follow the same
+shape.
 
-```r
-register_tool_provider <- function(provider,
-                                   name = NULL,
-                                   package = NULL) {
-  validate_tool_provider(provider)
-  the$providers[[name %||% deparse(substitute(provider))]] <- list(
-    fn = provider,
-    package = package
-  )
-  invisible()
-}
+### Extensibility deferred
 
-get_tool_providers <- function() the$providers
-```
+A registry surface that lets other packages contribute tools is
+**out of scope** for Phase 2. The block packages we already have
+(`blockr.dplyr`, `blockr.ggplot`, …) know nothing about
+`blockr.assistant`, and the block registry already exposes
+everything a generic tool needs to operate across block types —
+argument names, types and descriptions, package origin, category,
+and free-form description (`block_metadata()`,
+`registry_metadata()`). Phase 4's mutation tools are designed to
+be *generic* over the registry, not specialised per block class.
 
-The choice of "providers are functions, not S3 methods on blocks" is
-deliberate. Three reasons:
-
-- A provider can return *board-level* tools (the Phase 2 set), or
-  *block-specific* tools, or both. An S3 generic dispatched on block
-  class would force everything into the per-block frame.
-- Providers can inspect the live board and the session, which an S3
-  method on a block class cannot do without an awkward extra context
-  argument.
-- Tool registration is intrinsically a session-startup concern, not a
-  "for-each-block" iteration. Modelling it as a top-level call keeps
-  the provider's mental model close to what actually happens at
-  runtime.
-
-The provider signature is closed (board / update / session). Adding
-arguments later breaks downstream providers, so the signature is the
-architectural contract; we will not extend it without a real reason.
-If a future provider needs more context, it should reach for it via
-the session (`get_board_option_value`, `session$userData`, …) rather
-than expecting more named arguments.
+If a concrete extension need arises later (a block package that
+genuinely cannot be served by the registry-driven generic surface),
+we'll design the contribution API against that need rather than a
+hypothetical one.
 
 ### Result summarisation via `btw::btw_this()`
 
@@ -290,7 +266,8 @@ model, the argument schema, and the return shape.
 
 This is the one tool whose return value is fully determined by the
 package-load-time state of the block registry, with no dependency on
-`board`. We still build it through the provider for uniformity.
+`board`. We still build it through the same factory shape for
+uniformity.
 
 ### `get_block_result_preview`
 
@@ -322,89 +299,30 @@ that. When you call a tool, wait for its result before continuing
 your reply.
 ```
 
-The list of tools is hard-coded into the prompt rather than
-generated from the provider registry. We deliberately do *not*
-introduce dynamic prompt templating here — Phase 5 owns that. If a
-tool is added or removed between phases, updating this string is
-one find-and-replace.
+The list of tools is hard-coded into the prompt. We deliberately
+do *not* introduce dynamic prompt templating here — Phase 5 owns
+that. If a tool is added or removed between phases, updating this
+string is one find-and-replace.
 
 ## Implementation sketch
 
-### Provider registry — `R/providers.R`
+### Tool factories — `R/tools-read.R`
 
 ```r
-the <- new.env(parent = emptyenv())
-the$providers <- list()
+register_read_tools <- function(client, board, update, session) {
 
-register_tool_provider <- function(provider,
-                                   name = NULL,
-                                   package = NULL) {
-
-  if (!is.function(provider)) {
-    blockr_abort(
-      "`provider` must be a function.",
-      class = "tool_provider_not_function"
-    )
-  }
-
-  args <- names(formals(provider))
-  if (!identical(args[seq_len(3L)], c("board", "update", "session"))) {
-    blockr_abort(
-      "A tool provider must take (board, update, session) as its
-       first three arguments.",
-      class = "tool_provider_bad_signature"
-    )
-  }
-
-  the$providers[[name %||% deparse(substitute(provider))]] <- list(
-    fn = provider,
-    package = package
+  client$register_tool(tool_list_blocks(board, update, session))
+  client$register_tool(tool_describe_block(board, update, session))
+  client$register_tool(tool_list_links(board, update, session))
+  client$register_tool(tool_list_stacks(board, update, session))
+  client$register_tool(
+    tool_list_available_block_types(board, update, session)
   )
-
-  invisible()
-}
-
-get_tool_providers <- function() the$providers
-
-call_tool_providers <- function(board, update, session) {
-
-  tools <- list()
-
-  for (p in get_tool_providers()) {
-
-    these <- tryCatch(
-      p$fn(board, update, session),
-      error = function(e) {
-        blockr_warn(
-          "Tool provider from package {p$package} failed: {conditionMessage(e)}"
-        )
-        list()
-      }
-    )
-
-    if (!is.list(these)) {
-      next
-    }
-
-    tools <- c(tools, these)
-  }
-
-  tools
-}
-```
-
-### Built-in provider — `R/tools-read.R`
-
-```r
-read_tools_provider <- function(board, update, session) {
-  list(
-    tool_list_blocks(board, update, session),
-    tool_describe_block(board, update, session),
-    tool_list_links(board, update, session),
-    tool_list_stacks(board, update, session),
-    tool_list_available_block_types(board, update, session),
+  client$register_tool(
     tool_get_block_result_preview(board, update, session)
   )
+
+  invisible(client)
 }
 
 tool_list_blocks <- function(board, update, session) {
@@ -446,19 +364,6 @@ tool_list_blocks <- function(board, update, session) {
 # The other five factories follow the same skeleton.
 ```
 
-### `.onLoad` registration — `R/zzz.R`
-
-```r
-.onLoad <- function(libname, pkgname) {
-  register_tool_provider(
-    read_tools_provider,
-    name    = "read_tools",
-    package = pkgname
-  )
-  invisible()
-}
-```
-
 ### Extension server diff
 
 ```r
@@ -475,9 +380,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         client <- chat_ctor(system_prompt = sys_prompt)
 
-        for (tool_def in call_tool_providers(board, update, session)) {
-          client$register_tool(tool_def)                              # new
-        }
+        register_read_tools(client, board, update, session)         # new
 
         if (length(messages)) {
           client$set_turns(lapply(messages, ellmer::contents_replay))
@@ -514,19 +417,14 @@ revisit this when mutation errors carry structured payloads (e.g.
 
 ## Files added / changed
 
-- `R/providers.R` *(new)* — provider registry,
-  `register_tool_provider()`, `call_tool_providers()`.
-- `R/tools-read.R` *(new)* — six tool factories plus the built-in
-  `read_tools_provider`.
-- `R/zzz.R` *(new)* — `.onLoad()` registers the built-in provider.
-- `R/extension.R` — one new loop calling `call_tool_providers()` and
-  registering returned `ToolDef`s on the client.
+- `R/tools-read.R` *(new)* — six tool factories plus
+  `register_read_tools()`.
+- `R/extension.R` — one new line calling `register_read_tools()`
+  after the chat client is built.
 - `R/system-prompt.R` — `default_system_prompt()` text revised.
 - `DESCRIPTION` — add `btw` to `Imports:`.
 - `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
   connected blocks.
-- `tests/testthat/test-providers.R` *(new)* — registry validation,
-  provider error handling.
 - `tests/testthat/test-tools-read.R` *(new)* — one
   `testthat::describe()` per tool: happy path against a fake board,
   plus a failure path (unknown id, empty board).
@@ -535,9 +433,6 @@ revisit this when mutation errors carry structured payloads (e.g.
 
 - All six tools registered on the chat client at extension-server
   start, verifiable by `length(client$get_tools())`.
-- A second, *fake* test-only provider registered via
-  `register_tool_provider()` appears alongside the built-in ones —
-  proves the extension surface.
 - Demo app: user asks "what blocks are on the board?" → model
   invokes `list_blocks` and replies with the actual block ids.
 - Demo app: user asks "what does block X do?" → model invokes
@@ -562,11 +457,7 @@ revisit this when mutation errors carry structured payloads (e.g.
   sees the board when it explicitly calls a tool. Phase 5 will add
   a board summary so the model can answer trivial "how many blocks?"
   questions without a tool round-trip.
-- Providers are evaluated *once* per session. If a block-specific
-  tool wants to appear when a matching block is added mid-session,
-  the provider would need to be re-run on `update()`. Phase 4 will
-  decide whether to lift this limitation.
 - The tool list is hard-coded into the system prompt. Generating it
-  from the provider registry is a Phase 5 concern.
+  from `register_read_tools()` is a Phase 5 concern.
 - `btw` is added to `Imports`. If lighter alternatives appear that
   cover the same generic-summary surface, this is cheap to swap.
