@@ -778,5 +778,27 @@ revisit this when mutation errors carry structured payloads (e.g.
   extension's tool set needs to change as the board evolves (e.g. a
   per-block tool list), the dispatch would need to re-run on
   `update()`. Phase 4 will decide whether to lift this.
+- **Sibling-extension server state is not accessible through the
+  generic.** `assistant_tools(x, board, update, session, ...)` is
+  dispatched on the extension *object* — its constructor args, its
+  class — not on the return value of its server. So a future
+  `blockr.md` extension cannot, through this surface, contribute a
+  "read the current markdown content" tool that reaches into its
+  own running module's state. The reason is a hard one to engineer
+  around: in `blockr.dock`'s `board_server_callback()`, extension
+  servers run via `lapply(exts, extension_server, ...)` in list
+  order with no declared dependencies — at the moment any one
+  server runs, sibling servers ahead of it in the list have
+  finished, those behind it have not started. There is no
+  guaranteed order in which to read each other's return values.
+  Workarounds available today: a sibling extension that wants to
+  expose live state writes it to a known location (board option,
+  `session$userData[[<namespace>]]`) from its own server, and the
+  `assistant_tools.<sibling_class>` method reaches in there. We do
+  *not* attempt to standardise such a channel here — when a
+  concrete need arises, the right place to add structure is
+  upstream in `blockr.dock` (either an init-order contract or a
+  deferred-registration hook on `session$onFlushed()`), not a
+  side-registry inside this package.
 - `btw` is added to `Imports`. If lighter alternatives appear that
   cover the same generic-summary surface, this is cheap to swap.
