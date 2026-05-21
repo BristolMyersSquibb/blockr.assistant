@@ -313,16 +313,19 @@ model, the argument schema, and the return shape.
   externally controllable, and which other blocks feed into it."
 - **Arguments.** `id = ellmer::type_string("Block id, as returned by
   list_blocks.")`.
-- **Returns.** A character scalar of multi-line text. The tool's
-  implementation looks the block up on `board$blocks` and delegates
-  to the exported `describe_block(block)` S3 generic; the default
-  method `describe_block.block` produces the description from the
-  registry's generic metadata plus the live instance state
-  (current arg values, external-control flag, incoming links).
-  Block authors override `describe_block.<their_block_class>` when
-  the generic output is insufficient. Pre-formatted prose works
-  better for the model than a nested list, because the description
-  mixes structured fields with free-form values.
+- **Returns.** A character scalar of multi-line text (the model
+  sees a newline-joined string). The tool's implementation looks the
+  block up on `board$blocks`, delegates to the exported
+  `describe_block(block, board, id)` S3 generic — which returns a
+  character vector of lines — and collapses it with
+  `paste(..., collapse = "\n")` before returning to ellmer. The
+  default method `describe_block.block` produces the description
+  from the registry's generic metadata plus the live instance
+  state (current arg values, external-control flag, incoming
+  links). Block authors override `describe_block.<their_block_class>`
+  when the generic output is insufficient. Pre-formatted prose
+  works better for the model than a nested list, because the
+  description mixes structured fields with free-form values.
 
 ### `list_links`
 
@@ -341,11 +344,13 @@ model, the argument schema, and the return shape.
 - **Arguments.** none.
 - **Returns.** A data.frame with columns `id`, `name`, `blocks`,
   `description`. The first three come from `board_stacks(board)`
-  / `stack_blocks(s)`. `description` is `describe_stack(stack)`
-  for each stack, dispatched on the stack's class; the default
-  `describe_stack.stack` returns a short summary, and stack-class
-  extensions (e.g. `blockr.dag::dag_stack`) override their class
-  to add their own fields (colour, layout, …).
+  / `stack_blocks(s)`. `description` is
+  `paste(describe_stack(stack), collapse = "\n")` for each stack,
+  dispatched on the stack's class; the default `describe_stack.stack`
+  returns a short summary, and stack-class extensions (e.g.
+  `blockr.dag::dag_stack`) override their class to add their own
+  fields (colour, layout, …). Methods return a character vector
+  of lines; the tool collapses to a single string per row.
 
 ### `list_available_blocks`
 
@@ -429,7 +434,10 @@ string is one find-and-replace.
 #'   themselves do not carry an id because ids must be unique while
 #'   block-level fields are user-supplied and need not be).
 #' @param ... For future use.
-#' @return Character scalar of multi-line text.
+#' @return Character vector of lines (consistent with
+#'   [summarise_result()] and [describe_stack()]). The tool that
+#'   consumes this collapses with `paste(..., collapse = "\n")`
+#'   before returning to ellmer.
 #' @export
 describe_block <- function(x, board, id, ...) UseMethod("describe_block")
 
@@ -458,7 +466,10 @@ describe_block.block <- function(x, board, id, ...) {
 #'
 #' @param x A `stack`.
 #' @param ... For future use.
-#' @return Character scalar (single or multi-line).
+#' @return Character vector of lines (consistent with
+#'   [summarise_result()] and [describe_block()]). The tool that
+#'   consumes this collapses with `paste(..., collapse = "\n")`
+#'   before returning to ellmer.
 #' @export
 describe_stack <- function(x, ...) UseMethod("describe_stack")
 
@@ -551,7 +562,10 @@ tool_describe_block <- function(board, update, session) {
         ))
       }
 
-      describe_block(blks[[id]], board = brd, id = id)
+      paste(
+        describe_block(blks[[id]], board = brd, id = id),
+        collapse = "\n"
+      )
     }),
     name        = "describe_block",
     description = "Describe a block in detail: constructor, args, external_ctrl, incoming links.",
@@ -582,7 +596,9 @@ tool_list_stacks <- function(board, update, session) {
         id          = names(stks),
         name        = chr_ply(stks, function(s) stack_name(s) %||% NA_character_),
         blocks      = chr_ply(stks, function(s) paste(stack_blocks(s), collapse = ", ")),
-        description = chr_ply(stks, describe_stack),
+        description = chr_ply(stks, function(s) {
+          paste(describe_stack(s), collapse = "\n")
+        }),
         row.names   = NULL
       )
     }),
