@@ -24,9 +24,11 @@ yet — those are Phase 4, and they ride on top of the staging layer
 added in Phase 3.
 
 The phase introduces one abstraction the rest of the package will
-lean on: a **result-summarisation** convention based on
-`btw::btw_this()`, so block outputs of arbitrary R types reach the
-LLM as terse, informative text instead of an O(N) JSON dump.
+lean on: a `summarise_result()` S3 generic that turns a block's
+evaluated output into terse, LLM-shaped text. The default method
+forwards to `btw::btw_this()`; downstream code (or
+`blockr.assistant` itself, where a class deserves bespoke handling)
+can override per-class.
 
 ## Scope
 
@@ -101,7 +103,7 @@ genuinely cannot be served by the registry-driven generic surface),
 we'll design the contribution API against that need rather than a
 hypothetical one.
 
-### Result summarisation via `btw::btw_this()`
+### Result summarisation via `summarise_result()`
 
 A block's evaluated result is *any* R object — a data.frame, a
 `ggplot`, a list, a fitted model, a raster, a large list of large
@@ -112,11 +114,38 @@ lists. Two consequences:
 2. We need an LLM-shaped *summary* whose format depends on the
    object's class.
 
-`btw::btw_this()` is exactly this generic. It returns a character
-vector of lines describing its argument, with class-specific methods
-already wired for data frames (`skimr`-style summary), tibbles, and
-matrices; the default falls back to a truncated `print()`. We use it
-as the summarisation layer for `get_block_result_preview`:
+We introduce `summarise_result()` as an exported S3 generic. The
+default method forwards to `btw::btw_this()`, which already ships
+class-specific methods for data frames (`skimr`-style),
+tibbles, matrices, etc., and falls back to a truncated `print()`
+for everything else. The generic gives us a single hook for the
+cases where `btw_this()` is either missing a method or returns
+something we'd rather replace:
+
+```r
+#' Summarise a block result for the LLM
+#'
+#' Generic dispatch on the result's class. The default forwards to
+#' [btw::btw_this()]. Define methods to override the summary for
+#' specific result classes (e.g. when btw lacks a method or its
+#' output is too verbose for token budgets).
+#'
+#' @param x A block result, as returned by the block's `result`
+#'   reactive.
+#' @param ... Passed to methods.
+#' @return Character vector of lines.
+#' @export
+summarise_result <- function(x, ...) {
+  UseMethod("summarise_result")
+}
+
+#' @export
+summarise_result.default <- function(x, ...) {
+  btw::btw_this(x, ...)
+}
+```
+
+`get_block_result_preview` consumes the generic:
 
 ```r
 tool_get_block_result_preview <- function(board, update, session) {
@@ -143,7 +172,7 @@ tool_get_block_result_preview <- function(board, update, session) {
         ))
       }
 
-      paste(btw::btw_this(res), collapse = "\n")
+      paste(summarise_result(res), collapse = "\n")
     },
     name = "get_block_result_preview",
     description = paste(
@@ -171,11 +200,10 @@ from inside the tool function (which runs in the chat module's
 reactive context during `chat_mod_server`'s turn handling) returns
 the current evaluated result.
 
-`btw` becomes a hard dependency. The alternative — vendoring an
-ad-hoc `summarise_for_llm()` — would reimplement methods `btw`
-already maintains, with the same future maintenance burden minus the
-upstream's coverage. The price is one extra `Imports:` entry; that's
-the right trade.
+Phase 2 ships only the default `summarise_result()` method. Bespoke
+methods come when we hit a result class where the default output is
+unsatisfactory — at which point the override is one method
+definition, no plumbing.
 
 ### Read-only tools snapshot, they do not subscribe
 
@@ -278,9 +306,8 @@ uniformity.
 - **Arguments.** `id = ellmer::type_string("Block id, as returned
   by list_blocks.")`.
 - **Returns.** Character scalar — the concatenated output of
-  `btw::btw_this(result)`. See *Result summarisation via
-  `btw::btw_this()`* above for the rationale and the implementation
-  sketch.
+  `summarise_result(result)`. See *Result summarisation via
+  `summarise_result()`* above for the generic and its default.
 
 ## System prompt revision
 
@@ -419,15 +446,21 @@ revisit this when mutation errors carry structured payloads (e.g.
 
 - `R/tools-read.R` *(new)* — six tool factories plus
   `register_read_tools()`.
+- `R/summarise-result.R` *(new)* — `summarise_result()` generic and
+  default method forwarding to `btw::btw_this()`.
 - `R/extension.R` — one new line calling `register_read_tools()`
   after the chat client is built.
 - `R/system-prompt.R` — `default_system_prompt()` text revised.
 - `DESCRIPTION` — add `btw` to `Imports:`.
+- `NAMESPACE` — export `summarise_result` and its default method.
 - `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
   connected blocks.
 - `tests/testthat/test-tools-read.R` *(new)* — one
   `testthat::describe()` per tool: happy path against a fake board,
   plus a failure path (unknown id, empty board).
+- `tests/testthat/test-summarise-result.R` *(new)* — default
+  dispatches to `btw_this` for a data.frame and a non-tabular
+  object; a per-test S3 method on a fake class is honoured.
 
 ## Acceptance criteria
 
@@ -438,8 +471,8 @@ revisit this when mutation errors carry structured payloads (e.g.
 - Demo app: user asks "what does block X do?" → model invokes
   `describe_block` and replies with constructor args.
 - Demo app: user asks "what does the result of X look like?" → model
-  invokes `get_block_result_preview` and returns a `btw::btw_this()`
-  summary.
+  invokes `get_block_result_preview` and returns a
+  `summarise_result()` summary.
 - Each tool's R-level implementation tested in isolation against a
   static board fixture; `get_block_result_preview` tested via
   `shiny::testServer()` because it needs a reactive context.
