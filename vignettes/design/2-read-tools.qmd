@@ -187,7 +187,7 @@ summarise_result.default <- function(x, ...) {
 tool_get_block_result <- function(board, update, session) {
 
   ellmer::tool(
-    function(id) {
+    function(id) with_tool_errors("get_block_result", {
 
       blks <- isolate(board$blocks)
       if (!id %in% names(blks)) {
@@ -209,7 +209,7 @@ tool_get_block_result <- function(board, update, session) {
       }
 
       paste(summarise_result(res), collapse = "\n")
-    },
+    }),
     name = "get_block_result",
     description = paste(
       "Return a short text summary of a block's current evaluated",
@@ -492,10 +492,20 @@ register_read_tools <- function(client, board, update, session) {
   invisible(client)
 }
 
+with_tool_errors <- function(name, expr) {
+
+  tryCatch(
+    expr,
+    error = function(e) {
+      sprintf("%s failed: %s", name, conditionMessage(e))
+    }
+  )
+}
+
 tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
-    function() {
+    function() with_tool_errors("list_blocks", {
 
       b <- isolate(board$board)
       ids <- board_block_ids(b)
@@ -521,7 +531,7 @@ tool_list_blocks <- function(board, update, session) {
         package = chr_xtr(meta, "package"),
         row.names = NULL
       )
-    },
+    }),
     name        = "list_blocks",
     description = "List all blocks on the board with id, type, name, package.",
     arguments   = list()
@@ -531,7 +541,7 @@ tool_list_blocks <- function(board, update, session) {
 tool_describe_block <- function(board, update, session) {
 
   ellmer::tool(
-    function(id) {
+    function(id) with_tool_errors("describe_block", {
 
       brd <- isolate(board$board)
       blks <- board_blocks(brd)
@@ -542,7 +552,7 @@ tool_describe_block <- function(board, update, session) {
       }
 
       describe_block(blks[[id]], board = brd, id = id)
-    },
+    }),
     name        = "describe_block",
     description = "Describe a block in detail: constructor, args, external_ctrl, incoming links.",
     arguments   = list(
@@ -554,7 +564,7 @@ tool_describe_block <- function(board, update, session) {
 tool_list_stacks <- function(board, update, session) {
 
   ellmer::tool(
-    function() {
+    function() with_tool_errors("list_stacks", {
 
       stks <- board_stacks(isolate(board$board))
       if (!length(stks)) {
@@ -575,7 +585,7 @@ tool_list_stacks <- function(board, update, session) {
         description = chr_ply(stks, describe_stack),
         row.names   = NULL
       )
-    },
+    }),
     name        = "list_stacks",
     description = "List all stacks with id, name, blocks, and a class-specific description.",
     arguments   = list()
@@ -622,14 +632,26 @@ tools resolves them correctly when replayed.
 ## Error formatting
 
 Tools return errors as plain prose strings so the model can
-self-correct rather than seeing an opaque crash. The convention is:
+self-correct rather than seeing an opaque crash. Two layers:
 
-- Argument-level errors (unknown block id, unknown stack id) return
-  a short factual sentence pointing the model at the right
-  discovery tool ("No block with id X. Call list_blocks first.").
-- Implementation-level errors (a `block_metadata()` call throws, the
-  block result is in an error state) are caught with `tryCatch()`
-  and translated to "Tool X failed: `conditionMessage(e)`".
+- **Argument-level errors** (unknown block id, unknown stack id)
+  return a short factual sentence pointing the model at the right
+  discovery tool — e.g. "No block with id X. Call list_blocks
+  first." These are deliberate early returns, not exceptions.
+- **Implementation-level errors** (a `block_metadata()` call
+  throws, a custom `describe_block.<class>` method errors out, a
+  `summarise_result` override raises) are caught by the internal
+  helper `with_tool_errors(name, expr)` that wraps every tool body
+  in a `tryCatch`. The handler translates the error to
+  `"<tool_name> failed: <conditionMessage(e)>"`.
+
+Tools may also catch *specific* error conditions inline when the
+condition needs a distinctive message — e.g.
+`get_block_result`'s inner `tryCatch` around `result()` flags
+"block X has not evaluated successfully" rather than just
+generic-tool-failure. Those inline catches live *inside*
+`with_tool_errors`, so anything they don't explicitly handle still
+hits the outer catch-all.
 
 The format is plain text, not a JSON envelope: the model already
 treats tool returns as text, and a structured-error type would have
