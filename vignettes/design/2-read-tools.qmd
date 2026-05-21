@@ -23,8 +23,8 @@ and get an answer grounded in the live board state. No mutation tools
 yet — those are Phase 4, and they ride on top of the staging layer
 added in Phase 3.
 
-The phase introduces four S3 generics that the rest of the package
-— and downstream packages — will lean on:
+The phase introduces three S3 generics that the rest of the
+package — and downstream packages — will lean on:
 
 - `summarise_result(x, ...)` turns a block's evaluated output into
   terse, LLM-shaped text. The default forwards to
@@ -41,13 +41,12 @@ The phase introduces four S3 generics that the rest of the package
   base `stack` covers id / name / blocks; stack-class extensions
   (e.g. `blockr.dag`'s `dag_stack`, which adds a colour attribute)
   override their class to surface their extra fields.
-- `assistant_tools(x, board, update, session, ...)` returns the
-  list of `ellmer::ToolDef`s a dock extension contributes to the
-  chat. The default for the base `dock_extension` class returns
-  `list()`; the assistant's own tools come through
-  `assistant_tools.assistant_extension`, and sibling extensions
-  (e.g. a future `blockr.md`) hook in by defining their own
-  method.
+
+A fourth axis — letting *sibling dock extensions* contribute tools
+— was considered and deferred. It depends on upstream changes in
+`blockr.dock` (init ordering, sibling state access, and ultimately
+an external-control channel) that are out of scope for Phase 2.
+See #4 and `blockr.dock#129`.
 
 ## Scope
 
@@ -55,9 +54,8 @@ In:
 
 - Six tool factories of signature
   `function(board, update, session) -> ellmer::ToolDef`, living in
-  `R/tools-read.R`. Registration on the chat client happens by
-  dispatching the new `assistant_tools()` generic on each mounted
-  dock extension — see *Extensibility via S3 generics* below.
+  `R/tools-read.R`. A single `register_read_tools()` helper calls
+  each factory and registers its `ToolDef` on the chat client.
 - Tools shipped:
   - `list_blocks`
   - `describe_block`
@@ -97,8 +95,8 @@ always sees the current board via `board$board` / `board$blocks`.
 
 ### Extensibility via S3 generics
 
-Three axes need extensibility surfaces; all three are S3 generics,
-and all follow patterns the blockr ecosystem already uses for things
+Two axes need extensibility surfaces — both S3 generics, both
+following patterns the blockr ecosystem already uses for things
 like `block_metadata()` and `block_inputs()`.
 
 **Per-block-class — the `describe_block()` generic.** The
@@ -126,46 +124,20 @@ may add layout hints — override `describe_stack.<their_stack_class>`
 to surface them. `blockr.assistant` focuses its default on the base
 stack class only; everything class-specific is downstream's call.
 
-**Per-sibling-extension — the `assistant_tools()` generic.** The
-genuinely interesting extension axis is *other dock extensions*. If a
-future extension (e.g. a `blockr.md` markdown panel, or a notes
-extension) wants the assistant to be able to manipulate it, the
-extension author defines `assistant_tools.<their_extension_class>`
-returning a list of `ellmer::ToolDef`s. At extension-server start we
-already have `dock_extensions(board$board)` — the list of every
-extension mounted on the same board. We iterate, dispatch the
-generic on each, and register the returned tools on the chat client:
-
-```r
-for (ext in dock_extensions(isolate(board$board))) {
-
-  tools <- assistant_tools(
-    ext,
-    board   = board,
-    update  = update,
-    session = session
-  )
-
-  for (td in tools) {
-    client$register_tool(td)
-  }
-}
-```
-
-The default `assistant_tools.dock_extension` returns `list()`, so
-extensions that haven't opted in cost nothing. `blockr.assistant`'s
-own tools are not a special case — they come through
-`assistant_tools.assistant_extension`, which returns the six
-read-only tool factories invoked with `(board, update, session)`.
-The package's own contribution and any sibling extension's
-contribution use the exact same surface.
-
-This is the generalisation of "providers" the previous draft tried
-to bolt on: blocks need an override hook for *their own
-description*, not a tool-registration hook (the registry already
-gives generic tools the metadata they need); extensions need a
-tool-registration hook because they own their own functionality and
-the assistant cannot guess at it generically.
+**Sibling dock extensions — deliberately not exposed in Phase 2.**
+We explored a third generic — `assistant_tools(extension, ...)` —
+that would have let sibling dock extensions contribute their own
+tools. The interesting use case isn't reading sibling state but
+*manipulating* it (e.g. "set the markdown content of the md
+extension"), which needs an external-control mechanism for
+extensions that `blockr.dock` doesn't yet provide. Even the
+read-only variant requires upstream changes: extension servers run
+via `lapply()` with no ordering guarantee, and there is no API to
+read sibling-server return values. Shipping the generic without
+those upstream pieces would constrain it to stateless contributions,
+which is materially less interesting than the per-block axis. The
+design is preserved in #4; the upstream prerequisite is tracked at
+`blockr.dock#129`.
 
 ### Result summarisation via `summarise_result()`
 
@@ -438,48 +410,6 @@ string is one find-and-replace.
 
 ## Implementation sketch
 
-### `assistant_tools()` generic — `R/assistant-tools.R`
-
-```r
-#' Tools contributed to the assistant by a dock extension
-#'
-#' At assistant-extension server start, every dock extension mounted
-#' on the same board is dispatched on `assistant_tools()`; the
-#' returned `ellmer::ToolDef`s are registered on the chat client.
-#' Extensions that don't override the default contribute nothing.
-#'
-#' @param x A `dock_extension`.
-#' @param board,update,session Live extension references, captured
-#'   by the returned tools' closures.
-#' @param ... For future use.
-#' @return A list of `ellmer::ToolDef`s. Can be empty.
-#' @export
-assistant_tools <- function(x, board, update, session, ...) {
-  UseMethod("assistant_tools")
-}
-
-#' @rdname assistant_tools
-#' @export
-assistant_tools.dock_extension <- function(x, ...) list()
-
-#' @rdname assistant_tools
-#' @export
-assistant_tools.assistant_extension <- function(x,
-                                                board,
-                                                update,
-                                                session,
-                                                ...) {
-  list(
-    tool_list_blocks(board, update, session),
-    tool_describe_block(board, update, session),
-    tool_list_links(board, update, session),
-    tool_list_stacks(board, update, session),
-    tool_list_available_blocks(board, update, session),
-    tool_get_block_result(board, update, session)
-  )
-}
-```
-
 ### `describe_block()` generic — `R/describe-block.R`
 
 ```r
@@ -546,6 +476,22 @@ describe_stack.stack <- function(x, ...) {
 ### Tool factories — `R/tools-read.R`
 
 ```r
+register_read_tools <- function(client, board, update, session) {
+
+  client$register_tool(tool_list_blocks(board, update, session))
+  client$register_tool(tool_describe_block(board, update, session))
+  client$register_tool(tool_list_links(board, update, session))
+  client$register_tool(tool_list_stacks(board, update, session))
+  client$register_tool(
+    tool_list_available_blocks(board, update, session)
+  )
+  client$register_tool(
+    tool_get_block_result(board, update, session)
+  )
+
+  invisible(client)
+}
+
 tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
@@ -656,13 +602,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         client <- chat_ctor(system_prompt = sys_prompt)
 
-        for (ext in dock_extensions(isolate(board$board))) {        # new
-          for (td in assistant_tools(ext, board = board,
-                                     update = update,
-                                     session = session)) {
-            client$register_tool(td)
-          }
-        }
+        register_read_tools(client, board, update, session)         # new
 
         if (length(messages)) {
           client$set_turns(lapply(messages, ellmer::contents_replay))
@@ -699,9 +639,6 @@ revisit this when mutation errors carry structured payloads (e.g.
 
 ## Files added / changed
 
-- `R/assistant-tools.R` *(new)* — `assistant_tools()` generic;
-  defaults for `dock_extension` (empty) and `assistant_extension`
-  (the six built-in tools).
 - `R/describe-block.R` *(new)* — `describe_block()` generic and
   default method on `block` operating on registry metadata.
 - `R/describe-stack.R` *(new)* — `describe_stack()` generic and
@@ -709,18 +646,16 @@ revisit this when mutation errors carry structured payloads (e.g.
   summary.
 - `R/summarise-result.R` *(new)* — `summarise_result()` generic and
   default method forwarding to `btw::btw_this()`.
-- `R/tools-read.R` *(new)* — six tool factories.
-- `R/extension.R` — replace single-line tool registration with the
-  `dock_extensions()` loop that dispatches `assistant_tools()` per
-  extension.
+- `R/tools-read.R` *(new)* — six tool factories plus
+  `register_read_tools()`.
+- `R/extension.R` — one new line calling `register_read_tools()`
+  after the chat client is built.
 - `R/system-prompt.R` — `default_system_prompt()` text revised.
 - `DESCRIPTION` — add `btw` to `Imports:`.
-- `NAMESPACE` — export `assistant_tools`, `describe_block`,
-  `describe_stack`, `summarise_result` plus their default methods.
+- `NAMESPACE` — export `describe_block`, `describe_stack`,
+  `summarise_result` plus their default methods.
 - `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
   connected blocks.
-- `tests/testthat/test-assistant-tools.R` *(new)* — the iteration
-  picks up a fake sibling extension's `assistant_tools` method.
 - `tests/testthat/test-describe-block.R` *(new)* — default method
   on a synthetic block; an override on a fake block subclass is
   honoured.
@@ -739,9 +674,6 @@ revisit this when mutation errors carry structured payloads (e.g.
 - All six built-in tools registered on the chat client at
   extension-server start, verifiable by
   `length(client$get_tools())`.
-- A fake sibling `dock_extension` with an `assistant_tools` method
-  returning one tool sees that tool appear on the client alongside
-  the built-ins — proves the extension-axis surface.
 - An override of `describe_block.<fake_block_class>` is reached when
   the corresponding block is on the board — proves the per-block
   generic surface.
@@ -773,32 +705,8 @@ revisit this when mutation errors carry structured payloads (e.g.
   a board summary so the model can answer trivial "how many blocks?"
   questions without a tool round-trip.
 - The tool list is hard-coded into the system prompt. Generating it
-  from the `assistant_tools()` dispatch is a Phase 5 concern.
-- `assistant_tools()` is dispatched once per session. If a sibling
-  extension's tool set needs to change as the board evolves (e.g. a
-  per-block tool list), the dispatch would need to re-run on
-  `update()`. Phase 4 will decide whether to lift this.
-- **Sibling-extension server state is not accessible through the
-  generic.** `assistant_tools(x, board, update, session, ...)` is
-  dispatched on the extension *object* — its constructor args, its
-  class — not on the return value of its server. So a future
-  `blockr.md` extension cannot, through this surface, contribute a
-  "read the current markdown content" tool that reaches into its
-  own running module's state. The reason is a hard one to engineer
-  around: in `blockr.dock`'s `board_server_callback()`, extension
-  servers run via `lapply(exts, extension_server, ...)` in list
-  order with no declared dependencies — at the moment any one
-  server runs, sibling servers ahead of it in the list have
-  finished, those behind it have not started. There is no
-  guaranteed order in which to read each other's return values.
-  Workarounds available today: a sibling extension that wants to
-  expose live state writes it to a known location (board option,
-  `session$userData[[<namespace>]]`) from its own server, and the
-  `assistant_tools.<sibling_class>` method reaches in there. We do
-  *not* attempt to standardise such a channel here — when a
-  concrete need arises, the right place to add structure is
-  upstream in `blockr.dock` (either an init-order contract or a
-  deferred-registration hook on `session$onFlushed()`), not a
-  side-registry inside this package.
+  from `register_read_tools()` is a Phase 5 concern.
+- No tool-contribution API for sibling dock extensions; see #4 and
+  the upstream prerequisite at `blockr.dock#129`.
 - `btw` is added to `Imports`. If lighter alternatives appear that
   cover the same generic-summary surface, this is cheap to swap.
