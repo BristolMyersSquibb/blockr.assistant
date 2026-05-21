@@ -30,23 +30,24 @@ The phase introduces four S3 generics that the rest of the package
   terse, LLM-shaped text. The default forwards to
   `btw::btw_this()`; override per-class where the default isn't
   enough.
-- `describe_block(x, ...)` returns the multi-line description that
-  the `describe_block` tool reports back to the model. The default
-  method operates on the base `block` class via the registry's
-  generic metadata; block packages can override their specific
-  class if the generic output isn't enough.
+- `describe_block(x, board, id, ...)` returns the multi-line
+  description that the `describe_block` tool reports back to the
+  model. The default method operates on the base `block` class via
+  the registry's generic metadata; block packages can override
+  their specific class if the generic output isn't enough.
 - `describe_stack(x, ...)` is the stack counterpart: a one-line (or
   short multi-line) description per stack, returned alongside the
   basic enumeration fields by `list_stacks`. The default method on
   base `stack` covers id / name / blocks; stack-class extensions
   (e.g. `blockr.dag`'s `dag_stack`, which adds a colour attribute)
   override their class to surface their extra fields.
-- `assistant_tools(x, ...)` returns the list of `ellmer::ToolDef`s
-  a dock extension contributes to the chat. The default for the
-  base `dock_extension` class returns `list()`; the assistant's
-  own tools come through `assistant_tools.assistant_extension`,
-  and sibling extensions (e.g. a future `blockr.md`) hook in by
-  defining their own method.
+- `assistant_tools(x, board, update, session, ...)` returns the
+  list of `ellmer::ToolDef`s a dock extension contributes to the
+  chat. The default for the base `dock_extension` class returns
+  `list()`; the assistant's own tools come through
+  `assistant_tools.assistant_extension`, and sibling extensions
+  (e.g. a future `blockr.md`) hook in by defining their own
+  method.
 
 ## Scope
 
@@ -103,7 +104,7 @@ like `block_metadata()` and `block_inputs()`.
 **Per-block-class — the `describe_block()` generic.** The
 `describe_block` *tool* registered with `ellmer` takes an `id`, fetches
 the corresponding block off `board$blocks`, and delegates to
-`describe_block(block)`. Default behaviour lives on
+`describe_block(block, board, id)`. Default behaviour lives on
 `describe_block.block` and produces the description from the registry's
 generic block metadata (constructor name, argument descriptions,
 external-control flag, current parameter values, incoming links). A
@@ -440,7 +441,9 @@ string is one find-and-replace.
 #' @param ... For future use.
 #' @return A list of `ellmer::ToolDef`s. Can be empty.
 #' @export
-assistant_tools <- function(x, ...) UseMethod("assistant_tools")
+assistant_tools <- function(x, board, update, session, ...) {
+  UseMethod("assistant_tools")
+}
 
 #' @rdname assistant_tools
 #' @export
