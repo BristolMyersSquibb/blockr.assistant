@@ -45,8 +45,11 @@ In scope:
 Explicitly out of scope (for now):
 
 - Building our own LLM provider abstractions — `ellmer` handles that.
-- Persistence of conversation history — deferred to a later phase or to
-  `blockr.session`.
+- Application-level persistence wiring. The extension's constructor
+  and `state` shape make system prompt and chat history round-trip
+  through `blockr.dock`'s standard ser/des (see Phase 1), but the
+  integration that triggers cross-session save/restore (e.g. via
+  `blockr.session`) is out of the initial roadmap.
 - Mutation safeguards (undo, dry-run, snapshot-before-mutation) — the
   initial implementation applies tool calls directly to the board.
   Snapshotting will likely be revisited once `blockr.session` exposes
@@ -133,36 +136,50 @@ package; every mutation tool is a thin façade over it.
 
 ## Decomposition into phases
 
-Each phase corresponds to its own design-doc vignette, named
-`p<n>-<topic>.qmd` (the `p` prefix keeps the file names portable — R
-CMD check rejects vignette names starting with a digit). Phases are
-ordered so that the package compiles and demos something at the end of
-each one.
+Each phase corresponds to its own design doc under `vignettes/design/`,
+named `<n>-<topic>.qmd`. These files are deliberately excluded from
+the package tarball via `.Rbuildignore` — they are not installed
+vignettes (R CMD check rejects digit-prefixed vignette filenames)
+but `pkgdown` walks `vignettes/` recursively and picks them up as
+articles served at `articles/design/<n>-<topic>.html`. Phases are
+ordered so that the package compiles and demos something at the end
+of each one.
 
 ### Phase 1 — Extension shell with `ellmer` chat
 
-*File:* `p1-shell.qmd`
+*File:* `1-shell.qmd`
 
 `new_assistant_extension()` constructor, dock UI/server, a
 `shinychat::chat_mod_ui` / `chat_mod_server` panel, and an
 `ellmer::Chat` constructed from the board's `llm_model` option. Includes
 from day one:
 
-- Streaming responses, history, basic cost/token telemetry.
-- A visible "stop" affordance backed by `ellmer::stream_controller()`
-  (cheap to wire, and a runaway tool-calling assistant without a stop
-  button later on would be unpleasant).
+- Streaming responses, history, basic token telemetry.
+- A visible "stop" affordance — provided for free by
+  `shinychat::chat_mod_server()`, which constructs an
+  `ellmer::stream_controller()` internally and wires its own cancel
+  input. No work for us beyond verifying it end-to-end.
 - A default, overridable assistant persona shipped with the package —
   configurable via a `system_prompt` argument on
   `new_assistant_extension()`. The default persona is short and scoped
   to "you are a blockr board assistant"; subsequent phases add dynamic
   board context on top.
+- A `state` shape that round-trips constructor arguments
+  (`system_prompt`, `messages`) via `blockr.dock`'s ser/des.
+  Constructor signature ↔ state keys is a structural contract (see
+  `1-shell.qmd` for the implications). Phase 1 also adds a
+  `messages = NULL` constructor argument so that a saved conversation
+  can be seeded back into the chat on restore. Model parameters
+  (temperature, max tokens, …) are deliberately *not* in the
+  extension's surface — they belong to the chat constructor, supplied
+  via `blockr_option("chat_function", …)` or the board's `llm_model`
+  option.
 
 No tools yet — the assistant can hold a conversation but is board-blind.
 
 ### Phase 2 — Read-only tool layer
 
-*File:* `p2-read-tools.qmd`
+*File:* `2-read-tools.qmd`
 
 Establish the "tool kit" abstraction: closures over `(board, update,
 session)`, JSON-schema argument definitions via `ellmer::type_*`, and
@@ -178,7 +195,7 @@ This phase locks in the patterns later mutation phases follow.
 
 ### Phase 3 — Staging and dispatch model
 
-*File:* `p3-staging.qmd`
+*File:* `3-staging.qmd`
 
 The architectural keystone. No new LLM-facing tools, but a clean
 foundation for Phase 4.
@@ -194,7 +211,7 @@ foundation for Phase 4.
 
 ### Phase 4 — Mutation tools
 
-*File:* `p4-mutation-tools.qmd`
+*File:* `4-mutation-tools.qmd`
 
 All thin façades over the Phase 3 staging layer:
 
@@ -211,7 +228,7 @@ blocks exist, target input exists, no cycles).
 
 ### Phase 5 — Context, examples and polish
 
-*File:* `p5-polish.qmd`
+*File:* `5-polish.qmd`
 
 - Dynamic board-summary in the system prompt (refreshed each turn).
 - Model-facing error formatting and recovery hints.
@@ -237,8 +254,11 @@ phases of the initial roadmap:
 - **Snapshot / undo** — integrate with `blockr.session` to snapshot board
   state before each mutation and expose an undo tool to the LLM. Requires
   hooks in `blockr.session` that don't yet exist.
-- **Conversation persistence** — bookmarking conversation history across
-  sessions; partially supported by `shinychat::chat_mod_server(bookmark_on_*)`.
+- **Conversation persistence wiring** — Phase 1 already ships the
+  state shape and constructor surface needed for chat history to
+  round-trip via ser/des. What's missing is the integration that
+  actually triggers save/restore — either through `blockr.session` or
+  via `shinychat::chat_mod_server(bookmark_on_*)`.
 - **Per-block-type tool registration** — allow block packages to
   contribute tools specific to their blocks (e.g. a `blockr.dplyr` block
   exposing a `set_filter_expression` tool).
@@ -251,9 +271,9 @@ phases of the initial roadmap:
 
 | Phase | File | Topic |
 |------:|------|-------|
-| 0 | `p0-roadmap.qmd` | This document |
-| 1 | `p1-shell.qmd` | Extension shell with `ellmer` chat |
-| 2 | `p2-read-tools.qmd` | Read-only tool layer |
-| 3 | `p3-staging.qmd` | Staging & dispatch model |
-| 4 | `p4-mutation-tools.qmd` | Mutation tools (blocks, links, stacks) |
-| 5 | `p5-polish.qmd` | Context, examples, polish |
+| 0 | `0-roadmap.qmd` | This document |
+| 1 | `1-shell.qmd` | Extension shell with `ellmer` chat |
+| 2 | `2-read-tools.qmd` | Read-only tool layer |
+| 3 | `3-staging.qmd` | Staging & dispatch model |
+| 4 | `4-mutation-tools.qmd` | Mutation tools (blocks, links, stacks) |
+| 5 | `5-polish.qmd` | Context, examples, polish |
