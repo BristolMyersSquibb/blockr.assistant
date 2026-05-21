@@ -23,8 +23,8 @@ and get an answer grounded in the live board state. No mutation tools
 yet — those are Phase 4, and they ride on top of the staging layer
 added in Phase 3.
 
-The phase introduces three S3 generics that the rest of the
-package — and downstream packages — will lean on:
+The phase introduces four S3 generics that the rest of the package
+— and downstream packages — will lean on:
 
 - `summarise_result(x, ...)` turns a block's evaluated output into
   terse, LLM-shaped text. The default forwards to
@@ -35,6 +35,12 @@ package — and downstream packages — will lean on:
   method operates on the base `block` class via the registry's
   generic metadata; block packages can override their specific
   class if the generic output isn't enough.
+- `describe_stack(x, ...)` is the stack counterpart: a one-line (or
+  short multi-line) description per stack, returned alongside the
+  basic enumeration fields by `list_stacks`. The default method on
+  base `stack` covers id / name / blocks; stack-class extensions
+  (e.g. `blockr.dag`'s `dag_stack`, which adds a colour attribute)
+  override their class to surface their extra fields.
 - `assistant_tools(x, ...)` returns the list of `ellmer::ToolDef`s
   a dock extension contributes to the chat. The default for the
   base `dock_extension` class returns `list()`; the assistant's
@@ -93,9 +99,9 @@ always sees the current board via `board$board` / `board$blocks`.
 
 ### Extensibility via S3 generics
 
-Two axes need extensibility surfaces; both are S3 generics, both
-follow patterns the blockr ecosystem already uses for things like
-`block_metadata()` and `block_inputs()`.
+Three axes need extensibility surfaces; all three are S3 generics,
+and all follow patterns the blockr ecosystem already uses for things
+like `block_metadata()` and `block_inputs()`.
 
 **Per-block-class — the `describe_block()` generic.** The
 `describe_block` *tool* registered with `ellmer` takes an `id`, fetches
@@ -110,6 +116,17 @@ defines `describe_block.<their_block_class>`. No coupling to
 even have to import the generic if `@method describe_block <class>`
 + roxygen handles registration. The default is the steady state for
 ~all blocks; overrides are an escape hatch, not a requirement.
+
+**Per-stack-class — the `describe_stack()` generic.** Same shape,
+applied to stacks. Unlike blocks, there is no separate `describe_stack`
+tool — the `list_stacks` tool calls `describe_stack(stack)` for every
+stack it lists and surfaces the result alongside the basic fields.
+The default `describe_stack.stack` returns a short summary
+covering id / name / blocks. Stack classes that carry extra
+attributes — `blockr.dag::dag_stack` adds a colour, future variants
+may add layout hints — override `describe_stack.<their_stack_class>`
+to surface them. `blockr.assistant` focuses its default on the base
+stack class only; everything class-specific is downstream's call.
 
 **Per-sibling-extension — the `assistant_tools()` generic.** The
 genuinely interesting extension axis is *other dock extensions*. If a
@@ -331,11 +348,16 @@ model, the argument schema, and the return shape.
 ### `list_stacks`
 
 - **Description.** "List all stacks on the board. Each stack groups
-  blocks under a name; returns one row per stack with id, name, and
-  comma-separated block ids."
+  blocks under a name; returns one row per stack with id, name,
+  comma-separated block ids, and a class-specific description."
 - **Arguments.** none.
-- **Returns.** A data.frame with columns `id`, `name`, `blocks`
-  (the last being `paste(stack_blocks(s), collapse = ", ")`).
+- **Returns.** A data.frame with columns `id`, `name`, `blocks`,
+  `description`. The first three come from `board_stacks(board)`
+  / `stack_blocks(s)`. `description` is `describe_stack(stack)`
+  for each stack, dispatched on the stack's class; the default
+  `describe_stack.stack` returns a short summary, and stack-class
+  extensions (e.g. `blockr.dag::dag_stack`) override their class
+  to add their own fields (colour, layout, …).
 
 ### `list_available_block_types`
 
@@ -459,6 +481,34 @@ describe_block.block <- function(x, board, ...) {
 }
 ```
 
+### `describe_stack()` generic — `R/describe-stack.R`
+
+```r
+#' Describe a stack for the LLM
+#'
+#' Generic backing the `description` column of the `list_stacks`
+#' tool. The default method `describe_stack.stack` summarises the
+#' base stack fields (id, name, comma-separated blocks). Stack
+#' classes that carry extra attributes (e.g. `blockr.dag::dag_stack`
+#' with a colour) override their class to surface those attributes.
+#'
+#' @param x A `stack`.
+#' @param ... For future use.
+#' @return Character scalar (single or multi-line).
+#' @export
+describe_stack <- function(x, ...) UseMethod("describe_stack")
+
+#' @rdname describe_stack
+#' @export
+describe_stack.stack <- function(x, ...) {
+  sprintf(
+    "stack '%s' (blocks: %s)",
+    stack_name(x) %||% "<unnamed>",
+    paste(stack_blocks(x), collapse = ", ")
+  )
+}
+```
+
 ### Tool factories — `R/tools-read.R`
 
 ```r
@@ -520,7 +570,38 @@ tool_describe_block <- function(board, update, session) {
   )
 }
 
-# list_links, list_stacks, list_available_block_types,
+tool_list_stacks <- function(board, update, session) {
+
+  ellmer::tool(
+    function() {
+
+      stks <- board_stacks(board$board)
+      if (!length(stks)) {
+        return(
+          data.frame(
+            id          = character(),
+            name        = character(),
+            blocks      = character(),
+            description = character()
+          )
+        )
+      }
+
+      data.frame(
+        id          = names(stks),
+        name        = chr_ply(stks, function(s) stack_name(s) %||% NA_character_),
+        blocks      = chr_ply(stks, function(s) paste(stack_blocks(s), collapse = ", ")),
+        description = chr_ply(stks, describe_stack),
+        row.names   = NULL
+      )
+    },
+    name        = "list_stacks",
+    description = "List all stacks with id, name, blocks, and a class-specific description.",
+    arguments   = list()
+  )
+}
+
+# list_links, list_available_block_types, and
 # get_block_result_preview follow the same skeleton.
 ```
 
@@ -588,6 +669,9 @@ revisit this when mutation errors carry structured payloads (e.g.
   (the six built-in tools).
 - `R/describe-block.R` *(new)* — `describe_block()` generic and
   default method on `block` operating on registry metadata.
+- `R/describe-stack.R` *(new)* — `describe_stack()` generic and
+  default method on `stack` returning a short id/name/blocks
+  summary.
 - `R/summarise-result.R` *(new)* — `summarise_result()` generic and
   default method forwarding to `btw::btw_this()`.
 - `R/tools-read.R` *(new)* — six tool factories.
@@ -597,7 +681,7 @@ revisit this when mutation errors carry structured payloads (e.g.
 - `R/system-prompt.R` — `default_system_prompt()` text revised.
 - `DESCRIPTION` — add `btw` to `Imports:`.
 - `NAMESPACE` — export `assistant_tools`, `describe_block`,
-  `summarise_result` plus their default methods.
+  `describe_stack`, `summarise_result` plus their default methods.
 - `inst/examples/02-read-tools/app.R` *(new)* — demo board with two
   connected blocks.
 - `tests/testthat/test-assistant-tools.R` *(new)* — the iteration
@@ -605,6 +689,9 @@ revisit this when mutation errors carry structured payloads (e.g.
 - `tests/testthat/test-describe-block.R` *(new)* — default method
   on a synthetic block; an override on a fake block subclass is
   honoured.
+- `tests/testthat/test-describe-stack.R` *(new)* — default method
+  on a synthetic stack; an override on a fake stack subclass
+  (mirroring `dag_stack`) surfaces in the `list_stacks` rows.
 - `tests/testthat/test-summarise-result.R` *(new)* — default
   dispatches to `btw_this` for a data.frame and a non-tabular
   object; a per-test S3 method on a fake class is honoured.
@@ -622,6 +709,9 @@ revisit this when mutation errors carry structured payloads (e.g.
   the built-ins — proves the extension-axis surface.
 - An override of `describe_block.<fake_block_class>` is reached when
   the corresponding block is on the board — proves the per-block
+  generic surface.
+- An override of `describe_stack.<fake_stack_class>` appears in the
+  `description` column of `list_stacks` — proves the per-stack
   generic surface.
 - Demo app: user asks "what blocks are on the board?" → model
   invokes `list_blocks` and replies with the actual block ids.
