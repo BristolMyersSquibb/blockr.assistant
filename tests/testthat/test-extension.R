@@ -50,18 +50,21 @@ test_that("default_system_prompt returns a non-empty string", {
 
 test_that("format_token_telemetry handles missing / NA / real tokens", {
 
-  expect_identical(format_token_telemetry(NULL), "")
+  expect_null(format_token_telemetry(NULL))
 
   na_turn <- ellmer::Turn("assistant", "hi")
-  expect_identical(format_token_telemetry(na_turn), "")
+  expect_null(format_token_telemetry(na_turn))
 
   real_turn <- ellmer::Turn("assistant", "hi")
   real_turn@tokens <- c(312, 84, NA)
 
-  expect_identical(
-    format_token_telemetry(real_turn),
-    "input: 312   output: 84   total this turn: 396"
-  )
+  res <- format_token_telemetry(real_turn)
+  expect_s3_class(res, "shiny.tag")
+
+  html <- as.character(res)
+  expect_match(html, "asst-meta", fixed = TRUE)
+  expect_match(html, ">312<")
+  expect_match(html, ">84<")
 })
 
 test_that("server constructs chat and exposes state matching ctor signature", {

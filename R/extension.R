@@ -46,8 +46,76 @@ new_assistant_extension <- function(system_prompt = NULL,
 
 asst_ext_ui <- function(id, board, ...) {
   tagList(
-    shinychat::chat_mod_ui(NS(id, "chat")),
-    verbatimTextOutput(NS(id, "tokens"))
+    asst_ext_styles(),
+    div(
+      class = "asst-panel",
+      shinychat::chat_mod_ui(NS(id, "chat")),
+      uiOutput(NS(id, "tokens"), container = function(...) {
+        div(class = "asst-token-slot", ...)
+      })
+    )
+  )
+}
+
+asst_ext_styles <- function() {
+  tags$style(
+    HTML(
+      "
+      /* blockr.dock wraps every extension UI in an unnamed div with no
+         height; without anchoring it here, our height:100% resolves to
+         content size and we overflow the dock-panel boundary. */
+      :has(> .asst-panel) {
+        height: 100%;
+      }
+      .asst-panel {
+        padding: 0 10px 14px 10px;
+        height: 100%;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+      }
+      .asst-panel > shiny-chat-container {
+        flex: 1 1 0;
+        min-height: 0;
+      }
+      .asst-token-slot.shiny-html-output {
+        display: flex;
+        justify-content: flex-end;
+        flex: 0 0 auto;
+        width: min(680px, 100%);
+        margin: 0 auto;
+        min-height: 21px;
+        padding: 10px 4px 0 4px;
+      }
+      .asst-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 11px;
+        line-height: 1;
+        color: var(--bs-secondary-color, #6c757d);
+        font-variant-numeric: tabular-nums slashed-zero;
+      }
+      .asst-meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: default;
+        transition: color 120ms ease;
+      }
+      .asst-meta-item:hover {
+        color: var(--bs-body-color, #212529);
+      }
+      .asst-meta-item svg {
+        width: 12px;
+        height: 12px;
+        opacity: 0.75;
+      }
+      .asst-meta-num {
+        font-weight: 500;
+      }
+      "
+    )
   )
 }
 
@@ -90,7 +158,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(mod$last_input(), record_new_turns(), ignoreNULL = TRUE)
         observeEvent(mod$last_turn(),  record_new_turns(), ignoreNULL = TRUE)
 
-        output$tokens <- renderText(
+        output$tokens <- renderUI(
           format_token_telemetry(mod$last_turn())
         )
 
@@ -108,15 +176,25 @@ asst_ext_srv <- function(system_prompt, messages) {
 format_token_telemetry <- function(turn) {
 
   if (is.null(turn) || all(is.na(turn@tokens))) {
-    return("")
+    return(NULL)
   }
 
   toks <- turn@tokens
   in_t  <- if (is.na(toks[1])) 0L else as.integer(toks[1])
   out_t <- if (is.na(toks[2])) 0L else as.integer(toks[2])
 
-  sprintf(
-    "input: %d   output: %d   total this turn: %d",
-    in_t, out_t, in_t + out_t
+  meta_item <- function(icon, value, title) {
+    span(
+      class = "asst-meta-item",
+      title = title,
+      bsicons::bs_icon(icon),
+      span(class = "asst-meta-num", format(value, big.mark = ","))
+    )
+  }
+
+  div(
+    class = "asst-meta",
+    meta_item("arrow-up-short",   in_t,  sprintf("Input tokens (this turn): %d", in_t)),
+    meta_item("arrow-down-short", out_t, sprintf("Output tokens (this turn): %d", out_t))
   )
 }
