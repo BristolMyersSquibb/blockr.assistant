@@ -194,7 +194,13 @@ format_token_telemetry <- function(turn) {
 
   div(
     class = "asst-meta",
-    meta_item("arrow-up-short",   in_t,  sprintf("Input tokens (this turn): %d", in_t)),
-    meta_item("arrow-down-short", out_t, sprintf("Output tokens (this turn): %d", out_t))
+    meta_item(
+      "arrow-up-short", in_t,
+      sprintf("Input tokens (this turn): %d", in_t)
+    ),
+    meta_item(
+      "arrow-down-short", out_t,
+      sprintf("Output tokens (this turn): %d", out_t)
+    )
   )
 }
