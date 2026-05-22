@@ -1043,26 +1043,31 @@ description.
   as #12 but applied to stacks; tracked separately in #13. Links
   face the same gap *if* subclasses are ever introduced (none
   today, so no urgency).
-- **dock observers and `dock_stack` reconstruction need updates for
-  the delta-shape `mod` payload shipped in blockr.core#176.** Two
-  dock-side issues affect modify operations:
+- **`blockr.dock` needs to catch up to blockr.core#176 before
+  Phase 4 is usable end-to-end.** `blockr.dock` is in this
+  package's `Imports`; `new_assistant_extension()` wraps
+  `blockr.dock::new_dock_extension`. Two dock-side issues, both
+  fallout of the delta-shape `mod` payload, sit on the critical
+  path for the mutation surface:
   - [`blockr.dock#131`](https://github.com/BristolMyersSquibb/blockr.dock/issues/131)
     — dock's `observeEvent(update()$blocks$mod, ...)` handlers
     (panel-title updater + plugin-block) still expect `mod` entries
-    to be full block objects and call `block_name(blk)` on what is
-    now a delta. `modify_block` against a block on a `dock_board`
-    will succeed in core's apply path but the dock observer will
-    error and the panel title won't refresh.
+    to be full block objects and call `block_name(blk)` on what
+    is now a delta. Every `modify_block` against a block on a
+    `dock_board` will error at observer time and the panel title
+    won't refresh.
   - [`blockr.dock#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130)
     — `update_stack.dock_stack` is missing, so `modify_stack`
     against a dock-promoted stack errors at apply time with
     "formal argument 'ctor' matched by multiple actual arguments".
 
-  Until both land, the assistant's mutation surface is technically
-  correct against core but visibly broken in a dock-mounted demo.
-  Base (non-dock) boards work fine. Phase 4 is unblocked the
-  moment dock catches up to core; nothing needs to change on the
-  assistant side.
+  The assistant code itself is correct against blockr.core post-#176.
+  But until #131 (and ideally #130) ship, Phase 4 should not merge:
+  the visible behaviour for any user issuing a modify is broken.
+  Either gate this PR on the dock fixes, pin `blockr.dock` via
+  `Remotes:` once a fix branch exists, or split out `modify_block`
+  / `modify_stack` into a follow-up PR that lands after dock
+  catches up.
 - **External-control writes still go through `update()`.** This is
   the design's bet on blockr.core#175. If core resolves the issue
   with a less-unified approach (e.g. ctrl writes still bypass
