@@ -3,7 +3,7 @@ title: "Staging & dispatch model"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Staging & dispatch model}
-  %\VignetteEngine{quarto::html}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
