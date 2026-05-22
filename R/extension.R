@@ -132,6 +132,8 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         client <- chat_ctor(system_prompt = sys_prompt)
 
+        pending_update <- reactiveVal(empty_pending())
+
         register_read_tools(client, board, update, session)
 
         if (length(messages)) {
@@ -157,8 +159,23 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
         }
 
-        observeEvent(mod$last_input(), record_new_turns(), ignoreNULL = TRUE)
-        observeEvent(mod$last_turn(),  record_new_turns(), ignoreNULL = TRUE)
+        observeEvent(
+          mod$last_input(),
+          {
+            reset_pending(pending_update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        observeEvent(
+          mod$last_turn(),
+          {
+            flush_pending(pending_update, update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
 
         output$tokens <- renderUI(
           format_token_telemetry(mod$last_turn())
