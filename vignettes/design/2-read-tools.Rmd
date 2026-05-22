@@ -3,7 +3,7 @@ title: "Read-only tool layer"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Read-only tool layer}
-  %\VignetteEngine{quarto::html}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
