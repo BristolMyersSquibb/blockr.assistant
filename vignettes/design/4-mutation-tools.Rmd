@@ -1043,16 +1043,26 @@ description.
   as #12 but applied to stacks; tracked separately in #13. Links
   face the same gap *if* subclasses are ever introduced (none
   today, so no urgency).
-- **`modify_stack` on a `dock_stack` errors at apply time today.**
-  blockr.core 0.1.2's default `update_stack.stack` reconstructs
-  through the stored constructor; `blockr.dock::dock_stack` needs
-  its own `update_stack` method, tracked at
-  [`blockr.dock#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130).
-  Until that lands, the assistant's `modify_stack` will succeed
-  at stage time and fail at flush time with a cryptic R error;
-  the user sees a Shiny error notification. Base `stack` works
-  fine; the issue only bites once dock's auto-promotion has
-  attached a `color` attribute.
+- **dock observers and `dock_stack` reconstruction need updates for
+  the delta-shape `mod` payload shipped in blockr.core#176.** Two
+  dock-side issues affect modify operations:
+  - [`blockr.dock#131`](https://github.com/BristolMyersSquibb/blockr.dock/issues/131)
+    — dock's `observeEvent(update()$blocks$mod, ...)` handlers
+    (panel-title updater + plugin-block) still expect `mod` entries
+    to be full block objects and call `block_name(blk)` on what is
+    now a delta. `modify_block` against a block on a `dock_board`
+    will succeed in core's apply path but the dock observer will
+    error and the panel title won't refresh.
+  - [`blockr.dock#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130)
+    — `update_stack.dock_stack` is missing, so `modify_stack`
+    against a dock-promoted stack errors at apply time with
+    "formal argument 'ctor' matched by multiple actual arguments".
+
+  Until both land, the assistant's mutation surface is technically
+  correct against core but visibly broken in a dock-mounted demo.
+  Base (non-dock) boards work fine. Phase 4 is unblocked the
+  moment dock catches up to core; nothing needs to change on the
+  assistant side.
 - **External-control writes still go through `update()`.** This is
   the design's bet on blockr.core#175. If core resolves the issue
   with a less-unified approach (e.g. ctrl writes still bypass
