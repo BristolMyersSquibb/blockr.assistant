@@ -132,6 +132,8 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         client <- chat_ctor(system_prompt = sys_prompt)
 
+        register_read_tools(client, board, update, session)
+
         if (length(messages)) {
           client$set_turns(lapply(messages, ellmer::contents_replay))
         }

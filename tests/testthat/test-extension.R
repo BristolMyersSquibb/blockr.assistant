@@ -143,11 +143,141 @@ test_that("server respects a user-supplied system_prompt", {
   )
 })
 
+test_that("server registers all six read-only tools on the client", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      tools <- client$get_tools()
+
+      expect_length(tools, 6L)
+      expect_setequal(
+        names(tools),
+        c("list_blocks", "describe_block", "list_links", "list_stacks",
+          "list_available_blocks", "get_block_result")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("registered list_blocks tool reflects the live board contents", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris"), h = new_head_block()),
+    links = c(new_link("d", "h", "data"))
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      res <- client$get_tools()$list_blocks()
+
+      expect_s3_class(res, "data.frame")
+      expect_setequal(res$id, c("d", "h"))
+      expect_true("dataset_block" %in% res$type)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("registered describe_block tool dispatches on block class", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  registerS3method(
+    "describe_block", "fake_block_in_server_test",
+    function(x, board, id, ...) "marked by override",
+    envir = globalenv()
+  )
+  withr::defer(
+    suppressWarnings(
+      rm("describe_block.fake_block_in_server_test", envir = globalenv())
+    )
+  )
+
+  blks <- board_blocks(brd)
+  class(blks[["d"]]) <- c("fake_block_in_server_test", class(blks[["d"]]))
+  board_blocks(brd) <- blks
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      res <- client$get_tools()$describe_block(id = "d")
+
+      expect_identical(res, "marked by override")
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("registered tool surfaces an error string instead of crashing", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      res <- client$get_tools()$describe_block(id = "no-such-block")
+
+      expect_match(res, "No block with id no-such-block", fixed = TRUE)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("demo app file constructs a shiny.appobj without crashing", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   src <- system.file("examples", "01-shell", "app.R",
+                     package = "blockr.assistant")
+
+  if (!nzchar(src)) {
+    skip("Demo app not found in installed package")
+  }
+
+  env <- new.env()
+  app <- source(src, local = env)$value
+
+  expect_s3_class(app, "shiny.appobj")
+})
+
+test_that("02-read-tools demo app file constructs a shiny.appobj", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  src <- system.file("examples", "02-read-tools", "app.R",
                      package = "blockr.assistant")
 
   if (!nzchar(src)) {

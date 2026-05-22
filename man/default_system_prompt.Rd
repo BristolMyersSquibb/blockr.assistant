@@ -11,8 +11,9 @@ A character scalar.
 }
 \description{
 The package-default persona used when \code{new_assistant_extension()} is
-called without a \code{system_prompt} argument. The text deliberately
-tells the model it cannot yet act on the board — Phase 1 ships no
-tools, and without an explicit instruction the model will happily
-hallucinate a CRUD vocabulary it does not have.
+called without a \code{system_prompt} argument. Names the read-only
+inspection tools so the model knows to prefer them over guessing
+about the board. Mutation tools arrive in a later phase; the prompt
+is explicit about the current ceiling so the model does not invent
+CRUD calls.
 }
