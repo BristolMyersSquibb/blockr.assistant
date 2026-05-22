@@ -40,7 +40,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
 
   app <- shinytest2::AppDriver$new(
     app_dir,
-    name = "02-read-tools",
+    name = "demo",
     seed = 42,
     load_timeout = 30 * 1000
   )
