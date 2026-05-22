@@ -159,13 +159,15 @@ stacks.
 
 The reasoning:
 
-- **Ids are system identifiers, not user-facing labels.** A block
-  has both an `id` (registry key) and a `name` (display attribute).
-  When a human user says "rename this block to dataset", they mean
-  the *name* — which is changeable via `modify_block(id, list(name
-  = ...))` when the block's constructor exposes a `name` arg, or
-  via a future Phase 5 metadata channel otherwise. They do not
-  mean the registry key.
+- **Ids are system identifiers, not user-facing labels.** Blocks
+  carry an `id` (the registry key) and a per-type display `name`
+  registered via `register_block(ctor, name, ...)`. The display
+  name is type-level metadata, not per-instance editable surface;
+  a "rename this block" user request maps onto changing the
+  rendered label in the board UI (out of scope for Phase 4) or
+  picking a different block type, not on changing the registry
+  key. The conflation of "name" and "id" in casual speech is what
+  makes this worth spelling out.
 - **Stable ids = stable model context.** The model is rebuilding
   its mental model of the board across turns from `list_blocks` /
   `describe_block` output. If ids could drift mid-conversation,
@@ -300,9 +302,11 @@ Benefit: no second reactiveVal, no recipe bookkeeping, no
 divergence risk between the staged block and its recipe.
 
 Same rule for stacks: `add_stack(x) → modify_stack(x, ...)`
-rejects. Even though stack args are technically introspectable via
-`stack_blocks()` / `stack_name()` (so a recipe-free collapse is
-possible), keeping the rule uniform across block and stack mods is
+rejects. Base stacks expose `stack_blocks()` / `stack_name()`
+readers, but subclasses such as `blockr.dock::dock_stack` add
+extra attributes (e.g. `color`) without a generic readback API,
+so a recipe-free collapse is not portable across subclasses.
+Keeping the rule uniform across block and stack mods is also
 easier for the model to internalise than two different behaviours
 for two superficially-identical operations.
 
@@ -395,7 +399,8 @@ tool_add_block <- function(board, update, pending, session) {
 
       id <- id %||% rand_names(existing_ids(board, pending, "blocks"))
 
-      block <- do.call(create_block, c(list(type), args))
+      parsed <- jsonlite::fromJSON(args, simplifyVector = TRUE)
+      block <- do.call(create_block, c(list(type), parsed))
 
       stage_block_add(pending, board, id, block)
 
@@ -406,17 +411,21 @@ tool_add_block <- function(board, update, pending, session) {
     name        = "add_block",
     description = paste(
       "Add a new block to the board. `type` is a block id as",
-      "reported by list_available_blocks. `args` is a named list",
-      "of constructor arguments. `id` is optional — if omitted,",
+      "reported by list_available_blocks. `args` is a JSON object",
+      "(passed as a string) of constructor arguments — field names",
+      "must match the arg names reported by list_available_blocks",
+      "for the chosen type. `id` is optional — if omitted,",
       "a unique id is generated."
     ),
     arguments = list(
       type = ellmer::type_string(
         "Block type id, from list_available_blocks."
       ),
-      args = ellmer::type_object(
-        "Constructor arguments for the block.",
-        .additional_properties = TRUE
+      args = ellmer::type_string(
+        paste(
+          "JSON object of constructor arguments, e.g.",
+          "'{\"n\": 10}'. Field names match list_available_blocks."
+        )
       ),
       id = ellmer::type_string(
         "Optional id for the new block. Generated if omitted.",
@@ -427,9 +436,14 @@ tool_add_block <- function(board, update, pending, session) {
 }
 ```
 
-`create_block` failures (missing required arg, wrong type, unknown
-`type` id) surface as natural R errors and get formatted into the
-`<tool> failed: <reason>` string. `stage_block_add` enforces
+`args` ships as a JSON-formatted string rather than a native
+object because ellmer's `type_object` requires a closed key list
+and the only escape hatch (`.additional_properties = TRUE`) is
+deprecated and only supported by Claude. A JSON-string parameter
+is provider-agnostic; the body parses with `jsonlite::fromJSON`
+and surfaces parse failures, construction failures (missing
+required arg, wrong type, unknown `type` id) through the
+`<tool> failed: <reason>` envelope. `stage_block_add` enforces
 uniqueness against board + pending via core's validator and the
 conflict-table reject rows.
 
@@ -461,9 +475,8 @@ tool_remove_block <- function(board, update, pending, session) {
 ```
 
 The cascade-cleanup of orphaned links and stack memberships is
-core's job at `preprocess_board_update` time
-(`blockr.core/R/board-server.R:1020`). The tool does not stage
-those; the model does not need to know they happen.
+core's job at `preprocess_board_update` time. The tool does not
+stage those; the model does not need to know they happen.
 
 ### `modify_block(id, args)`
 
@@ -473,7 +486,9 @@ tool_modify_block <- function(board, update, pending, session) {
   ellmer::tool(
     function(id, args) {
 
-      stage_block_mod(pending, board, id, args)
+      delta <- jsonlite::fromJSON(args, simplifyVector = TRUE)
+
+      stage_block_mod(pending, board, id, delta)
 
       sprintf(
         "Staged modify_block(%s) — will apply at turn end.", id
@@ -482,24 +497,29 @@ tool_modify_block <- function(board, update, pending, session) {
     name        = "modify_block",
     description = paste(
       "Change one or more constructor arguments of an existing",
-      "block. `args` is a partial named list — only keys present",
-      "are changed; unmentioned keys keep their current values."
+      "block. `args` is a JSON object (passed as a string) of",
+      "just the keys being changed; unmentioned keys keep their",
+      "current values."
     ),
     arguments = list(
       id = ellmer::type_string("Id of the block to modify."),
-      args = ellmer::type_object(
-        "Partial named list of arguments to change.",
-        .additional_properties = TRUE
+      args = ellmer::type_string(
+        paste(
+          "JSON object of arguments to change, e.g.",
+          "'{\"n\": 5}'. Only supplied keys are modified."
+        )
       )
     )
   )
 }
 ```
 
-`stage_block_mod` writes the delta into `pending$blocks$mod[[id]]`,
-collapses with a prior pending `mod` by key-wise merge, or rejects
-against a pending `add` / `rm` per the conflict table. No
-construction in the consumer.
+Same JSON-string treatment as `add_block` for the same reason —
+ellmer cannot model an open-keyed object portably. `stage_block_mod`
+writes the parsed delta into `pending$blocks$mod[[id]]`, collapses
+with a prior pending `mod` by key-wise merge, or rejects against a
+pending `add` / `rm` per the conflict table. No construction in
+the consumer.
 
 ### `add_link(from, to, input, id = NULL)`
 
@@ -871,8 +891,10 @@ staging, mirroring Phase 3 unchanged.
   `merge_args()`, `compact()`.
 - `R/staging.R` — refactor `stage_block_mod`, `stage_stack_mod`
   and `stage_link_mod` to take a delta (instead of a full block /
-  stack / link). No other stager changes; `empty_pending` stays as
-  Phase 3 ships it.
+  stack / link). Update `empty_pending()` so the three `mod` slots
+  are plain `list()` (named lists of deltas) instead of Phase 3's
+  typed `blocks()` / `links()` / `stacks()` — the typed slots no
+  longer fit the delta shape.
 - `R/extension.R` — call `register_mutation_tools()` from
   `asst_ext_srv`. No new reactiveVal.
 - `tests/testthat/test-tools-mutation.R` *(new)* — per-tool happy
@@ -888,17 +910,24 @@ staging, mirroring Phase 3 unchanged.
 - `inst/examples/04-mutation-tools/` *(new)* — minimal demo app
   exercising the full surface.
 - `DESCRIPTION` — bump `Remotes:` to pin `blockr.core` to the
-  branch carrying the #175 fix; unpinning at release time.
+  branch carrying the #175 fix; unpinning at release time. Add
+  `jsonlite` to `Imports:` (used by `add_block` and `modify_block`
+  tool bodies to parse the JSON-shaped `args` parameter; the
+  other tools take typed top-level args and do not need it).
+  `jsonlite` is already loaded transitively via `ellmer`, but the
+  explicit declaration documents the direct use.
 
 No new exports. The mutation tools are internal to the extension's
 server scope, accessed only via `register_mutation_tools`.
 
-No new package dependencies beyond what Phase 2/3 already pulled in
-(`ellmer`, `shinychat`, `blockr.core`).
-
 ## Acceptance criteria
 
 ### Automated (CI / `devtools::check()`)
+
+The end-to-end staging / flush assertions below are gated on the
+`blockr.core` change in [issue 175][issue-175]. Until that lands,
+the tests pin `blockr.core` via `Remotes:` to the branch carrying
+the delta-shape `mod` dispatch; CI tracks that branch.
 
 - Per-tool happy path: each of the nine tools, called against a
   synthetic board fixture, stages the expected entry into
@@ -916,15 +945,23 @@ No new package dependencies beyond what Phase 2/3 already pulled in
   asserting the error string and that no state changed.
 - `flush_pending` test cases from Phase 3 continue to pass against
   the new payload shape (delta-mods).
-- `shiny::testServer()` end-to-end:
+- `shiny::testServer()` end-to-end (scripted sequences invoke tool
+  functions directly via `client$get_tools()`, simulating what
+  `ellmer`'s dispatch loop would do on the model's behalf):
   - A turn with `add_block`, `add_link`, `add_stack` flushes
     exactly one `update(...)` carrying all three.
   - A turn with `add_block(foo, ...)` then `modify_block(foo,
-    ...)` returns a failure string for the modify, flushes one
-    `update(...)` carrying only the original add, and the model
-    can recover with `remove_block(foo) + add_block(...)`.
-  - Two `last_turn` firings without intervening stages produce zero
-    `update(...)` calls.
+    ...)` returns a failure string for the modify, and the
+    flushed `update(...)` carries only the original add (no mod
+    entry for `foo`).
+  - The recovery sequence flushes correctly: a turn scripted as
+    `add_block(foo, type, args1)` → `modify_block(foo, args2)`
+    (fails) → `remove_block(foo)` (collapses with pending add to
+    a no-op) → `add_block(foo, type, args3)` flushes exactly one
+    `update(...)` carrying a single add for `foo` with `args3`
+    and no rm.
+  - Two `last_turn` firings without intervening stages produce
+    zero `update(...)` calls.
 - Phase 1, 2, 3 acceptance criteria continue to pass.
 - `devtools::check()` passes 0/0/0.
 
@@ -987,6 +1024,25 @@ description.
   reactiveVal in the extension. If empirical use shows the model
   has trouble with the recovery pattern, a future phase can
   reintroduce the collapse behind a sidecar recipe cache.
+- **`add_block` / `modify_block` `args` are JSON-formatted strings,
+  not native typed objects.** ellmer's `type_object` requires a
+  closed key list, and the only escape hatch
+  (`.additional_properties = TRUE`) is deprecated and supported
+  only by Claude. JSON-string is the portable workaround. Trade-off:
+  the model must format args as a JSON string rather than emitting
+  a native object, and the tool body parses with
+  `jsonlite::fromJSON`. The clean upgrade path — per-block-type
+  tool generation backed by registry type info — is tracked in
+  #12.
+- **Stack subclass ctor args are unreachable from the assistant.**
+  `add_stack(blocks, name, id)` and `modify_stack(id, blocks, name)`
+  expose only the base `blockr.core::new_stack` args, so e.g. the
+  `color` attribute on `blockr.dock::dock_stack` cannot be set or
+  modified through the assistant — it falls back to the
+  auto-promoter's default at apply time. Same architectural cause
+  as #12 but applied to stacks; tracked separately in #13. Links
+  face the same gap *if* subclasses are ever introduced (none
+  today, so no urgency).
 - **External-control writes still go through `update()`.** This is
   the design's bet on blockr.core#175. If core resolves the issue
   with a less-unified approach (e.g. ctrl writes still bypass
