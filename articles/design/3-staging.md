@@ -1,0 +1,747 @@
+# Staging & dispatch model
+
+## Goal
+
+Phase 3 adds the architectural keystone that mutation tools (Phase 4)
+ride on top of: a per-turn *staging* layer between LLM tool calls and
+the board’s `update(...)` reactive. Tools no longer dispatch updates
+directly — they accumulate change into a pending payload private to the
+extension server, which is validated incrementally at stage time and
+flushed as a single `update(...)` call when the assistant’s turn
+completes.
+
+No new user-facing tools land in this phase. The Phase 2 read tools keep
+working unchanged, and the assistant’s externally visible behaviour is
+identical. What ships is an internal API (`stage_block_*`,
+`stage_link_*`, `stage_stack_*`, `flush_pending`) plus the wiring that
+attaches it to the chat turn lifecycle. Phase 4 mutation tools are thin
+façades over this layer.
+
+## Scope
+
+In:
+
+- A `pending_update` `reactiveVal` private to the extension server whose
+  value is shaped exactly like the `update(...)` payload
+  (`list(blocks = list(add, mod, rm), links = list(...), stacks = list(...))`).
+- A small `stage_*` API (one stager per add/mod/rm × blocks/links/
+  stacks) with explicit conflict semantics. Each stager runs
+  blockr.core’s validator on the proposed full pending payload against
+  the live board before mutating `pending_update`; rejections surface as
+  `with_tool_errors`-shaped error strings.
+- A `flush_pending(pending, update)` helper that calls
+  `update(pending())` when there is something to flush, then resets the
+  reactiveVal.
+- Turn-lifecycle wiring in `asst_ext_srv`: reset pending on
+  `mod$last_input` (new user turn begins), flush on `mod$last_turn`
+  (assistant turn complete).
+- Error formatting evolved from Phase 2’s `with_tool_errors`: a
+  stage-time rejection returns a string the model can self-correct from
+  (`"add_block failed: block 'foo' already exists. Use modify_block to change an existing block."`).
+- Tests in `tests/testthat/test-staging.R` exercising the stage API
+  against a synthetic board +
+  [`shiny::testServer()`](https://rdrr.io/pkg/shiny/man/testServer.html)
+  harness.
+
+Out (deferred to later phases):
+
+- Any new LLM-facing tool. The stage API is internal; the only callers
+  in Phase 3 are tests.
+- External-control writes (`block_external_ctrl_vars` reactiveVals).
+  Phase 4 will decide whether `modify_block` rides the staging layer
+  (replacing the block via `blocks$mod`) or hits the per-input
+  reactiveVal directly. Either way, Phase 3’s payload-shaped staging
+  primitive is independent of that decision.
+- A “pending changes” UI affordance (a badge counting staged operations,
+  a diff preview, an “apply now” button). The pending reactiveVal is
+  left observable so such an affordance is cheap to add later, but Phase
+  3 ships none.
+- Snapshotting/undo. Atomicity at the turn boundary is what we deliver
+  here; multi-turn rollback waits on `blockr.session` hooks that don’t
+  yet exist.
+
+## Architectural decisions
+
+### Why staging at all
+
+`blockr.core`’s board server exposes a single `board_update`
+`reactiveVal()` shared across plugins, callbacks and extensions
+(`blockr.core/R/board-server.R:82`). Each `update(payload)` call sets
+that reactiveVal; a priority-`Inf` observer validates the payload
+against the current board, and a priority-`-Inf` observer applies it and
+resets the reactiveVal to `NULL`. The validate/apply pair runs once per
+flush of the reactive graph.
+
+Two consequences for an LLM-driven caller:
+
+1.  **Multiple [`update()`](https://rdrr.io/r/stats/update.html) calls
+    inside one reactive flush race.** A `reactiveVal` only holds one
+    value. If the model calls two mutation tools and each issues
+    `update(...)` synchronously, the second call overwrites the first;
+    only one set of changes actually reaches the validator/applier pair
+    on the next reactive flush. ellmer’s tool dispatch runs inside
+    `chat_mod_server`’s observer chain — so all tool calls within a
+    single assistant turn live in the same reactive epoch and would
+    collide this way.
+2.  **No “pending validation” against intermediate state.** Per-tool
+    feedback (“did my last call succeed?”) is meaningful only if the
+    tool can see the in-flight state — i.e. the board *plus* every prior
+    staged change in this turn. blockr.core’s validators run on
+    `rv$board` only; they don’t know about a sibling tool’s earlier
+    [`update()`](https://rdrr.io/r/stats/update.html) call until both
+    have flushed and been applied.
+
+Staging fixes both: tools mutate a server-private `pending_update`
+reactiveVal whose value is the accumulated payload. Each stage runs
+blockr.core’s own validators against the *merged* state (current board +
+pending payload), so the model gets per-tool feedback grounded in what
+the next tool will actually see. When the assistant’s turn completes,
+the accumulated payload is dispatched as one `update(...)` call — one
+validator pass, one applier pass, one re-render, one logical snapshot
+point for future `blockr.session` integration.
+
+The staging layer is the central architectural deliverable of the
+package; every Phase 4 mutation tool is a thin façade over it.
+
+### Pending payload shape mirrors `update(...)` exactly
+
+The pending payload is shaped identically to what blockr.core’s
+[`update()`](https://rdrr.io/r/stats/update.html) expects:
+
+``` r
+
+list(
+  blocks = list(
+    add = blockr.core::blocks(),  # an empty `blocks` typed object
+    mod = blockr.core::blocks(),
+    rm  = character()
+  ),
+  links  = list(
+    add = blockr.core::links(),
+    mod = blockr.core::links(),
+    rm  = character()
+  ),
+  stacks = list(
+    add = blockr.core::stacks(),
+    mod = blockr.core::stacks(),
+    rm  = character()
+  )
+)
+```
+
+Two reasons for keeping the shapes identical:
+
+1.  **Flush is `update(pending())`.** No transformation step, no shape
+    adapter, no risk of drift if blockr.core’s payload shape evolves.
+2.  **The merge helper can reuse blockr.core’s own `combine_*`
+    internals** (`combine_update_blocks()` at
+    `blockr.core/R/board-server.R:897`, plus analogous logic for links
+    and stacks). For Phase 3 we re-implement the trivial bits in-package
+    — the upstream helper is unexported and we want to avoid the `:::`
+    dependency — but the shape compatibility means exporting it later is
+    a no-op refactor.
+
+The initial pending value is the fully-populated empty-skeleton above,
+not `NULL`. This trades one allocation per turn for a cleaner stage API:
+stagers never have to check “does the `blocks$add` slot exist yet?” — it
+always does, just empty.
+
+### Turn boundaries: stage on tool call, flush on `last_turn`
+
+[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+returns a module result whose `last_input()` reactive fires when the
+user submits a message and `last_turn()` reactive fires when the
+assistant finishes its turn. Concretely, `last_turn` is written by an
+observer keyed on `append_stream_task$status() == "success"`
+([`shinychat::chat_mod_server`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+source) — and the stream task uses `client$stream_async()`, which
+handles all tool roundtrips internally before resolving. So `last_turn`
+fires *once* per assistant turn after all tool calls have run, not once
+per intermediate tool-call turn. That is exactly the boundary we want
+the flush to hook into.
+
+The two events bracket a turn:
+
+- **On `last_input` — reset pending.** Defensive: if a previous turn
+  crashed before flushing, we don’t carry its stale staging into the new
+  turn. Also makes the invariant “between turns, pending is empty” cheap
+  to assert.
+- **On `last_turn` — flush pending.** Build the `update(...)` payload
+  from the accumulated stagers and dispatch. If there is nothing staged,
+  this is a no-op.
+
+``` r
+
+observeEvent(
+  mod$last_input(),
+  {
+    reset_pending(pending_update)
+    record_new_turns()
+  },
+  ignoreNULL = TRUE
+)
+
+observeEvent(
+  mod$last_turn(),
+  {
+    flush_pending(pending_update, update, session)
+    record_new_turns()
+  },
+  ignoreNULL = TRUE
+)
+```
+
+The two observers replace Phase 1’s pair (which called
+`record_new_turns()` only) — staging side-effects now bracket each
+recording call. `flush_pending` calls `update(payload)` which sets
+blockr.core’s `board_update` reactiveVal; blockr.core’s own
+priority-`Inf` validator and priority-`-Inf` applier observers process
+it on the next reactive flush. Our observer doesn’t wait for that — by
+the time `record_new_turns()` runs, the dispatch is queued, not yet
+applied. That ordering is fine: chat history goes into `state$messages`,
+board state lives in `rv$board`, and the saved bookmark gathers both
+after the cascade has settled. There is no within-observer ordering
+constraint to enforce here.
+
+A consequence: **the model can’t read back its own mutations within the
+same turn.** The Phase 3 read tools (unchanged from Phase 2) read
+directly from `board$board`, which only reflects the post-dispatch state
+— and dispatch runs after the turn completes. So `list_blocks` called in
+the same turn that staged `add_block(new_id)` will not see `new_id`, and
+`get_block_result(new_id)` returns “no such block” for the same reason
+(no block server has been built yet either way). The model can ask the
+user to nudge it on the next turn, or — for an interactive “build then
+inspect” pattern — split the work across two user turns. Whether to
+plumb a merged view through to the read tools is a deliberate Phase 4
+decision (see *Read tools and the merge view* below).
+
+We considered three alternatives and rejected each:
+
+- **Flush before the model produces its final response.** ellmer’s
+  tool-call loop is opaque from outside; there is no hook between “last
+  tool call returned” and “model emits final text”. Not viable.
+- **Flush per tool call.** Defeats the staging premise — back to the
+  racing single-`reactiveVal` problem of issue (1) above.
+- **Flush on a quiet idle (e.g. 200ms after the last tool call).**
+  Timing-dependent and racy with the next tool call in the same turn.
+
+`last_turn` is the only clean signal.
+
+### Stage-time validation against merged state
+
+Every stager re-uses `blockr.core`’s own validators
+(`validate_board_update`, plus its per-slot helpers) against the
+*proposed full pending payload* and the *current real board*.
+blockr.core’s validators do the merging internally where it matters —
+`combine_update_blocks(upd, board)` is what
+`validate_update_links_board` feeds into the link-block cross-reference
+check, and the analogous logic gates the stack check. So we never have
+to construct a “virtual merged board” ourselves at stage time; we just
+hand the validator the next-tick view of the payload and the live board,
+and trust it to do the right thing.
+
+``` r
+
+stage_block_add <- function(pending, board, id, block) {
+
+  cur <- pending()
+  new <- cur
+  new$blocks$add <- c(new$blocks$add, set_names(blocks(block), id))
+
+  tryCatch(
+    {
+      validate_pending(new, isolate(board$board))
+      pending(new)
+      invisible(TRUE)
+    },
+    error = function(e) {
+      stop(
+        format_stage_error("add_block", id, e),
+        call. = FALSE
+      )
+    }
+  )
+}
+```
+
+`validate_pending(payload, board)` is the in-package single-entrypoint
+wrapper around blockr.core’s validator chain (see *Validator access*
+below for how we reach the unexported helpers).
+
+The stager *throws* on rejection rather than returning an error value.
+Phase 2’s `with_tool_errors()` already wraps every tool body in a
+`tryCatch` and translates exceptions to error strings, so re-using
+exceptions keeps the surface uniform: a Phase 4 mutation tool’s body
+looks roughly like
+
+``` r
+
+function(id, type, args) {
+  with_tool_errors("add_block", {
+    block <- build_block(type, args)              # Phase 4 helper
+    stage_block_add(pending_update, board, id, block)
+    sprintf("Staged add_block(%s) — will apply at turn end.", id)
+  })
+}
+```
+
+with no per-tool conflict handling.
+
+### Conflict semantics: lenient collapse, reject only the genuinely ambiguous
+
+When a stager would step on its own prior pending entry, we collapse the
+two operations into the latest-intent outcome wherever the result is
+unambiguous, and reject only the rows where the combined intent is
+genuinely ill-defined. The rule table:
+
+| Prior pending entry | Stage call | Outcome |
+|----|----|----|
+| `add(x)` | `add(x)` | reject — duplicate ID, the model needs to pick a different one |
+| `add(x)` | `mod(x)` | **collapse**: replace the pending add’s block value with the mod’s new value |
+| `add(x)` | `rm(x)` | **collapse**: drop the pending add (no-op for the turn) |
+| `mod(x)` | `add(x)` | reject — `x` exists on the board, cannot re-`add` |
+| `mod(x)` | `mod(x)` | **collapse**: last-write-wins, replace the pending mod |
+| `mod(x)` | `rm(x)` | **collapse**: discard the pending mod, stage the `rm` |
+| `rm(x)` | `add(x)` | reject — replace-via-rm-then-add is ambiguous; model should explicitly use `mod(x)` instead |
+| `rm(x)` | `mod(x)` | reject — `x` is being removed, mod is meaningless |
+| `rm(x)` | `rm(x)` | reject — already pending removal |
+
+Five rows collapse, four reject. The collapses cover every case where
+the model is *refining intent in flight* — typing a wrong arg into
+`add_block` and immediately correcting it via `modify_block`, staging an
+add and changing its mind, swapping out a mod for a rm. The rejections
+are reserved for cases where the combined intent is genuinely ambiguous
+(`rm` then `add` reads either as “replace” or as “cancel the rm and
+create something new”; the model should say which) or simply impossible
+(`add` the same ID twice; `mod` something that’s about to be removed).
+
+Why this trade-off:
+
+- **The model can recover from its own mistakes within a turn.** Under a
+  stricter table, once the model stages an `add`, it has no in-turn path
+  to fix it — every follow-up rejects, the bad add flushes at turn end,
+  and recovery is deferred to the next user turn. That’s a dead-end the
+  LLM cannot navigate around. The lenient table closes the trap.
+- **The flush-time validator is the safety net.** The point of staging
+  is per-call feedback, but the source of truth for “is this payload
+  safe” is
+  [`validate_board_update()`](https://bristolmyerssquibb.github.io/blockr.core/reference/validate_board_update.html)
+  at flush time. Lenient stage-time collapse can’t produce an invalid
+  flush — if the combined intent expressed by the collapsed payload is
+  structurally bad, the dispatch-time validator catches it.
+- **Collapse semantics are unambiguous.** Every accepted row has a
+  single intuitive meaning: the latest call wins for that id. There is
+  no surprise about what “add then mod” produces.
+
+The same table extends to links and stacks with the obvious
+substitutions.
+
+### Read tools and the merge view (deferred decision)
+
+Phase 2’s read tools (`list_blocks`, `describe_block`, `list_links`, …)
+read directly from `board$board` / `board$blocks` without going through
+any merge. After Phase 3 lands, a tool that asks “what blocks are on the
+board?” sees only the *committed* board — not the blocks staged in the
+current turn.
+
+Two stances are defensible:
+
+1.  **Read against `board$board`.** Honest — the model sees what’s
+    actually live. Symmetric with `get_block_result`, which can’t
+    evaluate a pending block anyway (no server has been built for it
+    yet). Recommended for Phase 3.
+2.  **Read against a merged view that applies `pending_update` on top of
+    the live board.** The model sees the world it has just been
+    building. Lets it reason about “should I add a link from foo to
+    bar?” within the same turn it added foo.
+
+Phase 3 ships option (1): zero-touch to the read tools, no risk of the
+model thinking a block exists when it doesn’t (yet), and no need to ship
+a merge helper that has no other Phase 3 caller. Phase 4 revisits this
+once mutation tools are in flight and the actual question — “does the
+model in practice need same-turn read-after-write?” — becomes empirical
+rather than hypothetical.
+
+If Phase 4 lands on option (2), it introduces a merge helper at that
+point. We did not ship one in Phase 3 deliberately: stage-time
+validation does not need it (blockr.core’s validator handles the
+necessary merging internally for cross-reference checks), so a Phase 3
+helper would have been dead code with a YAGNI risk of under-specifying
+what Phase 4 actually wants (e.g. accounting for blockr.core’s
+apply-time auto-cleanups of dangling refs).
+
+### Atomicity on flush: all-or-nothing, no partial apply
+
+If `update(pending())` errors out at dispatch — e.g. blockr.core’s
+validator rejects the merged payload because the board changed during
+the turn (the user added a block via the UI that now collides with a
+pending add) — Phase 3 does **not** attempt partial application. The
+entire staged payload is discarded, the pending reactiveVal is reset,
+and the user sees a Shiny error notification.
+
+Rationale:
+
+- **Atomicity is a feature.** A turn’s mutations represent the model’s
+  collective intent. Half-applying (“blocks went through but links
+  rolled back because of a cycle”) leaves the board in a state the model
+  never asked for and would be hard for the user to reason about.
+- **Stage-time validation already catches the structural cases.**
+  Flush-time rejection is reserved for races (concurrent user edit) and
+  bugs in the staging API. Neither is the right place for clever
+  recovery.
+- **The model can retry on the next turn.** A partial apply followed by
+  a “please continue” prompt is a more confusing recovery than “your
+  last set of changes was rejected because X; here’s the current board,
+  try again.”
+
+The Shiny-level error surface is whatever blockr.core’s validator emits
+— a `notify(type = "error")` toast via the standard `notify_user`
+plugin. We do not customise this in Phase 3.
+
+What the model sees on the *next* turn is whatever surface the user (or
+a future “tell the model what happened” affordance) chooses to expose.
+Phase 3 makes no commitment here; the recorded conversation only
+captures what the model itself emitted, so a flush rejection is
+invisible to the model unless the user types it back. Phase 5’s
+prompt-context layer is the natural home for “on each new turn, prepend
+a system note describing any board changes since the last turn
+(including rolled-back flushes)” — out of scope here.
+
+### External-control writes are not staged in Phase 3
+
+`blockr.core`’s `external_ctrl` mechanism lets a block expose a subset
+of its arguments as reactiveVals (`block_external_ctrl_vars(block)`
+enumerates them), bypassing
+[`update()`](https://rdrr.io/r/stats/update.html) for parameter tweaks.
+The natural Phase 4 use is `modify_block(id, args)` writing directly to
+those vars on the target block’s `rv$inputs[[id]][[arg_name]]()`
+reactives.
+
+That path doesn’t intersect `update(...)` at all — it mutates per-block
+reactiveVals directly. Phase 3’s staging layer is shaped around the
+`update(...)` payload, so external-control writes sit outside it by
+construction.
+
+Open question for Phase 4, deliberately not decided here:
+
+- **Stage external-control writes too?** Pro: a single “flush at end of
+  turn” point keeps reactive cascades from re-evaluating a block once
+  per `modify_block` call within a turn. Con: requires a parallel
+  staging structure (per-input values keyed by block-id) that has no
+  equivalent in the `update(...)` payload.
+- **Fire external-control writes immediately?** Pro: simpler, matches
+  how a human user clicking the ctrl-block submit button works. Con:
+  reactive cascade per call.
+
+Phase 4 will pick. Phase 3 keeps the staging primitive scoped to
+`update(...)` payloads so the decision stays open.
+
+## Pending payload shape and stagers
+
+### Initial state
+
+``` r
+
+empty_pending <- function() {
+  list(
+    blocks = list(
+      add = blockr.core::blocks(),
+      mod = blockr.core::blocks(),
+      rm  = character()
+    ),
+    links = list(
+      add = blockr.core::links(),
+      mod = blockr.core::links(),
+      rm  = character()
+    ),
+    stacks = list(
+      add = blockr.core::stacks(),
+      mod = blockr.core::stacks(),
+      rm  = character()
+    )
+  )
+}
+```
+
+`reset_pending(pending_update)` sets `pending_update(empty_pending())`.
+
+### Stager signatures
+
+All stagers take the `pending_update` reactiveVal, the live board
+reactive (for merge-time validation), and the per-operation arguments:
+
+``` r
+
+stage_block_add(pending, board, id, block)
+stage_block_mod(pending, board, id, block)
+stage_block_rm(pending, board, id)
+
+stage_link_add(pending, board, id, link)
+stage_link_mod(pending, board, id, link)
+stage_link_rm(pending, board, id)
+
+stage_stack_add(pending, board, id, stack)
+stage_stack_mod(pending, board, id, stack)
+stage_stack_rm(pending, board, id)
+```
+
+Each one:
+
+1.  Reads the current pending payload (`isolate(pending())`).
+2.  Applies the conflict-resolution rule for its op against the prior
+    pending entry for that id (see *Conflict semantics* above). Five
+    rows collapse — `add → mod` replaces the pending add’s value,
+    `add → rm` drops the pending add, `mod → mod` last-write-wins,
+    `mod → rm` discards the pending mod, plus the natural identity
+    collapses; four rows throw `format_stage_error(op, id, msg)` with a
+    model-actionable explanation.
+3.  Computes the proposed-new pending payload.
+4.  Calls `validate_pending(proposed, isolate(board$board))`, which
+    wraps blockr.core’s validator chain. Catches `blockr_abort`
+    conditions and re-throws via `format_stage_error`. blockr.core’s
+    validator handles all the “combined update vs current board” logic
+    (including merging adds into the block list before validating link
+    references) — see *Stage-time validation* above.
+5.  Sets `pending(proposed)` on success and returns `invisible(TRUE)`.
+
+### `flush_pending(pending, update)`
+
+``` r
+
+flush_pending <- function(pending, update) {
+
+  payload <- isolate(pending())
+
+  if (!has_any_changes(payload)) {
+    reset_pending(pending)
+    return(invisible(FALSE))
+  }
+
+  tryCatch(
+    update(payload),
+    error = function(e) {
+      log_warn("flush_pending: dispatch rejected payload: ",
+               conditionMessage(e))
+    },
+    finally = reset_pending(pending)
+  )
+
+  invisible(TRUE)
+}
+```
+
+Note: `blockr.core`’s `preprocess_board_update` may itself extend the
+payload at dispatch time (adding link-removals for orphaned links when
+blocks are removed, and similar stack cleanups —
+`blockr.core/R/board-server.R:1020`). The applied set may therefore be a
+superset of what we staged. This is correct behaviour — the cleanup is
+what the user would expect — but it means a stage that adds blocks A, B,
+C and removes B may dispatch as “add A, C; remove B; remove
+dangling-link-x”. Not visible to the model, since it didn’t stage the
+link removal, but worth flagging for anyone debugging a flush.
+
+`has_any_changes` is a one-liner over
+[`lengths()`](https://rdrr.io/r/base/lengths.html) of all six add/mod/rm
+slots. The `tryCatch` keeps a malformed payload from crashing the chat
+module — the Shiny error notification from blockr.core’s validator
+already surfaces to the user. The `finally = reset_pending` clause
+guarantees that we never carry a rejected payload into the next turn.
+
+### Error formatting
+
+``` r
+
+format_stage_error <- function(op, id, e) {
+
+  msg <- if (inherits(e, "condition")) conditionMessage(e) else e
+
+  sprintf(
+    "%s(%s) failed: %s",
+    op,
+    id,
+    msg
+  )
+}
+```
+
+Identical shape to Phase 2’s `with_tool_errors`, so the model sees the
+same `"<tool> failed: <reason>"` pattern whether the failure came from
+inside the tool body or from a stage-time conflict.
+
+A reject is *not* logged as a warning — it’s expected flow for an LLM
+still feeling out the board. The flush-time rejection from the previous
+section *is* logged, because by that point the model believed each stage
+succeeded and the dispatch-time failure is genuinely surprising.
+
+## Extension server diff
+
+``` r
+
+asst_ext_srv <- function(system_prompt, messages) {
+
+  function(id, board, update, ...) {
+
+    moduleServer(
+      id,
+      function(input, output, session) {
+
+        chat_ctor <- isolate(get_board_option_value("llm_model", session))
+        sys_prompt <- coal(system_prompt, default_system_prompt())
+
+        client <- chat_ctor(system_prompt = sys_prompt)
+
+        pending_update <- reactiveVal(empty_pending())             # new
+
+        register_read_tools(client, board, update, session)        # unchanged from Phase 2
+
+        if (length(messages)) {
+          client$set_turns(lapply(messages, ellmer::contents_replay))
+        }
+
+        mod <- shinychat::chat_mod_server("chat", client)
+
+        # … existing record_new_turns + messages reactive …
+
+        observeEvent(                                               # changed
+          mod$last_input(),
+          {
+            reset_pending(pending_update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        observeEvent(                                               # changed
+          mod$last_turn(),
+          {
+            flush_pending(pending_update, update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        # token telemetry unchanged
+
+        list(
+          state = list(
+            system_prompt = sys_prompt,
+            messages      = messages
+          )
+        )
+      }
+    )
+  }
+}
+```
+
+The Phase 2 observers on `mod$last_input` / `mod$last_turn` that called
+`record_new_turns()` directly are subsumed into the new observers.
+`record_new_turns()` keeps the same behaviour — it appends new turns to
+the recorded `messages` reactive — and now shares its turn-boundary
+observer with the staging side-effects.
+
+`pending_update` is deliberately not added to `state`. It’s transient
+turn-local scratch space, not part of the persisted extension contract;
+carrying it through ser/des would let a half-staged turn restore into an
+inconsistent state. The invariant “between turns, pending is empty”
+makes “between sessions, pending is empty” trivially true.
+
+`register_read_tools()` is also not touched. The read tools have no
+Phase 3 reason to see `pending_update` (they continue to read the live
+board). If Phase 4 lands on the merged-view option for read tools,
+that’s where the signature change happens — Phase 3 deliberately avoids
+a churn that may turn out unneeded.
+
+## Files added / changed
+
+- `R/staging.R` *(new)* — `empty_pending()`, `reset_pending()`,
+  `validate_pending()`, the nine `stage_*` functions, `flush_pending()`,
+  `format_stage_error()`, `has_any_changes()`.
+- `R/extension.R` — wire `pending_update` into the server and swap the
+  two record-on-turn-boundary observers for the new reset-then-record /
+  flush-then-record observers.
+- `tests/testthat/test-staging.R` *(new)* — covers each stager’s happy
+  path, each conflict-rule rejection, the flush helper (including the
+  empty-pending no-op and the validator-rejection branch), and the
+  turn-boundary wiring via
+  [`shiny::testServer()`](https://rdrr.io/pkg/shiny/man/testServer.html)
+  against a fake board.
+- `tests/testthat/test-extension.R` — extend with a turn-boundary test:
+  stage three operations across two fake tool calls, trigger
+  `last_turn`, assert that exactly one `update(...)` call fired and that
+  pending was reset.
+
+No new exports. The stage API is internal — Phase 4 will decide whether
+any pieces deserve exporting once the mutation tools shake out the
+actual extensibility needs.
+
+No new dependencies.
+
+No new vignette (this design doc *is* the deliverable for Phase 3; the
+user-facing tutorial is a Phase 5 concern).
+
+## Acceptance criteria
+
+### Automated (CI / `devtools::check()`)
+
+- Each of the nine `stage_*` functions has a happy-path test against a
+  synthetic board fixture, plus one test per row of the
+  conflict-resolution table — collapse rows assert the collapsed pending
+  payload, rejection rows assert the expected error string.
+- `flush_pending()` test cases:
+  - Empty pending → no `update(...)` call, returns `FALSE`.
+  - Non-empty pending → exactly one `update(...)` call with the
+    accumulated payload, pending reset to `empty_pending()`, returns
+    `TRUE`.
+  - `update(...)` throws → caller does not crash, pending is still
+    reset, warning logged.
+- [`shiny::testServer()`](https://rdrr.io/pkg/shiny/man/testServer.html)
+  end-to-end:
+  - `mod$last_input` firing resets a non-empty pending.
+  - `mod$last_turn` firing flushes pending exactly once.
+  - Two `last_turn` firings without intervening stages produce zero
+    `update(...)` calls.
+- Phase 1 and Phase 2 acceptance criteria still pass — staging is
+  additive, no read tool or chat behaviour regresses.
+- `devtools::check()` passes 0/0/0.
+
+### Manual (demo app, live LLM)
+
+- The Phase 2 demo (`inst/examples/02-read-tools/`) still runs
+  end-to-end: read tools answer “what blocks?” etc. correctly, no
+  `update(...)` is ever dispatched, pending stays empty through every
+  turn. This is the regression smoke test — Phase 3 should be
+  observationally invisible to a user without mutation tools.
+
+No new manual criteria; staging has no user-visible surface until Phase
+4.
+
+## Known limitations carried into later phases
+
+- **No same-turn read-after-write.** Tools read the committed board, not
+  the merged view. If empirical Phase 4 usage shows the model wants to
+  inspect what it just staged, Phase 4 introduces a merge helper and
+  wires it into the read-tool factories — see *Read tools and the merge
+  view (deferred decision)*.
+- **Flush rejection is silent to the model.** The user sees a Shiny
+  error notification; the model sees nothing on the next turn unless the
+  user types the error back. Phase 5’s prompt-context layer is the
+  natural home for “tell the model about state changes since its last
+  turn”.
+- **No “pending changes” UI affordance.** A badge (“3 staged changes
+  will apply when the assistant finishes”) or a diff preview would be
+  helpful for trust; the reactiveVal is left observable so this is cheap
+  to bolt on, but Phase 3 ships nothing.
+- **External-control writes are not staged.** Phase 4 mutation tools
+  that hit `block_external_ctrl_vars` will fire reactive cascades per
+  call within a turn. If this turns out painful, Phase 4 (or a
+  follow-up) adds a parallel per-input staging structure — orthogonal to
+  this phase’s payload-shaped staging.
+- **Atomic flush has no partial-success fallback.** A racing user edit
+  that invalidates the payload at dispatch time discards the whole
+  turn’s mutations. This is by design; if the trade-off bites in
+  practice, a future phase can add an “apply what you can” mode behind a
+  constructor option.
+- **No snapshot / undo.** Each flush is a fresh `update(...)` with no
+  rollback handle. Snapshot integration waits on `blockr.session` hooks
+  that don’t yet exist.
