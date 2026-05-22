@@ -1043,6 +1043,16 @@ description.
   as #12 but applied to stacks; tracked separately in #13. Links
   face the same gap *if* subclasses are ever introduced (none
   today, so no urgency).
+- **`modify_stack` on a `dock_stack` errors at apply time today.**
+  blockr.core 0.1.2's default `update_stack.stack` reconstructs
+  through the stored constructor; `blockr.dock::dock_stack` needs
+  its own `update_stack` method, tracked at
+  [`blockr.dock#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130).
+  Until that lands, the assistant's `modify_stack` will succeed
+  at stage time and fail at flush time with a cryptic R error;
+  the user sees a Shiny error notification. Base `stack` works
+  fine; the issue only bites once dock's auto-promotion has
+  attached a `color` attribute.
 - **External-control writes still go through `update()`.** This is
   the design's bet on blockr.core#175. If core resolves the issue
   with a less-unified approach (e.g. ctrl writes still bypass

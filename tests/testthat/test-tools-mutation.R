@@ -72,7 +72,38 @@ test_that("add_block surfaces JSON parse errors", {
   expect_length(isolate(env$pending()$blocks$add), 0L)
 })
 
-test_that("add_block surfaces unknown block type", {
+test_that("add_block rejects non-object JSON args", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  expect_match(
+    add(type = "head_block", args = "[1,2,3]", id = "a"),
+    "must be a JSON object"
+  )
+  expect_match(
+    add(type = "head_block", args = "\"scalar\"", id = "b"),
+    "must be a JSON object"
+  )
+  expect_length(isolate(env$pending()$blocks$add), 0L)
+})
+
+test_that("add_block treats null and empty args as no args", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  expect_match(
+    add(type = "head_block", args = "null", id = "n"),
+    "^Staged"
+  )
+  expect_match(
+    add(type = "head_block", args = "{}", id = "e"),
+    "^Staged"
+  )
+})
+
+test_that("add_block surfaces unknown block type with discoverable hint", {
 
   env <- new_mutation_env()
   add <- tool_add_block(env$board, env$pending, NULL)
@@ -80,6 +111,8 @@ test_that("add_block surfaces unknown block type", {
   res <- add(type = "not_a_block", args = "{}", id = "new")
 
   expect_match(res, "^add_block failed:")
+  expect_match(res, "unknown block type")
+  expect_match(res, "list_available_blocks")
 })
 
 test_that("add_block generates an id when omitted", {
@@ -140,6 +173,18 @@ test_that("modify_block stages a delta against a committed block", {
     isolate(env$pending()$blocks$mod[["head"]]),
     list(n = 9L)
   )
+})
+
+test_that("modify_block rejects an empty delta", {
+
+  env <- new_mutation_env()
+  mod <- tool_modify_block(env$board, env$pending, NULL)
+
+  expect_match(
+    mod(id = "head", args = "{}"),
+    "no fields supplied"
+  )
+  expect_length(isolate(env$pending()$blocks$mod), 0L)
 })
 
 test_that("modify_block rejects against a pending add (recovery message)", {

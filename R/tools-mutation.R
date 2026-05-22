@@ -34,6 +34,36 @@ compact <- function(x) {
   x[!vapply(x, is.null, logical(1L))]
 }
 
+parse_args_json <- function(s, tool) {
+
+  if (!nzchar(s)) {
+    return(list())
+  }
+
+  parsed <- jsonlite::fromJSON(s, simplifyVector = TRUE)
+
+  if (is.null(parsed)) {
+    return(list())
+  }
+
+  if (!is.list(parsed) ||
+      (length(parsed) > 0L && is.null(names(parsed)))) {
+    stop(
+      sprintf(
+        paste0(
+          "%s `args` must be a JSON object with named fields, e.g. ",
+          "'{\"n\": 10}'. Got a JSON %s."
+        ),
+        tool,
+        if (is.list(parsed)) "array" else "scalar or array"
+      ),
+      call. = FALSE
+    )
+  }
+
+  parsed
+}
+
 tool_add_block <- function(board, pending, session) {
 
   ellmer::tool(
@@ -44,11 +74,20 @@ tool_add_block <- function(board, pending, session) {
           id <- rand_names(existing_ids(board, pending, "blocks"))
         }
 
-        parsed <- if (nzchar(args)) {
-          jsonlite::fromJSON(args, simplifyVector = TRUE)
-        } else {
-          list()
+        if (!type %in% list_blocks()) {
+          stop(
+            sprintf(
+              paste(
+                "unknown block type '%s'. Call list_available_blocks",
+                "to see registered types."
+              ),
+              type
+            ),
+            call. = FALSE
+          )
         }
+
+        parsed <- parse_args_json(args, "add_block")
 
         block <- do.call(create_block, c(list(type), parsed))
 
@@ -118,7 +157,14 @@ tool_modify_block <- function(board, pending, session) {
     function(id, args) {
       with_tool_errors("modify_block", {
 
-        delta <- jsonlite::fromJSON(args, simplifyVector = TRUE)
+        delta <- parse_args_json(args, "modify_block")
+
+        if (!length(delta)) {
+          stop(
+            "no fields supplied; pass at least one key in `args`",
+            call. = FALSE
+          )
+        }
 
         stage_block_mod(pending, board, id, delta)
 
