@@ -36,10 +36,12 @@ pak::pak("BristolMyersSquibb/blockr.assistant")
 ## Example
 
 Mount the assistant on a small board.
-The chat is wired to whichever `ellmer` model is set via the `blockr.chat_function` option — here, Anthropic, which expects `ANTHROPIC_API_KEY` in the environment.
+The chat is wired to whichever `ellmer` model the board's `llm_model` option resolves to (by default `ellmer::chat_openai()`); set the `blockr.chat_function` option to swap providers.
 
 ```{r example-code, code=readLines("inst/examples/01-shell/app.R"), eval=FALSE}
 ```
+
+![Assistant panel mounted next to a small `blockr.dock` board.](man/figures/01-shell.png)
 
 ## Roadmap
 
