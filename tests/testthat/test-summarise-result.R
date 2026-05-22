@@ -1,4 +1,4 @@
-test_that("default summarise_result forwards to btw::btw_this for data frames", {
+test_that("default summarise_result handles data frames via btw_this", {
 
   res <- summarise_result(head(iris, 5L))
 

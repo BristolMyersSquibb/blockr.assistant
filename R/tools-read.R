@@ -27,32 +27,34 @@ with_tool_errors <- function(name, expr) {
 tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
-    function() with_tool_errors("list_blocks", {
+    function() {
+      with_tool_errors("list_blocks", {
 
-      b <- isolate(board$board)
-      blks <- board_blocks(b)
+        b <- isolate(board$board)
+        blks <- board_blocks(b)
 
-      if (!length(blks)) {
-        return(
-          data.frame(
-            id      = character(),
-            type    = character(),
-            name    = character(),
-            package = character()
+        if (!length(blks)) {
+          return(
+            data.frame(
+              id      = character(),
+              type    = character(),
+              name    = character(),
+              package = character()
+            )
           )
+        }
+
+        meta <- block_metadata(blks)
+
+        data.frame(
+          id      = names(blks),
+          type    = chr_ply(blks, function(x) class(x)[[1L]]),
+          name    = meta$name,
+          package = meta$package,
+          row.names = NULL
         )
-      }
-
-      meta <- block_metadata(blks)
-
-      data.frame(
-        id      = names(blks),
-        type    = chr_ply(blks, function(x) class(x)[[1L]]),
-        name    = meta$name,
-        package = meta$package,
-        row.names = NULL
-      )
-    }),
+      })
+    },
     name        = "list_blocks",
     description = paste(
       "List all blocks on the board. One row per block: id, type",
@@ -65,24 +67,26 @@ tool_list_blocks <- function(board, update, session) {
 tool_describe_block <- function(board, update, session) {
 
   ellmer::tool(
-    function(id) with_tool_errors("describe_block", {
+    function(id) {
+      with_tool_errors("describe_block", {
 
-      brd <- isolate(board$board)
-      blks <- board_blocks(brd)
+        brd <- isolate(board$board)
+        blks <- board_blocks(brd)
 
-      if (!id %in% names(blks)) {
-        return(
-          sprintf(
-            "No block with id %s. Call list_blocks first.", id
+        if (!id %in% names(blks)) {
+          return(
+            sprintf(
+              "No block with id %s. Call list_blocks first.", id
+            )
           )
-        )
-      }
+        }
 
-      paste(
-        describe_block(blks[[id]], board = brd, id = id),
-        collapse = "\n"
-      )
-    }),
+        paste(
+          describe_block(blks[[id]], board = brd, id = id),
+          collapse = "\n"
+        )
+      })
+    },
     name        = "describe_block",
     description = paste(
       "Describe a block currently on the board: its class chain,",
@@ -98,10 +102,11 @@ tool_describe_block <- function(board, update, session) {
 tool_list_links <- function(board, update, session) {
 
   ellmer::tool(
-    function() with_tool_errors("list_links", {
-
-      as.data.frame(board_links(isolate(board$board)))
-    }),
+    function() {
+      with_tool_errors("list_links", {
+        as.data.frame(board_links(isolate(board$board)))
+      })
+    },
     name        = "list_links",
     description = paste(
       "List all links between blocks: id, source block (from),",
@@ -115,38 +120,37 @@ tool_list_links <- function(board, update, session) {
 tool_list_stacks <- function(board, update, session) {
 
   ellmer::tool(
-    function() with_tool_errors("list_stacks", {
+    function() {
+      with_tool_errors("list_stacks", {
 
-      stks <- board_stacks(isolate(board$board))
+        stks <- board_stacks(isolate(board$board))
 
-      if (!length(stks)) {
-        return(
-          data.frame(
-            id          = character(),
-            name        = character(),
-            blocks      = character(),
-            description = character()
+        if (!length(stks)) {
+          return(
+            data.frame(
+              id          = character(),
+              name        = character(),
+              blocks      = character(),
+              description = character()
+            )
           )
-        )
-      }
+        }
 
-      data.frame(
-        id          = names(stks),
-        name        = chr_ply(
-          stks,
-          function(s) coal(stack_name(s), NA_character_)
-        ),
-        blocks      = chr_ply(
-          stks,
-          function(s) paste(stack_blocks(s), collapse = ", ")
-        ),
-        description = chr_ply(
-          stks,
-          function(s) paste(describe_stack(s), collapse = "\n")
-        ),
-        row.names   = NULL
-      )
-    }),
+        data.frame(
+          id          = names(stks),
+          name        = chr_ply(stks, function(s) {
+            coal(stack_name(s), NA_character_)
+          }),
+          blocks      = chr_ply(stks, function(s) {
+            paste(stack_blocks(s), collapse = ", ")
+          }),
+          description = chr_ply(stks, function(s) {
+            paste(describe_stack(s), collapse = "\n")
+          }),
+          row.names   = NULL
+        )
+      })
+    },
     name        = "list_stacks",
     description = paste(
       "List all stacks on the board. One row per stack: id, name,",
@@ -162,34 +166,36 @@ tool_list_stacks <- function(board, update, session) {
 tool_list_available_blocks <- function(board, update, session) {
 
   ellmer::tool(
-    function() with_tool_errors("list_available_blocks", {
+    function() {
+      with_tool_errors("list_available_blocks", {
 
-      uids <- list_blocks()
+        uids <- list_blocks()
 
-      if (!length(uids)) {
-        return(
-          data.frame(
-            id          = character(),
-            name        = character(),
-            package     = character(),
-            category    = character(),
-            description = character()
+        if (!length(uids)) {
+          return(
+            data.frame(
+              id          = character(),
+              name        = character(),
+              package     = character(),
+              category    = character(),
+              description = character()
+            )
           )
+        }
+
+        meta <- registry_metadata(uids, "all")
+
+        data.frame(
+          id          = uids,
+          name        = meta$name,
+          package     = meta$package,
+          category    = meta$category,
+          description = meta$description,
+          arguments   = I(meta$arguments),
+          row.names   = NULL
         )
-      }
-
-      meta <- registry_metadata(uids, "all")
-
-      data.frame(
-        id          = uids,
-        name        = meta$name,
-        package     = meta$package,
-        category    = meta$category,
-        description = meta$description,
-        arguments   = I(meta$arguments),
-        row.names   = NULL
-      )
-    }),
+      })
+    },
     name        = "list_available_blocks",
     description = paste(
       "List every registered block constructor -- block types the",
@@ -204,34 +210,36 @@ tool_list_available_blocks <- function(board, update, session) {
 tool_get_block_result <- function(board, update, session) {
 
   ellmer::tool(
-    function(id) with_tool_errors("get_block_result", {
+    function(id) {
+      with_tool_errors("get_block_result", {
 
-      blks <- isolate(board$blocks)
+        blks <- isolate(board$blocks)
 
-      if (!id %in% names(blks)) {
-        return(
-          sprintf(
-            "No block with id %s. Call list_blocks first.", id
+        if (!id %in% names(blks)) {
+          return(
+            sprintf(
+              "No block with id %s. Call list_blocks first.", id
+            )
           )
+        }
+
+        res <- tryCatch(
+          isolate(blks[[id]]$server$result()),
+          error = function(e) e
         )
-      }
 
-      res <- tryCatch(
-        isolate(blks[[id]]$server$result()),
-        error = function(e) e
-      )
-
-      if (inherits(res, "error")) {
-        return(
-          sprintf(
-            "Block %s has not evaluated successfully: %s",
-            id, conditionMessage(res)
+        if (inherits(res, "error")) {
+          return(
+            sprintf(
+              "Block %s has not evaluated successfully: %s",
+              id, conditionMessage(res)
+            )
           )
-        )
-      }
+        }
 
-      paste(summarise_result(res), collapse = "\n")
-    }),
+        paste(summarise_result(res), collapse = "\n")
+      })
+    },
     name        = "get_block_result",
     description = paste(
       "Return a short text summary of a block's current evaluated",

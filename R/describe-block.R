@@ -52,10 +52,12 @@ describe_block.block <- function(x, board, id, ...) {
       "Incoming links:",
       chr_ply(
         seq_along(inc),
-        function(i) sprintf(
-          "  %s <- %s (input: %s)",
-          inc$id[[i]], inc$from[[i]], inc$input[[i]]
-        )
+        function(i) {
+          sprintf(
+            "  %s <- %s (input: %s)",
+            inc$id[[i]], inc$from[[i]], inc$input[[i]]
+          )
+        }
       )
     )
   } else {
