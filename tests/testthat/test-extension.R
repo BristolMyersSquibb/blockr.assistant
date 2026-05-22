@@ -256,6 +256,103 @@ test_that("registered tool surfaces an error string instead of crashing", {
   )
 })
 
+test_that("pending_update is initialised empty and survives a no-op flush", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  calls <- 0L
+  fake_update <- function(payload) calls <<- calls + 1L
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_false(isolate(has_any_changes(pending_update())))
+
+      flush_pending(pending_update, update)
+
+      expect_identical(calls, 0L)
+      expect_false(isolate(has_any_changes(pending_update())))
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = fake_update
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("staging across a turn flushes once and resets pending", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris"), h = new_head_block())
+  )
+
+  captured <- list()
+  calls <- 0L
+  fake_update <- function(payload) {
+    calls <<- calls + 1L
+    captured[[length(captured) + 1L]] <<- payload
+  }
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "new1", new_head_block())
+      stage_block_add(pending_update, board, "new2", new_head_block())
+      stage_block_rm(pending_update, board, "h")
+
+      expect_true(isolate(has_any_changes(pending_update())))
+
+      flush_pending(pending_update, update)
+
+      expect_identical(calls, 1L)
+      expect_setequal(names(captured[[1]]$blocks$add), c("new1", "new2"))
+      expect_equal(captured[[1]]$blocks$rm, "h")
+      expect_false(isolate(has_any_changes(pending_update())))
+
+      flush_pending(pending_update, update)
+      expect_identical(calls, 1L)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = fake_update
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("reset_pending wipes a non-empty pending payload", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "new", new_head_block())
+      expect_true(isolate(has_any_changes(pending_update())))
+
+      reset_pending(pending_update)
+      expect_false(isolate(has_any_changes(pending_update())))
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("demo app file constructs a shiny.appobj without crashing", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
