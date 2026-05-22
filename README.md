@@ -7,7 +7,7 @@
 
 [![lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![status](https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml/badge.svg)](https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml)
-[![coverage](https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg)](https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant)
+[![coverage](https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg?token=TxIZnzIqo2)](https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant)
 <!-- badges: end -->
 
 An [`ellmer`](https://ellmer.tidyverse.org/)-powered chat panel for

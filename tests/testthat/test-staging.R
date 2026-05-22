@@ -244,6 +244,52 @@ test_that("stage_link_add stages, rejects duplicates, and collapses", {
   expect_length(isolate(env$pending()$links$rm), 0L)
 })
 
+test_that("stage_link_add rejects when id is pending mod or rm", {
+
+  env <- new_pending_env()
+  stage_link_mod(
+    env$pending, env$board, "lnk1",
+    new_link("data", "head", "data")
+  )
+
+  expect_error(
+    stage_link_add(
+      env$pending, env$board, "lnk1",
+      new_link("data", "spare", "data")
+    ),
+    "staged for modification",
+    fixed = TRUE
+  )
+
+  env <- new_pending_env()
+  stage_link_rm(env$pending, env$board, "lnk1")
+
+  expect_error(
+    stage_link_add(
+      env$pending, env$board, "lnk1",
+      new_link("data", "spare", "data")
+    ),
+    "staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_link_mod collapses onto a pending add", {
+
+  env <- new_pending_env()
+  stage_link_add(
+    env$pending, env$board, "new",
+    new_link("data", "spare", "data")
+  )
+
+  later <- new_link("data", "spare", "data")
+  stage_link_mod(env$pending, env$board, "new", later)
+
+  p <- isolate(env$pending())
+  expect_length(p$links$mod, 0L)
+  expect_identical(p$links$add[["new"]], later)
+})
+
 test_that("stage_link_mod replaces a pending mod (last-write-wins)", {
 
   env <- new_pending_env()
@@ -261,7 +307,49 @@ test_that("stage_link_mod replaces a pending mod (last-write-wins)", {
   expect_identical(p$links$mod[["lnk1"]], later)
 })
 
-test_that("stage_stack_add / mod / rm follow the same rules", {
+test_that("stage_link_mod rejects when id is pending rm", {
+
+  env <- new_pending_env()
+  stage_link_rm(env$pending, env$board, "lnk1")
+
+  expect_error(
+    stage_link_mod(
+      env$pending, env$board, "lnk1",
+      new_link("data", "head", "data")
+    ),
+    "staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_link_rm discards a pending mod when staging rm", {
+
+  env <- new_pending_env()
+  stage_link_mod(
+    env$pending, env$board, "lnk1",
+    new_link("data", "head", "data")
+  )
+
+  stage_link_rm(env$pending, env$board, "lnk1")
+
+  p <- isolate(env$pending())
+  expect_length(p$links$mod, 0L)
+  expect_equal(p$links$rm, "lnk1")
+})
+
+test_that("stage_link_rm rejects when id is already pending rm", {
+
+  env <- new_pending_env()
+  stage_link_rm(env$pending, env$board, "lnk1")
+
+  expect_error(
+    stage_link_rm(env$pending, env$board, "lnk1"),
+    "already staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_stack_add stages a new stack", {
 
   env <- new_pending_env()
 
@@ -269,7 +357,90 @@ test_that("stage_stack_add / mod / rm follow the same rules", {
     env$pending, env$board, "new",
     new_stack("spare", name = "n")
   )
+
   expect_named(isolate(env$pending()$stacks$add), "new")
+})
+
+test_that("stage_stack_add rejects duplicates and pending mod / rm", {
+
+  env <- new_pending_env()
+  stage_stack_add(
+    env$pending, env$board, "new",
+    new_stack("spare", name = "n")
+  )
+
+  expect_error(
+    stage_stack_add(
+      env$pending, env$board, "new",
+      new_stack("spare", name = "n")
+    ),
+    "already staged for creation",
+    fixed = TRUE
+  )
+
+  env <- new_pending_env()
+  stage_stack_mod(
+    env$pending, env$board, "pipe",
+    new_stack(c("data", "head"), name = "renamed")
+  )
+
+  expect_error(
+    stage_stack_add(
+      env$pending, env$board, "pipe",
+      new_stack("spare", name = "n")
+    ),
+    "staged for modification",
+    fixed = TRUE
+  )
+
+  env <- new_pending_env()
+  stage_stack_rm(env$pending, env$board, "pipe")
+
+  expect_error(
+    stage_stack_add(
+      env$pending, env$board, "pipe",
+      new_stack("spare", name = "n")
+    ),
+    "staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_stack_mod collapses onto a pending add", {
+
+  env <- new_pending_env()
+  stage_stack_add(
+    env$pending, env$board, "new",
+    new_stack("spare", name = "n")
+  )
+
+  later <- new_stack("spare", name = "renamed")
+  stage_stack_mod(env$pending, env$board, "new", later)
+
+  p <- isolate(env$pending())
+  expect_length(p$stacks$mod, 0L)
+  expect_identical(p$stacks$add[["new"]], later)
+})
+
+test_that("stage_stack_mod replaces a pending mod (last-write-wins)", {
+
+  env <- new_pending_env()
+  stage_stack_mod(
+    env$pending, env$board, "pipe",
+    new_stack(c("data", "head"), name = "first")
+  )
+
+  later <- new_stack(c("data", "head"), name = "second")
+  stage_stack_mod(env$pending, env$board, "pipe", later)
+
+  p <- isolate(env$pending())
+  expect_length(p$stacks$mod, 1L)
+  expect_identical(p$stacks$mod[["pipe"]], later)
+})
+
+test_that("stage_stack_mod rejects unknown id and pending rm", {
+
+  env <- new_pending_env()
 
   expect_error(
     stage_stack_mod(
@@ -280,8 +451,59 @@ test_that("stage_stack_add / mod / rm follow the same rules", {
     fixed = TRUE
   )
 
+  env <- new_pending_env()
   stage_stack_rm(env$pending, env$board, "pipe")
-  expect_equal(isolate(env$pending()$stacks$rm), "pipe")
+
+  expect_error(
+    stage_stack_mod(
+      env$pending, env$board, "pipe",
+      new_stack(c("data", "head"), name = "x")
+    ),
+    "staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_stack_rm collapses onto a pending add (drops it)", {
+
+  env <- new_pending_env()
+  stage_stack_add(
+    env$pending, env$board, "new",
+    new_stack("spare", name = "n")
+  )
+
+  stage_stack_rm(env$pending, env$board, "new")
+
+  p <- isolate(env$pending())
+  expect_length(p$stacks$add, 0L)
+  expect_length(p$stacks$rm, 0L)
+})
+
+test_that("stage_stack_rm discards a pending mod when staging rm", {
+
+  env <- new_pending_env()
+  stage_stack_mod(
+    env$pending, env$board, "pipe",
+    new_stack(c("data", "head"), name = "renamed")
+  )
+
+  stage_stack_rm(env$pending, env$board, "pipe")
+
+  p <- isolate(env$pending())
+  expect_length(p$stacks$mod, 0L)
+  expect_equal(p$stacks$rm, "pipe")
+})
+
+test_that("stage_stack_rm rejects an already-pending rm", {
+
+  env <- new_pending_env()
+  stage_stack_rm(env$pending, env$board, "pipe")
+
+  expect_error(
+    stage_stack_rm(env$pending, env$board, "pipe"),
+    "already staged for removal",
+    fixed = TRUE
+  )
 })
 
 test_that("flush_pending is a no-op on empty pending", {
