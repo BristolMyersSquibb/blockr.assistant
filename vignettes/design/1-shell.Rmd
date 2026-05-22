@@ -3,7 +3,7 @@ title: "Extension shell with `ellmer` chat"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Extension shell with `ellmer` chat}
-  %\VignetteEngine{quarto::html}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
