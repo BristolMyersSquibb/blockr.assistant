@@ -1043,31 +1043,32 @@ description.
   as #12 but applied to stacks; tracked separately in #13. Links
   face the same gap *if* subclasses are ever introduced (none
   today, so no urgency).
-- **`blockr.dock` needs to catch up to blockr.core#176 before
-  Phase 4 is usable end-to-end.** `blockr.dock` is in this
-  package's `Imports`; `new_assistant_extension()` wraps
-  `blockr.dock::new_dock_extension`. Two dock-side issues, both
-  fallout of the delta-shape `mod` payload, sit on the critical
-  path for the mutation surface:
-  - [`blockr.dock#131`](https://github.com/BristolMyersSquibb/blockr.dock/issues/131)
-    — dock's `observeEvent(update()$blocks$mod, ...)` handlers
-    (panel-title updater + plugin-block) still expect `mod` entries
-    to be full block objects and call `block_name(blk)` on what
-    is now a delta. Every `modify_block` against a block on a
-    `dock_board` will error at observer time and the panel title
-    won't refresh.
-  - [`blockr.dock#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130)
-    — `update_stack.dock_stack` is missing, so `modify_stack`
-    against a dock-promoted stack errors at apply time with
-    "formal argument 'ctor' matched by multiple actual arguments".
-
-  The assistant code itself is correct against blockr.core post-#176.
-  But until #131 (and ideally #130) ship, Phase 4 should not merge:
-  the visible behaviour for any user issuing a modify is broken.
-  Either gate this PR on the dock fixes, pin `blockr.dock` via
-  `Remotes:` once a fix branch exists, or split out `modify_block`
-  / `modify_stack` into a follow-up PR that lands after dock
-  catches up.
+- **Pinned upstream `Remotes:`.** Until the matching changes in
+  `blockr.core` and `blockr.dock` are released, `DESCRIPTION`
+  pins both via `Remotes:` to the PR branches: `blockr.core#176`
+  (delta-shape `mod` payload + `update_link`/`update_stack`
+  generics) and `blockr.dock#133` (stacked on `#132`, which
+  fixes the two dock-side observer issues
+  [`#131`](https://github.com/BristolMyersSquibb/blockr.dock/issues/131)
+  and [`#130`](https://github.com/BristolMyersSquibb/blockr.dock/issues/130)
+  surfaced during Phase 4 validation). Live end-to-end testing
+  against Claude confirmed the pinned versions behave correctly:
+  `add_block` / `add_link` / `add_stack` build pipelines, and
+  `modify_block` against ctrl-able args updates the board in
+  place without dock observer errors. Unpin at release time.
+- **Stage-time link validator and apply-time preprocess
+  disagree on dangling links (blockr.core).** When the model
+  removes a block whose existing links are still referenced
+  elsewhere on the board, then tries to add a new link, the
+  stage-time `validate_board_update_xrefs` rejects with
+  `"Expecting all links to refer to known block IDs."` — even
+  though `preprocess_board_update` would auto-clean the orphans
+  at apply time. The model has to explicitly `remove_link` the
+  dangling links before adding new ones. Tracked at
+  [`blockr.core#177`](https://github.com/BristolMyersSquibb/blockr.core/issues/177).
+  Workaround on the assistant side could be to mirror
+  preprocess's orphan-cleanup in `stage_block_rm`; for now we
+  prefer the upstream fix so behaviour stays single-source.
 - **External-control writes still go through `update()`.** This is
   the design's bet on blockr.core#175. If core resolves the issue
   with a less-unified approach (e.g. ctrl writes still bypass

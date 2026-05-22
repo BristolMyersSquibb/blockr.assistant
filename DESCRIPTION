@@ -33,7 +33,8 @@ Suggests:
     testthat (>= 3.0.0),
     withr
 Remotes:
-    BristolMyersSquibb/blockr.core#176
+    BristolMyersSquibb/blockr.core#176,
+    BristolMyersSquibb/blockr.dock#133
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder:
