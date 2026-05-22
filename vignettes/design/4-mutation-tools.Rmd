@@ -1,0 +1,999 @@
+---
+title: "Mutation tools"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Mutation tools}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+## Goal
+
+Phase 4 turns the Phase 3 staging primitive into a usable surface for
+the LLM: nine mutation tools (`add_block`, `remove_block`,
+`modify_block`, `add_link`, `remove_link`, `modify_link`,
+`add_stack`, `remove_stack`, `modify_stack`) that the assistant can
+call to build and edit a board. Every tool is a thin façade over the
+Phase 3 stage API — its body constructs the relevant object (or
+forwards a delta), calls a `stage_*` function, and returns a short
+result string. No new dispatch path, no parallel reactive structure
+visible to the model: every mutation accumulates into the
+`pending_update` reactiveVal and flushes via the existing
+`flush_pending` hook on `last_turn`.
+
+The phase deliberately pushes routing complexity *down* into
+`blockr.core`. A `modify_block` call ships a single partial-args
+delta as part of an `update(...)` payload; core decides whether to
+service it as an external-control write or as an atomic re-setup of
+the block server (see [blockr.core#175][issue-175]). The consumer
+sees one shape and does not branch.
+
+[issue-175]: https://github.com/BristolMyersSquibb/blockr.core/issues/175
+
+## Scope
+
+In:
+
+- Nine mutation tools, registered alongside the Phase 2 read tools
+  via a new `register_mutation_tools()` helper.
+- A refactor of Phase 3's `stage_block_mod()`, `stage_stack_mod()`
+  and `stage_link_mod()` to accept a *partial-args delta* rather
+  than a full constructed object — matching the unified dispatch
+  shape agreed in blockr.core#175.
+- `inst/examples/04-mutation-tools/` for manual smoke-testing against
+  a live LLM.
+- Tests covering each tool's happy path, the new delta-mod conflict
+  rows, ID-generation behaviour, and a turn-boundary end-to-end test
+  via `shiny::testServer()`.
+
+Out (deferred to later phases or out of roadmap):
+
+- Same-turn read-after-write. The Phase 2 read tools continue to read
+  the committed board only. Staged operations are visible to the
+  model only through its own tool-call history. Revisited if Phase 5
+  telemetry shows the model is confused.
+- A "pending changes" UI affordance (badge, diff preview, apply-now
+  button). The reactiveVals are observable; an extension is cheap to
+  bolt on later.
+- Snapshot / undo. Atomicity at the turn boundary is what we ship;
+  multi-turn rollback waits on `blockr.session` hooks that do not
+  yet exist.
+- Per-block-type custom tools. Block packages contributing tools
+  (`set_filter_expression`, etc.) is a separate roadmap item.
+- Multi-board / multi-session orchestration. Extension state is
+  scoped to the board it is mounted on.
+
+Phase 4 is gated on the `blockr.core` change tracked at
+[blockr.core#175][issue-175]: unified delta-shape `mod` slots for
+all three entity types (blocks, stacks, links), with blocks
+additionally routed internally to external-control writes vs.
+atomic re-setup. Until that lands, Phase 4 pins `blockr.core` via
+`Remotes:` to the branch carrying the fix. The design proceeds as
+if the unified dispatch is already available.
+
+## Architectural decisions
+
+### Trust core to dispatch; do not split routing in the consumer
+
+The natural shape for `modify_block(id, args)` is one tool that ships
+one `update(...)` payload — and trusts the framework to do the right
+thing. Today (pre-#175) the framework forces consumers to
+choose: write external-control reactiveVals directly (bypassing
+`update()` entirely, fast but per-call cascade), or stage a
+`blocks$mod` entry that won't actually re-run the server. Splitting
+that choice in *every* consumer of the mutation API leaks an
+implementation detail of `blockr.core` into every LLM-driven (or
+script-driven) board mutator.
+
+Phase 4 takes the opposite stance. `modify_block` stages exactly one
+thing — a partial-args delta in `pending_update$blocks$mod[[id]]` —
+and `flush_pending` ships it via `update(...)`. The core routing
+table (ctrl write if all changed args are ctrl-able on the live
+block; atomic re-setup otherwise) is core's problem.
+
+Two consequences shape the rest of this document:
+
+1. **No `pending_ctrl` reactiveVal.** Phase 3 left the door open for a
+   parallel staging structure for ctrl writes ("if this turns out
+   painful"). Phase 4 walks through that door and back out: the only
+   staging structure for the whole tool surface is the
+   `update(...)`-shaped `pending_update` from Phase 3. No sibling
+   reactiveVals.
+2. **The model sees uniform semantics.** Every mutation tool returns
+   `"Staged <tool>(<id>) — will apply at turn end."`. No tool fires
+   side-effects mid-turn. The whole assistant turn is one atomic
+   board update.
+
+### Mods are deltas; adds are full constructions
+
+Mutation tools split into two shapes:
+
+- `add_block`, `add_link`, `add_stack` carry the *full* set of
+  constructor arguments and produce a typed object
+  (`blockr.core::create_block(type, ...)`, `new_link(...)`,
+  `new_stack(...)`). The constructor call is the natural place to
+  surface "missing required arg" / "wrong type" errors to the model,
+  routed through `with_tool_errors` into a `<tool> failed: <reason>`
+  string. Construction-as-validation: we have to construct the
+  object to stage it anyway, so the validation is free.
+- `modify_block`, `modify_stack`, `modify_link` carry a
+  *partial-args delta* (a named list of just the keys being
+  changed). No construction in the consumer. The delta lands in
+  `pending_update$<entity>$mod[[id]]` and flushes as part of the
+  `update(...)` payload. Core merges the delta against the live
+  entry, validates, and dispatches.
+
+Why the asymmetry? An add knows everything (it's bringing a new
+object into existence); a mod knows only the diff. For blocks and
+stacks, the current args live inside an opaque object — `blockr.core`
+does not export a `block_args()` readback, and stack subclasses
+(e.g. `blockr.dock::dock_stack` with its `color` attribute) make
+generic readback brittle. Forcing the consumer to reconstruct a
+full object for a one-arg change would require either a generic
+arg-readback API or a stateful mirror of every entity's args inside
+the extension. Neither is worth the cost when core can do the merge
+in one place. Links are not subclassable today and *could* support
+full-replace from the consumer side, but Phase 4 puts them on the
+delta path too for API symmetry — every `modify_*` tool has the
+same body shape, every `mod` slot has the same payload shape.
+
+This means stage-time validation for mods is shallow — at the
+consumer we can only check that the delta is a named list. The
+substantive validation (does `n_rows` exist on a `head_block`? is
+the proposed value the right type?) runs at flush against the live
+entry, in core. The cost: a typo'd arg name in `modify_block` goes
+undetected until turn end. The benefit: we don't ship a parallel
+schema layer in the consumer that's guaranteed to drift from
+`blockr.core`'s actual constructor signatures.
+
+### Block ids are immutable for committed blocks
+
+The assistant cannot change the id of a block that already exists
+on the board. There is no `change_id` tool, no embedded id-change
+arg on `modify_block`, no path of any kind. Same for links and
+stacks.
+
+The reasoning:
+
+- **Ids are system identifiers, not user-facing labels.** A block
+  has both an `id` (registry key) and a `name` (display attribute).
+  When a human user says "rename this block to dataset", they mean
+  the *name* — which is changeable via `modify_block(id, list(name
+  = ...))` when the block's constructor exposes a `name` arg, or
+  via a future Phase 5 metadata channel otherwise. They do not
+  mean the registry key.
+- **Stable ids = stable model context.** The model is rebuilding
+  its mental model of the board across turns from `list_blocks` /
+  `describe_block` output. If ids could drift mid-conversation,
+  the model's tool-call history and current board state would
+  desynchronise.
+- **External references stay valid.** Saved app state, bookmarks,
+  upstream observers that key off block id, and any future
+  `blockr.session` integration all assume committed ids are
+  stable. The assistant's mutation surface should not be the
+  thing that breaks that.
+
+For a *staged* (not yet committed) block, the id is freely
+changeable — but not via a dedicated tool. The model just stages a
+`remove_block(old_id)` followed by `add_block(<type>, <args>, id =
+new_id)`. Behaviorally identical to re-keying the pending entry,
+costs two tool calls instead of one, and avoids a tool that has
+to detect "is this id pending vs. committed?" and dispatch
+differently.
+
+If a user asks the assistant to change a committed block's id, the
+expected handling is conversational: the assistant explains it
+can offer `remove_block(old_id) + add_block(<type>, <args>, id =
+new_id)`, but that tears down the block server (lost eval state,
+re-evaluation of downstream blocks), and asks the user whether
+that's acceptable. Phase 5's prompt-context layer will likely
+codify this kind of guidance into the system prompt.
+
+Same rule applies to link and stack ids. The conflict table has
+no id-change rows for any entity type.
+
+### Hybrid ID generation via `blockr.core::rand_names()`
+
+`add_block`, `add_link`, `add_stack` all accept an optional `id`
+argument:
+
+- If the model supplies an id, it is used as-is. Uniqueness against
+  the merged board-plus-pending state is checked by core's validator
+  at stage time (Phase 3's `validate_pending` already runs the full
+  validator chain). Format constraints are whatever core enforces —
+  we do not layer our own.
+- If the model omits the id, the package generates one via
+  `blockr.core::rand_names(old_names = existing_ids(board, pending))`.
+  Core's default `rand_names` produces `adjective-animal` ids
+  (`quick-elephant`, `tidy-otter`) via the optional `ids` package,
+  falling back to random letter strings. The tool result string
+  echoes the final id in either path.
+
+Result string template:
+
+```
+"Staged add_block(quick-elephant) — will apply at turn end."
+```
+
+The id is always present and unambiguous, so the model can quote it
+in subsequent calls without needing a separate listing tool.
+
+### Read tools stay committed-only (reaffirmed)
+
+Phase 3's deferred decision is settled in favour of option (1):
+read tools read `board$board`, *not* a merged
+board-plus-pending view. The reasons accumulated since Phase 3
+still hold:
+
+- The stage-time validator already accounts for pending state when
+  checking cross-references (e.g. an `add_link(foo→bar)` staged
+  after an `add_block(foo)` validates against the merged payload
+  thanks to `validate_pending` calling through to
+  `combine_update_blocks` in core).
+- `get_block_result` cannot return a value for a pending block (no
+  server has been built yet), so a partial merge view would create
+  the illusion of a usable block.
+- The model's own tool-call history records what it staged this
+  turn — a separate "list pending" surface adds nothing the
+  conversation log does not already carry.
+
+If Phase 5's user-test telemetry surfaces friction here, the
+lightweight fix is a new `list_pending_changes()` tool that explicitly
+reports the staged operations (not a retrofit of the existing read
+tools).
+
+### Validity checks delegated to core
+
+Phase 3's `validate_pending(payload, board)` runs the full
+`validate_board_update` chain on every stage. Cycles, dangling
+block references in links, missing target inputs, duplicate ids and
+the rest are caught there against the merged state. Phase 4 adds
+nothing new. The stagers stay thin: collapse against the conflict
+table, call `commit_pending`, return. There is no consumer-side
+re-implementation of any cross-reference rule.
+
+### Reject `add → mod`; recover via `remove + add`
+
+Phase 3's conflict table lenient-collapses `add(x)` followed by
+`mod(x)`: the pending add's value is replaced by the mod's new
+value. In Phase 3 the mod carried a *full block object*, so the
+collapse was a trivial swap. In Phase 4 the mod carries a *delta*,
+and producing the collapsed value would require rebuilding the
+staged block with the merged args via
+`create_block(type, merged_args)`. The original `(type, args)`
+recipe is known at stage time of the `add_block` call, but discarded
+once the block is stored — there is no public arg readback on a
+constructed block.
+
+We could maintain a sidecar recipe cache (a second reactiveVal
+keyed by id holding `list(type = ..., args = ...)` for every staged
+add). It would close the gap and keep the row a collapse. The cost
+is a second reactiveVal that has to stay in lockstep with
+`pending_update` across every add and rm, plus a more complex
+`stage_block_mod` that branches on "is this a live-board target
+or a pending-add target?".
+
+Phase 4 takes the simpler trade. **The `add → mod` row rejects.**
+The model recovers by issuing `remove_block(x) + add_block(type,
+corrected_args, id = "x")` instead. The corrected args are visible
+to the model in its own tool-call history (the prior `add_block`
+call sits in the conversation log with the original `type` and
+`args`), so reconstructing them is not a knowledge problem.
+
+The rejection error string points the model at the recovery path
+explicitly:
+
+```
+"modify_block(foo) failed: foo is staged for creation this turn.
+ Use remove_block(foo) followed by add_block(<type>, <args>, id = \"foo\")
+ with the corrected arguments."
+```
+
+Cost: extra tokens when the model self-corrects a pending-add
+mid-turn, especially for blocks with many args. The frequency is
+bounded (only triggers on same-turn second-thoughts about an add).
+Benefit: no second reactiveVal, no recipe bookkeeping, no
+divergence risk between the staged block and its recipe.
+
+Same rule for stacks: `add_stack(x) → modify_stack(x, ...)`
+rejects. Even though stack args are technically introspectable via
+`stack_blocks()` / `stack_name()` (so a recipe-free collapse is
+possible), keeping the rule uniform across block and stack mods is
+easier for the model to internalise than two different behaviours
+for two superficially-identical operations.
+
+The one collapse that *doesn't* need reconstruction is still in
+the table: `add(x) → rm(x)` drops the pending add. A trivial
+named-list manipulation, no recipe required.
+
+### Conflict table for delta-mods
+
+Phase 3's nine-row table for blocks extends with one row flip:
+`add → mod` becomes a reject (see previous section) rather than a
+collapse. The remaining collapses keep their Phase 3 mechanics
+except for `mod → mod`, where the collapse now merges deltas
+key-wise rather than replacing the full block.
+
+For blocks (`{add, mod, rm} × {add, mod, rm}`):
+
+| Prior pending entry | Stage call      | Outcome |
+|---|---|---|
+| `add(x)`            | `add(x, ...)`   | reject — duplicate id |
+| `add(x)`            | `mod(x, ...)`   | reject — `x` is staged for creation; use `remove_block + add_block` with corrected args |
+| `add(x)`            | `rm(x)`         | **collapse** — drop pending add |
+| `mod(x, d1)`        | `add(x, ...)`   | reject — `x` exists on board, cannot re-add |
+| `mod(x, d1)`        | `mod(x, d2)`    | **collapse** — pending mod becomes `merge_args(d1, d2)` (key-wise last-write-wins) |
+| `mod(x, d1)`        | `rm(x)`         | **collapse** — discard pending mod, stage `rm` |
+| `rm(x)`             | any `(x, ...)`  | reject — `x` is being removed |
+
+The `merge_args(prev, new)` helper is named-overwrite: keys in
+`new` replace prev; keys in `prev` not present in `new` survive.
+Matches "delta means partial override".
+
+Stacks and links follow the same table, substituting the
+appropriate `modify_*` tool name. All three entity types have an
+identical conflict shape now that links also surface a `modify_*`
+tool with delta semantics.
+
+Principle inherited from Phase 3: collapse where the combined
+intent is unambiguous and cheap, reject otherwise (including the
+one Phase 4 reject — `add → mod` — that buys us no recipe cache).
+
+### Tool result formatting
+
+All nine tools follow the same template:
+
+```
+"Staged <tool>(<id>) — will apply at turn end."
+```
+
+Same shape as Phase 3's `format_stage_error` for failures
+(`"<tool>(<id>) failed: <reason>"`) so the model parses one
+consistent pattern across the whole API.
+
+No structured tool result (no JSON object). The model consumes the
+chat content of the tool result; a single sentence is enough for it
+to confirm the call landed and to recall the id later. Phase 5 may
+revisit this if richer telemetry helps the model self-correct.
+
+### Atomicity, errors, and flush rejection
+
+Inherited from Phase 3 unchanged:
+
+- A turn's mutations are atomic. Any stage error throws from the
+  tool body, gets re-shaped by `with_tool_errors`, and goes back to
+  the model as a `<tool> failed: <reason>` string. The pending
+  payload is *not* mutated by a failing stage — the model can
+  retry.
+- Flush rejection (validator throws at `update(...)` dispatch
+  time) discards the whole staged payload and logs a warning. The
+  user sees the standard Shiny notification from
+  `blockr.core`'s validator; the model sees nothing on the next
+  turn unless the user (or Phase 5's prompt-context layer) tells
+  it.
+- No partial apply on flush. Phase 4 changes nothing here.
+
+## Tool surface
+
+Each tool factory has the Phase 2 shape: `tool_<name>(board, update,
+pending, session)` returns an `ellmer::tool(...)`. Bodies
+below elide the `with_tool_errors("<name>", { ... })` wrapper for
+brevity; assume each tool body is wrapped exactly like the Phase 2
+read tools at `R/tools-read.R`.
+
+### `add_block(type, args, id = NULL)`
+
+```r
+tool_add_block <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(type, args, id = NULL) {
+
+      id <- id %||% rand_names(existing_ids(board, pending, "blocks"))
+
+      block <- do.call(create_block, c(list(type), args))
+
+      stage_block_add(pending, board, id, block)
+
+      sprintf(
+        "Staged add_block(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "add_block",
+    description = paste(
+      "Add a new block to the board. `type` is a block id as",
+      "reported by list_available_blocks. `args` is a named list",
+      "of constructor arguments. `id` is optional — if omitted,",
+      "a unique id is generated."
+    ),
+    arguments = list(
+      type = ellmer::type_string(
+        "Block type id, from list_available_blocks."
+      ),
+      args = ellmer::type_object(
+        "Constructor arguments for the block.",
+        .additional_properties = TRUE
+      ),
+      id = ellmer::type_string(
+        "Optional id for the new block. Generated if omitted.",
+        required = FALSE
+      )
+    )
+  )
+}
+```
+
+`create_block` failures (missing required arg, wrong type, unknown
+`type` id) surface as natural R errors and get formatted into the
+`<tool> failed: <reason>` string. `stage_block_add` enforces
+uniqueness against board + pending via core's validator and the
+conflict-table reject rows.
+
+### `remove_block(id)`
+
+```r
+tool_remove_block <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id) {
+
+      stage_block_rm(pending, board, id)
+
+      sprintf(
+        "Staged remove_block(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "remove_block",
+    description = paste(
+      "Remove a block from the board. Any links to or from the",
+      "block are cleaned up at apply time by core; the model does",
+      "not need to remove them explicitly."
+    ),
+    arguments = list(
+      id = ellmer::type_string("Block id to remove.")
+    )
+  )
+}
+```
+
+The cascade-cleanup of orphaned links and stack memberships is
+core's job at `preprocess_board_update` time
+(`blockr.core/R/board-server.R:1020`). The tool does not stage
+those; the model does not need to know they happen.
+
+### `modify_block(id, args)`
+
+```r
+tool_modify_block <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id, args) {
+
+      stage_block_mod(pending, board, id, args)
+
+      sprintf(
+        "Staged modify_block(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "modify_block",
+    description = paste(
+      "Change one or more constructor arguments of an existing",
+      "block. `args` is a partial named list — only keys present",
+      "are changed; unmentioned keys keep their current values."
+    ),
+    arguments = list(
+      id = ellmer::type_string("Id of the block to modify."),
+      args = ellmer::type_object(
+        "Partial named list of arguments to change.",
+        .additional_properties = TRUE
+      )
+    )
+  )
+}
+```
+
+`stage_block_mod` writes the delta into `pending$blocks$mod[[id]]`,
+collapses with a prior pending `mod` by key-wise merge, or rejects
+against a pending `add` / `rm` per the conflict table. No
+construction in the consumer.
+
+### `add_link(from, to, input, id = NULL)`
+
+```r
+tool_add_link <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(from, to, input, id = NULL) {
+
+      id <- id %||% rand_names(existing_ids(board, pending, "links"))
+
+      link <- new_link(from, to, input)
+
+      stage_link_add(pending, board, id, link)
+
+      sprintf(
+        "Staged add_link(%s: %s → %s$%s) — will apply at turn end.",
+        id, from, to, input
+      )
+    },
+    name        = "add_link",
+    description = paste(
+      "Add a link that wires the output of block `from` into",
+      "argument `input` of block `to`. Both blocks must exist on",
+      "the board or be staged for creation in this turn."
+    ),
+    arguments = list(
+      from  = ellmer::type_string("Source block id."),
+      to    = ellmer::type_string("Destination block id."),
+      input = ellmer::type_string(
+        "Input slot on the destination block."
+      ),
+      id = ellmer::type_string(
+        "Optional id for the new link. Generated if omitted.",
+        required = FALSE
+      )
+    )
+  )
+}
+```
+
+Cross-reference validity (both blocks exist, `input` is a valid
+slot on `to`, no cycle introduced) is checked by core's validator
+at stage time against the merged board-plus-pending state.
+
+### `remove_link(id)`
+
+```r
+tool_remove_link <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id) {
+
+      stage_link_rm(pending, board, id)
+
+      sprintf(
+        "Staged remove_link(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "remove_link",
+    description = "Remove a link by its id.",
+    arguments = list(
+      id = ellmer::type_string("Link id to remove.")
+    )
+  )
+}
+```
+
+### `modify_link(id, from = NULL, to = NULL, input = NULL)`
+
+```r
+tool_modify_link <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id, from = NULL, to = NULL, input = NULL) {
+
+      delta <- compact(list(from = from, to = to, input = input))
+
+      stage_link_mod(pending, board, id, delta)
+
+      sprintf(
+        "Staged modify_link(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "modify_link",
+    description = paste(
+      "Retarget an existing link. Any combination of `from`, `to`,",
+      "and `input` may be supplied; only supplied fields are",
+      "changed. Omitted fields keep their current values."
+    ),
+    arguments = list(
+      id = ellmer::type_string("Id of the link to modify."),
+      from = ellmer::type_string(
+        "New source block id.",
+        required = FALSE
+      ),
+      to = ellmer::type_string(
+        "New destination block id.",
+        required = FALSE
+      ),
+      input = ellmer::type_string(
+        "New input slot on the destination block.",
+        required = FALSE
+      )
+    )
+  )
+}
+```
+
+### `add_stack(blocks, name = NULL, id = NULL)`
+
+```r
+tool_add_stack <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(blocks, name = NULL, id = NULL) {
+
+      id <- id %||% rand_names(existing_ids(board, pending, "stacks"))
+
+      stack <- new_stack(blocks = blocks, name = name)
+
+      stage_stack_add(pending, board, id, stack)
+
+      sprintf(
+        "Staged add_stack(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "add_stack",
+    description = paste(
+      "Group a set of blocks into a stack. `blocks` is a",
+      "character vector of block ids; `name` is an optional",
+      "human-readable label."
+    ),
+    arguments = list(
+      blocks = ellmer::type_array(
+        "Block ids to include in the stack.",
+        items = ellmer::type_string()
+      ),
+      name = ellmer::type_string(
+        "Optional display name for the stack.",
+        required = FALSE
+      ),
+      id = ellmer::type_string(
+        "Optional id for the new stack. Generated if omitted.",
+        required = FALSE
+      )
+    )
+  )
+}
+```
+
+### `remove_stack(id)`
+
+```r
+tool_remove_stack <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id) {
+
+      stage_stack_rm(pending, board, id)
+
+      sprintf(
+        "Staged remove_stack(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "remove_stack",
+    description = paste(
+      "Remove a stack. Member blocks are not removed; only the",
+      "grouping disappears."
+    ),
+    arguments = list(
+      id = ellmer::type_string("Stack id to remove.")
+    )
+  )
+}
+```
+
+### `modify_stack(id, blocks = NULL, name = NULL)`
+
+```r
+tool_modify_stack <- function(board, update, pending, session) {
+
+  ellmer::tool(
+    function(id, blocks = NULL, name = NULL) {
+
+      delta <- compact(list(blocks = blocks, name = name))
+
+      stage_stack_mod(pending, board, id, delta)
+
+      sprintf(
+        "Staged modify_stack(%s) — will apply at turn end.", id
+      )
+    },
+    name        = "modify_stack",
+    description = paste(
+      "Change a stack's member blocks and/or name. Either or both",
+      "arguments may be omitted; only supplied fields are",
+      "changed."
+    ),
+    arguments = list(
+      id = ellmer::type_string("Stack id to modify."),
+      blocks = ellmer::type_array(
+        "New set of member block ids.",
+        items    = ellmer::type_string(),
+        required = FALSE
+      ),
+      name = ellmer::type_string(
+        "New display name.",
+        required = FALSE
+      )
+    )
+  )
+}
+```
+
+`compact()` is a small utility that strips `NULL` entries from a
+list — so a `modify_stack` call that supplies only `name` produces
+a delta `list(name = ...)` with no `blocks` key.
+
+## Stage API changes from Phase 3
+
+The Phase 3 stagers take full constructed objects for mods. With
+the unified delta shape, the three `mod` stagers all change signature.
+No new stagers.
+
+| Function          | Phase 3 signature              | Phase 4 signature             |
+|-------------------|--------------------------------|-------------------------------|
+| `stage_block_add` | `(pending, board, id, block)`  | unchanged                     |
+| `stage_block_mod` | `(pending, board, id, block)`  | `(pending, board, id, delta)` |
+| `stage_block_rm`  | `(pending, board, id)`         | unchanged                     |
+| `stage_stack_add` | `(pending, board, id, stack)`  | unchanged                     |
+| `stage_stack_mod` | `(pending, board, id, stack)`  | `(pending, board, id, delta)` |
+| `stage_stack_rm`  | `(pending, board, id)`         | unchanged                     |
+| `stage_link_add`  | `(pending, board, id, link)`   | unchanged                     |
+| `stage_link_mod`  | `(pending, board, id, link)`   | `(pending, board, id, delta)` |
+| `stage_link_rm`   | `(pending, board, id)`         | unchanged                     |
+
+The internal conflict-handling in `stage_block_mod` becomes:
+
+```r
+stage_block_mod <- function(pending, board, id, delta) {
+
+  cur <- isolate(pending())
+
+  if (id %in% names(cur$blocks$add)) {
+    stage_abort(
+      "modify_block", id,
+      paste0(
+        id, " is staged for creation this turn. Use remove_block(",
+        id, ") followed by add_block(<type>, <args>, id = \"", id,
+        "\") with the corrected arguments."
+      )
+    )
+  }
+
+  if (id %in% cur$blocks$rm) {
+    stage_abort(
+      "modify_block", id,
+      "id is staged for removal; mod has no effect"
+    )
+  }
+
+  new <- cur
+
+  if (id %in% names(cur$blocks$mod)) {
+
+    new$blocks$mod[[id]] <- merge_args(cur$blocks$mod[[id]], delta)
+
+  } else {
+
+    new$blocks$mod <- c(
+      new$blocks$mod,
+      set_names(list(delta), id)
+    )
+  }
+
+  commit_pending(pending, isolate(board$board), new, "modify_block", id)
+}
+```
+
+Two structural notes:
+
+- The type of `pending$blocks$mod` diverges from Phase 3's typed
+  `blocks(...)` object. Phase 4 stores it as a named *list of
+  deltas* (each a named list of args), matching the post-#175
+  payload shape. The validator in `commit_pending` runs against
+  this new shape — which requires the matching change in core
+  (#175) to land before the test suite can pass end-to-end.
+- The `merge_args` helper is named-overwrite: `merge_args(d1, d2)`
+  returns a list whose keys are the union, with values from `d2`
+  winning on conflict.
+
+`stage_stack_mod` and `stage_link_mod` follow the same template
+with their entity-specific slot names and conflict-table guards.
+All three mod stagers have identical body shape; only the entity
+key differs (`blocks`, `stacks`, `links`).
+
+## Extension server diff
+
+```r
+asst_ext_srv <- function(system_prompt, messages) {
+
+  function(id, board, update, ...) {
+
+    moduleServer(
+      id,
+      function(input, output, session) {
+
+        chat_ctor <- isolate(
+          get_board_option_value("llm_model", session)
+        )
+        sys_prompt <- coal(system_prompt, default_system_prompt())
+
+        client <- chat_ctor(system_prompt = sys_prompt)
+
+        pending_update <- reactiveVal(empty_pending())
+
+        register_read_tools(client, board, update, session)
+        register_mutation_tools(                                    # new
+          client, board, pending_update, session
+        )
+
+        if (length(messages)) {
+          client$set_turns(
+            lapply(messages, ellmer::contents_replay)
+          )
+        }
+
+        mod <- shinychat::chat_mod_server("chat", client)
+
+        observeEvent(
+          mod$last_input(),
+          {
+            reset_pending(pending_update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        observeEvent(
+          mod$last_turn(),
+          {
+            flush_pending(pending_update, update)
+            record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        list(
+          state = list(
+            system_prompt = sys_prompt,
+            messages      = messages
+          )
+        )
+      }
+    )
+  }
+}
+```
+
+No second reactiveVal beyond Phase 3's `pending_update`. The
+extension carries exactly one piece of turn-local state for
+staging, mirroring Phase 3 unchanged.
+
+## Files added / changed
+
+- `R/tools-mutation.R` *(new)* — nine `tool_*` factories, the
+  `register_mutation_tools()` helper, `existing_ids()`,
+  `merge_args()`, `compact()`.
+- `R/staging.R` — refactor `stage_block_mod`, `stage_stack_mod`
+  and `stage_link_mod` to take a delta (instead of a full block /
+  stack / link). No other stager changes; `empty_pending` stays as
+  Phase 3 ships it.
+- `R/extension.R` — call `register_mutation_tools()` from
+  `asst_ext_srv`. No new reactiveVal.
+- `tests/testthat/test-tools-mutation.R` *(new)* — per-tool happy
+  path; per-tool error path (construction failure on adds,
+  conflict-table rejects); ID generation (model-supplied, omitted,
+  collision).
+- `tests/testthat/test-staging.R` — extend with the new delta shape
+  for `stage_block_mod` / `stage_stack_mod` / `stage_link_mod`;
+  remove the Phase 3 tests that validate the full-object mod shape.
+- `tests/testthat/test-extension.R` — end-to-end turn-boundary test
+  asserting one `update(...)` per turn carrying the expected shape
+  for a multi-tool turn (add, link, mod).
+- `inst/examples/04-mutation-tools/` *(new)* — minimal demo app
+  exercising the full surface.
+- `DESCRIPTION` — bump `Remotes:` to pin `blockr.core` to the
+  branch carrying the #175 fix; unpinning at release time.
+
+No new exports. The mutation tools are internal to the extension's
+server scope, accessed only via `register_mutation_tools`.
+
+No new package dependencies beyond what Phase 2/3 already pulled in
+(`ellmer`, `shinychat`, `blockr.core`).
+
+## Acceptance criteria
+
+### Automated (CI / `devtools::check()`)
+
+- Per-tool happy path: each of the nine tools, called against a
+  synthetic board fixture, stages the expected entry into
+  `pending_update` and returns the expected result string.
+- Per-tool error path: at least one error case per tool, asserting
+  the returned string starts with `"<tool> failed: "`. Coverage
+  includes construction failure (missing required arg on `add_*`),
+  conflict-table rejects (duplicate `add`, `add → mod`, anything
+  on a staged-rm id), and unknown id for `rm` / `mod`.
+- ID generation: explicit valid id → used as-is; explicit colliding
+  id → rejected via core's validator; omitted id → `rand_names`
+  generates a non-colliding id and the tool result echoes it.
+- Conflict-table coverage: one test per collapse row asserting the
+  post-stage `pending_update` state; one test per reject row
+  asserting the error string and that no state changed.
+- `flush_pending` test cases from Phase 3 continue to pass against
+  the new payload shape (delta-mods).
+- `shiny::testServer()` end-to-end:
+  - A turn with `add_block`, `add_link`, `add_stack` flushes
+    exactly one `update(...)` carrying all three.
+  - A turn with `add_block(foo, ...)` then `modify_block(foo,
+    ...)` returns a failure string for the modify, flushes one
+    `update(...)` carrying only the original add, and the model
+    can recover with `remove_block(foo) + add_block(...)`.
+  - Two `last_turn` firings without intervening stages produce zero
+    `update(...)` calls.
+- Phase 1, 2, 3 acceptance criteria continue to pass.
+- `devtools::check()` passes 0/0/0.
+
+### Manual (demo app, live LLM)
+
+A new example app at `inst/examples/04-mutation-tools/`: empty
+board, a single text input for the user prompt, no pre-loaded
+state. Used to smoke-test the full surface end-to-end against a
+real provider.
+
+Scenarios to verify by hand:
+
+- *Build a pipeline.* "Load the `iris` dataset, drop the species
+  column, then plot sepal length vs. width." Expected: at turn end
+  the board carries 3 blocks (e.g. `dataset_block`, `subset_block`,
+  `scatter_block`), 2 links connecting them, and a 1-message chat
+  transcript reporting each staged operation. No console errors.
+- *Modify in place.* Starting from the pipeline above: "change the
+  dataset to `mtcars`." Expected: `modify_block` routes through
+  core's ctrl path if the dataset arg is ctrl-able, or an atomic
+  re-setup otherwise. Downstream blocks re-evaluate with the new
+  data; the chat reports the staged modify only.
+- *Id-change request from the user.* "Rename `dataset` to
+  `data_source`." Expected: the assistant declines an id change on
+  the committed block, explains it can offer `remove_block +
+  add_block` (with the trade-off that the block's eval state and
+  outputs are torn down and re-evaluated), and asks the user
+  whether to proceed.
+- *Recover from a wrong arg.* "Add a head block with 5 rows." (model
+  picks the wrong arg name). "Sorry, use `n` not `rows`." Expected:
+  the model's first `modify_block` returns the
+  `is staged for creation this turn` error; the model recovers by
+  calling `remove_block` followed by `add_block` with the corrected
+  args, and the flushed payload at turn end carries exactly one add
+  with the corrected arg.
+
+Manual checks are documentation, not gating — they verify the
+design holds in a real assistant loop and are recorded in the PR
+description.
+
+## Known limitations carried into later phases
+
+- **Reads remain committed-only.** No same-turn read-after-write.
+  The model relies on its tool-call history for what it staged.
+  Phase 5's prompt-context layer or a future
+  `list_pending_changes()` tool can add explicit visibility if
+  empirical usage shows the need.
+- **Stage-time mod validation is shape-only.** Substantive
+  validation of a delta (valid arg names, type compatibility)
+  happens at flush via core's validator chain, not at stage time.
+  A typo'd arg name in `modify_block` flushes and rejects at turn
+  end. The user sees the standard Shiny notification; the model
+  hears about it only via the next turn's user prompt (or via
+  Phase 5's prompt-context layer once it lands).
+- **`add → mod` is a reject, not a collapse.** Phase 3's lenient
+  in-turn self-correction does not extend to changing a staged
+  add's args. The model has to issue `remove_block + add_block`
+  with corrected args. Cost is bounded (extra tokens in same-turn
+  self-correction); benefit is no recipe cache or second
+  reactiveVal in the extension. If empirical use shows the model
+  has trouble with the recovery pattern, a future phase can
+  reintroduce the collapse behind a sidecar recipe cache.
+- **External-control writes still go through `update()`.** This is
+  the design's bet on blockr.core#175. If core resolves the issue
+  with a less-unified approach (e.g. ctrl writes still bypass
+  `update()` and consumers must route), Phase 4 will need a
+  carve-out in `modify_block` to route the ctrl-eligible subset
+  directly. Tracked.
+- **Atomic flush has no partial-success fallback.** Inherited from
+  Phase 3 unchanged: a racing user edit that invalidates the
+  payload at dispatch time discards the whole turn's mutations.
+- **No snapshot / undo.** Inherited from Phase 3 / roadmap.
