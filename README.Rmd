@@ -1,0 +1,49 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# blockr.assistant
+
+<!-- badges: start -->
+[![lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![status](https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml/badge.svg)](https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml)
+[![coverage](https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg)](https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant)
+<!-- badges: end -->
+
+An [`ellmer`](https://ellmer.tidyverse.org/)-powered chat panel for [`blockr.dock`](https://github.com/BristolMyersSquibb/blockr.dock) boards.
+The assistant ships as a `dock_extension` that slots into the board layout like any other panel; the chat UI is built on [`shinychat`](https://github.com/posit-dev/shinychat).
+
+## Installation
+
+You can install the development version of blockr.assistant from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("pak")
+pak::pak("BristolMyersSquibb/blockr.assistant")
+```
+
+## Example
+
+Mount the assistant on a small board.
+The chat is wired to whichever `ellmer` model the board's `llm_model` option resolves to (by default `ellmer::chat_openai()`); set the `blockr.chat_function` option to swap providers.
+
+```{r example-code, code=readLines("inst/examples/01-shell/app.R"), eval=FALSE}
+```
+
+![Assistant panel mounted next to a small `blockr.dock` board.](man/figures/01-shell.png)
+
+## Roadmap
+
+The assistant is in **Phase 1**: it can hold a conversation, but it has no tools to inspect or manipulate the board yet.
+See the [roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html) for the staged plan and the [Phase 1 design notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html) for what is currently shipped.

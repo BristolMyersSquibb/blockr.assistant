@@ -26,12 +26,11 @@ Imports:
     shinychat
 Suggests:
     knitr,
-    quarto,
     rmarkdown,
     testthat (>= 3.0.0),
     withr
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder:
-    quarto
+    knitr
 Config/roxygen2/version: 8.0.0

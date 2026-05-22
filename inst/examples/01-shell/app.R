@@ -2,12 +2,6 @@ library(blockr.core)
 library(blockr.dock)
 library(blockr.assistant)
 
-options(
-  blockr.chat_function = function(system_prompt = NULL, params = NULL) {
-    ellmer::chat_anthropic(system_prompt = system_prompt, params = params)
-  }
-)
-
 board <- new_dock_board(
   blocks = c(
     data = new_dataset_block("iris"),

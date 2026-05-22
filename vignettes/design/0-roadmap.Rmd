@@ -3,7 +3,7 @@ title: "Roadmap"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Roadmap}
-  %\VignetteEngine{quarto::html}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
