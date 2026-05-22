@@ -31,11 +31,12 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="articles/p0-roadmap.html">Roadmap</a></li>
+<li class="nav-item"><a class="nav-link" href="articles/design/0-roadmap.html">Roadmap</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-design-docs" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Design docs</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-design-docs">
-<li><a class="dropdown-item" href="articles/p0-roadmap.html">Roadmap</a></li>
+<li><a class="dropdown-item" href="articles/design/0-roadmap.html">Roadmap</a></li>
+    <li><a class="dropdown-item" href="articles/design/1-shell.html">Phase 1 — Extension shell</a></li>
   </ul>
 </li>
       </ul>
@@ -51,8 +52,57 @@
   </div>
 </nav><div class="container template-home">
 <div class="row">
-  <main id="main" class="col-md-9">
-Building on the docking layout manager provided by 'blockr.dock', this extension hosts an 'ellmer'-powered chat interface alongside a 'blockr' board. The chat is equipped with tools that allow a large language model to inspect and manipulate board state -- adding, removing and modifying blocks, links and stacks -- via the same update channel used by interactive user actions.
+  <main id="main" class="col-md-9"><div class="section level1">
+<div class="page-header"><h1 id="blockrassistant">blockr.assistant<a class="anchor" aria-label="anchor" href="#blockrassistant"></a>
+</h1></div>
+<!-- badges: start -->
+
+<p>An <a href="https://ellmer.tidyverse.org/" class="external-link"><code>ellmer</code></a>-powered chat panel for <a href="https://github.com/BristolMyersSquibb/blockr.dock" class="external-link"><code>blockr.dock</code></a> boards. The assistant ships as a <code>dock_extension</code> that slots into the board layout like any other panel; the chat UI is built on <a href="https://github.com/posit-dev/shinychat" class="external-link"><code>shinychat</code></a>.</p>
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
+<p>You can install the development version of blockr.assistant from <a href="https://github.com/" class="external-link">GitHub</a> with:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"BristolMyersSquibb/blockr.assistant"</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
+</h2>
+<p>Mount the assistant on a small board. The chat is wired to whichever <code>ellmer</code> model the board’s <code>llm_model</code> option resolves to (by default <code><a href="https://ellmer.tidyverse.org/reference/chat_openai.html" class="external-link">ellmer::chat_openai()</a></code>); set the <code>blockr.chat_function</code> option to swap providers.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.core/" class="external-link">blockr.core</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.dock/" class="external-link">blockr.dock</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.assistant/">blockr.assistant</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">board</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.dock/reference/dock.html" class="external-link">new_dock_board</a></span><span class="op">(</span></span>
+<span>  blocks <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    data <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_data_block.html" class="external-link">new_dataset_block</a></span><span class="op">(</span><span class="st">"iris"</span><span class="op">)</span>,</span>
+<span>    head <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_transform_block.html" class="external-link">new_head_block</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>    plot <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_plot_block.html" class="external-link">new_scatter_block</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"Sepal.Length"</span>, y <span class="op">=</span> <span class="st">"Sepal.Width"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  links <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"head"</span>, <span class="st">"data"</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"head"</span>, <span class="st">"plot"</span>, <span class="st">"data"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  extensions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>assistant <span class="op">=</span> <span class="fu"><a href="reference/new_assistant_extension.html">new_assistant_extension</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  layout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>,</span>
+<span>    <span class="st">"assistant"</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/serve.html" class="external-link">serve</a></span><span class="op">(</span><span class="va">board</span><span class="op">)</span></span></code></pre></div>
+<figure><img src="reference/figures/01-shell.png" alt="Assistant panel mounted next to a small blockr.dock board."><figcaption aria-hidden="true">
+Assistant panel mounted next to a small <code>blockr.dock</code> board.
+</figcaption></figure>
+</div>
+<div class="section level2">
+<h2 id="roadmap">Roadmap<a class="anchor" aria-label="anchor" href="#roadmap"></a>
+</h2>
+<p>The assistant is in <strong>Phase 1</strong>: it can hold a conversation, but it has no tools to inspect or manipulate the board yet. See the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html">roadmap</a> for the staged plan and the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html">Phase 1 design notes</a> for what is currently shipped.</p>
+</div>
+</div>
   </main><aside class="col-md-3"><div class="license">
 <h2 data-toc-skip>License</h2>
 <ul class="list-unstyled">
@@ -76,7 +126,14 @@ Building on the docking layout manager provided by 'blockr.dock', this extension
 </ul>
 </div>
 
-
+<div class="dev-status">
+<h2 data-toc-skip>Dev status</h2>
+<ul class="list-unstyled">
+<li><a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="lifecycle"></a></li>
+<li><a href="https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml" class="external-link"><img src="https://github.com/BristolMyersSquibb/blockr.assistant/actions/workflows/ci.yaml/badge.svg" alt="status"></a></li>
+<li><a href="https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant" class="external-link"><img src="https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg" alt="coverage"></a></li>
+</ul>
+</div>
 
   </aside>
 </div>

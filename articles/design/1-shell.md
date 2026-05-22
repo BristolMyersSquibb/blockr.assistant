@@ -1,0 +1,352 @@
+# Extension shell with \`ellmer\` chat
+
+## Goal
+
+Phase 1 delivers a mountable `dock_extension` whose UI is a `shinychat`
+panel and whose server constructs an
+[`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html) from
+the board’s `llm_model` option. At the end of Phase 1 the package
+builds, the extension can be added to any `dock_board`, and a user can
+hold a streaming, cancellable conversation with the model. The assistant
+has no awareness of the board yet — that is Phase 2.
+
+## Scope
+
+In:
+
+- [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
+  constructor returning a `dock_extension`.
+- A chat panel UI based on
+  [`shinychat::chat_mod_ui()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html).
+- An extension server that reads `llm_model` from the board options,
+  invokes the constructor, and hands the resulting
+  [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html) to
+  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html).
+- A short, overridable default system prompt.
+- A `state` shape that round-trips the system prompt and the full
+  conversation through `blockr.dock`’s ser/des.
+- A demo app under `inst/examples/` that mounts the extension on a
+  `dock_board` with one or two starter blocks.
+
+Out (deferred to later phases):
+
+- Any awareness of board state, blocks, links, stacks.
+- Tool registration (Phase 2 and 4).
+- Dynamic board summary in the system prompt (Phase 5).
+- Application-level persistence wiring. The extension is built so
+  history *can* round-trip through ser/des, but cross-session
+  save/restore (e.g. via `blockr.session`) is not in this phase.
+
+## Architectural decisions
+
+**State shape mirrors the constructor signature.** `blockr.dock`’s
+extension ser/des serializes the extension server’s `state` list
+entry-by-entry (with `reval_if`) and on restore calls the constructor
+with those entries spliced in as named arguments
+(`do.call(ctor_fun, c(payload, …))`, see
+`blockr.dock/R/utils-serdes.R`). The structural consequence: every key
+in `state` must be a valid argument of
+[`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md),
+and conversely every constructor argument that affects runtime behaviour
+should appear in `state` if we want save/restore fidelity. This decision
+shapes the rest of the doc.
+
+**Provider neutrality via
+[`new_llm_model_option()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_board_options.html).**
+We never construct an `ellmer` chat client directly. The board exposes
+an `llm_model` board option whose value is a chat-constructor of
+signature `function(system_prompt = NULL, params = NULL)` returning an
+[`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html).
+`blockr.core` guarantees a usable fallback (`default_chat`) so the
+extension never needs to handle a missing backend.
+
+**The Chat client is constructed once per session.** Re-constructing on
+every `llm_model` option change would force `chat_mod_server` to
+re-mount and lose its history. For Phase 1 the option is read once at
+extension-server start; changing models mid-session requires a session
+restart. Lifting this restriction is future work.
+
+**Stream cancellation is delegated to `shinychat`, not built
+ourselves.**
+[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+already instantiates an
+[`ellmer::stream_controller()`](https://ellmer.tidyverse.org/reference/stream_controller.html)
+internally and wires `input$chat_cancel` to `controller$cancel()`. The
+stop button surfaces from the `chat_mod_ui()` chrome. The Phase 0
+roadmap entry for a “visible stop affordance” therefore costs nothing in
+this phase — we only verify it works end-to-end in the demo.
+
+## Public API
+
+``` r
+
+new_assistant_extension(
+  system_prompt = NULL,
+  messages      = NULL,
+  ...
+)
+```
+
+- `system_prompt` — character scalar or `NULL`. When `NULL`, the package
+  default is used. A user-supplied string replaces the default verbatim;
+  we do not concatenate. Callers who want to extend the default can read
+  it via an unexported
+  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md).
+- `messages` — optional list of recorded turns to seed the conversation
+  with. The on-disk shape is the output of
+  [`ellmer::contents_record()`](https://ellmer.tidyverse.org/reference/contents_record.html)
+  per turn (see *Wire format* below). `NULL` means start with an empty
+  conversation.
+- `...` — forwarded to
+  [`new_dock_extension()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/extension.html)
+  (notably for `options =` and the `pkg =` provenance argument).
+
+Notably absent: a `params` argument. Model parameters (temperature, max
+tokens, …) belong to the chat constructor, not to the extension. A
+caller who wants different params should register a chat constructor
+that bakes them in — either as the global
+`blockr_option("chat_function", …)` or as a named alternative selected
+via the board’s `llm_model` option. Having a second `params` knob on the
+extension would create two ways to do the same thing, with a precedence
+question if both are set, and would force us to design a JSON ser/des
+for
+[`ellmer::params()`](https://ellmer.tidyverse.org/reference/params.html)
+(an S7 object) just so it could round-trip through `state`.
+
+Class: `assistant_extension`, inheriting from `dock_extension`.
+
+## Extension UI
+
+``` r
+
+asst_ext_ui <- function(id, board, ...) {
+  shinychat::chat_mod_ui(NS(id, "chat"))
+}
+```
+
+`chat_mod_ui()` renders the message list, the input box and the stop
+button. We namespace the inner id (`"chat"`) so later phases can add
+sibling outputs (token counter, debug panel) without colliding with
+`chat_mod_ui`’s internal ids.
+
+## Extension server
+
+``` r
+
+asst_ext_srv <- function(id, board, update, ...) {
+
+  moduleServer(
+    id,
+    function(input, output, session) {
+
+      chat_ctor <- isolate(get_board_option_value("llm_model", session))
+      sys_prompt <- system_prompt %||% default_system_prompt()
+
+      client <- chat_ctor(system_prompt = sys_prompt)
+
+      if (length(messages)) {
+        client$set_turns(lapply(messages, ellmer::contents_replay))
+      }
+
+      mod <- shinychat::chat_mod_server("chat", client)
+
+      messages <- reactiveVal(messages %||% list())
+
+      record_new_turns <- function() {
+        recorded <- messages()
+        turns <- client$get_turns()
+
+        if (length(turns) > length(recorded)) {
+          new_idx <- seq.int(length(recorded) + 1L, length(turns))
+          messages(
+            c(recorded, lapply(turns[new_idx], ellmer::contents_record))
+          )
+        } else if (length(turns) < length(recorded)) {
+          messages(lapply(turns, ellmer::contents_record))
+        }
+      }
+
+      observeEvent(mod$last_input(), record_new_turns(), ignoreNULL = TRUE)
+      observeEvent(mod$last_turn(),  record_new_turns(), ignoreNULL = TRUE)
+
+      list(
+        state = list(
+          system_prompt = sys_prompt,
+          messages      = messages
+        )
+      )
+    }
+  )
+}
+```
+
+A few notes on the structure:
+
+- `system_prompt` and the `messages` argument are captured from the
+  [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
+  enclosing scope. `system_prompt` stays a plain string throughout the
+  session. The `messages` argument is consumed once to seed
+  `client$set_turns()` and the local `reactiveVal` of the same name;
+  after that the reactive form is what the rest of the server reads and
+  writes.
+- `get_board_option_value("llm_model", session)` is `blockr.core`’s
+  accessor for board options inside a Shiny module. It returns the chat
+  constructor with a `chat_name` attribute we can surface later in
+  telemetry. The accessor reads a reactive value, so we wrap it in
+  `isolate()` – the chat client is constructed once at module startup
+  and must not re-fire if the option later changes.
+- `messages` tracks the recorded form of the conversation. We *append*
+  on each turn boundary (`mod$last_input` for the user’s submit,
+  `mod$last_turn` for the model’s response completion) rather than
+  re-recording the whole list — `contents_record` over a growing list of
+  turns would be O(n²) over the conversation. The
+  `length(turns) < length(recorded)` branch handles the edge case where
+  something external (e.g. `mod$clear()`) shrinks the client’s turns; we
+  re-sync rather than diverge.
+- The return shape `list(state = …)` is the contract documented for
+  `dock_extension` servers (`blockr.dock/R/ext-class.R`). Every key in
+  `state` matches a constructor argument by name — that is what makes
+  ser/des coherent.
+
+The live
+[`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html)
+instance and the `chat_mod_server` return (`mod`) are deliberately *not*
+in `state`. They are runtime concerns (tool registration in Phase 2,
+turn-completion observers in Phase 3), they are not serializable, and
+they are not constructor arguments. Exposing them externally — if later
+phases need it — is a separate decision from ser/des.
+
+## Wire format for `messages`
+
+We use
+[`ellmer::contents_record()`](https://ellmer.tidyverse.org/reference/contents_record.html)
+/
+[`ellmer::contents_replay()`](https://ellmer.tidyverse.org/reference/contents_record.html)
+as the round-trip pair. Output is plain JSON — no opaque blobs — and the
+round-trip is lossless across all turn shapes (text, tool calls,
+multi-content). For the simplest exchange:
+
+``` json
+[
+  { "version": 1, "class": "ellmer::UserTurn",
+    "props": {
+      "contents": [
+        { "version": 1, "class": "ellmer::ContentText",
+          "props": { "text": "hi" } }
+      ]
+    }
+  },
+  { "version": 1, "class": "ellmer::AssistantTurn",
+    "props": {
+      "contents": [
+        { "version": 1, "class": "ellmer::ContentText",
+          "props": { "text": "hello back" } }
+      ],
+      "json": [], "tokens": ["NA","NA","NA"],
+      "cost": "NA", "duration": "NA"
+    }
+  }
+]
+```
+
+Verbosity here is the cost of lossless round-tripping — assistant turns
+that carry tool calls (Phase 4) or token telemetry are faithfully
+preserved. We deliberately do not roll our own `{role, content}` shape:
+it would be lossy by Phase 4 and would duplicate work `ellmer` already
+maintains.
+
+## Default system prompt
+
+    You are a helpful assistant embedded next to a blockr data analysis
+    board. In future versions you will be able to inspect and manipulate
+    the board; for now you can only talk to the user. Answer concisely.
+    Do not invent tool calls or claim to have changed the board — you
+    cannot, yet.
+
+The “you cannot, yet” line is deliberate: in Phase 1 the model is
+board-blind, and without an explicit instruction it will happily
+hallucinate a CRUD vocabulary it does not have. Replacing this prompt
+becomes important in Phase 2 once real tools exist; we revisit the text
+there.
+
+The prompt lives as a string constant in `R/system-prompt.R`. A single
+constant is fine for now; file-based prompts can come later when we
+start composing multiple fragments (persona + board summary + tool
+catalogue).
+
+## Telemetry
+
+[`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html)
+exposes per-turn token accounting via `client$tokens()` and
+`client$last_turn()$tokens`. Phase 1 surfaces this as a small
+`verbatimTextOutput("tokens")` beneath the chat:
+
+    input: 312   output: 84   total this turn: 396
+
+The output is updated in an observer over `mod$last_turn`. Cost
+estimation is out of scope for Phase 1 (it requires a per-model price
+table we do not yet maintain); only raw token counts are shown.
+
+Token counts are *not* added to `state`. They are recomputable from the
+recorded `messages` (the per-turn `tokens` field is preserved by
+`contents_record`), so exposing them separately would be redundant and
+would commit us to a key that isn’t a constructor argument.
+
+## Demo app
+
+`inst/examples/01-shell/app.R` mounts the extension on a small board:
+
+``` r
+
+library(blockr.core)
+library(blockr.dock)
+library(blockr.assistant)
+
+board <- new_dock_board(
+  blocks     = list(new_dataset_block("iris")),
+  extensions = list(new_assistant_extension())
+)
+
+serve(board)
+```
+
+Acceptance criteria for Phase 1:
+
+- App launches without warnings against a board that has `llm_model`
+  unset (i.e. the `default_chat` fallback is exercised).
+- A streaming response renders chunk-by-chunk in the chat panel.
+- Clicking the stop button mid-stream stops the stream and leaves a
+  partial-turn entry in the history (`chat_mod_server` default
+  behaviour).
+- The token line updates after each turn.
+- Serialize a board after a three-turn conversation, restore it in a
+  fresh session, confirm: (a) the conversation is visible in the chat
+  panel, (b) the next user message correctly extends the restored
+  history, (c) the system prompt survived the round-trip.
+- `devtools::check()` passes with 0/0/0.
+
+## Files added in this phase
+
+- `R/extension.R` —
+  [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md),
+  `asst_ext_ui()`, `asst_ext_srv()`.
+- `R/system-prompt.R` —
+  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md).
+- `R/utils.R` — `%||%` and any small helpers shared with later phases.
+- `inst/examples/01-shell/app.R` — demo app.
+- `tests/testthat/test-extension.R` — smoke tests
+  ([`is_dock_extension()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/extension.html),
+  server runs under
+  [`shiny::testServer()`](https://rdrr.io/pkg/shiny/man/testServer.html)
+  against a `default_chat` mock, ser/des round-trip).
+
+## Known limitations carried into later phases
+
+- Changing the `llm_model` option mid-session has no effect — the client
+  is captured at server start. Either documented as a known limitation
+  or addressed by an explicit “reset chat” button later.
+- No board awareness: the chat cannot answer “what blocks do I have?”
+  questions yet. This is the entire subject of Phase 2.
+- No application-level persistence trigger. Phase 1 makes history
+  *serializable*; what’s missing is the integration that actually saves
+  and restores boards across sessions.
