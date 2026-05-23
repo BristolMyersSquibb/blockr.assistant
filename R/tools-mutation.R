@@ -47,7 +47,7 @@ parse_args_json <- function(s, tool) {
   }
 
   if (!is.list(parsed) ||
-      (length(parsed) > 0L && is.null(names(parsed)))) {
+        (length(parsed) > 0L && is.null(names(parsed)))) {
     stop(
       sprintf(
         paste0(
