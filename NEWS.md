@@ -46,6 +46,16 @@ The biggest changes since the Phase 4 cut:
   `inst/examples/05-polish/`. The `_pkgdown.yml` reference index
   groups the surface into "Extension" and "S3 generics".
 
+* Runtime dependency check at extension mount: detects whether
+  the installed `blockr.core` exposes `apply_block_mod_delta`
+  (the marker for the delta-shape `blocks$mod` dispatch this
+  release relies on). If absent, the assistant surfaces a sticky
+  `notify(type = "error")` explaining what to upgrade rather than
+  letting a later `modify_block` call crash an upstream observer
+  the assistant can't catch from its own side. Phase 5 requires
+  the blockr.core and blockr.dock branches pinned in DESCRIPTION
+  (`Remotes:`) until those are merged and tagged.
+
 # blockr.assistant 0.0.0.9000
 
 Initial development version (Phases 1-4): extension shell with

@@ -145,6 +145,8 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
+        check_runtime_deps(session)
+
         compose <- if (is.function(system_prompt)) {
           system_prompt
         } else {
@@ -174,6 +176,20 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, session
           )
 
+          # Drop trailing user turn(s): if the prior conversation
+          # ended on a user message with no assistant reply (e.g. the
+          # old provider errored), shinychat's client_set_ui would
+          # render a perpetual loading indicator on the new mount,
+          # which reads as a stuck auto-submit. Trim them so the new
+          # mount looks like a clean state; the user can re-ask on
+          # the new provider if they want a response.
+          while (
+            length(seed_turns) &&
+              seed_turns[[length(seed_turns)]]@role == "user"
+          ) {
+            seed_turns <- seed_turns[-length(seed_turns)]
+          }
+
           if (length(seed_turns)) {
             cl$set_turns(seed_turns)
           }
@@ -184,6 +200,10 @@ asst_ext_srv <- function(system_prompt, messages) {
         # When the chat constructor changes (initial mount or after a
         # user-driven option swap), build a fresh client, migrate the
         # prior conversation, and bump mount_idx so the UI re-renders.
+        # The whole build is wrapped: if the chat ctor errors (bad
+        # API key check, provider construction failure) we surface
+        # the error to the user rather than letting the observer
+        # propagate it.
         observe({
 
           ctor <- chat_ctor_r()
@@ -199,7 +219,27 @@ asst_ext_srv <- function(system_prompt, messages) {
             }
           })
 
-          client_r(make_client(ctor, seed_turns))
+          new_client <- tryCatch(
+            make_client(ctor, seed_turns),
+            error = function(e) {
+              notify(
+                paste(
+                  "Could not build chat client:",
+                  conditionMessage(e)
+                ),
+                type = "error",
+                duration = NULL,
+                session = session
+              )
+              NULL
+            }
+          )
+
+          if (is.null(new_client)) {
+            return()
+          }
+
+          client_r(new_client)
           mount_idx(isolate(mount_idx()) + 1L)
         })
 
@@ -207,10 +247,14 @@ asst_ext_srv <- function(system_prompt, messages) {
           shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
         })
 
-        # Mount the chat module against the current client; replay
-        # past turns into the freshly-rendered UI on the next flush
-        # (chat_append targets a DOM element that doesn't exist yet
-        # in the current flush cycle).
+        # Mount the chat module against the current client.
+        # shinychat::chat_mod_server() calls chat_restore() internally,
+        # which fires client_set_ui() on the next reactive flush --
+        # that hook already replays every prior turn into the
+        # freshly-rendered UI via chat_append(). No manual replay
+        # needed (and earlier attempts targeted the wrong DOM id
+        # because the chat container lives under shinychat's own
+        # NS("chat")).
         observe({
 
           idx <- mount_idx()
@@ -218,26 +262,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
-          sub_id <- chat_sub_id(idx)
-          m <- shinychat::chat_mod_server(sub_id, cl)
-          mod_r(m)
-
-          turns <- cl$get_turns()
-          if (length(turns)) {
-            session$onFlushed(
-              function() {
-                for (turn in turns) {
-                  if (!turn@role %in% c("user", "assistant")) next
-                  text <- turn_text(turn)
-                  if (!nzchar(text)) next
-                  shinychat::chat_append(
-                    sub_id, text, role = turn@role, session = session
-                  )
-                }
-              },
-              once = TRUE
-            )
-          }
+          mod_r(shinychat::chat_mod_server(chat_sub_id(idx), cl))
         })
 
         refresh_prompt <- function() {
@@ -331,6 +356,39 @@ asst_ext_srv <- function(system_prompt, messages) {
 
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
+}
+
+# Feature-detect support for the delta-shape `blocks$mod` payload
+# that Phase 4 mutation tools dispatch. The canonical signal is
+# blockr.core's `apply_block_mod_delta` (introduced by the
+# delta-mod fix). If it's missing, our modify_block calls would
+# crash an upstream observer that we can't catch from our side --
+# surface the mismatch up front via notify so the user knows what
+# to upgrade.
+check_runtime_deps <- function(session) {
+
+  if (exists("apply_block_mod_delta",
+             envir = asNamespace("blockr.core"),
+             inherits = FALSE)) {
+    return(invisible(TRUE))
+  }
+
+  notify(
+    paste(
+      "Assistant requires blockr.core with delta-shape mod",
+      "support (>= the apply_block_mod_delta fix). Installed",
+      "blockr.core", utils::packageVersion("blockr.core"),
+      "is too old -- modify_block will crash the app until this",
+      "is upgraded (install BristolMyersSquibb/blockr.core and",
+      "BristolMyersSquibb/blockr.dock from the dev branches",
+      "pinned in DESCRIPTION via Remotes)."
+    ),
+    type = "error",
+    duration = NULL,
+    session = session
+  )
+
+  invisible(FALSE)
 }
 
 turn_text <- function(turn) {

@@ -667,8 +667,17 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
         inherits(client_r()$get_provider(), "ellmer::ProviderOpenAI")
       )
 
-      # Seed a synthetic conversation turn on the current client
-      client_r()$set_turns(list(ellmer::Turn("user", "remember 42")))
+      # Seed a synthetic completed exchange on the current client.
+      # A trailing user turn would be dropped on swap (it has no
+      # assistant reply, see make_client) -- so include both sides
+      # of the exchange so the migration test exercises a real
+      # carry-over.
+      client_r()$set_turns(
+        list(
+          ellmer::Turn("user", "remember 42"),
+          ellmer::Turn("assistant", "ok, 42 noted")
+        )
+      )
       first_client <- client_r()
 
       # Trigger the option-change observer by writing to the option's
@@ -685,14 +694,73 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
         inherits(client_r()$get_provider(), "ellmer::ProviderAnthropic")
       )
 
-      # Conversation migrated
+      # Both turns of the completed exchange migrated
       turns <- client_r()$get_turns()
       user_turns <- Filter(function(t) t@role == "user", turns)
       expect_length(user_turns, 1L)
       expect_match(user_turns[[1L]]@contents[[1L]]@text, "remember 42")
+      assistant_turns <- Filter(
+        function(t) t@role == "assistant", turns
+      )
+      expect_length(assistant_turns, 1L)
 
       # Tools re-registered (16 surface-tools, same as initial mount)
       expect_length(client_r()$get_tools(), 16L)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = sess
+  )
+})
+
+test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
+
+  fake_a <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-a",
+      credentials = function() list(Authorization = "Bearer a"),
+      echo = "none"
+    )
+  }
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_anthropic(
+      model = "claude-b",
+      credentials = function() list(`x-api-key` = "b"),
+      echo = "none"
+    )
+  }
+
+  opts <- list(A = fake_a, B = fake_b)
+  withr::local_options(blockr.chat_function = opts)
+
+  sess <- shiny::MockShinySession$new()
+  blockr.core:::board_option_to_userdata(
+    new_llm_model_option(),
+    session = sess
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      # Stage a conversation that ends on an unanswered user turn
+      # (the prior provider errored out before responding, say).
+      client_r()$set_turns(
+        list(ellmer::Turn("user", "unanswered question"))
+      )
+
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      # The trailing user turn was dropped on swap -- the new client
+      # has no pending user turn to render as "awaiting response".
+      turns <- client_r()$get_turns()
+      user_turns <- Filter(function(t) t@role == "user", turns)
+      expect_length(user_turns, 0L)
     },
     args = list(
       board = reactiveValues(board = new_board()),
