@@ -18,9 +18,9 @@ needs to use the Phase 2 + Phase 4 tool surface well, and giving the
 *user* the docs and demos needed to adopt the package. No new
 LLM-facing tools, no new staging semantics — what ships is:
 
-- A turn-by-turn refreshed system prompt that bundles the static
-  persona, an auto-generated tool catalogue, and a compact summary
-  of the current board.
+- A turn-by-turn refreshed system prompt that bundles a static
+  intro / conventions block, an auto-generated tool catalogue, and
+  a compact summary of the current board.
 - A small feedback channel that tells the model when its previous
   turn's flushed payload was rejected at dispatch (so it can recover
   on the next turn without the user having to retype the error).
@@ -41,24 +41,34 @@ documentation work that is mechanical once the package surface settles.
 
 In:
 
-- A `compose_system_prompt(persona, board, pending, client, last_flush)`
-  composer called once at extension-server start and re-called on
-  every new user turn. The result is shipped via
-  `client$set_system_prompt(...)` before the model processes the
-  user's input.
-- `summarise_board()` — a token-budgeted text summary of the current
-  board (blocks, links, stacks) and the pending payload, formatted
-  for LLM consumption.
+- A `default_system_prompt(board, client, last_flush, ...)`
+  function that builds the four-section prompt. It's the default
+  value of `new_assistant_extension`'s `system_prompt` argument and
+  is called by the extension server on every refresh, with the
+  result shipped via `client$set_system_prompt(...)`.
+- `summarise_board()` — a token-budgeted text summary of the
+  current board (blocks, links, stacks), formatted for LLM
+  consumption. Internally walks each entity via the new
+  `summarise_block` / `summarise_stack` S3 generics so block /
+  stack authors can override the per-entity line for their class
+  (parallel to the Phase 2 `describe_block` / `describe_stack`
+  pattern).
 - `format_tool_catalogue()` — derives the "you have these tools"
   section from `client$get_tools()` instead of hand-curated text in
-  the persona string. Reflects whatever was registered, including
+  the prompt body. Reflects whatever was registered, including
   user extensions.
 - A `last_flush_error` `reactiveVal` populated by Phase 3's
   `flush_pending` on dispatch-time validator rejection. Surfaces in
-  the composed prompt on the next turn as a one-line "your previous
-  changes were rejected because X" note, then clears.
-- A re-shaped `default_system_prompt()` that is *persona-only* — no
-  tool list, no board context. The composer adds the rest.
+  the prompt as a one-line "your previous changes were rejected
+  because X" note, then clears once consumed.
+- A new `query_data(code)` read tool: evaluates model-supplied R
+  against an environment built from `blockr.core::eval_env()` with
+  every committed block's result bound by id, captures stdout +
+  the return value via `capture.output`, returns the captured
+  text. The escape hatch for questions the static board summary
+  can't cover (unique values, group counts, ad-hoc filters,
+  cross-block joins) without bloating the prompt context with
+  per-block result previews.
 - One showcase example app under `inst/examples/05-polish/`
   exercising a populated board, mutation tools, and the new prompt
   context.
@@ -69,12 +79,13 @@ In:
 - `_pkgdown.yml` organisation: a "Get started" article, a "Design
   notes" section grouping the phase docs, and a reference index
   grouped by surface (extension, tools, S3 generics).
-- Tests for the prompt composer and the flush-feedback round-trip.
+- Tests for `default_system_prompt` and the flush-feedback round-trip.
 
 Out (deferred to later phases or out of roadmap):
 
-- New mutation or read tools. The Phase 2 + 4 surface is final for
-  the initial roadmap.
+- New mutation tools. The Phase 4 surface is final for the initial
+  roadmap. (One new *read* tool — `query_data` — lands in this
+  phase; see scope above.)
 - A `list_pending_changes()` tool. Phase 4 left it as a follow-up if
   empirical use shows the model is confused by committed-only reads
   during a turn. Phase 5's compact board summary covers the read
@@ -133,20 +144,20 @@ Three observations from Phase 4 push the same direction:
 3. **ID-change requests need a system-prompt nudge.** Phase 4's
    architectural decision on immutable committed ids is correct, but
    the model has no way to know that without trying and failing. A
-   short note in the persona ("committed ids are immutable; offer
-   `remove + add` if the user asks to rename") is cheaper than a
-   failed tool call.
+   short note in the intro block ("committed ids are immutable;
+   offer `remove + add` if the user asks to rename") is cheaper than
+   a failed tool call.
 
 ### The system prompt is a function, with a string shorthand
 
 Phase 1's `system_prompt = "<full prompt string>"` argument was the
-right shape for a static persona, but Phase 5 wants the prompt to
+right shape for a static prompt, but Phase 5 wants the prompt to
 reflect the live board state on every new turn. We resolve this by
 extending the argument's type rather than splitting it: the
 `system_prompt` argument now accepts a *function* (called each turn
 to build the prompt) or a *string* (used verbatim as a static
 prompt). The default is the function `default_system_prompt`, which
-ships the four-section composition (persona + tool catalogue +
+ships the four-section composition (intro + tool catalogue +
 board summary + optional flush-rejection note).
 
 ```r
@@ -211,8 +222,8 @@ list(state = state_payload)
 Custom *functions* do not round-trip — same fundamental limitation
 as any function-valued argument under ser/des, since closure
 environments don't serialise robustly. A caller passing a custom
-composer must re-pass it on every mount. This is documented in
-*Known limitations* below.
+`system_prompt` function must re-pass it on every mount. This is
+documented in *Known limitations* below.
 
 ### Composition cadence: drive refresh from materialized state
 
@@ -271,16 +282,19 @@ flush after the current observer body finishes, so the refresh
 sees the *new* value of `last_flush_error` (and the *new* value of
 `board$board` if the flush succeeded).
 
-### Section structure of the composed prompt
+### Section structure of the default prompt
 
-The composer assembles four sections in a fixed order. Order is
-fixed because token-cache hits on Anthropic's API and equivalent
-behaviour on others rely on prefix stability — sections that change
-infrequently come first.
+`default_system_prompt` assembles four sections in a fixed order.
+Order is fixed because token-cache hits on Anthropic's API and
+equivalent behaviour on others rely on prefix stability — sections
+that change infrequently come first.
 
-1. **Persona** (rarely changes). The free-text introduction.
-   `default_persona_text()` ships the default; a caller passing a
-   custom `system_prompt` function controls this section entirely.
+1. **Intro / conventions** (rarely changes). The free-text
+   introduction plus the conventions that don't auto-generate
+   (staging semantics, committed-only inspection reads, id
+   immutability, the `modify_block` boundary). Inlined in the
+   default function body; a caller writing their own
+   `system_prompt` function controls this section entirely.
 2. **Tool catalogue** (changes only if tools are registered or
    removed — effectively never within a session). One line per
    tool: `<name>(<args>): <description>`. Generated from
@@ -307,30 +321,45 @@ model can navigate the prompt without parsing.
 ### Board summary content and token budget
 
 The summary is structured to surface what the model needs to plan a
-mutation without forcing it to call `describe_block` for every block:
+mutation without forcing it to call `describe_block` for every
+block. The per-entity projections are delivered through two new S3
+generics so block / stack authors can override per class:
 
-- **Per block**: id, class, current arg values via `format(block)`
-  (the same projection `describe_block.block` ships, which already
-  trims to a tidy single-block representation), and the
-  modifiable-keys line (`block_name only` / a comma-separated list
-  / `all constructor arguments and block_name`, mirroring the
-  ctrl-line in `describe_block.block`). The modifiable-keys field
-  is the key extra: it lets the model pick `modify_block` vs
-  `remove + add` without a `describe_block` round-trip — exactly
-  the round-trip elimination Phase 5 exists to deliver. *Not*
-  included: the block's evaluated result (that's
+- **Per block** — `summarise_block(x, board, id)`. Default for the
+  base `block` class returns one line:
+  `<id> (<class>): <arg=val, ...> [modifiable: <keys>]`. The args
+  come from `initial_block_state(x)`; modifiable keys from the
+  `external_ctrl` attribute (resolved the same way
+  `describe_block.block` does). The modifiable-keys field is the
+  key extra over Phase 4's read tools: it lets the model pick
+  `modify_block` vs `remove + add` without a `describe_block`
+  round-trip — exactly the round-trip elimination Phase 5 exists
+  to deliver. *Not* included: the block's evaluated result (that's
   `get_block_result`'s job — too large for prompt context),
-  display name + source package (registry metadata, useful for
-  picking a type but stable across turns; looked up by the model
-  via `list_available_blocks` when it actually needs to add a
-  block).
-- **Per link**: id, from, to, input. One line each, sourced from
-  `as.data.frame(board_links(b))`.
-- **Per stack**: id, name, comma-separated member block ids. One
-  line each, mirroring `tool_list_stacks`' projection.
+  display name + source package (registry metadata, looked up by
+  the model via `list_available_blocks` when it actually needs to
+  add a block).
+- **Per link** — flat row from `board_links()`: `<id>: <from> ->
+  <to>$<input>`. No generic; links are not subclassable in
+  blockr.core's current API.
+- **Per stack** — `summarise_stack(x)`. Default for the base
+  `stack` class returns the existing `describe_stack`-shape
+  projection (name + comma-separated blocks); the internal
+  `summarise_stacks` helper prepends the id. Stack classes that
+  add attributes (e.g. `blockr.dag::dag_stack` with a colour)
+  override their class for a denser one-line representation.
+
+`summarise_block` and `summarise_stack` slot in alongside the
+existing `describe_block` / `describe_stack` (Phase 2) and
+`summarise_result` (Phase 2). Three generics, three aspects of how
+a block reaches the model — `describe_*` is the full drill-down
+projection used by the read tool, `summarise_*` is the compact
+prompt-context projection used by the dynamic system prompt, and
+`summarise_result` is the result-value projection used by
+`get_block_result`. Block authors can override any subset.
 
 A soft cap of ~4000 characters total for the board section keeps
-the prompt sub-1k-tokens on a moderately busy board (the persona +
+the prompt sub-1k-tokens on a moderately busy board (the intro +
 tool catalogue is bounded at ~1500 chars by the count and shape of
 our tools). If the board exceeds the cap, we truncate per-block arg
 values more aggressively and fall back to a header-only summary
@@ -351,8 +380,8 @@ would waste tokens on every turn for occasional value.
 The Phase 1 / Phase 2 default prompt hard-coded the tool names. With
 nine mutation tools (Phase 4) plus six read tools (Phase 2), plus the
 possibility of user-registered tools, the hand-curated list is both
-long and a maintenance hazard. The composer derives it from
-`client$get_tools()`:
+long and a maintenance hazard. `default_system_prompt` derives it
+from `client$get_tools()`:
 
 ```r
 format_tool_catalogue <- function(client) {
@@ -445,66 +474,113 @@ in N+2's prompt. The invariant we want is "the delta note always
 reflects the most recent flush attempt"; clearing on no-op
 preserves it.
 
-The composer reads it on the next turn:
+`default_system_prompt` reads the reactiveVal on every refresh and
+emits the note when non-NULL; the full implementation lives in the
+sketch below.
 
-```r
-compose_system_prompt <- function(persona, board, pending, client,
-                                  last_flush) {
+### Default-prompt content
 
-  sections <- c(
-    persona,
-    "",
-    "## Tools",
-    format_tool_catalogue(client),
-    "",
-    "## Board",
-    summarise_board(board, pending)
-  )
-
-  err <- isolate(last_flush())
-  if (!is.null(err)) {
-    sections <- c(
-      sections,
-      "",
-      sprintf(
-        "Note: your previous turn's changes were rejected: %s. %s",
-        err,
-        "The board did not change. Re-issue corrected calls."
-      )
-    )
-  }
-
-  paste(sections, collapse = "\n")
-}
-```
-
-The note appears once. After the model's next `last_turn` fires,
-`flush_pending` either reaches the success branch (`last_flush_error
-<- NULL`) or a fresh rejection branch (overwrites with the new
-message). Either way the prior note does not persist.
-
-### Default persona content
-
-The Phase 4 `default_system_prompt` body splits into two pieces
-under Phase 5:
+The Phase 4 `default_system_prompt` body splits under Phase 5:
 
 - The static prose — staging semantics, committed-only inspection
   reads, id immutability, the `modify_block` / `remove + add`
-  boundary, "answer concisely" — lives in an internal
-  `default_persona_text()` helper and is emitted by
-  `default_system_prompt(...)` as the first section of every
-  composition.
+  boundary, "answer concisely" — is inlined as the first section
+  of `default_system_prompt`'s output.
 - The per-tool listing drops out entirely: the auto-generated
   catalogue replaces it. So does the JSON-args-as-string note,
   which already lives in the `add_block` / `modify_block` tool
   descriptions and reaches the model via the catalogue.
 
-The persona helper stays internal because the exported
-`default_system_prompt()` is the user-facing inspection point —
-callers asking "what does the prompt look like" call that, not the
-internal helper.
+### Defensive error handling around the `system_prompt` call
 
-### What the composer is *not*
+The function bound to `system_prompt` runs once per refresh, on
+every materialized board change. A failure path needs to exist for
+both the package default (a bug in `summarise_board` or
+`format(<exotic-block-class>)`) and user-supplied functions
+(arbitrary code).
+
+The wrap is a `tryCatch` inside `refresh_prompt` that:
+
+- surfaces the failure to the user via `blockr.core::notify(...,
+  type = "error")`, which renders a Shiny toast *and* logs at
+  error level — same path Phase 4's mutation tools and Phase 3's
+  flush rejection use, so a failure here has the same diagnostic
+  footprint as any other assistant-side error,
+- skips the `set_system_prompt` call on failure (the chat client
+  keeps its previous prompt — least-surprising fallback; matches
+  how Shiny's own observer error handling leaves prior reactive
+  values in place),
+- does *not* substitute a different prompt (e.g.
+  `default_system_prompt`) — silently swapping the prompt
+  contents would hide what the caller actually asked for.
+
+If the very first refresh fails (initial mount, no previous prompt
+to fall back to), the chat client retains the empty placeholder
+passed to `chat_ctor` at construction time. The model would then
+operate without any board context until the next refresh succeeds.
+That is a package bug if the default is at fault, and a caller bug
+if a custom function is at fault — the error notification points
+at the root cause either way.
+
+### `query_data`: an eval escape hatch for richer inspection
+
+`get_block_result` returns a fixed `summarise_result()` projection
+of a single block — useful for "what does this look like" but
+inadequate for "how many distinct values of `Species` are there",
+"what's the mean of column X grouped by Y", "do rows from block A
+and block B match on id". A static prompt can't carry every such
+projection, and inflating the per-block summary to cover them
+would burn tokens on every turn for occasional value.
+
+The remedy: a `query_data(code)` read tool that evaluates
+model-supplied R against a scoping env built from
+`blockr.core::eval_env()` with every committed block's result
+bound under its id. Captures stdout (any `print`s the code does)
+and auto-prints the last expression's value via `capture.output`.
+Returns the captured text (truncated to a line cap so a
+runaway `print(huge_df)` doesn't blow the budget).
+
+Behavioural shape mirrors a one-shot R REPL evaluation:
+
+- Bindings: every block `b` with a successful result is bound as
+  `b` in the env. Blocks that errored at evaluation time are
+  omitted, and the tool result lists them in a one-line preface
+  so the model knows what wasn't reachable.
+- Parent env: `eval_env()`'s default chain — either
+  `default_eval_parent()` (blockr-default packages attached) or
+  `baseenv()`, depending on the `attach_default_packages`
+  blockr_option. Matches how a block's own expression evaluates,
+  so the model's mental model of "what's in scope" lines up with
+  what a `mutate_block` (or similar) would see.
+- Output: `capture.output({ val <- eval(parsed, envir = env); print(val) })`.
+  Mid-script `print` calls land in the capture; the last
+  expression's value auto-prints (REPL semantics). Errors at
+  parse or eval time route through `with_tool_errors` into the
+  standard `query_data failed: <reason>` envelope.
+- Truncation: hard cap at ~200 lines of captured output. Over the
+  cap, the tool result is the first N lines + a `(output
+  truncated; %d lines hidden)` footer.
+
+Security and trust: this lets the model execute arbitrary R in
+the app's process. That sounds alarming until you notice the
+mutate-block class of attack surface is already reachable —
+`add_block("mutate_block", args = '{"expr": "system(...)"}')`
+gets the same code execution via the staging path. `query_data`
+doesn't expand the attack surface, it just makes the same
+capability explicit and ergonomic for read-only inspection.
+Anyone deploying the assistant in a high-trust context (i.e.
+real user data, real R session) already needs to vet the model
+provider and the data sources for prompt-injection risk; adding
+`query_data` doesn't change that calculus.
+
+What the tool is *not*: sandboxed (no callr subprocess, no
+allowlist), time-limited (no timeout — long-running queries
+block the chat module), memory-bounded (large intermediate
+values stay in the eval env until GC). All of these are
+hardening passes a future phase can layer on without changing
+the tool's surface.
+
+### What `default_system_prompt` is *not*
 
 A few deliberate non-features:
 
@@ -533,19 +609,19 @@ A few deliberate non-features:
 ```r
 #' Default assistant system prompt
 #'
-#' Composer behind the assistant's default system prompt. Builds a
-#' multi-section prompt: a persona / conventions paragraph
-#' (`default_persona_text`), an auto-generated tool catalogue from
-#' `client$get_tools()`, a compact board summary, and (when
-#' applicable) a one-line note carrying the previous turn's flush
-#' rejection.
+#' Builds the four-section system prompt the assistant ships by
+#' default: an intro / conventions block, an auto-generated tool
+#' catalogue from `client$get_tools()`, a compact board summary,
+#' and (when applicable) a one-line note carrying the previous
+#' turn's flush rejection.
 #'
 #' Each argument is optional; the corresponding section is omitted
 #' when its input is `NULL`, so `default_system_prompt()` at the
-#' REPL returns just the persona / conventions block — useful for
-#' inspecting what the default looks like without mounting a board.
+#' REPL returns just the intro block — useful for inspecting what
+#' the default looks like without mounting a board.
 #'
-#' Custom functions passed via `new_assistant_extension(system_prompt = my_fn)`
+#' This is the default value of `new_assistant_extension`'s
+#' `system_prompt` argument. Custom functions passed in its place
 #' receive `(board, client, last_flush, ...)`; the `...` is
 #' forward-compatibility headroom for future phases adding inputs
 #' (accept `...` in custom functions so the call site can grow
@@ -557,6 +633,7 @@ A few deliberate non-features:
 #' @param last_flush Reactive holding the previous turn's flush
 #'   rejection message (character) or `NULL`. `NULL` (or a `NULL`
 #'   value) omits the delta note.
+#' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
 #'
@@ -564,7 +641,32 @@ A few deliberate non-features:
 default_system_prompt <- function(board = NULL, client = NULL,
                                   last_flush = NULL, ...) {
 
-  sections <- default_persona_text()
+  intro <- paste(
+    "You are an assistant embedded next to a blockr data analysis",
+    "board. The Tools section below lists what you can call; the",
+    "Board section is the current shape of the board.",
+    "",
+    "Inspection tools always read the committed board, not your",
+    "staged changes. Mutation tools *stage* a change; nothing",
+    "applies mid-turn. All staged calls from your turn flush as one",
+    "atomic update when your turn ends. Your own tool-call history",
+    "is the record of what is pending.",
+    "",
+    "Block, link and stack ids are immutable once committed. If the",
+    "user asks to rename one, explain you can offer remove + add",
+    "with a new id, but that tears down the block server and",
+    "re-evaluates downstream blocks -- ask before proceeding. For",
+    "a still-staged entity, use remove + add to change the id.",
+    "",
+    "modify_block can only change keys reported as modifiable in",
+    "the Board section above (and block_name, always). For other",
+    "changes use remove_block + add_block.",
+    "",
+    "Answer concisely.",
+    sep = "\n"
+  )
+
+  sections <- intro
 
   if (!is.null(client)) {
     sections <- c(
@@ -593,33 +695,6 @@ default_system_prompt <- function(board = NULL, client = NULL,
   }
 
   paste(sections, collapse = "\n")
-}
-
-default_persona_text <- function() {
-  paste(
-    "You are an assistant embedded next to a blockr data analysis",
-    "board. The Tools section below lists what you can call; the",
-    "Board section is the current shape of the board.",
-    "",
-    "Inspection tools always read the committed board, not your",
-    "staged changes. Mutation tools *stage* a change; nothing",
-    "applies mid-turn. All staged calls from your turn flush as one",
-    "atomic update when your turn ends. Your own tool-call history",
-    "is the record of what is pending.",
-    "",
-    "Block, link and stack ids are immutable once committed. If the",
-    "user asks to rename one, explain you can offer remove + add",
-    "with a new id, but that tears down the block server and",
-    "re-evaluates downstream blocks -- ask before proceeding. For",
-    "a still-staged entity, use remove + add to change the id.",
-    "",
-    "modify_block can only change keys reported as modifiable in",
-    "the Board section above (and block_name, always). For other",
-    "changes use remove_block + add_block.",
-    "",
-    "Answer concisely.",
-    sep = "\n"
-  )
 }
 
 format_tool_catalogue <- function(client) {
@@ -698,14 +773,241 @@ summarise_board <- function(board, max_chars = 4000L) {
   out
 }
 
-# summarise_blocks / summarise_links / summarise_stacks are short
-# helpers that produce a per-entity line block. Bodies are elided
-# here because they are mechanical projection of the existing
-# read-tool output (tool_list_blocks / tool_list_links /
-# tool_list_stacks in R/tools-read.R) to a compact text format,
-# plus the modifiable-keys line from describe_block.block for the
-# per-block summary. They live in R/system-prompt.R.
+summarise_blocks <- function(blks) {
+
+  if (!length(blks)) return(character())
+
+  c(
+    "## Blocks",
+    chr_ply(names(blks), function(id) {
+      summarise_block(blks[[id]], board = NULL, id = id)
+    })
+  )
+}
+
+summarise_links <- function(lnks) {
+
+  if (!length(lnks)) return(character())
+
+  df <- as.data.frame(lnks)
+  c(
+    "## Links",
+    chr_ply(
+      seq_len(nrow(df)),
+      function(i) sprintf(
+        "- %s: %s -> %s$%s",
+        df$id[[i]], df$from[[i]], df$to[[i]], df$input[[i]]
+      )
+    )
+  )
+}
+
+summarise_stacks <- function(stks) {
+
+  if (!length(stks)) return(character())
+
+  c(
+    "## Stacks",
+    chr_ply(names(stks), function(id) {
+      sprintf("- %s %s", id, summarise_stack(stks[[id]]))
+    })
+  )
+}
 ```
+
+### `R/summarise-block.R` *(new)*
+
+```r
+#' Summarise a block for the LLM prompt context
+#'
+#' Generic backing the per-block lines in the dynamic system
+#' prompt's board summary. The default method `summarise_block.block`
+#' produces a compact one-line summary (id, class, current arg
+#' values, modifiable keys). Block authors override their class
+#' when the default is too generic or too verbose for prompt
+#' context.
+#'
+#' Parallel to [describe_block()] (which produces the *full*
+#' multi-line description used by the `describe_block` tool). Use
+#' `summarise_block` when token density matters; use
+#' `describe_block` when the user has explicitly asked for detail.
+#'
+#' @param x A `block`.
+#' @param board The current board snapshot, for resolving
+#'   cross-references. May be `NULL` — currently unused by the
+#'   default method, reserved for overrides that want to surface
+#'   relationships.
+#' @param id The id under which the block lives on the board.
+#' @param ... For future use.
+#'
+#' @return A single-line character scalar (preferred). A multi-line
+#'   vector is accepted but inflates the prompt budget.
+#'
+#' @export
+summarise_block <- function(x, board, id, ...) UseMethod("summarise_block")
+
+#' @rdname summarise_block
+#' @export
+summarise_block.block <- function(x, board, id, ...) {
+
+  args <- initial_block_state(x)
+  ctrl <- attr(x, "external_ctrl")
+
+  args_str <- if (length(args)) {
+
+    paste(
+      chr_ply(names(args), function(nm) {
+        sprintf("%s=%s", nm, format(args[[nm]]))
+      }),
+      collapse = ", "
+    )
+
+  } else {
+    "no args"
+  }
+
+  ctrl_str <- if (isTRUE(ctrl)) {
+    "all args + block_name"
+  } else if (isFALSE(ctrl) || !length(ctrl)) {
+    "block_name only"
+  } else {
+    paste(c(ctrl, "block_name"), collapse = ", ")
+  }
+
+  sprintf(
+    "- %s (%s): %s [modifiable: %s]",
+    id, class(x)[[1L]], args_str, ctrl_str
+  )
+}
+```
+
+### `R/summarise-stack.R` *(new)*
+
+```r
+#' Summarise a stack for the LLM prompt context
+#'
+#' Generic backing the per-stack lines in the dynamic system
+#' prompt's board summary. The default method `summarise_stack.stack`
+#' produces a compact name + member-blocks line. Stack classes that
+#' carry extra attributes (e.g. `blockr.dag::dag_stack` with a
+#' colour) override their class to surface those attributes.
+#'
+#' Parallel to [describe_stack()] (full description, used by the
+#' `list_stacks` tool's description column). Use `summarise_stack`
+#' when token density matters.
+#'
+#' @param x A `stack`.
+#' @param ... For future use.
+#'
+#' @return A single-line character scalar (preferred). The caller
+#'   in `summarise_board()` prepends the stack's id.
+#'
+#' @export
+summarise_stack <- function(x, ...) UseMethod("summarise_stack")
+
+#' @rdname summarise_stack
+#' @export
+summarise_stack.stack <- function(x, ...) {
+
+  blocks <- stack_blocks(x)
+  blocks_str <- if (length(blocks)) {
+    paste(blocks, collapse = ", ")
+  } else {
+    "<empty>"
+  }
+
+  sprintf(
+    "'%s' (blocks: %s)",
+    coal(stack_name(x), "<unnamed>"),
+    blocks_str
+  )
+}
+```
+
+### `R/tool-query-data.R` *(new)*
+
+```r
+tool_query_data <- function(board, update, session) {
+
+  ellmer::tool(
+    function(code) {
+      with_tool_errors("query_data", {
+
+        blks <- isolate(board$blocks)
+
+        data <- list()
+        skipped <- character()
+
+        for (id in names(blks)) {
+
+          res <- tryCatch(
+            isolate(blks[[id]]$server$result()),
+            error = function(e) e
+          )
+
+          if (inherits(res, "error")) {
+            skipped <- c(skipped, id)
+          } else {
+            data[[id]] <- res
+          }
+        }
+
+        env <- eval_env(data)
+        parsed <- parse(text = code)
+
+        output <- capture.output({
+          val <- NULL
+          for (e in parsed) val <- eval(e, envir = env)
+          if (!is.null(val)) print(val)
+        })
+
+        if (length(output) > 200L) {
+          hidden <- length(output) - 200L
+          output <- c(
+            output[seq_len(200L)],
+            sprintf("(output truncated; %d lines hidden)", hidden)
+          )
+        }
+
+        if (length(skipped)) {
+          output <- c(
+            sprintf(
+              "(skipped blocks with errors: %s)",
+              paste(skipped, collapse = ", ")
+            ),
+            "",
+            output
+          )
+        }
+
+        paste(output, collapse = "\n")
+      })
+    },
+    name        = "query_data",
+    description = paste(
+      "Evaluate R code against the board's block results. Every",
+      "committed block's evaluated result is bound in scope by its",
+      "block id (e.g. for a block with id `data` write `head(data)`).",
+      "Returns captured stdout plus the auto-printed value of the",
+      "last expression -- the same shape an R REPL would produce.",
+      "Use this for questions the Board section doesn't carry: unique",
+      "values, group counts, ad-hoc filters, joins across blocks.",
+      "Read-only; the board is not modified."
+    ),
+    arguments = list(
+      code = ellmer::type_string(
+        paste(
+          "R code to evaluate. Multiple statements allowed; the last",
+          "expression's value is auto-printed."
+        )
+      )
+    )
+  )
+}
+```
+
+`register_read_tools` gains one line registering the tool
+alongside the Phase 2 read surface.
 
 ### `R/extension.R` (diff)
 
@@ -760,9 +1062,24 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         refresh_prompt <- function() {
-          client$set_system_prompt(
-            compose(board, client, last_flush_error)
+
+          prompt <- tryCatch(
+            compose(board, client, last_flush_error),
+            error = function(e) {
+              notify(
+                paste(
+                  "Assistant prompt update failed:",
+                  conditionMessage(e)
+                ),
+                type = "error"
+              )
+              NULL
+            }
           )
+
+          if (!is.null(prompt)) {
+            client$set_system_prompt(prompt)
+          }
         }
 
         refresh_prompt()                                          # initial
@@ -845,7 +1162,7 @@ Four diffs vs. Phase 4:
 
 The `state` shape now conditionally includes `system_prompt`: only
 when the caller passed a literal string. Function-valued
-`system_prompt` (custom composer or the default) is omitted from
+`system_prompt` (custom function or the default) is omitted from
 state so `do.call(ctor, payload)` on restore falls back to the
 constructor's default. Phase 4 saved boards carry a literal string
 in `state$system_prompt` (Phase 4 always serialised the resolved
@@ -896,8 +1213,8 @@ Two changes vs. Phase 4's `flush_pending`:
   (no-op / success / rejection). The no-op branch clears the
   prior error so a flush-rejected turn followed by a
   no-mutation turn doesn't leave a stale note visible on turn
-  +2. The invariant the composer relies on is *"the delta note
-  always reflects the most recent flush attempt"*.
+  +2. The invariant `default_system_prompt` relies on is *"the
+  delta note always reflects the most recent flush attempt"*.
 
 Phase 3's atomicity contract is otherwise unchanged: the whole
 staged payload either applies or is discarded; no partial apply.
@@ -925,11 +1242,16 @@ Outline (one Rmd, ~250 lines):
 4. *Configure the model.* How to point at a different provider via
    `blockr_option("chat_function", …)`. Pointer to ellmer for the
    provider matrix.
-5. *Customise the persona.* The `persona` argument; when to override
-   the full prompt via `prompt_composer`.
-6. *Extend the read tools.* The `describe_block.<class>` and
-   `describe_stack.<class>` S3 generics. One short example for a
-   bespoke block class.
+5. *Customise the prompt.* Pass a string for full static control,
+   or a function for full dynamic control (wrapping
+   `default_system_prompt()` is the usual extension pattern).
+6. *Extend the prompt and read tools.* The S3 generic family
+   exposed by the package: `describe_block` / `describe_stack`
+   (full descriptions, used by the read tools), `summarise_block`
+   / `summarise_stack` (compact prompt-context lines), and
+   `summarise_result` (block result formatting). One short example
+   each for a bespoke block class overriding `summarise_block` and
+   `describe_block` to demonstrate the density / detail split.
 7. *Where to go next.* Pointers to the design vignettes for
    contributors, and the issue tracker for feature requests.
 
@@ -951,7 +1273,8 @@ plot1, plot2), two stacks, and the assistant. Comments at the top
 of the file list the manual scenarios to try ("ask what's on the
 board without calling a tool", "ask the assistant to add a third
 plot", "ask to rename a block and observe the immutability
-nudge").
+nudge", "ask 'how many unique species in `data`?' to exercise
+`query_data`").
 
 Existing examples stay in place — `01-shell/` and `02-read-tools/`
 are useful for regression and for the corresponding design phases'
@@ -983,10 +1306,11 @@ Two changes:
    `vignettes/blockr.assistant.Rmd`, and a "Design notes" section
    that surfaces the six design vignettes in roadmap order.
 2. *Reference index*: grouped into "Extension" (`new_assistant_extension`,
-   `default_persona`), "S3 generics" (`describe_block`,
-   `describe_stack`, `summarise_result`), and an unlabelled
-   miscellany for anything that does not fit (currently empty —
-   the package surface is intentionally small).
+   `default_system_prompt`), "S3 generics" (`describe_block`,
+   `describe_stack`, `summarise_block`, `summarise_stack`,
+   `summarise_result`), and an unlabelled miscellany for anything
+   that does not fit (currently empty — the package surface is
+   intentionally small).
 
 The pkgdown site is already deployed via the existing CI workflow;
 no infra changes.
@@ -994,13 +1318,23 @@ no infra changes.
 ## Files added / changed
 
 - `R/system-prompt.R` — rewrite `default_system_prompt` from a
-  zero-arg static-string function to the four-section composer
+  zero-arg static-string function to the four-section builder
   documented above (signature
   `(board = NULL, client = NULL, last_flush = NULL, ...)`). Add the
-  internal helpers: `default_persona_text`, `format_tool_catalogue`,
-  `format_tool_signature`, `summarise_board`, `summarise_blocks`,
-  `summarise_links`, `summarise_stacks`.
-- `R/extension.R` — flip the constructor default for
+  internal helpers: `format_tool_catalogue`, `format_tool_signature`,
+  `summarise_board`, `summarise_blocks`, `summarise_links`,
+  `summarise_stacks`. The intro / conventions text is inlined in
+  the function body (no separate helper).
+- `R/summarise-block.R` *(new)* — `summarise_block` S3 generic +
+  default `summarise_block.block` method emitting the compact
+  per-block line.
+- `R/summarise-stack.R` *(new)* — `summarise_stack` S3 generic +
+  default `summarise_stack.stack` method emitting the compact
+  per-stack line.
+- `R/tool-query-data.R` *(new)* — `tool_query_data` factory; the
+  read-eval-print escape hatch documented above.
+- `R/tools-read.R` — register `tool_query_data` in
+  `register_read_tools` alongside the Phase 2 read tools.
   `system_prompt` from `NULL` to `default_system_prompt`, accept
   function or string, wrap strings as `function(...) the_string`
   at server start, add `last_flush_error` reactiveVal, add the
@@ -1014,22 +1348,26 @@ no infra changes.
 - `vignettes/blockr.assistant.Rmd` *(new)* — user-facing tutorial.
 - `README.Rmd` / `README.md` — rewrite per the section above.
 - `_pkgdown.yml` — reference index grouping; "Get started" article.
-- `tests/testthat/test-system-prompt.R` *(new)* — composer and
-  formatter coverage: `default_system_prompt()` (no args) returns
-  the persona text; with `client` adds the catalogue; with `board`
-  adds the summary; with a populated `last_flush` reactiveVal adds
-  the delta note. `format_tool_signature` shape. `summarise_board`
-  on empty / small / oversized boards.
+- `tests/testthat/test-system-prompt.R` *(new)* —
+  `default_system_prompt` and formatter coverage:
+  `default_system_prompt()` (no args) returns the intro block;
+  with `client` adds the catalogue; with `board` adds the summary;
+  with a populated `last_flush` reactiveVal adds the delta note.
+  `format_tool_signature` shape. `summarise_board` on empty /
+  small / oversized boards.
 - `tests/testthat/test-extension.R` — update the existing
-  `default_system_prompt` no-arg test to assert the persona-only
-  return (the conventions paragraph) when called bare; add tests
+  `default_system_prompt` no-arg test to assert the intro-only
+  return when called bare. Replace existing
+  `asst_ext_srv(system_prompt = NULL, ...)` callers with explicit
+  function-valued args (`default_system_prompt` or a stub), since
+  the new server no longer coalesces NULL to default. Add tests
   for the string-arg path (state carries the string verbatim, the
   refresh sets that string each turn), the function-arg path
   (state omits `system_prompt` so restore falls back to default),
-  the refresh-on-`last_input` observer wiring, and the
-  flush-feedback round-trip (rejected dispatch populates
-  `last_flush_error`, next composition surfaces the note,
-  successful follow-up flush clears it).
+  the `observe({ board$board; last_flush_error() })` refresh
+  observer wiring, and the flush-feedback round-trip (rejected
+  dispatch populates `last_flush_error`, refresh surfaces the
+  note, successful follow-up flush clears it).
 - `tests/testthat/test-staging.R` — extend `flush_pending` tests
   with the optional `last_flush_error` reactiveVal behaviour
   (success clears, rejection populates, no-op also clears so a
@@ -1039,23 +1377,23 @@ no infra changes.
   conversion, and add the Phase 5 entry to the vignette index
   table. Pure docs drift; no code impact.
 - `NEWS.md` *(new if absent)* — `system_prompt` argument now
-  accepts a function (the new default `default_system_prompt`
-  composer), flush-rejection feedback, pkgdown article
-  reorganisation.
+  accepts a function (the new default `default_system_prompt`),
+  flush-rejection feedback, pkgdown article reorganisation.
 - `DESCRIPTION` — bump version to `0.1.0` reflecting initial
-  roadmap completion. No new imports — `client$get_tools()` and
-  `client$set_system_prompt()` are existing ellmer surface.
+  roadmap completion. No new imports — `client$get_tools()`,
+  `client$set_system_prompt()`, and `eval_env()` are existing
+  ellmer / blockr.core surface.
 
-The only new export is the rewritten `default_system_prompt`
-function (kept under the same name as Phase 4; signature change
-only). All other helpers are internal.
+New exports: rewritten `default_system_prompt` (same name as
+Phase 4, signature change only), `summarise_block`,
+`summarise_stack`. All other helpers are internal.
 
 ## Acceptance criteria
 
 ### Automated (CI / `devtools::check()`)
 
 - `default_system_prompt()` called with no arguments returns just
-  the persona text (no `## Tools`, no `## Board`, no delta note);
+  the intro block (no `## Tools`, no `## Board`, no delta note);
   with a `client` adds the catalogue header and tool lines; with a
   `board` adds the board header and per-entity lines; with a
   populated `last_flush` reactiveVal adds the delta note.
@@ -1069,6 +1407,27 @@ only). All other helpers are internal.
   - A pathologically large board (1000 synthetic blocks) →
     header + "(too many blocks to inline; call list_blocks…)"
     truncation branch.
+- `summarise_block` dispatches per class: register a fake S3 method
+  `summarise_block.fake_class` returning `"OVERRIDDEN"`, build a
+  board containing a block of that class, assert the
+  `summarise_board()` output for that block is `"OVERRIDDEN"`
+  (and the default-class blocks are unchanged).
+- `summarise_stack` dispatches per class: same shape as the block
+  test, against a fake stack class.
+- `query_data` happy path: against a board with a `dataset_block`
+  named `d` serving `iris`, calling the tool with
+  `code = "nrow(d)"` returns `"[1] 150"`. With
+  `code = "length(unique(d$Species))"` returns `"[1] 3"`. With
+  multiple statements
+  (`"x <- table(d$Species); x"`) returns the auto-printed table.
+- `query_data` error paths: parse error in `code` returns a
+  `"query_data failed: <reason>"` string (via `with_tool_errors`);
+  runtime error in `eval` returns the same envelope; a board with
+  a failing block surfaces a `"(skipped blocks with errors: …)"`
+  preface and the other blocks still resolve in scope.
+- `query_data` truncation: a `code` argument that auto-prints a
+  10000-row data frame produces output capped at 200 lines plus a
+  `(output truncated; N lines hidden)` footer.
 - Refresh observer fires on board materialization: stage and flush
   a non-empty payload via `shiny::testServer()`, assert
   `client$get_system_prompt()` reflects the new board after the
@@ -1078,6 +1437,12 @@ only). All other helpers are internal.
   `board$board` (simulating a UI edit), assert
   `client$get_system_prompt()` reflects the new state without any
   `last_input` / `last_turn` activity in between.
+- Failing `system_prompt` function: pass
+  `system_prompt = function(...) stop("boom")`. Trigger a refresh.
+  Assert (a) `client$get_system_prompt()` is unchanged from the
+  previous value, (b) a notification of type `"error"` was emitted
+  (mock `blockr.core::notify`, capture the call), (c) the chat
+  module is still alive — no observer crash.
 - Flush-rejection round-trip via `shiny::testServer()`:
   - Stage a payload that fails a mocked validator. Trigger
     `last_turn`. Assert `last_flush_error()` holds the rejection
@@ -1097,8 +1462,8 @@ only). All other helpers are internal.
 - The `state` round-trip: serialising an extension built with a
   custom string, restoring it, and reading
   `client$get_system_prompt()` returns the same string. Built with
-  the default composer, the restored extension uses the default
-  composer again (not a stale snapshot).
+  the default function, the restored extension uses the default
+  function again (not a stale snapshot).
 - Phase 1-4 acceptance criteria continue to pass.
 - `devtools::check()` passes 0/0/0.
 - `lintr::lint_package()` passes 0 lints.
@@ -1114,6 +1479,12 @@ Run the Phase 5 example app against a real provider and verify:
 - *Drill-down with a tool call.* "Show me the current value of
   `n_rows` on the head block." Expected: one `describe_block`
   call, accurate answer.
+- *`query_data` drill-down.* "How many unique values of `Species`
+  does the `data` block carry, and what are they?" Expected: one
+  `query_data` call (e.g. `unique(data$Species)`), answer cites
+  the three setosa/versicolor/virginica values from the captured
+  output. Confirms the eval escape hatch is being used for
+  questions the static summary can't answer.
 - *Pipeline build.* "Add a filter for `Sepal.Width > 3` after the
   head block and pipe the result into a new scatter plot."
   Expected: the model stages the appropriate blocks and links in
@@ -1122,8 +1493,8 @@ Run the Phase 5 example app against a real provider and verify:
 - *Rename request.* "Rename `head` to `top_rows`." Expected: the
   model declines the in-place rename, explains the `remove + add`
   path with the eval-state caveat, and asks the user. (Triggered
-  by the persona's id-immutability paragraph in
-  `default_persona_text`; no tool call required.)
+  by the id-immutability paragraph in the default prompt's intro;
+  no tool call required.)
 - *Recover from a flush rejection.* Set up a board where a staged
   link would create a cycle (manual setup via the example app's
   comments). Ask the assistant to add the cycle-creating link.
@@ -1165,9 +1536,18 @@ recorded in the PR description.
   wait on demand.
 - **Tool catalogue is bag-of-tools, not categorised.** The
   catalogue lists every registered tool in registration order. For
-  the current 15-tool surface this is readable; if per-block-type
+  the current 16-tool surface this is readable; if per-block-type
   custom tools (#12) ever land, grouping by namespace might
   matter.
+- **`query_data` runs unsandboxed in-process.** Model-supplied
+  code reaches `default_eval_parent()` (or `baseenv()`), same
+  scope as a `mutate_block` expression. No timeout, no memory cap,
+  no `system()` allowlist. The architectural decision section
+  above argues this is acceptable because the same attack surface
+  exists via `add_block("mutate_block", ...)`; a future hardening
+  phase can layer subprocess isolation (callr), expression
+  allowlists, or time/memory limits without changing the tool's
+  surface.
 - **Static-string override loses dynamic context.** Passing
   `system_prompt = "<string>"` opts out of refresh entirely. A
   caller who wants the default composition plus a small extra
@@ -1175,11 +1555,11 @@ recorded in the PR description.
   `default_system_prompt(...)` and concatenates — the extension
   has no "default + append" sugar. Adding sugar is cheap if real
   use shows it matters.
-- **No prompt-cache awareness.** The composer assembles sections
-  in a stable order so providers that cache on prefix bytes (e.g.
-  Anthropic's prompt caching) get decent hit rates, but we don't
-  surface explicit cache breakpoint hints. ellmer may grow this
-  API; we wire it up if/when it appears.
+- **No prompt-cache awareness.** `default_system_prompt` assembles
+  sections in a stable order so providers that cache on prefix
+  bytes (e.g. Anthropic's prompt caching) get decent hit rates,
+  but we don't surface explicit cache breakpoint hints. ellmer
+  may grow this API; we wire it up if/when it appears.
 - **`list_pending_changes()` deferred.** Phase 4 left the door open
   for an explicit "show me what's staged" tool if empirical use
   showed the model getting confused. Phase 5's compact board
@@ -1196,10 +1576,10 @@ recorded in the PR description.
   before apply" gate is a future affordance.
 - **Custom-function `system_prompt` does not round-trip via
   ser/des.** Function values are deliberately omitted from the
-  `state` payload, so a board saved with a custom composer
-  reloads using the default composer. Functions don't serialise
+  `state` payload, so a board saved with a custom function
+  reloads using the default function. Functions don't serialise
   robustly (closure environments carry application-specific
   bindings), and the alternative — silently freezing the
   rendered string at save time — would be more surprising than
-  reverting to default. Callers who need a custom composer
+  reverting to default. Callers who need a custom function
   re-supply it at mount time each session.
