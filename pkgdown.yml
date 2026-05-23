@@ -6,7 +6,8 @@ articles:
   design/1-shell: design/1-shell.html
   design/2-read-tools: design/2-read-tools.html
   design/3-staging: design/3-staging.html
-last_built: 2026-05-22T12:22Z
+  design/4-mutation-tools: design/4-mutation-tools.html
+last_built: 2026-05-23T07:14Z
 urls:
   reference: https://bristolmyerssquibb.github.io/blockr.assistant/reference
   article: https://bristolmyerssquibb.github.io/blockr.assistant/articles
