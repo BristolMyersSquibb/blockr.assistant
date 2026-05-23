@@ -127,7 +127,7 @@ test_that("string system_prompt is used verbatim and stored in state", {
         session$returned$state$system_prompt,
         "be terse"
       )
-      expect_identical(client$get_system_prompt(), "be terse")
+      expect_identical(client_r()$get_system_prompt(), "be terse")
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -146,7 +146,7 @@ test_that("server registers the read and mutation tools on the client", {
     {
       session$flushReact()
 
-      tools <- client$get_tools()
+      tools <- client_r()$get_tools()
 
       expect_length(tools, 16L)
       expect_setequal(
@@ -182,7 +182,7 @@ test_that("registered list_blocks tool reflects the live board contents", {
     {
       session$flushReact()
 
-      res <- client$get_tools()$list_blocks()
+      res <- client_r()$get_tools()$list_blocks()
 
       expect_s3_class(res, "data.frame")
       expect_setequal(res$id, c("d", "h"))
@@ -222,7 +222,7 @@ test_that("registered describe_block tool dispatches on block class", {
     {
       session$flushReact()
 
-      res <- client$get_tools()$describe_block(id = "d")
+      res <- client_r()$get_tools()$describe_block(id = "d")
 
       expect_identical(res, "marked by override")
     },
@@ -243,7 +243,7 @@ test_that("registered tool surfaces an error string instead of crashing", {
     {
       session$flushReact()
 
-      res <- client$get_tools()$describe_block(id = "no-such-block")
+      res <- client_r()$get_tools()$describe_block(id = "no-such-block")
 
       expect_match(res, "No block with id no-such-block", fixed = TRUE)
     },
@@ -368,7 +368,7 @@ test_that("recovery sequence flushes a single corrected add", {
     {
       session$flushReact()
 
-      tools <- client$get_tools()
+      tools <- client_r()$get_tools()
 
       expect_match(
         tools$add_block(type = "head_block", args = "{}", id = "x"),
@@ -481,7 +481,7 @@ test_that("initial refresh sets the composed prompt on the client", {
     {
       session$flushReact()
 
-      prompt <- client$get_system_prompt()
+      prompt <- client_r()$get_system_prompt()
       expect_match(prompt, "## Tools", fixed = TRUE)
       expect_match(prompt, "## Board", fixed = TRUE)
       expect_match(prompt, "d (dataset_block)", fixed = TRUE)
@@ -503,13 +503,13 @@ test_that("static string system_prompt is used verbatim each refresh", {
     {
       session$flushReact()
 
-      expect_identical(client$get_system_prompt(), "STATIC")
+      expect_identical(client_r()$get_system_prompt(), "STATIC")
 
       # mutate board to trigger the refresh observer
       board$board <- new_board(blocks = c(x = new_dataset_block("iris")))
       session$flushReact()
 
-      expect_identical(client$get_system_prompt(), "STATIC")
+      expect_identical(client_r()$get_system_prompt(), "STATIC")
     },
     args = list(
       board = reactiveValues(board = new_board()),
@@ -528,13 +528,13 @@ test_that("board$board change triggers a fresh prompt", {
     {
       session$flushReact()
 
-      before <- client$get_system_prompt()
+      before <- client_r()$get_system_prompt()
       expect_match(before, "0 block(s)", fixed = TRUE)
 
       board$board <- new_board(blocks = c(x = new_dataset_block("iris")))
       session$flushReact()
 
-      after <- client$get_system_prompt()
+      after <- client_r()$get_system_prompt()
       expect_match(after, "1 block(s)", fixed = TRUE)
       expect_match(after, "x (dataset_block)", fixed = TRUE)
     },
@@ -566,7 +566,7 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
     {
       session$flushReact()
 
-      expect_identical(client$get_system_prompt(), "FIRST")
+      expect_identical(client_r()$get_system_prompt(), "FIRST")
 
       board$board <- new_board(
         blocks = c(x = new_dataset_block("iris"))
@@ -574,7 +574,7 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
       session$flushReact()
 
       # composer threw -> prompt unchanged
-      expect_identical(client$get_system_prompt(), "FIRST")
+      expect_identical(client_r()$get_system_prompt(), "FIRST")
       # composer was actually re-invoked on the change
       expect_gte(call_count, 2L)
     },
@@ -614,7 +614,7 @@ test_that("flush rejection populates last_flush_error and the delta note", {
         "validator rejected this payload"
       )
 
-      prompt <- client$get_system_prompt()
+      prompt <- client_r()$get_system_prompt()
       expect_match(
         prompt,
         "Note: your previous turn's changes were rejected",
@@ -628,6 +628,77 @@ test_that("flush rejection populates last_flush_error and the delta note", {
       update = rejecting_update
     ),
     session = with_llm_session()
+  )
+})
+
+test_that("llm_model swap rebuilds the client and migrates turns", {
+
+  fake_a <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-a",
+      credentials = function() list(Authorization = "Bearer a"),
+      echo = "none"
+    )
+  }
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_anthropic(
+      model = "claude-b",
+      credentials = function() list(`x-api-key` = "b"),
+      echo = "none"
+    )
+  }
+
+  opts <- list(A = fake_a, B = fake_b)
+  withr::local_options(blockr.chat_function = opts)
+
+  sess <- shiny::MockShinySession$new()
+  blockr.core:::board_option_to_userdata(
+    new_llm_model_option(),
+    session = sess
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      # Initial mount uses fake_a -> OpenAI provider
+      expect_true(
+        inherits(client_r()$get_provider(), "ellmer::ProviderOpenAI")
+      )
+
+      # Seed a synthetic conversation turn on the current client
+      client_r()$set_turns(list(ellmer::Turn("user", "remember 42")))
+      first_client <- client_r()
+
+      # Trigger the option-change observer by writing to the option's
+      # reactiveVal (same path as the selectInput callback).
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      # Client identity changed
+      expect_false(identical(client_r(), first_client))
+
+      # New client is the Anthropic provider
+      expect_true(
+        inherits(client_r()$get_provider(), "ellmer::ProviderAnthropic")
+      )
+
+      # Conversation migrated
+      turns <- client_r()$get_turns()
+      user_turns <- Filter(function(t) t@role == "user", turns)
+      expect_length(user_turns, 1L)
+      expect_match(user_turns[[1L]]@contents[[1L]]@text, "remember 42")
+
+      # Tools re-registered (16 surface-tools, same as initial mount)
+      expect_length(client_r()$get_tools(), 16L)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = sess
   )
 })
 
@@ -645,7 +716,7 @@ test_that("a successful follow-up flush clears the delta note", {
       last_flush_error("prior rejection")
       session$flushReact()
       expect_match(
-        client$get_system_prompt(),
+        client_r()$get_system_prompt(),
         "Note: your previous turn's", fixed = TRUE
       )
 
@@ -655,7 +726,7 @@ test_that("a successful follow-up flush clears the delta note", {
 
       expect_null(isolate(last_flush_error()))
       expect_no_match(
-        client$get_system_prompt(),
+        client_r()$get_system_prompt(),
         "Note: your previous turn's", fixed = TRUE
       )
     },

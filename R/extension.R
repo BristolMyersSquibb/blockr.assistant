@@ -59,7 +59,9 @@ asst_ext_ui <- function(id, board, ...) {
     asst_ext_styles(),
     div(
       class = "asst-panel",
-      shinychat::chat_mod_ui(NS(id, "chat")),
+      uiOutput(NS(id, "chat_panel"), container = function(...) {
+        div(class = "asst-chat-slot", ...)
+      }),
       uiOutput(NS(id, "tokens"), container = function(...) {
         div(class = "asst-token-slot", ...)
       })
@@ -84,7 +86,13 @@ asst_ext_styles <- function() {
         display: flex;
         flex-direction: column;
       }
-      .asst-panel > shiny-chat-container {
+      .asst-chat-slot.shiny-html-output {
+        flex: 1 1 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .asst-chat-slot shiny-chat-container {
         flex: 1 1 0;
         min-height: 0;
       }
@@ -137,10 +145,6 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
-        chat_ctor <- isolate(
-          get_board_option_value("llm_model", session)
-        )
-
         compose <- if (is.function(system_prompt)) {
           system_prompt
         } else {
@@ -151,17 +155,98 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
 
-        client <- chat_ctor(system_prompt = "")
+        messages_rec <- reactiveVal(coal(messages, list()))
 
-        register_read_tools(client, board, update, session)
-        register_mutation_tools(
-          client, board, pending_update, session
+        client_r   <- reactiveVal(NULL)
+        mod_r      <- reactiveVal(NULL)
+        mount_idx  <- reactiveVal(0L)
+
+        chat_ctor_r <- reactive(
+          get_board_option_value("llm_model", session)
         )
+
+        make_client <- function(ctor, seed_turns) {
+
+          cl <- ctor(system_prompt = "")
+
+          register_read_tools(cl, board, update, session)
+          register_mutation_tools(
+            cl, board, pending_update, session
+          )
+
+          if (length(seed_turns)) {
+            cl$set_turns(seed_turns)
+          }
+
+          cl
+        }
+
+        # When the chat constructor changes (initial mount or after a
+        # user-driven option swap), build a fresh client, migrate the
+        # prior conversation, and bump mount_idx so the UI re-renders.
+        observe({
+
+          ctor <- chat_ctor_r()
+
+          seed_turns <- isolate({
+            prev <- client_r()
+            if (!is.null(prev)) {
+              prev$get_turns()
+            } else if (length(messages)) {
+              lapply(messages, ellmer::contents_replay)
+            } else {
+              list()
+            }
+          })
+
+          client_r(make_client(ctor, seed_turns))
+          mount_idx(isolate(mount_idx()) + 1L)
+        })
+
+        output$chat_panel <- renderUI({
+          shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
+        })
+
+        # Mount the chat module against the current client; replay
+        # past turns into the freshly-rendered UI on the next flush
+        # (chat_append targets a DOM element that doesn't exist yet
+        # in the current flush cycle).
+        observe({
+
+          idx <- mount_idx()
+          cl  <- client_r()
+
+          req(cl)
+
+          sub_id <- chat_sub_id(idx)
+          m <- shinychat::chat_mod_server(sub_id, cl)
+          mod_r(m)
+
+          turns <- cl$get_turns()
+          if (length(turns)) {
+            session$onFlushed(
+              function() {
+                for (turn in turns) {
+                  if (!turn@role %in% c("user", "assistant")) next
+                  text <- turn_text(turn)
+                  if (!nzchar(text)) next
+                  shinychat::chat_append(
+                    sub_id, text, role = turn@role, session = session
+                  )
+                }
+              },
+              once = TRUE
+            )
+          }
+        })
 
         refresh_prompt <- function() {
 
+          cl <- client_r()
+          if (is.null(cl)) return(invisible())
+
           prompt <- tryCatch(
-            compose(board, client, last_flush_error),
+            compose(board, cl, last_flush_error),
             error = function(e) {
               notify(
                 paste(
@@ -175,45 +260,43 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
 
           if (!is.null(prompt)) {
-            client$set_system_prompt(prompt)
+            cl$set_system_prompt(prompt)
           }
         }
 
-        refresh_prompt()
-
-        if (length(messages)) {
-          client$set_turns(
-            lapply(messages, ellmer::contents_replay)
-          )
-        }
-
-        mod <- shinychat::chat_mod_server("chat", client)
-
-        messages <- reactiveVal(coal(messages, list()))
-
         record_new_turns <- function() {
 
-          recorded <- messages()
-          turns <- client$get_turns()
+          cl <- isolate(client_r())
+          if (is.null(cl)) return(invisible())
+
+          recorded <- messages_rec()
+          turns <- cl$get_turns()
 
           if (length(turns) > length(recorded)) {
             new_idx <- seq.int(length(recorded) + 1L, length(turns))
-            messages(
-              c(recorded, lapply(turns[new_idx], ellmer::contents_record))
+            messages_rec(
+              c(
+                recorded,
+                lapply(turns[new_idx], ellmer::contents_record)
+              )
             )
           } else if (length(turns) < length(recorded)) {
-            messages(lapply(turns, ellmer::contents_record))
+            messages_rec(lapply(turns, ellmer::contents_record))
           }
         }
 
         observe({
           board$board
           last_flush_error()
+          client_r()
           refresh_prompt()
         })
 
+        last_input_r <- reactive(req(mod_r())$last_input())
+        last_turn_r  <- reactive(req(mod_r())$last_turn())
+
         observeEvent(
-          mod$last_input(),
+          last_input_r(),
           {
             reset_pending(pending_update)
             record_new_turns()
@@ -222,7 +305,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         observeEvent(
-          mod$last_turn(),
+          last_turn_r(),
           {
             flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
@@ -231,10 +314,10 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         output$tokens <- renderUI(
-          format_token_telemetry(mod$last_turn())
+          format_token_telemetry(last_turn_r())
         )
 
-        state_payload <- list(messages = messages)
+        state_payload <- list(messages = messages_rec)
 
         if (is.character(system_prompt)) {
           state_payload$system_prompt <- system_prompt
@@ -244,6 +327,23 @@ asst_ext_srv <- function(system_prompt, messages) {
       }
     )
   }
+}
+
+chat_sub_id <- function(idx) {
+  sprintf("chat_%d", as.integer(idx))
+}
+
+turn_text <- function(turn) {
+
+  texts <- chr_ply(
+    seq_along(turn@contents),
+    function(i) {
+      x <- turn@contents[[i]]
+      if (inherits(x, "ellmer::ContentText")) x@text else ""
+    }
+  )
+
+  paste(texts[nzchar(texts)], collapse = "\n")
 }
 
 format_token_telemetry <- function(turn) {
