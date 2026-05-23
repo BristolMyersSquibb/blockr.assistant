@@ -34,13 +34,13 @@ describe_block.block <- function(x, board, id, ...) {
 
   ctrl <- attr(x, "external_ctrl")
   ctrl_line <- sprintf(
-    "External control: %s",
+    "Modifiable via modify_block: %s",
     if (isTRUE(ctrl)) {
-      "all arguments"
+      "all constructor arguments and block_name"
     } else if (isFALSE(ctrl) || !length(ctrl)) {
-      "none"
+      "block_name only"
     } else {
-      paste(ctrl, collapse = ", ")
+      paste(c(ctrl, "block_name"), collapse = ", ")
     }
   )
 

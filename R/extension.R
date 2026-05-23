@@ -135,6 +135,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update <- reactiveVal(empty_pending())
 
         register_read_tools(client, board, update, session)
+        register_mutation_tools(client, board, pending_update, session)
 
         if (length(messages)) {
           client$set_turns(lapply(messages, ellmer::contents_replay))

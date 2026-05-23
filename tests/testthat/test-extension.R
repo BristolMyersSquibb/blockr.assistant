@@ -143,7 +143,7 @@ test_that("server respects a user-supplied system_prompt", {
   )
 })
 
-test_that("server registers all six read-only tools on the client", {
+test_that("server registers the read and mutation tools on the client", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -154,11 +154,16 @@ test_that("server registers all six read-only tools on the client", {
 
       tools <- client$get_tools()
 
-      expect_length(tools, 6L)
+      expect_length(tools, 15L)
       expect_setequal(
         names(tools),
-        c("list_blocks", "describe_block", "list_links", "list_stacks",
-          "list_available_blocks", "get_block_result")
+        c(
+          "list_blocks", "describe_block", "list_links", "list_stacks",
+          "list_available_blocks", "get_block_result",
+          "add_block", "remove_block", "modify_block",
+          "add_link", "remove_link", "modify_link",
+          "add_stack", "remove_stack", "modify_stack"
+        )
       )
     },
     args = list(
@@ -353,6 +358,56 @@ test_that("reset_pending wipes a non-empty pending payload", {
   )
 })
 
+test_that("recovery sequence flushes a single corrected add", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  captured <- list()
+  fake_update <- function(payload) {
+    captured[[length(captured) + 1L]] <<- payload
+  }
+
+  testServer(
+    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    {
+      session$flushReact()
+
+      tools <- client$get_tools()
+
+      expect_match(
+        tools$add_block(type = "head_block", args = "{}", id = "x"),
+        "^Staged add_block"
+      )
+      expect_match(
+        tools$modify_block(id = "x", args = "{\"n\": 10}"),
+        "staged for creation"
+      )
+      expect_match(
+        tools$remove_block(id = "x"),
+        "^Staged remove_block"
+      )
+      expect_match(
+        tools$add_block(type = "head_block", args = "{}", id = "x"),
+        "^Staged add_block"
+      )
+
+      flush_pending(pending_update, update)
+
+      expect_length(captured, 1L)
+      expect_named(captured[[1]]$blocks$add, "x")
+      expect_length(captured[[1]]$blocks$rm, 0L)
+      expect_length(captured[[1]]$blocks$mod, 0L)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = fake_update
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("demo app file constructs a shiny.appobj without crashing", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -375,6 +430,23 @@ test_that("02-read-tools demo app file constructs a shiny.appobj", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   src <- system.file("examples", "02-read-tools", "app.R",
+                     package = "blockr.assistant")
+
+  if (!nzchar(src)) {
+    skip("Demo app not found in installed package")
+  }
+
+  env <- new.env()
+  app <- source(src, local = env)$value
+
+  expect_s3_class(app, "shiny.appobj")
+})
+
+test_that("04-mutation-tools demo app file constructs a shiny.appobj", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  src <- system.file("examples", "04-mutation-tools", "app.R",
                      package = "blockr.assistant")
 
   if (!nzchar(src)) {

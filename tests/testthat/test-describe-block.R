@@ -47,7 +47,7 @@ test_that("describe_block surfaces external-control declaration", {
 
   expect_match(
     paste(res, collapse = "\n"),
-    "External control:",
+    "Modifiable via modify_block:",
     fixed = TRUE
   )
 })

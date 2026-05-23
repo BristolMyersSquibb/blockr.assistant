@@ -19,7 +19,15 @@ with_tool_errors <- function(name, expr) {
   tryCatch(
     expr,
     error = function(e) {
-      sprintf("%s failed: %s", name, conditionMessage(e))
+
+      msg <- conditionMessage(e)
+      pat <- sprintf("^%s\\([^)]*\\) failed:", name)
+
+      if (grepl(pat, msg)) {
+        msg
+      } else {
+        sprintf("%s failed: %s", name, msg)
+      }
     }
   )
 }

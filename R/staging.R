@@ -3,20 +3,34 @@ empty_pending <- function() {
   list(
     blocks = list(
       add = blocks(),
-      mod = blocks(),
+      mod = list(),
       rm  = character()
     ),
     links = list(
       add = links(),
-      mod = links(),
+      mod = list(),
       rm  = character()
     ),
     stacks = list(
       add = stacks(),
-      mod = stacks(),
+      mod = list(),
       rm  = character()
     )
   )
+}
+
+merge_args <- function(prev, new) {
+
+  if (!length(prev)) {
+    return(new)
+  }
+
+  if (!length(new)) {
+    return(prev)
+  }
+
+  prev[names(new)] <- new
+  prev
 }
 
 reset_pending <- function(pending) {
@@ -92,9 +106,20 @@ stage_block_add <- function(pending, board, id, block) {
   commit_pending(pending, isolate(board$board), new, "add_block", id)
 }
 
-stage_block_mod <- function(pending, board, id, block) {
+stage_block_mod <- function(pending, board, id, delta) {
 
   cur <- isolate(pending())
+
+  if (id %in% names(cur$blocks$add)) {
+    stage_abort(
+      "modify_block", id,
+      paste0(
+        id, " is staged for creation this turn. Use remove_block(\"",
+        id, "\") followed by add_block(<type>, <args>, id = \"", id,
+        "\") with the corrected arguments."
+      )
+    )
+  }
 
   if (id %in% cur$blocks$rm) {
     stage_abort(
@@ -105,17 +130,13 @@ stage_block_mod <- function(pending, board, id, block) {
 
   new <- cur
 
-  if (id %in% names(cur$blocks$add)) {
+  if (id %in% names(cur$blocks$mod)) {
 
-    new$blocks$add[[id]] <- block
-
-  } else if (id %in% names(cur$blocks$mod)) {
-
-    new$blocks$mod[[id]] <- block
+    new$blocks$mod[[id]] <- merge_args(cur$blocks$mod[[id]], delta)
 
   } else {
 
-    new$blocks$mod <- c(new$blocks$mod, set_names(blocks(block), id))
+    new$blocks$mod <- c(new$blocks$mod, set_names(list(delta), id))
   }
 
   commit_pending(pending, isolate(board$board), new, "modify_block", id)
@@ -179,9 +200,19 @@ stage_link_add <- function(pending, board, id, link) {
   commit_pending(pending, isolate(board$board), new, "add_link", id)
 }
 
-stage_link_mod <- function(pending, board, id, link) {
+stage_link_mod <- function(pending, board, id, delta) {
 
   cur <- isolate(pending())
+
+  if (id %in% names(cur$links$add)) {
+    stage_abort(
+      "modify_link", id,
+      paste0(
+        id, " is staged for creation this turn. Use remove_link(\"",
+        id, "\") followed by add_link(...) with the corrected fields."
+      )
+    )
+  }
 
   if (id %in% cur$links$rm) {
     stage_abort(
@@ -192,17 +223,13 @@ stage_link_mod <- function(pending, board, id, link) {
 
   new <- cur
 
-  if (id %in% names(cur$links$add)) {
+  if (id %in% names(cur$links$mod)) {
 
-    new$links$add[[id]] <- link
-
-  } else if (id %in% names(cur$links$mod)) {
-
-    new$links$mod[[id]] <- link
+    new$links$mod[[id]] <- merge_args(cur$links$mod[[id]], delta)
 
   } else {
 
-    new$links$mod <- c(new$links$mod, set_names(links(link), id))
+    new$links$mod <- c(new$links$mod, set_names(list(delta), id))
   }
 
   commit_pending(pending, isolate(board$board), new, "modify_link", id)
@@ -266,9 +293,19 @@ stage_stack_add <- function(pending, board, id, stack) {
   commit_pending(pending, isolate(board$board), new, "add_stack", id)
 }
 
-stage_stack_mod <- function(pending, board, id, stack) {
+stage_stack_mod <- function(pending, board, id, delta) {
 
   cur <- isolate(pending())
+
+  if (id %in% names(cur$stacks$add)) {
+    stage_abort(
+      "modify_stack", id,
+      paste0(
+        id, " is staged for creation this turn. Use remove_stack(\"",
+        id, "\") followed by add_stack(...) with the corrected fields."
+      )
+    )
+  }
 
   if (id %in% cur$stacks$rm) {
     stage_abort(
@@ -279,17 +316,13 @@ stage_stack_mod <- function(pending, board, id, stack) {
 
   new <- cur
 
-  if (id %in% names(cur$stacks$add)) {
+  if (id %in% names(cur$stacks$mod)) {
 
-    new$stacks$add[[id]] <- stack
-
-  } else if (id %in% names(cur$stacks$mod)) {
-
-    new$stacks$mod[[id]] <- stack
+    new$stacks$mod[[id]] <- merge_args(cur$stacks$mod[[id]], delta)
 
   } else {
 
-    new$stacks$mod <- c(new$stacks$mod, set_names(stacks(stack), id))
+    new$stacks$mod <- c(new$stacks$mod, set_names(list(delta), id))
   }
 
   commit_pending(pending, isolate(board$board), new, "modify_stack", id)
