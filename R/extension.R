@@ -1,23 +1,33 @@
 #' Assistant extension
 #'
 #' Mounts an `ellmer`-powered chat panel on a `blockr.dock` board.
-#' Phase 1 wires the chat panel to an `ellmer::Chat` constructed from
-#' the board's `llm_model` option; the assistant has no awareness of
-#' the board yet -- tools and dynamic prompt context arrive in later
-#' phases.
+#' The chat client is built from the board's `llm_model` option and
+#' wired with the read and mutation tools; the system prompt is
+#' refreshed on every materialized board change so the model always
+#' sees the current shape of the board.
 #'
-#' The constructor signature mirrors the extension's `state` shape:
-#' `system_prompt` and `messages` round-trip through `blockr.dock`'s
-#' ser/des so that a saved board restores with the same persona and
-#' the same conversation history. Model parameters (temperature,
-#' max tokens, ...) are deliberately not part of this surface -- they
-#' belong to the chat constructor, supplied via
-#' `blockr.core::blockr_option("chat_function", ...)` or the board's
-#' `llm_model` option.
+#' The `system_prompt` argument controls the prompt the model sees:
 #'
-#' @param system_prompt Character scalar overriding the package default
-#'   persona returned by [default_system_prompt()]. `NULL` uses the
-#'   default.
+#' * A **function** is called on every refresh with
+#'   `(board, client, last_flush, ...)` and must return a character
+#'   scalar. The default [default_system_prompt()] composes a
+#'   four-section prompt (intro / tool catalogue / board summary /
+#'   optional flush-rejection note); a caller can pass any function
+#'   of the same shape.
+#' * A **character scalar** is used verbatim as a static prompt -- no
+#'   refresh, no auto-appended catalogue or board summary. The deal
+#'   is "give up dynamic context, gain full prompt control".
+#'
+#' The `state` shape mirrors the constructor: `system_prompt` (when
+#' the caller passed a string) and `messages` round-trip through
+#' `blockr.dock`'s ser/des. Function-valued `system_prompt` is
+#' omitted from `state` so restore falls back to the constructor
+#' default (functions don't serialise robustly across sessions).
+#'
+#' @param system_prompt Either a function (called each refresh with
+#'   `(board, client, last_flush, ...)` to build the prompt) or a
+#'   character scalar (used verbatim, no refresh). Defaults to the
+#'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
 #'   server start. `NULL` starts with an empty conversation.
@@ -31,7 +41,7 @@
 #' blockr.dock::is_dock_extension(ext)
 #'
 #' @export
-new_assistant_extension <- function(system_prompt = NULL,
+new_assistant_extension <- function(system_prompt = default_system_prompt,
                                     messages = NULL,
                                     ...) {
   new_dock_extension(
@@ -127,18 +137,54 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
-        chat_ctor <- isolate(get_board_option_value("llm_model", session))
-        sys_prompt <- coal(system_prompt, default_system_prompt())
+        chat_ctor <- isolate(
+          get_board_option_value("llm_model", session)
+        )
 
-        client <- chat_ctor(system_prompt = sys_prompt)
+        compose <- if (is.function(system_prompt)) {
+          system_prompt
+        } else {
+          force(system_prompt)
+          function(...) system_prompt
+        }
 
-        pending_update <- reactiveVal(empty_pending())
+        pending_update   <- reactiveVal(empty_pending())
+        last_flush_error <- reactiveVal(NULL)
+
+        client <- chat_ctor(system_prompt = "")
 
         register_read_tools(client, board, update, session)
-        register_mutation_tools(client, board, pending_update, session)
+        register_mutation_tools(
+          client, board, pending_update, session
+        )
+
+        refresh_prompt <- function() {
+
+          prompt <- tryCatch(
+            compose(board, client, last_flush_error),
+            error = function(e) {
+              notify(
+                paste(
+                  "Assistant prompt update failed:",
+                  conditionMessage(e)
+                ),
+                type = "error"
+              )
+              NULL
+            }
+          )
+
+          if (!is.null(prompt)) {
+            client$set_system_prompt(prompt)
+          }
+        }
+
+        refresh_prompt()
 
         if (length(messages)) {
-          client$set_turns(lapply(messages, ellmer::contents_replay))
+          client$set_turns(
+            lapply(messages, ellmer::contents_replay)
+          )
         }
 
         mod <- shinychat::chat_mod_server("chat", client)
@@ -160,6 +206,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
         }
 
+        observe({
+          board$board
+          last_flush_error()
+          refresh_prompt()
+        })
+
         observeEvent(
           mod$last_input(),
           {
@@ -172,7 +224,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           mod$last_turn(),
           {
-            flush_pending(pending_update, update)
+            flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
           },
           ignoreNULL = TRUE
@@ -182,12 +234,13 @@ asst_ext_srv <- function(system_prompt, messages) {
           format_token_telemetry(mod$last_turn())
         )
 
-        list(
-          state = list(
-            system_prompt = sys_prompt,
-            messages      = messages
-          )
-        )
+        state_payload <- list(messages = messages)
+
+        if (is.character(system_prompt)) {
+          state_payload$system_prompt <- system_prompt
+        }
+
+        list(state = state_payload)
       }
     )
   }

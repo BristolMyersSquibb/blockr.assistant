@@ -67,23 +67,16 @@ test_that("format_token_telemetry handles missing / NA / real tokens", {
   expect_match(html, ">84<")
 })
 
-test_that("server constructs chat and exposes state matching ctor signature", {
+test_that("function-arg system_prompt is omitted from state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
-      expect_named(
-        session$returned$state,
-        c("system_prompt", "messages")
-      )
-      expect_identical(
-        session$returned$state$system_prompt,
-        default_system_prompt()
-      )
+      expect_named(session$returned$state, "messages")
       expect_length(session$returned$state$messages(), 0L)
     },
     args = list(
@@ -107,7 +100,7 @@ test_that("server seeds the chat from a saved messages argument", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = seed),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
     {
       session$flushReact()
 
@@ -121,7 +114,7 @@ test_that("server seeds the chat from a saved messages argument", {
   )
 })
 
-test_that("server respects a user-supplied system_prompt", {
+test_that("string system_prompt is used verbatim and stored in state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -134,6 +127,7 @@ test_that("server respects a user-supplied system_prompt", {
         session$returned$state$system_prompt,
         "be terse"
       )
+      expect_identical(client$get_system_prompt(), "be terse")
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -148,18 +142,18 @@ test_that("server registers the read and mutation tools on the client", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
       tools <- client$get_tools()
 
-      expect_length(tools, 15L)
+      expect_length(tools, 16L)
       expect_setequal(
         names(tools),
         c(
           "list_blocks", "describe_block", "list_links", "list_stacks",
-          "list_available_blocks", "get_block_result",
+          "list_available_blocks", "get_block_result", "query_data",
           "add_block", "remove_block", "modify_block",
           "add_link", "remove_link", "modify_link",
           "add_stack", "remove_stack", "modify_stack"
@@ -184,7 +178,7 @@ test_that("registered list_blocks tool reflects the live board contents", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -224,7 +218,7 @@ test_that("registered describe_block tool dispatches on block class", {
   board_blocks(brd) <- blks
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -245,7 +239,7 @@ test_that("registered tool surfaces an error string instead of crashing", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -270,7 +264,7 @@ test_that("pending_update is initialised empty and survives a no-op flush", {
   fake_update <- function(payload) calls <<- calls + 1L
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -305,7 +299,7 @@ test_that("staging across a turn flushes once and resets pending", {
   }
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -340,7 +334,7 @@ test_that("reset_pending wipes a non-empty pending payload", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -370,7 +364,7 @@ test_that("recovery sequence flushes a single corrected add", {
   }
 
   testServer(
-    asst_ext_srv(system_prompt = NULL, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -457,4 +451,220 @@ test_that("04-mutation-tools demo app file constructs a shiny.appobj", {
   app <- source(src, local = env)$value
 
   expect_s3_class(app, "shiny.appobj")
+})
+
+test_that("05-polish demo app file constructs a shiny.appobj", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  src <- system.file("examples", "05-polish", "app.R",
+                     package = "blockr.assistant")
+
+  if (!nzchar(src)) {
+    skip("Demo app not found in installed package")
+  }
+
+  env <- new.env()
+  app <- source(src, local = env)$value
+
+  expect_s3_class(app, "shiny.appobj")
+})
+
+test_that("initial refresh sets the composed prompt on the client", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      prompt <- client$get_system_prompt()
+      expect_match(prompt, "## Tools", fixed = TRUE)
+      expect_match(prompt, "## Board", fixed = TRUE)
+      expect_match(prompt, "d (dataset_block)", fixed = TRUE)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("static string system_prompt is used verbatim each refresh", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = "STATIC", messages = NULL),
+    {
+      session$flushReact()
+
+      expect_identical(client$get_system_prompt(), "STATIC")
+
+      # mutate board to trigger the refresh observer
+      board$board <- new_board(blocks = c(x = new_dataset_block("iris")))
+      session$flushReact()
+
+      expect_identical(client$get_system_prompt(), "STATIC")
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("board$board change triggers a fresh prompt", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      before <- client$get_system_prompt()
+      expect_match(before, "0 block(s)", fixed = TRUE)
+
+      board$board <- new_board(blocks = c(x = new_dataset_block("iris")))
+      session$flushReact()
+
+      after <- client$get_system_prompt()
+      expect_match(after, "1 block(s)", fixed = TRUE)
+      expect_match(after, "x (dataset_block)", fixed = TRUE)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a throwing system_prompt function keeps the prior prompt", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  # Function that succeeds once (initial mount), then throws.
+  call_count <- 0L
+  flaky_prompt <- function(board, client, last_flush, ...) {
+    call_count <<- call_count + 1L
+    if (call_count == 1L) {
+      "FIRST"
+    } else {
+      stop("composer-boom")
+    }
+  }
+
+  testServer(
+    asst_ext_srv(system_prompt = flaky_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_identical(client$get_system_prompt(), "FIRST")
+
+      board$board <- new_board(
+        blocks = c(x = new_dataset_block("iris"))
+      )
+      session$flushReact()
+
+      # composer threw -> prompt unchanged
+      expect_identical(client$get_system_prompt(), "FIRST")
+      # composer was actually re-invoked on the change
+      expect_gte(call_count, 2L)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("flush rejection populates last_flush_error and the delta note", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  rejecting_update <- function(payload) {
+    stop("validator rejected this payload")
+  }
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(
+        pending_update, board, "new", new_head_block()
+      )
+
+      expect_warning(
+        flush_pending(pending_update, update, last_flush_error),
+        "validator rejected this payload"
+      )
+      session$flushReact()
+
+      expect_identical(
+        isolate(last_flush_error()),
+        "validator rejected this payload"
+      )
+
+      prompt <- client$get_system_prompt()
+      expect_match(
+        prompt,
+        "Note: your previous turn's changes were rejected",
+        fixed = TRUE
+      )
+    },
+    args = list(
+      board = reactiveValues(
+        board = new_board(blocks = c(d = new_dataset_block("iris")))
+      ),
+      update = rejecting_update
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a successful follow-up flush clears the delta note", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  succeeding_update <- function(payload) invisible(payload)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      last_flush_error("prior rejection")
+      session$flushReact()
+      expect_match(
+        client$get_system_prompt(),
+        "Note: your previous turn's", fixed = TRUE
+      )
+
+      # No staged changes -> no-op flush -> error clears
+      flush_pending(pending_update, update, last_flush_error)
+      session$flushReact()
+
+      expect_null(isolate(last_flush_error()))
+      expect_no_match(
+        client$get_system_prompt(),
+        "Note: your previous turn's", fixed = TRUE
+      )
+    },
+    args = list(
+      board = reactiveValues(
+        board = new_board(blocks = c(d = new_dataset_block("iris")))
+      ),
+      update = succeeding_update
+    ),
+    session = with_llm_session()
+  )
 })

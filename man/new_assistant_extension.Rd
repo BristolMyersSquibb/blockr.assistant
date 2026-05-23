@@ -4,12 +4,17 @@
 \alias{new_assistant_extension}
 \title{Assistant extension}
 \usage{
-new_assistant_extension(system_prompt = NULL, messages = NULL, ...)
+new_assistant_extension(
+  system_prompt = default_system_prompt,
+  messages = NULL,
+  ...
+)
 }
 \arguments{
-\item{system_prompt}{Character scalar overriding the package default
-persona returned by \code{\link[=default_system_prompt]{default_system_prompt()}}. \code{NULL} uses the
-default.}
+\item{system_prompt}{Either a function (called each refresh with
+\verb{(board, client, last_flush, ...)} to build the prompt) or a
+character scalar (used verbatim, no refresh). Defaults to the
+exported \link{default_system_prompt} function.}
 
 \item{messages}{Optional list of recorded turns (as produced by
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
@@ -23,20 +28,30 @@ A \code{dock_extension} object additionally inheriting from
 }
 \description{
 Mounts an \code{ellmer}-powered chat panel on a \code{blockr.dock} board.
-Phase 1 wires the chat panel to an \code{ellmer::Chat} constructed from
-the board's \code{llm_model} option; the assistant has no awareness of
-the board yet -- tools and dynamic prompt context arrive in later
-phases.
+The chat client is built from the board's \code{llm_model} option and
+wired with the read and mutation tools; the system prompt is
+refreshed on every materialized board change so the model always
+sees the current shape of the board.
 }
 \details{
-The constructor signature mirrors the extension's \code{state} shape:
-\code{system_prompt} and \code{messages} round-trip through \code{blockr.dock}'s
-ser/des so that a saved board restores with the same persona and
-the same conversation history. Model parameters (temperature,
-max tokens, ...) are deliberately not part of this surface -- they
-belong to the chat constructor, supplied via
-\code{blockr.core::blockr_option("chat_function", ...)} or the board's
-\code{llm_model} option.
+The \code{system_prompt} argument controls the prompt the model sees:
+\itemize{
+\item A \strong{function} is called on every refresh with
+\verb{(board, client, last_flush, ...)} and must return a character
+scalar. The default \code{\link[=default_system_prompt]{default_system_prompt()}} composes a
+four-section prompt (intro / tool catalogue / board summary /
+optional flush-rejection note); a caller can pass any function
+of the same shape.
+\item A \strong{character scalar} is used verbatim as a static prompt -- no
+refresh, no auto-appended catalogue or board summary. The deal
+is "give up dynamic context, gain full prompt control".
+}
+
+The \code{state} shape mirrors the constructor: \code{system_prompt} (when
+the caller passed a string) and \code{messages} round-trip through
+\code{blockr.dock}'s ser/des. Function-valued \code{system_prompt} is
+omitted from \code{state} so restore falls back to the constructor
+default (functions don't serialise robustly across sessions).
 }
 \examples{
 ext <- new_assistant_extension()

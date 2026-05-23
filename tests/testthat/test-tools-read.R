@@ -191,5 +191,5 @@ test_that("register_read_tools wires every read tool onto a chat client", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
 
-  expect_equal(length(client$get_tools()) - before, 6L)
+  expect_equal(length(client$get_tools()) - before, 7L)
 })

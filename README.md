@@ -65,11 +65,15 @@ alt="Assistant panel mounted next to a small blockr.dock board." />
 <code>blockr.dock</code> board.</figcaption>
 </figure>
 
-## Roadmap
+## Status
 
-The assistant is in **Phase 1**: it can hold a conversation, but it has
-no tools to inspect or manipulate the board yet. See the
+The assistant is feature-complete for the initial roadmap: read tools
+(`list_blocks`, `describe_block`, `query_data`, …), mutation tools
+(`add_block`, `modify_block`, …) flushed atomically per turn, and a
+system prompt refreshed on every materialized board change so the model
+always sees the current shape of the board.
+
+See the
 [roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
-for the staged plan and the [Phase 1 design
-notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html)
-for what is currently shipped.
+for the staged plan and the per-phase design notes for what was shipped
+in each phase.
