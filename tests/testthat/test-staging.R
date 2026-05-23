@@ -322,10 +322,7 @@ test_that("stage_link_mod rejects when id is pending rm", {
 test_that("stage_link_rm discards a pending mod when staging rm", {
 
   env <- new_pending_env()
-  stage_link_mod(
-    env$pending, env$board, "lnk1",
-    new_link("data", "head", "data")
-  )
+  stage_link_mod(env$pending, env$board, "lnk1", list(input = "data"))
 
   stage_link_rm(env$pending, env$board, "lnk1")
 
@@ -376,10 +373,7 @@ test_that("stage_stack_add rejects duplicates and pending mod / rm", {
   )
 
   env <- new_pending_env()
-  stage_stack_mod(
-    env$pending, env$board, "pipe",
-    new_stack(c("data", "head"), name = "renamed")
-  )
+  stage_stack_mod(env$pending, env$board, "pipe", list(name = "renamed"))
 
   expect_error(
     stage_stack_add(
@@ -403,7 +397,7 @@ test_that("stage_stack_add rejects duplicates and pending mod / rm", {
   )
 })
 
-test_that("stage_stack_mod collapses onto a pending add", {
+test_that("stage_stack_mod rejects against a pending add", {
 
   env <- new_pending_env()
   stage_stack_add(
@@ -411,28 +405,25 @@ test_that("stage_stack_mod collapses onto a pending add", {
     new_stack("spare", name = "n")
   )
 
-  later <- new_stack("spare", name = "renamed")
-  stage_stack_mod(env$pending, env$board, "new", later)
-
-  p <- isolate(env$pending())
-  expect_length(p$stacks$mod, 0L)
-  expect_identical(p$stacks$add[["new"]], later)
+  expect_error(
+    stage_stack_mod(env$pending, env$board, "new", list(name = "renamed")),
+    "staged for creation",
+    fixed = TRUE
+  )
 })
 
-test_that("stage_stack_mod replaces a pending mod (last-write-wins)", {
+test_that("stage_stack_mod merges deltas key-wise on a pending mod", {
 
   env <- new_pending_env()
-  stage_stack_mod(
-    env$pending, env$board, "pipe",
-    new_stack(c("data", "head"), name = "first")
-  )
-
-  later <- new_stack(c("data", "head"), name = "second")
-  stage_stack_mod(env$pending, env$board, "pipe", later)
+  stage_stack_mod(env$pending, env$board, "pipe", list(name = "first"))
+  stage_stack_mod(env$pending, env$board, "pipe", list(blocks = "data"))
 
   p <- isolate(env$pending())
   expect_length(p$stacks$mod, 1L)
-  expect_identical(p$stacks$mod[["pipe"]], later)
+  expect_equal(
+    p$stacks$mod[["pipe"]],
+    list(name = "first", blocks = "data")
+  )
 })
 
 test_that("stage_stack_mod rejects unknown id and pending rm", {
@@ -449,10 +440,7 @@ test_that("stage_stack_mod rejects unknown id and pending rm", {
   stage_stack_rm(env$pending, env$board, "pipe")
 
   expect_error(
-    stage_stack_mod(
-      env$pending, env$board, "pipe",
-      new_stack(c("data", "head"), name = "x")
-    ),
+    stage_stack_mod(env$pending, env$board, "pipe", list(name = "x")),
     "staged for removal",
     fixed = TRUE
   )
@@ -476,10 +464,7 @@ test_that("stage_stack_rm collapses onto a pending add (drops it)", {
 test_that("stage_stack_rm discards a pending mod when staging rm", {
 
   env <- new_pending_env()
-  stage_stack_mod(
-    env$pending, env$board, "pipe",
-    new_stack(c("data", "head"), name = "renamed")
-  )
+  stage_stack_mod(env$pending, env$board, "pipe", list(name = "renamed"))
 
   stage_stack_rm(env$pending, env$board, "pipe")
 
