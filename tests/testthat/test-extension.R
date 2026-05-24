@@ -402,11 +402,11 @@ test_that("recovery sequence flushes a single corrected add", {
   )
 })
 
-test_that("demo app file constructs a shiny.appobj without crashing", {
+test_that("empty-board demo app file constructs a shiny.appobj", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  src <- system.file("examples", "01-shell", "app.R",
+  src <- system.file("examples", "empty-board", "app.R",
                      package = "blockr.assistant")
 
   if (!nzchar(src)) {
@@ -419,45 +419,11 @@ test_that("demo app file constructs a shiny.appobj without crashing", {
   expect_s3_class(app, "shiny.appobj")
 })
 
-test_that("02-read-tools demo app file constructs a shiny.appobj", {
+test_that("populated-board demo app file constructs a shiny.appobj", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  src <- system.file("examples", "02-read-tools", "app.R",
-                     package = "blockr.assistant")
-
-  if (!nzchar(src)) {
-    skip("Demo app not found in installed package")
-  }
-
-  env <- new.env()
-  app <- source(src, local = env)$value
-
-  expect_s3_class(app, "shiny.appobj")
-})
-
-test_that("04-mutation-tools demo app file constructs a shiny.appobj", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  src <- system.file("examples", "04-mutation-tools", "app.R",
-                     package = "blockr.assistant")
-
-  if (!nzchar(src)) {
-    skip("Demo app not found in installed package")
-  }
-
-  env <- new.env()
-  app <- source(src, local = env)$value
-
-  expect_s3_class(app, "shiny.appobj")
-})
-
-test_that("05-polish demo app file constructs a shiny.appobj", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  src <- system.file("examples", "05-polish", "app.R",
+  src <- system.file("examples", "populated-board", "app.R",
                      package = "blockr.assistant")
 
   if (!nzchar(src)) {

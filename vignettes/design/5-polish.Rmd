@@ -69,7 +69,7 @@ In:
   can't cover (unique values, group counts, ad-hoc filters,
   cross-block joins) without bloating the prompt context with
   per-block result previews.
-- One showcase example app under `inst/examples/05-polish/`
+- One showcase example app under `inst/examples/populated-board/`
   exercising a populated board, mutation tools, and the new prompt
   context.
 - `vignettes/intro.Rmd` — the user-facing top-level
@@ -1259,27 +1259,25 @@ Code chunks are not evaluated (`eval = FALSE`) — the package can't
 talk to a live model in CI without a key. Screenshots ship under
 `man/figures/`.
 
-### Example app — `inst/examples/05-polish/app.R`
+### Example apps — `inst/examples/`
 
-A single showcase app that exercises the full surface end-to-end
-against a populated board. The Phase 4 example
-(`04-mutation-tools/`) already exercises the mutation tool surface
-on a near-empty board; the Phase 5 example complements it with a
-realistic starting board so the model has something to navigate
-*to*, not just from.
+Two demos, named for what they show rather than for which phase
+introduced them:
 
-Structure: a `dock_board` with five blocks (data, filter, head,
-plot1, plot2), two stacks, and the assistant. Comments at the top
-of the file list the manual scenarios to try ("ask what's on the
-board without calling a tool", "ask the assistant to add a third
-plot", "ask to rename a block and observe the immutability
-nudge", "ask 'how many unique species in `data`?' to exercise
-`query_data`").
+- `empty-board/` — empty board, assistant builds it from scratch.
+  Smoke-tests the mutation surface end-to-end against a real LLM.
+- `populated-board/` — a four-block pipeline (`data` →
+  `filter` → `head` / `plot`) with two stacks, wired before the
+  assistant mounts. Gives the model something to navigate to (not
+  just from). Comments at the top list manual scenarios ("ask
+  what's on the board without calling a tool", "rename a block to
+  observe the immutability nudge", "ask 'how many unique species
+  in `data`?' to exercise `query_data`").
 
-Existing examples stay in place — `01-shell/` and `02-read-tools/`
-are useful for regression and for the corresponding design phases'
-documentation. `04-mutation-tools/` covers the mutation surface on
-a clean board. No example is deleted by Phase 5.
+Phase 5 consolidates the per-phase example directories
+(`01-shell/`, `02-read-tools/`) into `populated-board/` and
+renames `04-mutation-tools/` → `empty-board/`. The single phase-5
+showcase becomes `populated-board/`.
 
 ### README — `README.Rmd`
 
@@ -1344,7 +1342,7 @@ no infra changes.
 - `R/staging.R` — extend `flush_pending` with the optional
   `last_flush_error` reactiveVal write (success and no-op clear,
   rejection populates).
-- `inst/examples/05-polish/app.R` *(new)* — showcase demo.
+- `inst/examples/populated-board/app.R` *(new)* — showcase demo.
 - `vignettes/intro.Rmd` *(new)* — user-facing tutorial.
 - `README.Rmd` / `README.md` — rewrite per the section above.
 - `_pkgdown.yml` — reference index grouping; "Get started" article.

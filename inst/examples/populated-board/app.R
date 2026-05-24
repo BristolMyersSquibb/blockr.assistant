@@ -1,7 +1,5 @@
-# Phase 5 showcase: dynamic prompt context on a populated board.
-#
-# This demo starts with a small five-block pipeline already wired up,
-# so the assistant has something to navigate to (not just from). Try:
+# A small pipeline wired up before the assistant mounts, so it has
+# something to navigate to (not just from). Try:
 #
 # - "What is on the board?" -- the answer should come from the prompt's
 #   Board section, no tool call required.
