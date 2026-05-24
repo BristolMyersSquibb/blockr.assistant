@@ -4,16 +4,42 @@
 \alias{default_system_prompt}
 \title{Default assistant system prompt}
 \usage{
-default_system_prompt()
+default_system_prompt(board = NULL, client = NULL, last_flush = NULL, ...)
+}
+\arguments{
+\item{board}{Reactive containing the live board, as supplied
+to the extension server. \code{NULL} omits the board section.}
+
+\item{client}{An \code{ellmer::Chat}. \code{NULL} omits the tool
+catalogue.}
+
+\item{last_flush}{Reactive holding the previous turn's flush
+rejection message (character) or \code{NULL}. \code{NULL} (or a
+\code{NULL} value) omits the delta note.}
+
+\item{...}{Forward-compatibility slot for future inputs.}
 }
 \value{
 A character scalar.
 }
 \description{
-The package-default persona used when \code{new_assistant_extension()} is
-called without a \code{system_prompt} argument. Names the read-only
-inspection tools so the model knows to prefer them over guessing
-about the board. Mutation tools arrive in a later phase; the prompt
-is explicit about the current ceiling so the model does not invent
-CRUD calls.
+Builds the four-section system prompt the assistant ships by
+default: an intro / conventions block, an auto-generated tool
+catalogue from \code{client$get_tools()}, a compact board summary,
+and (when applicable) a one-line note carrying the previous
+turn's flush rejection.
+}
+\details{
+Each argument is optional; the corresponding section is
+omitted when its input is \code{NULL}, so \code{default_system_prompt()}
+at the REPL returns just the intro block -- useful for
+inspecting what the default looks like without mounting a
+board.
+
+This is the default value of \code{new_assistant_extension}'s
+\code{system_prompt} argument. Custom functions passed in its
+place receive \verb{(board, client, last_flush, ...)}; the \code{...}
+is forward-compatibility headroom for future phases adding
+inputs (accept \code{...} in custom functions so the call site can
+grow without breaking you).
 }

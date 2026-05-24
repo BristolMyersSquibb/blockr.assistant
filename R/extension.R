@@ -1,23 +1,33 @@
 #' Assistant extension
 #'
 #' Mounts an `ellmer`-powered chat panel on a `blockr.dock` board.
-#' Phase 1 wires the chat panel to an `ellmer::Chat` constructed from
-#' the board's `llm_model` option; the assistant has no awareness of
-#' the board yet -- tools and dynamic prompt context arrive in later
-#' phases.
+#' The chat client is built from the board's `llm_model` option and
+#' wired with the read and mutation tools; the system prompt is
+#' refreshed on every materialized board change so the model always
+#' sees the current shape of the board.
 #'
-#' The constructor signature mirrors the extension's `state` shape:
-#' `system_prompt` and `messages` round-trip through `blockr.dock`'s
-#' ser/des so that a saved board restores with the same persona and
-#' the same conversation history. Model parameters (temperature,
-#' max tokens, ...) are deliberately not part of this surface -- they
-#' belong to the chat constructor, supplied via
-#' `blockr.core::blockr_option("chat_function", ...)` or the board's
-#' `llm_model` option.
+#' The `system_prompt` argument controls the prompt the model sees:
 #'
-#' @param system_prompt Character scalar overriding the package default
-#'   persona returned by [default_system_prompt()]. `NULL` uses the
-#'   default.
+#' * A **function** is called on every refresh with
+#'   `(board, client, last_flush, ...)` and must return a character
+#'   scalar. The default [default_system_prompt()] composes a
+#'   four-section prompt (intro / tool catalogue / board summary /
+#'   optional flush-rejection note); a caller can pass any function
+#'   of the same shape.
+#' * A **character scalar** is used verbatim as a static prompt -- no
+#'   refresh, no auto-appended catalogue or board summary. The deal
+#'   is "give up dynamic context, gain full prompt control".
+#'
+#' The `state` shape mirrors the constructor: `system_prompt` (when
+#' the caller passed a string) and `messages` round-trip through
+#' `blockr.dock`'s ser/des. Function-valued `system_prompt` is
+#' omitted from `state` so restore falls back to the constructor
+#' default (functions don't serialise robustly across sessions).
+#'
+#' @param system_prompt Either a function (called each refresh with
+#'   `(board, client, last_flush, ...)` to build the prompt) or a
+#'   character scalar (used verbatim, no refresh). Defaults to the
+#'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
 #'   server start. `NULL` starts with an empty conversation.
@@ -31,7 +41,7 @@
 #' blockr.dock::is_dock_extension(ext)
 #'
 #' @export
-new_assistant_extension <- function(system_prompt = NULL,
+new_assistant_extension <- function(system_prompt = default_system_prompt,
                                     messages = NULL,
                                     ...) {
   new_dock_extension(
@@ -49,7 +59,9 @@ asst_ext_ui <- function(id, board, ...) {
     asst_ext_styles(),
     div(
       class = "asst-panel",
-      shinychat::chat_mod_ui(NS(id, "chat")),
+      uiOutput(NS(id, "chat_panel"), container = function(...) {
+        div(class = "asst-chat-slot", ...)
+      }),
       uiOutput(NS(id, "tokens"), container = function(...) {
         div(class = "asst-token-slot", ...)
       })
@@ -74,7 +86,13 @@ asst_ext_styles <- function() {
         display: flex;
         flex-direction: column;
       }
-      .asst-panel > shiny-chat-container {
+      .asst-chat-slot.shiny-html-output {
+        flex: 1 1 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .asst-chat-slot shiny-chat-container {
         flex: 1 1 0;
         min-height: 0;
       }
@@ -127,41 +145,194 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
-        chat_ctor <- isolate(get_board_option_value("llm_model", session))
-        sys_prompt <- coal(system_prompt, default_system_prompt())
-
-        client <- chat_ctor(system_prompt = sys_prompt)
-
-        pending_update <- reactiveVal(empty_pending())
-
-        register_read_tools(client, board, update, session)
-        register_mutation_tools(client, board, pending_update, session)
-
-        if (length(messages)) {
-          client$set_turns(lapply(messages, ellmer::contents_replay))
+        compose <- if (is.function(system_prompt)) {
+          system_prompt
+        } else {
+          force(system_prompt)
+          function(...) system_prompt
         }
 
-        mod <- shinychat::chat_mod_server("chat", client)
+        pending_update   <- reactiveVal(empty_pending())
+        last_flush_error <- reactiveVal(NULL)
 
-        messages <- reactiveVal(coal(messages, list()))
+        messages_rec <- reactiveVal(coal(messages, list()))
 
-        record_new_turns <- function() {
+        client_r   <- reactiveVal(NULL)
+        mod_r      <- reactiveVal(NULL)
+        mount_idx  <- reactiveVal(0L)
 
-          recorded <- messages()
-          turns <- client$get_turns()
+        chat_ctor_r <- reactive(
+          get_board_option_value("llm_model", session)
+        )
 
-          if (length(turns) > length(recorded)) {
-            new_idx <- seq.int(length(recorded) + 1L, length(turns))
-            messages(
-              c(recorded, lapply(turns[new_idx], ellmer::contents_record))
-            )
-          } else if (length(turns) < length(recorded)) {
-            messages(lapply(turns, ellmer::contents_record))
+        make_client <- function(ctor, seed_turns) {
+
+          cl <- ctor(system_prompt = "")
+
+          register_read_tools(cl, board, update, session)
+          register_mutation_tools(
+            cl, board, pending_update, session
+          )
+
+          # Drop trailing turns that represent an incomplete or
+          # failed exchange. Two shapes show up after a stream error
+          # on the prior provider:
+          # (a) An assistant turn with empty @contents -- ellmer's
+          #     stream_async appends an assistant placeholder when
+          #     it starts the stream and never fills it if the
+          #     stream errors (e.g. OpenAI insufficient_quota).
+          # (b) A trailing user turn with no following assistant
+          #     turn at all -- the failure happened before even the
+          #     placeholder was added.
+          # Either renders on the new mount as a perpetual loading
+          # spinner via shinychat::client_set_ui (which calls
+          # chat_append for each turn; an empty assistant turn shows
+          # as "waiting for response"). Trim until we hit a
+          # complete exchange; the user can re-ask on the new
+          # provider if they want the question answered.
+          repeat {
+            n <- length(seed_turns)
+            if (!n) break
+            last <- seed_turns[[n]]
+            is_empty_assistant <- identical(last@role, "assistant") &&
+              !length(last@contents)
+            is_trailing_user <- identical(last@role, "user")
+            if (!(is_empty_assistant || is_trailing_user)) break
+            seed_turns <- seed_turns[-n]
+          }
+
+          if (length(seed_turns)) {
+            cl$set_turns(seed_turns)
+          }
+
+          cl
+        }
+
+        # When the chat constructor changes (initial mount or after a
+        # user-driven option swap), build a fresh client, migrate the
+        # prior conversation, and bump mount_idx so the UI re-renders.
+        # The whole build is wrapped: if the chat ctor errors (bad
+        # API key check, provider construction failure) we surface
+        # the error to the user rather than letting the observer
+        # propagate it.
+        observe({
+
+          ctor <- chat_ctor_r()
+
+          seed_turns <- isolate({
+            prev <- client_r()
+            if (!is.null(prev)) {
+              prev$get_turns()
+            } else if (length(messages)) {
+              lapply(messages, ellmer::contents_replay)
+            } else {
+              list()
+            }
+          })
+
+          new_client <- tryCatch(
+            make_client(ctor, seed_turns),
+            error = function(e) {
+              notify(
+                paste(
+                  "Could not build chat client:",
+                  conditionMessage(e)
+                ),
+                type = "error",
+                duration = NULL,
+                session = session
+              )
+              NULL
+            }
+          )
+
+          if (is.null(new_client)) {
+            return()
+          }
+
+          client_r(new_client)
+          mount_idx(isolate(mount_idx()) + 1L)
+        })
+
+        output$chat_panel <- renderUI({
+          shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
+        })
+
+        # Mount the chat module against the current client.
+        # shinychat::chat_mod_server() calls chat_restore() internally,
+        # which fires client_set_ui() on the next reactive flush --
+        # that hook already replays every prior turn into the
+        # freshly-rendered UI via chat_append(). No manual replay
+        # needed (and earlier attempts targeted the wrong DOM id
+        # because the chat container lives under shinychat's own
+        # NS("chat")).
+        observe({
+
+          idx <- mount_idx()
+          cl  <- client_r()
+
+          req(cl)
+
+          mod_r(shinychat::chat_mod_server(chat_sub_id(idx), cl))
+        })
+
+        refresh_prompt <- function() {
+
+          cl <- client_r()
+          if (is.null(cl)) return(invisible())
+
+          prompt <- tryCatch(
+            compose(board, cl, last_flush_error),
+            error = function(e) {
+              notify(
+                paste(
+                  "Assistant prompt update failed:",
+                  conditionMessage(e)
+                ),
+                type = "error"
+              )
+              NULL
+            }
+          )
+
+          if (!is.null(prompt)) {
+            cl$set_system_prompt(prompt)
           }
         }
 
+        record_new_turns <- function() {
+
+          cl <- isolate(client_r())
+          if (is.null(cl)) return(invisible())
+
+          recorded <- messages_rec()
+          turns <- cl$get_turns()
+
+          if (length(turns) > length(recorded)) {
+            new_idx <- seq.int(length(recorded) + 1L, length(turns))
+            messages_rec(
+              c(
+                recorded,
+                lapply(turns[new_idx], ellmer::contents_record)
+              )
+            )
+          } else if (length(turns) < length(recorded)) {
+            messages_rec(lapply(turns, ellmer::contents_record))
+          }
+        }
+
+        observe({
+          board$board
+          last_flush_error()
+          client_r()
+          refresh_prompt()
+        })
+
+        last_input_r <- reactive(req(mod_r())$last_input())
+        last_turn_r  <- reactive(req(mod_r())$last_turn())
+
         observeEvent(
-          mod$last_input(),
+          last_input_r(),
           {
             reset_pending(pending_update)
             record_new_turns()
@@ -170,27 +341,45 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         observeEvent(
-          mod$last_turn(),
+          last_turn_r(),
           {
-            flush_pending(pending_update, update)
+            flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
           },
           ignoreNULL = TRUE
         )
 
         output$tokens <- renderUI(
-          format_token_telemetry(mod$last_turn())
+          format_token_telemetry(last_turn_r())
         )
 
-        list(
-          state = list(
-            system_prompt = sys_prompt,
-            messages      = messages
-          )
-        )
+        state_payload <- list(messages = messages_rec)
+
+        if (is.character(system_prompt)) {
+          state_payload$system_prompt <- system_prompt
+        }
+
+        list(state = state_payload)
       }
     )
   }
+}
+
+chat_sub_id <- function(idx) {
+  sprintf("chat_%d", as.integer(idx))
+}
+
+turn_text <- function(turn) {
+
+  texts <- chr_ply(
+    seq_along(turn@contents),
+    function(i) {
+      x <- turn@contents[[i]]
+      if (inherits(x, "ellmer::ContentText")) x@text else ""
+    }
+  )
+
+  paste(texts[nzchar(texts)], collapse = "\n")
 }
 
 format_token_telemetry <- function(turn) {

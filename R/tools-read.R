@@ -10,6 +10,7 @@ register_read_tools <- function(client, board, update, session) {
   client$register_tool(
     tool_get_block_result(board, update, session)
   )
+  client$register_tool(tool_query_data(board, update, session))
 
   invisible(client)
 }

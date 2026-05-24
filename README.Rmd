@@ -38,12 +38,21 @@ pak::pak("BristolMyersSquibb/blockr.assistant")
 Mount the assistant on a small board.
 The chat is wired to whichever `ellmer` model the board's `llm_model` option resolves to (by default `ellmer::chat_openai()`); set the `blockr.chat_function` option to swap providers.
 
-```{r example-code, code=readLines("inst/examples/01-shell/app.R"), eval=FALSE}
+```{r example-code, code=readLines("inst/examples/populated-board/app.R"), eval=FALSE}
 ```
 
-![Assistant panel mounted next to a small `blockr.dock` board.](man/figures/01-shell.png)
+![Assistant panel mounted next to a small `blockr.dock` board.](man/figures/screenshot.png)
 
-## Roadmap
+## Status
 
-The assistant is in **Phase 1**: it can hold a conversation, but it has no tools to inspect or manipulate the board yet.
-See the [roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html) for the staged plan and the [Phase 1 design notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html) for what is currently shipped.
+The assistant is feature-complete for the initial roadmap: read
+tools (`list_blocks`, `describe_block`, `query_data`, ...),
+mutation tools (`add_block`, `modify_block`, ...) flushed
+atomically per turn, and a system prompt refreshed on every
+materialized board change so the model always sees the current
+shape of the board.
+
+See the
+[roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
+for the staged plan and the per-phase design notes for what was
+shipped in each phase.

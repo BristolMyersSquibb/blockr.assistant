@@ -358,18 +358,34 @@ stage_stack_rm <- function(pending, board, id) {
   commit_pending(pending, isolate(board$board), new, "remove_stack", id)
 }
 
-flush_pending <- function(pending, update) {
+flush_pending <- function(pending, update, last_flush_error = NULL) {
 
   payload <- isolate(pending())
 
   if (!has_any_changes(payload)) {
+
     reset_pending(pending)
+
+    if (!is.null(last_flush_error)) {
+      last_flush_error(NULL)
+    }
+
     return(invisible(FALSE))
   }
 
   tryCatch(
-    update(payload),
+    {
+      update(payload)
+      if (!is.null(last_flush_error)) {
+        last_flush_error(NULL)
+      }
+    },
     error = function(e) {
+
+      if (!is.null(last_flush_error)) {
+        last_flush_error(conditionMessage(e))
+      }
+
       warning(
         "flush_pending: dispatch rejected payload: ",
         conditionMessage(e),

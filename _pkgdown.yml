@@ -10,8 +10,8 @@ navbar:
     home: ~
 
     intro:
-      text: Roadmap
-      href: articles/design/0-roadmap.html
+      text: Get started
+      href: articles/intro.html
 
     design:
       text: Design docs
@@ -20,3 +20,24 @@ navbar:
           href: articles/design/0-roadmap.html
         - text: Phase 1 — Extension shell
           href: articles/design/1-shell.html
+        - text: Phase 2 — Read-only tool layer
+          href: articles/design/2-read-tools.html
+        - text: Phase 3 — Staging & dispatch model
+          href: articles/design/3-staging.html
+        - text: Phase 4 — Mutation tools
+          href: articles/design/4-mutation-tools.html
+        - text: Phase 5 — Context, examples, polish
+          href: articles/design/5-polish.html
+
+reference:
+  - title: Extension
+    contents:
+      - new_assistant_extension
+      - default_system_prompt
+  - title: S3 generics
+    contents:
+      - describe_block
+      - describe_stack
+      - summarise_block
+      - summarise_stack
+      - summarise_result
