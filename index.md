@@ -26,6 +26,20 @@ set the `blockr.chat_function` option to swap providers.
 
 ``` r
 
+# A small pipeline wired up before the assistant mounts, so it has
+# something to navigate to (not just from). Try:
+#
+# - "What is on the board?" -- the answer should come from the prompt's
+#   Board section, no tool call required.
+# - "What is the unique value of `Species` in the data block?" -- the
+#   model should call `query_data(code = "unique(data$Species)")`.
+# - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by
+#   Species" -- the model stages add_block (and add_link) calls; flush
+#   happens at turn end.
+# - "Rename `head` to `top_rows`" -- the model declines the in-place
+#   rename and offers remove + add, triggered by the id-immutability
+#   paragraph in the default prompt's intro (no tool call needed).
+
 library(blockr.core)
 library(blockr.dock)
 library(blockr.assistant)
@@ -33,16 +47,22 @@ library(blockr.assistant)
 board <- new_dock_board(
   blocks = c(
     data = new_dataset_block("iris"),
-    head = new_head_block(),
+    filt = new_subset_block(subset = "Sepal.Length > 5"),
+    head = new_head_block(n = 10L),
     plot = new_scatter_block(x = "Sepal.Length", y = "Sepal.Width")
   ),
   links = c(
-    new_link("data", "head", "data"),
-    new_link("head", "plot", "data")
+    new_link("data", "filt", "data"),
+    new_link("filt", "head", "data"),
+    new_link("filt", "plot", "data")
+  ),
+  stacks = c(
+    prep    = new_stack(c("data", "filt"), name = "Prep"),
+    display = new_stack(c("head", "plot"), name = "Display")
   ),
   extensions = list(assistant = new_assistant_extension()),
   layout = list(
-    list("data", "head", "plot"),
+    list("data", "filt", "head", "plot"),
     "assistant"
   )
 )
@@ -51,15 +71,19 @@ serve(board)
 ```
 
 ![Assistant panel mounted next to a small blockr.dock
-board.](reference/figures/01-shell.png)
+board.](reference/figures/screenshot.png)
 
 Assistant panel mounted next to a small `blockr.dock` board.
 
-## Roadmap
+## Status
 
-The assistant is in **Phase 1**: it can hold a conversation, but it has
-no tools to inspect or manipulate the board yet. See the
+The assistant is feature-complete for the initial roadmap: read tools
+(`list_blocks`, `describe_block`, `query_data`, …), mutation tools
+(`add_block`, `modify_block`, …) flushed atomically per turn, and a
+system prompt refreshed on every materialized board change so the model
+always sees the current shape of the board.
+
+See the
 [roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
-for the staged plan and the [Phase 1 design
-notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html)
-for what is currently shipped.
+for the staged plan and the per-phase design notes for what was shipped
+in each phase.

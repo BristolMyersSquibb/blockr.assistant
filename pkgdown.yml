@@ -7,7 +7,9 @@ articles:
   design/2-read-tools: design/2-read-tools.html
   design/3-staging: design/3-staging.html
   design/4-mutation-tools: design/4-mutation-tools.html
-last_built: 2026-05-23T07:14Z
+  design/5-polish: design/5-polish.html
+  intro: intro.html
+last_built: 2026-05-24T09:02Z
 urls:
   reference: https://bristolmyerssquibb.github.io/blockr.assistant/reference
   article: https://bristolmyerssquibb.github.io/blockr.assistant/articles

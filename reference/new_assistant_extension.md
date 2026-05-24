@@ -1,25 +1,30 @@
 # Assistant extension
 
-Mounts an `ellmer`-powered chat panel on a `blockr.dock` board. Phase 1
-wires the chat panel to an
-[`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html)
-constructed from the board's `llm_model` option; the assistant has no
-awareness of the board yet – tools and dynamic prompt context arrive in
-later phases.
+Mounts an `ellmer`-powered chat panel on a `blockr.dock` board. The chat
+client is built from the board's `llm_model` option and wired with the
+read and mutation tools; the system prompt is refreshed on every
+materialized board change so the model always sees the current shape of
+the board.
 
 ## Usage
 
 ``` r
-new_assistant_extension(system_prompt = NULL, messages = NULL, ...)
+new_assistant_extension(
+  system_prompt = default_system_prompt,
+  messages = NULL,
+  ...
+)
 ```
 
 ## Arguments
 
 - system_prompt:
 
-  Character scalar overriding the package default persona returned by
-  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md).
-  `NULL` uses the default.
+  Either a function (called each refresh with
+  `(board, client, last_flush, ...)` to build the prompt) or a character
+  scalar (used verbatim, no refresh). Defaults to the exported
+  [default_system_prompt](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
+  function.
 
 - messages:
 
@@ -40,14 +45,25 @@ A `dock_extension` object additionally inheriting from
 
 ## Details
 
-The constructor signature mirrors the extension's `state` shape:
-`system_prompt` and `messages` round-trip through `blockr.dock`'s
-ser/des so that a saved board restores with the same persona and the
-same conversation history. Model parameters (temperature, max tokens,
-...) are deliberately not part of this surface – they belong to the chat
-constructor, supplied via
-`blockr.core::blockr_option("chat_function", ...)` or the board's
-`llm_model` option.
+The `system_prompt` argument controls the prompt the model sees:
+
+- A **function** is called on every refresh with
+  `(board, client, last_flush, ...)` and must return a character scalar.
+  The default
+  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
+  composes a four-section prompt (intro / tool catalogue / board summary
+  / optional flush-rejection note); a caller can pass any function of
+  the same shape.
+
+- A **character scalar** is used verbatim as a static prompt – no
+  refresh, no auto-appended catalogue or board summary. The deal is
+  "give up dynamic context, gain full prompt control".
+
+The `state` shape mirrors the constructor: `system_prompt` (when the
+caller passed a string) and `messages` round-trip through
+`blockr.dock`'s ser/des. Function-valued `system_prompt` is omitted from
+`state` so restore falls back to the constructor default (functions
+don't serialise robustly across sessions).
 
 ## Examples
 

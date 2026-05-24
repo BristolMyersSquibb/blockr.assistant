@@ -31,8 +31,8 @@ In:
   `stage_link_mod()` to accept a *partial-args delta* rather than a full
   constructed object — matching the unified dispatch shape agreed in
   blockr.core#175.
-- `inst/examples/04-mutation-tools/` for manual smoke-testing against a
-  live LLM.
+- `inst/examples/empty-board/` for manual smoke-testing against a live
+  LLM.
 - Tests covering each tool’s happy path, the new delta-mod conflict
   rows, ID-generation behaviour, and a turn-boundary end-to-end test via
   [`shiny::testServer()`](https://rdrr.io/pkg/shiny/man/testServer.html).
@@ -898,8 +898,8 @@ Phase 3 unchanged.
 - `tests/testthat/test-extension.R` — end-to-end turn-boundary test
   asserting one `update(...)` per turn carrying the expected shape for a
   multi-tool turn (add, link, mod).
-- `inst/examples/04-mutation-tools/` *(new)* — minimal demo app
-  exercising the full surface.
+- `inst/examples/empty-board/` *(new)* — minimal demo app exercising the
+  full surface.
 - `DESCRIPTION` — bump `Remotes:` to pin `blockr.core` to the branch
   carrying the \#175 fix; unpinning at release time. Add `jsonlite` to
   `Imports:` (used by `add_block` and `modify_block` tool bodies to
@@ -959,9 +959,9 @@ branch carrying the delta-shape `mod` dispatch; CI tracks that branch.
 
 ### Manual (demo app, live LLM)
 
-A new example app at `inst/examples/04-mutation-tools/`: empty board, a
-single text input for the user prompt, no pre-loaded state. Used to
-smoke-test the full surface end-to-end against a real provider.
+A new example app at `inst/examples/empty-board/`: empty board, a single
+text input for the user prompt, no pre-loaded state. Used to smoke-test
+the full surface end-to-end against a real provider.
 
 Scenarios to verify by hand:
 

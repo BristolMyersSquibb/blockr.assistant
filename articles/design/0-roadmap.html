@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../../index.html">blockr.assistant</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -29,12 +29,16 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="active nav-item"><a class="nav-link" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
-<li class="nav-item dropdown">
+<li class="nav-item"><a class="nav-link" href="../../articles/intro.html">Get started</a></li>
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-design-docs" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Design docs</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-design-docs">
 <li><a class="dropdown-item" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
     <li><a class="dropdown-item" href="../../articles/design/1-shell.html">Phase 1 — Extension shell</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/2-read-tools.html">Phase 2 — Read-only tool layer</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/3-staging.html">Phase 3 — Staging &amp; dispatch model</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/4-mutation-tools.html">Phase 4 — Mutation tools</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/5-polish.html">Phase 5 — Context, examples, polish</a></li>
   </ul>
 </li>
       </ul>
@@ -43,6 +47,7 @@
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../../search.json">
 </form></li>
 <li class="nav-item"><a class="nav-link" href="../../reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="../../news/index.html">Changelog</a></li>
       </ul>
 </div>
 
@@ -207,7 +212,7 @@ package; every mutation tool is a thin façade over it.</p>
 </h2>
 <p>Each phase corresponds to its own design doc under
 <code>vignettes/design/</code>, named
-<code>&lt;n&gt;-&lt;topic&gt;.qmd</code>. These files are deliberately
+<code>&lt;n&gt;-&lt;topic&gt;.Rmd</code>. These files are deliberately
 excluded from the package tarball via <code>.Rbuildignore</code> — they
 are not installed vignettes (R CMD check rejects digit-prefixed vignette
 filenames) but <code>pkgdown</code> walks <code>vignettes/</code>
@@ -218,7 +223,7 @@ each one.</p>
 <div class="section level3">
 <h3 id="phase-1-extension-shell-with-ellmer-chat">Phase 1 — Extension shell with <code>ellmer</code> chat<a class="anchor" aria-label="anchor" href="#phase-1-extension-shell-with-ellmer-chat"></a>
 </h3>
-<p><em>File:</em> <code>1-shell.qmd</code></p>
+<p><em>File:</em> <code>1-shell.Rmd</code></p>
 <p><code><a href="../../reference/new_assistant_extension.html">new_assistant_extension()</a></code> constructor, dock UI/server, a
 <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_ui</a></code> / <code>chat_mod_server</code>
 panel, and an <code><a href="https://ellmer.tidyverse.org/reference/Chat.html" class="external-link">ellmer::Chat</a></code> constructed from the board’s
@@ -237,7 +242,7 @@ dynamic board context on top.</li>
 <li>A <code>state</code> shape that round-trips constructor arguments
 (<code>system_prompt</code>, <code>messages</code>) via
 <code>blockr.dock</code>’s ser/des. Constructor signature ↔︎ state keys
-is a structural contract (see <code>1-shell.qmd</code> for the
+is a structural contract (see <code>1-shell.Rmd</code> for the
 implications). Phase 1 also adds a <code>messages = NULL</code>
 constructor argument so that a saved conversation can be seeded back
 into the chat on restore. Model parameters (temperature, max tokens, …)
@@ -252,7 +257,7 @@ board-blind.</p>
 <div class="section level3">
 <h3 id="phase-2-read-only-tool-layer">Phase 2 — Read-only tool layer<a class="anchor" aria-label="anchor" href="#phase-2-read-only-tool-layer"></a>
 </h3>
-<p><em>File:</em> <code>2-read-tools.qmd</code></p>
+<p><em>File:</em> <code>2-read-tools.Rmd</code></p>
 <p>Establish the “tool kit” abstraction: closures over
 <code>(board, update, session)</code>, JSON-schema argument definitions
 via <code>ellmer::type_*</code>, and result shaping (strings, structured
@@ -272,7 +277,7 @@ lists, errors). Implement the read-only inspection tools:</p>
 <div class="section level3">
 <h3 id="phase-3-staging-and-dispatch-model">Phase 3 — Staging and dispatch model<a class="anchor" aria-label="anchor" href="#phase-3-staging-and-dispatch-model"></a>
 </h3>
-<p><em>File:</em> <code>3-staging.qmd</code></p>
+<p><em>File:</em> <code>3-staging.Rmd</code></p>
 <p>The architectural keystone. No new LLM-facing tools, but a clean
 foundation for Phase 4.</p>
 <ul>
@@ -291,7 +296,7 @@ to model).</li>
 <div class="section level3">
 <h3 id="phase-4-mutation-tools">Phase 4 — Mutation tools<a class="anchor" aria-label="anchor" href="#phase-4-mutation-tools"></a>
 </h3>
-<p><em>File:</em> <code>4-mutation-tools.qmd</code></p>
+<p><em>File:</em> <code>4-mutation-tools.Rmd</code></p>
 <p>All thin façades over the Phase 3 staging layer:</p>
 <ul>
 <li>Blocks: <code>add_block(type, args)</code>,
@@ -311,14 +316,13 @@ checks (referenced blocks exist, target input exists, no cycles).</p>
 <div class="section level3">
 <h3 id="phase-5-context-examples-and-polish">Phase 5 — Context, examples and polish<a class="anchor" aria-label="anchor" href="#phase-5-context-examples-and-polish"></a>
 </h3>
-<p><em>File:</em> <code>5-polish.qmd</code></p>
+<p><em>File:</em> <code>5-polish.Rmd</code></p>
 <ul>
 <li>Dynamic board-summary in the system prompt (refreshed each
 turn).</li>
 <li>Model-facing error formatting and recovery hints.</li>
 <li>Example apps in <code>inst/examples/</code>.</li>
-<li>A top-level tutorial vignette
-<code>blockr.assistant.qmd</code>.</li>
+<li>A top-level tutorial vignette <code>intro.Rmd</code>.</li>
 <li>README, <code>pkgdown</code> site setup.</li>
 </ul>
 <p>No new features beyond polish on the context layer.</p>
@@ -378,32 +382,32 @@ they apply.</li>
 <tbody>
 <tr class="odd">
 <td align="right">0</td>
-<td><code>0-roadmap.qmd</code></td>
+<td><code>0-roadmap.Rmd</code></td>
 <td>This document</td>
 </tr>
 <tr class="even">
 <td align="right">1</td>
-<td><code>1-shell.qmd</code></td>
+<td><code>1-shell.Rmd</code></td>
 <td>Extension shell with <code>ellmer</code> chat</td>
 </tr>
 <tr class="odd">
 <td align="right">2</td>
-<td><code>2-read-tools.qmd</code></td>
+<td><code>2-read-tools.Rmd</code></td>
 <td>Read-only tool layer</td>
 </tr>
 <tr class="even">
 <td align="right">3</td>
-<td><code>3-staging.qmd</code></td>
+<td><code>3-staging.Rmd</code></td>
 <td>Staging &amp; dispatch model</td>
 </tr>
 <tr class="odd">
 <td align="right">4</td>
-<td><code>4-mutation-tools.qmd</code></td>
+<td><code>4-mutation-tools.Rmd</code></td>
 <td>Mutation tools (blocks, links, stacks)</td>
 </tr>
 <tr class="even">
 <td align="right">5</td>
-<td><code>5-polish.qmd</code></td>
+<td><code>5-polish.Rmd</code></td>
 <td>Context, examples, polish</td>
 </tr>
 </tbody>

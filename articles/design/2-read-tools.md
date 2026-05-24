@@ -53,8 +53,8 @@ In:
   - `get_block_result`
 - A revised default system prompt that drops the “you cannot, yet” hedge
   and instead introduces the inspection toolkit.
-- A demo app `inst/examples/02-read-tools/` mounting the extension on a
-  small concrete board: a `dataset_block("iris")` feeding into a
+- A demo app `inst/examples/populated-board/` mounting the extension on
+  a small concrete board: a `dataset_block("iris")` feeding into a
   `subset_block`. Two blocks, one link, evaluated results on both —
   enough to exercise `list_blocks`, `describe_block`, `list_links`, and
   `get_block_result` end-to-end.
@@ -739,8 +739,9 @@ on link {id}: cycle detected”).
 - `DESCRIPTION` — add `btw` to `Imports:`.
 - `NAMESPACE` — export `describe_block`, `describe_stack`,
   `summarise_result` plus their default methods.
-- `inst/examples/02-read-tools/app.R` *(new)* — `dataset_block("iris")`
-  → `subset_block`, the assistant extension mounted alongside.
+- `inst/examples/populated-board/app.R` *(new)* —
+  `dataset_block("iris")` → `subset_block`, the assistant extension
+  mounted alongside.
 - `tests/testthat/test-describe-block.R` *(new)* — default method on a
   synthetic block; an override on a fake block subclass is honoured.
 - `tests/testthat/test-describe-stack.R` *(new)* — default method on a

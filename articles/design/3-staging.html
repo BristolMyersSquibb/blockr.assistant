@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../../index.html">blockr.assistant</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -29,12 +29,16 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
-<li class="nav-item dropdown">
+<li class="nav-item"><a class="nav-link" href="../../articles/intro.html">Get started</a></li>
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-design-docs" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Design docs</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-design-docs">
 <li><a class="dropdown-item" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
     <li><a class="dropdown-item" href="../../articles/design/1-shell.html">Phase 1 — Extension shell</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/2-read-tools.html">Phase 2 — Read-only tool layer</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/3-staging.html">Phase 3 — Staging &amp; dispatch model</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/4-mutation-tools.html">Phase 4 — Mutation tools</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/5-polish.html">Phase 5 — Context, examples, polish</a></li>
   </ul>
 </li>
       </ul>
@@ -43,6 +47,7 @@
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../../search.json">
 </form></li>
 <li class="nav-item"><a class="nav-link" href="../../reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="../../news/index.html">Changelog</a></li>
       </ul>
 </div>
 
@@ -882,7 +887,7 @@ additive, no read tool or chat behaviour regresses.</li>
 <h3 id="manual-demo-app-live-llm">Manual (demo app, live LLM)<a class="anchor" aria-label="anchor" href="#manual-demo-app-live-llm"></a>
 </h3>
 <ul>
-<li>The Phase 2 demo (<code>inst/examples/02-read-tools/</code>) still
+<li>The Phase 2 demo (<code>inst/examples/populated-board/</code>) still
 runs end-to-end: read tools answer “what blocks?” etc. correctly, no
 <code>update(...)</code> is ever dispatched, pending stays empty through
 every turn. This is the regression smoke test — Phase 3 should be

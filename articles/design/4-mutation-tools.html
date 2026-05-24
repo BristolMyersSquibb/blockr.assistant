@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../../index.html">blockr.assistant</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -29,12 +29,16 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
-<li class="nav-item dropdown">
+<li class="nav-item"><a class="nav-link" href="../../articles/intro.html">Get started</a></li>
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-design-docs" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Design docs</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-design-docs">
 <li><a class="dropdown-item" href="../../articles/design/0-roadmap.html">Roadmap</a></li>
     <li><a class="dropdown-item" href="../../articles/design/1-shell.html">Phase 1 — Extension shell</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/2-read-tools.html">Phase 2 — Read-only tool layer</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/3-staging.html">Phase 3 — Staging &amp; dispatch model</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/4-mutation-tools.html">Phase 4 — Mutation tools</a></li>
+    <li><a class="dropdown-item" href="../../articles/design/5-polish.html">Phase 5 — Context, examples, polish</a></li>
   </ul>
 </li>
       </ul>
@@ -43,6 +47,7 @@
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../../search.json">
 </form></li>
 <li class="nav-item"><a class="nav-link" href="../../reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="../../news/index.html">Changelog</a></li>
       </ul>
 </div>
 
@@ -101,8 +106,8 @@ accept a <em>partial-args delta</em> rather than a full constructed
 object — matching the unified dispatch shape agreed in
 blockr.core#175.</li>
 <li>
-<code>inst/examples/04-mutation-tools/</code> for manual
-smoke-testing against a live LLM.</li>
+<code>inst/examples/empty-board/</code> for manual smoke-testing
+against a live LLM.</li>
 <li>Tests covering each tool’s happy path, the new delta-mod conflict
 rows, ID-generation behaviour, and a turn-boundary end-to-end test via
 <code><a href="https://rdrr.io/pkg/shiny/man/testServer.html" class="external-link">shiny::testServer()</a></code>.</li>
@@ -1088,8 +1093,8 @@ Phase 3 tests that validate the full-object mod shape.</li>
 turn-boundary test asserting one <code>update(...)</code> per turn
 carrying the expected shape for a multi-tool turn (add, link, mod).</li>
 <li>
-<code>inst/examples/04-mutation-tools/</code> <em>(new)</em> —
-minimal demo app exercising the full surface.</li>
+<code>inst/examples/empty-board/</code> <em>(new)</em> — minimal
+demo app exercising the full surface.</li>
 <li>
 <code>DESCRIPTION</code> — bump <code>Remotes:</code> to pin
 <code>blockr.core</code> to the branch carrying the #175 fix; unpinning
@@ -1167,9 +1172,9 @@ produce zero <code>update(...)</code> calls.</li>
 <div class="section level3">
 <h3 id="manual-demo-app-live-llm">Manual (demo app, live LLM)<a class="anchor" aria-label="anchor" href="#manual-demo-app-live-llm"></a>
 </h3>
-<p>A new example app at <code>inst/examples/04-mutation-tools/</code>:
-empty board, a single text input for the user prompt, no pre-loaded
-state. Used to smoke-test the full surface end-to-end against a real
+<p>A new example app at <code>inst/examples/empty-board/</code>: empty
+board, a single text input for the user prompt, no pre-loaded state.
+Used to smoke-test the full surface end-to-end against a real
 provider.</p>
 <p>Scenarios to verify by hand:</p>
 <ul>

@@ -22,7 +22,7 @@
 
     <a class="navbar-brand me-2" href="index.html">blockr.assistant</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -31,12 +31,16 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="articles/design/0-roadmap.html">Roadmap</a></li>
+<li class="nav-item"><a class="nav-link" href="articles/intro.html">Get started</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-design-docs" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Design docs</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-design-docs">
 <li><a class="dropdown-item" href="articles/design/0-roadmap.html">Roadmap</a></li>
     <li><a class="dropdown-item" href="articles/design/1-shell.html">Phase 1 — Extension shell</a></li>
+    <li><a class="dropdown-item" href="articles/design/2-read-tools.html">Phase 2 — Read-only tool layer</a></li>
+    <li><a class="dropdown-item" href="articles/design/3-staging.html">Phase 3 — Staging &amp; dispatch model</a></li>
+    <li><a class="dropdown-item" href="articles/design/4-mutation-tools.html">Phase 4 — Mutation tools</a></li>
+    <li><a class="dropdown-item" href="articles/design/5-polish.html">Phase 5 — Context, examples, polish</a></li>
   </ul>
 </li>
       </ul>
@@ -45,6 +49,7 @@
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json">
 </form></li>
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 </div>
 
@@ -71,36 +76,57 @@
 </h2>
 <p>Mount the assistant on a small board. The chat is wired to whichever <code>ellmer</code> model the board’s <code>llm_model</code> option resolves to (by default <code><a href="https://ellmer.tidyverse.org/reference/chat_openai.html" class="external-link">ellmer::chat_openai()</a></code>); set the <code>blockr.chat_function</code> option to swap providers.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.core/" class="external-link">blockr.core</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="co"># A small pipeline wired up before the assistant mounts, so it has</span></span>
+<span><span class="co"># something to navigate to (not just from). Try:</span></span>
+<span><span class="co">#</span></span>
+<span><span class="co"># - "What is on the board?" -- the answer should come from the prompt's</span></span>
+<span><span class="co">#   Board section, no tool call required.</span></span>
+<span><span class="co"># - "What is the unique value of `Species` in the data block?" -- the</span></span>
+<span><span class="co">#   model should call `query_data(code = "unique(data$Species)")`.</span></span>
+<span><span class="co"># - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by</span></span>
+<span><span class="co">#   Species" -- the model stages add_block (and add_link) calls; flush</span></span>
+<span><span class="co">#   happens at turn end.</span></span>
+<span><span class="co"># - "Rename `head` to `top_rows`" -- the model declines the in-place</span></span>
+<span><span class="co">#   rename and offers remove + add, triggered by the id-immutability</span></span>
+<span><span class="co">#   paragraph in the default prompt's intro (no tool call needed).</span></span>
+<span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.core/" class="external-link">blockr.core</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.dock/" class="external-link">blockr.dock</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://bristolmyerssquibb.github.io/blockr.assistant/">blockr.assistant</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">board</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.dock/reference/dock.html" class="external-link">new_dock_board</a></span><span class="op">(</span></span>
 <span>  blocks <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    data <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_data_block.html" class="external-link">new_dataset_block</a></span><span class="op">(</span><span class="st">"iris"</span><span class="op">)</span>,</span>
-<span>    head <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_transform_block.html" class="external-link">new_head_block</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>    filt <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_transform_block.html" class="external-link">new_subset_block</a></span><span class="op">(</span>subset <span class="op">=</span> <span class="st">"Sepal.Length &gt; 5"</span><span class="op">)</span>,</span>
+<span>    head <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_transform_block.html" class="external-link">new_head_block</a></span><span class="op">(</span>n <span class="op">=</span> <span class="fl">10L</span><span class="op">)</span>,</span>
 <span>    plot <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_plot_block.html" class="external-link">new_scatter_block</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"Sepal.Length"</span>, y <span class="op">=</span> <span class="st">"Sepal.Width"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  links <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"head"</span>, <span class="st">"data"</span><span class="op">)</span>,</span>
-<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"head"</span>, <span class="st">"plot"</span>, <span class="st">"data"</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"filt"</span>, <span class="st">"data"</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"filt"</span>, <span class="st">"head"</span>, <span class="st">"data"</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_link.html" class="external-link">new_link</a></span><span class="op">(</span><span class="st">"filt"</span>, <span class="st">"plot"</span>, <span class="st">"data"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  stacks <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    prep    <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_stack.html" class="external-link">new_stack</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"filt"</span><span class="op">)</span>, name <span class="op">=</span> <span class="st">"Prep"</span><span class="op">)</span>,</span>
+<span>    display <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_stack.html" class="external-link">new_stack</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>, name <span class="op">=</span> <span class="st">"Display"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  extensions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>assistant <span class="op">=</span> <span class="fu"><a href="reference/new_assistant_extension.html">new_assistant_extension</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  layout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"filt"</span>, <span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>,</span>
 <span>    <span class="st">"assistant"</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/serve.html" class="external-link">serve</a></span><span class="op">(</span><span class="va">board</span><span class="op">)</span></span></code></pre></div>
-<figure><img src="reference/figures/01-shell.png" alt="Assistant panel mounted next to a small blockr.dock board."><figcaption aria-hidden="true">
+<figure><img src="reference/figures/screenshot.png" alt="Assistant panel mounted next to a small blockr.dock board."><figcaption aria-hidden="true">
 Assistant panel mounted next to a small <code>blockr.dock</code> board.
 </figcaption></figure>
 </div>
 <div class="section level2">
-<h2 id="roadmap">Roadmap<a class="anchor" aria-label="anchor" href="#roadmap"></a>
+<h2 id="status">Status<a class="anchor" aria-label="anchor" href="#status"></a>
 </h2>
-<p>The assistant is in <strong>Phase 1</strong>: it can hold a conversation, but it has no tools to inspect or manipulate the board yet. See the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html">roadmap</a> for the staged plan and the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/1-shell.html">Phase 1 design notes</a> for what is currently shipped.</p>
+<p>The assistant is feature-complete for the initial roadmap: read tools (<code>list_blocks</code>, <code>describe_block</code>, <code>query_data</code>, …), mutation tools (<code>add_block</code>, <code>modify_block</code>, …) flushed atomically per turn, and a system prompt refreshed on every materialized board change so the model always sees the current shape of the board.</p>
+<p>See the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html">roadmap</a> for the staged plan and the per-phase design notes for what was shipped in each phase.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="license">

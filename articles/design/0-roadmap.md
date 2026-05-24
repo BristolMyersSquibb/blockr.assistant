@@ -130,7 +130,7 @@ package; every mutation tool is a thin façade over it.
 ## Decomposition into phases
 
 Each phase corresponds to its own design doc under `vignettes/design/`,
-named `<n>-<topic>.qmd`. These files are deliberately excluded from the
+named `<n>-<topic>.Rmd`. These files are deliberately excluded from the
 package tarball via `.Rbuildignore` — they are not installed vignettes
 (R CMD check rejects digit-prefixed vignette filenames) but `pkgdown`
 walks `vignettes/` recursively and picks them up as articles served at
@@ -139,7 +139,7 @@ package compiles and demos something at the end of each one.
 
 ### Phase 1 — Extension shell with `ellmer` chat
 
-*File:* `1-shell.qmd`
+*File:* `1-shell.Rmd`
 
 [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
 constructor, dock UI/server, a
@@ -162,7 +162,7 @@ constructed from the board’s `llm_model` option. Includes from day one:
   assistant”; subsequent phases add dynamic board context on top.
 - A `state` shape that round-trips constructor arguments
   (`system_prompt`, `messages`) via `blockr.dock`’s ser/des. Constructor
-  signature ↔︎ state keys is a structural contract (see `1-shell.qmd` for
+  signature ↔︎ state keys is a structural contract (see `1-shell.Rmd` for
   the implications). Phase 1 also adds a `messages = NULL` constructor
   argument so that a saved conversation can be seeded back into the chat
   on restore. Model parameters (temperature, max tokens, …) are
@@ -174,7 +174,7 @@ No tools yet — the assistant can hold a conversation but is board-blind.
 
 ### Phase 2 — Read-only tool layer
 
-*File:* `2-read-tools.qmd`
+*File:* `2-read-tools.Rmd`
 
 Establish the “tool kit” abstraction: closures over
 `(board, update, session)`, JSON-schema argument definitions via
@@ -190,7 +190,7 @@ This phase locks in the patterns later mutation phases follow.
 
 ### Phase 3 — Staging and dispatch model
 
-*File:* `3-staging.qmd`
+*File:* `3-staging.Rmd`
 
 The architectural keystone. No new LLM-facing tools, but a clean
 foundation for Phase 4.
@@ -206,7 +206,7 @@ foundation for Phase 4.
 
 ### Phase 4 — Mutation tools
 
-*File:* `4-mutation-tools.qmd`
+*File:* `4-mutation-tools.Rmd`
 
 All thin façades over the Phase 3 staging layer:
 
@@ -223,12 +223,12 @@ blocks exist, target input exists, no cycles).
 
 ### Phase 5 — Context, examples and polish
 
-*File:* `5-polish.qmd`
+*File:* `5-polish.Rmd`
 
 - Dynamic board-summary in the system prompt (refreshed each turn).
 - Model-facing error formatting and recovery hints.
 - Example apps in `inst/examples/`.
-- A top-level tutorial vignette `blockr.assistant.qmd`.
+- A top-level tutorial vignette `intro.Rmd`.
 - README, `pkgdown` site setup.
 
 No new features beyond polish on the context layer.
@@ -266,9 +266,9 @@ phases of the initial roadmap:
 
 | Phase | File                   | Topic                                  |
 |------:|------------------------|----------------------------------------|
-|     0 | `0-roadmap.qmd`        | This document                          |
-|     1 | `1-shell.qmd`          | Extension shell with `ellmer` chat     |
-|     2 | `2-read-tools.qmd`     | Read-only tool layer                   |
-|     3 | `3-staging.qmd`        | Staging & dispatch model               |
-|     4 | `4-mutation-tools.qmd` | Mutation tools (blocks, links, stacks) |
-|     5 | `5-polish.qmd`         | Context, examples, polish              |
+|     0 | `0-roadmap.Rmd`        | This document                          |
+|     1 | `1-shell.Rmd`          | Extension shell with `ellmer` chat     |
+|     2 | `2-read-tools.Rmd`     | Read-only tool layer                   |
+|     3 | `3-staging.Rmd`        | Staging & dispatch model               |
+|     4 | `4-mutation-tools.Rmd` | Mutation tools (blocks, links, stacks) |
+|     5 | `5-polish.Rmd`         | Context, examples, polish              |

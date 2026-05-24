@@ -294,7 +294,8 @@ would commit us to a key that isn’t a constructor argument.
 
 ## Demo app
 
-`inst/examples/01-shell/app.R` mounts the extension on a small board:
+`inst/examples/populated-board/app.R` mounts the extension on a small
+board:
 
 ``` r
 
@@ -333,7 +334,7 @@ Acceptance criteria for Phase 1:
 - `R/system-prompt.R` —
   [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md).
 - `R/utils.R` — `%||%` and any small helpers shared with later phases.
-- `inst/examples/01-shell/app.R` — demo app.
+- `inst/examples/populated-board/app.R` — demo app.
 - `tests/testthat/test-extension.R` — smoke tests
   ([`is_dock_extension()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/extension.html),
   server runs under
