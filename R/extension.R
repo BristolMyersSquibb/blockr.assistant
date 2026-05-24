@@ -174,18 +174,31 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, session
           )
 
-          # Drop trailing user turn(s): if the prior conversation
-          # ended on a user message with no assistant reply (e.g. the
-          # old provider errored), shinychat's client_set_ui would
-          # render a perpetual loading indicator on the new mount,
-          # which reads as a stuck auto-submit. Trim them so the new
-          # mount looks like a clean state; the user can re-ask on
-          # the new provider if they want a response.
-          while (
-            length(seed_turns) &&
-              seed_turns[[length(seed_turns)]]@role == "user"
-          ) {
-            seed_turns <- seed_turns[-length(seed_turns)]
+          # Drop trailing turns that represent an incomplete or
+          # failed exchange. Two shapes show up after a stream error
+          # on the prior provider:
+          # (a) An assistant turn with empty @contents -- ellmer's
+          #     stream_async appends an assistant placeholder when
+          #     it starts the stream and never fills it if the
+          #     stream errors (e.g. OpenAI insufficient_quota).
+          # (b) A trailing user turn with no following assistant
+          #     turn at all -- the failure happened before even the
+          #     placeholder was added.
+          # Either renders on the new mount as a perpetual loading
+          # spinner via shinychat::client_set_ui (which calls
+          # chat_append for each turn; an empty assistant turn shows
+          # as "waiting for response"). Trim until we hit a
+          # complete exchange; the user can re-ask on the new
+          # provider if they want the question answered.
+          repeat {
+            n <- length(seed_turns)
+            if (!n) break
+            last <- seed_turns[[n]]
+            is_empty_assistant <- identical(last@role, "assistant") &&
+              !length(last@contents)
+            is_trailing_user <- identical(last@role, "user")
+            if (!(is_empty_assistant || is_trailing_user)) break
+            seed_turns <- seed_turns[-n]
           }
 
           if (length(seed_turns)) {

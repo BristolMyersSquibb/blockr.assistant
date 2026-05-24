@@ -715,6 +715,69 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
   )
 })
 
+test_that("llm_model swap drops an empty assistant placeholder", {
+
+  # Simulates the post-stream-error state: ellmer's stream_async
+  # appends a user turn AND an empty assistant placeholder when
+  # the stream starts; if the stream errors before the placeholder
+  # is filled, the prior client carries both. On swap, shinychat's
+  # client_set_ui would render the empty assistant as a perpetual
+  # loading spinner -- both turns must be dropped.
+
+  fake_a <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-a",
+      credentials = function() list(Authorization = "Bearer a"),
+      echo = "none"
+    )
+  }
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_anthropic(
+      model = "claude-b",
+      credentials = function() list(`x-api-key` = "b"),
+      echo = "none"
+    )
+  }
+
+  opts <- list(A = fake_a, B = fake_b)
+  withr::local_options(blockr.chat_function = opts)
+
+  sess <- shiny::MockShinySession$new()
+  blockr.core:::board_option_to_userdata(
+    new_llm_model_option(),
+    session = sess
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      # Construct the (user, empty-assistant) shape ellmer leaves
+      # behind after a failed stream.
+      empty_assistant <- ellmer::Turn("assistant", "")
+      empty_assistant@contents <- list()
+      client_r()$set_turns(
+        list(ellmer::Turn("user", "errored question"), empty_assistant)
+      )
+
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      # Both the empty assistant and the orphaned user beneath
+      # it should be trimmed -- the new client starts clean.
+      turns <- client_r()$get_turns()
+      expect_length(turns, 0L)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = sess
+  )
+})
+
 test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
 
   fake_a <- function(system_prompt = NULL, params = NULL) {
