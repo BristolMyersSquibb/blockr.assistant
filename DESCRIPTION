@@ -18,8 +18,8 @@ License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:
-    blockr.core (>= 0.1.2),
-    blockr.dock (>= 0.1.1),
+    blockr.core (>= 0.1.3),
+    blockr.dock (>= 0.1.2),
     bsicons,
     btw,
     ellmer,

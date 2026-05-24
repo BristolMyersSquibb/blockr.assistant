@@ -145,8 +145,6 @@ asst_ext_srv <- function(system_prompt, messages) {
       id,
       function(input, output, session) {
 
-        check_runtime_deps(session)
-
         compose <- if (is.function(system_prompt)) {
           system_prompt
         } else {
@@ -356,39 +354,6 @@ asst_ext_srv <- function(system_prompt, messages) {
 
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
-}
-
-# Feature-detect support for the delta-shape `blocks$mod` payload
-# that Phase 4 mutation tools dispatch. The canonical signal is
-# blockr.core's `apply_block_mod_delta` (introduced by the
-# delta-mod fix). If it's missing, our modify_block calls would
-# crash an upstream observer that we can't catch from our side --
-# surface the mismatch up front via notify so the user knows what
-# to upgrade.
-check_runtime_deps <- function(session) {
-
-  if (exists("apply_block_mod_delta",
-             envir = asNamespace("blockr.core"),
-             inherits = FALSE)) {
-    return(invisible(TRUE))
-  }
-
-  notify(
-    paste(
-      "Assistant requires blockr.core with delta-shape mod",
-      "support (>= the apply_block_mod_delta fix). Installed",
-      "blockr.core", utils::packageVersion("blockr.core"),
-      "is too old -- modify_block will crash the app until this",
-      "is upgraded (install BristolMyersSquibb/blockr.core and",
-      "BristolMyersSquibb/blockr.dock from the dev branches",
-      "pinned in DESCRIPTION via Remotes)."
-    ),
-    type = "error",
-    duration = NULL,
-    session = session
-  )
-
-  invisible(FALSE)
 }
 
 turn_text <- function(turn) {
