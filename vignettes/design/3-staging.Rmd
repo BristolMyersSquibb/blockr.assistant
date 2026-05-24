@@ -725,7 +725,7 @@ the user-facing tutorial is a Phase 5 concern).
 
 ### Manual (demo app, live LLM)
 
-- The Phase 2 demo (`inst/examples/02-read-tools/`) still runs
+- The Phase 2 demo (`inst/examples/populated-board/`) still runs
   end-to-end: read tools answer "what blocks?" etc. correctly,
   no `update(...)` is ever dispatched, pending stays empty
   through every turn. This is the regression smoke test — Phase
