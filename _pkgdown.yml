@@ -11,7 +11,7 @@ navbar:
 
     intro:
       text: Get started
-      href: articles/blockr.assistant.html
+      href: articles/intro.html
 
     design:
       text: Design docs

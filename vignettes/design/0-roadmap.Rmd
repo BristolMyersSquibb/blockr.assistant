@@ -233,7 +233,7 @@ blocks exist, target input exists, no cycles).
 - Dynamic board-summary in the system prompt (refreshed each turn).
 - Model-facing error formatting and recovery hints.
 - Example apps in `inst/examples/`.
-- A top-level tutorial vignette `blockr.assistant.Rmd`.
+- A top-level tutorial vignette `intro.Rmd`.
 - README, `pkgdown` site setup.
 
 No new features beyond polish on the context layer.

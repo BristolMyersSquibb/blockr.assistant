@@ -72,7 +72,7 @@ In:
 - One showcase example app under `inst/examples/05-polish/`
   exercising a populated board, mutation tools, and the new prompt
   context.
-- `vignettes/blockr.assistant.Rmd` — the user-facing top-level
+- `vignettes/intro.Rmd` — the user-facing top-level
   tutorial. Lives next to the existing design vignettes but at the
   package root so pkgdown surfaces it as the "Get started" article.
 - An updated `README.Rmd` reflecting the full feature set.
@@ -1221,7 +1221,7 @@ staged payload either applies or is discarded; no partial apply.
 
 ## Documentation deliverables
 
-### Top-level tutorial vignette — `vignettes/blockr.assistant.Rmd`
+### Top-level tutorial vignette — `vignettes/intro.Rmd`
 
 Lives at the package root (not under `vignettes/design/`) so
 `browseVignettes("blockr.assistant")` and pkgdown's "Get started"
@@ -1303,7 +1303,7 @@ that's a `man/figures/` swap, not a README change.
 Two changes:
 
 1. *Articles navbar*: a "Get started" entry pointing at
-   `vignettes/blockr.assistant.Rmd`, and a "Design notes" section
+   `vignettes/intro.Rmd`, and a "Design notes" section
    that surfaces the six design vignettes in roadmap order.
 2. *Reference index*: grouped into "Extension" (`new_assistant_extension`,
    `default_system_prompt`), "S3 generics" (`describe_block`,
@@ -1345,7 +1345,7 @@ no infra changes.
   `last_flush_error` reactiveVal write (success and no-op clear,
   rejection populates).
 - `inst/examples/05-polish/app.R` *(new)* — showcase demo.
-- `vignettes/blockr.assistant.Rmd` *(new)* — user-facing tutorial.
+- `vignettes/intro.Rmd` *(new)* — user-facing tutorial.
 - `README.Rmd` / `README.md` — rewrite per the section above.
 - `_pkgdown.yml` — reference index grouping; "Get started" article.
 - `tests/testthat/test-system-prompt.R` *(new)* —
