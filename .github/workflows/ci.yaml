@@ -8,7 +8,9 @@ name: ci
 
 jobs:
   ci:
-    uses: cynkra/blockr.ci/.github/workflows/ci.yaml@main
-    secrets: inherit
+    uses: cynkra/blockr.ci/.github/workflows/ci.yaml@10-secrets-explicit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      BLOCKR_PAT: ${{ secrets.BLOCKR_PAT }}
     permissions:
       contents: write
