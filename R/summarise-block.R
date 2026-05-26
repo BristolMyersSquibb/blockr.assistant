@@ -44,7 +44,11 @@ summarise_block.block <- function(x, board, id, ...) {
 
     paste(
       chr_ply(names(args), function(nm) {
-        sprintf("%s=%s", nm, format(args[[nm]]))
+        # format() can return multiple strings (lists, multi-element
+        # vectors); collapse so this fits the chr_ply length-1
+        # contract.
+        v <- paste(format(args[[nm]]), collapse = " ")
+        sprintf("%s=%s", nm, v)
       }),
       collapse = ", "
     )

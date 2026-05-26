@@ -181,36 +181,60 @@ tool_list_available_blocks <- function(board, update, session) {
         uids <- list_blocks()
 
         if (!length(uids)) {
-          return(
-            data.frame(
-              id          = character(),
-              name        = character(),
-              package     = character(),
-              category    = character(),
-              description = character()
-            )
-          )
+          return(list())
         }
 
         meta <- registry_metadata(uids, "all")
 
-        data.frame(
-          id          = uids,
-          name        = meta$name,
-          package     = meta$package,
-          category    = meta$category,
-          description = meta$description,
-          arguments   = I(meta$arguments),
-          row.names   = NULL
-        )
+        # Build a list-of-records so jsonlite preserves arg NAMES.
+        # A data frame with I() list-column loses the names of the
+        # arguments vectors during serialization, leaving the model
+        # with descriptions but no way to know what each describes.
+        lapply(seq_along(uids), function(i) {
+          args_vec  <- meta$arguments[[i]]
+          arg_names <- names(args_vec)
+          examples  <- attr(args_vec, "examples")
+
+          # Convert named char vector -> list keyed by arg name. Wrap
+          # each value so jsonlite emits {name: {description, example}}
+          # rather than {name: "..."}.
+          args_list <- if (length(arg_names)) {
+            stats::setNames(
+              lapply(arg_names, function(nm) {
+                ex <- if (!is.null(examples) && nm %in% names(examples)) {
+                  examples[[nm]]
+                } else NULL
+                list(description = unname(args_vec[[nm]]), example = ex)
+              }),
+              arg_names
+            )
+          } else {
+            list()
+          }
+
+          list(
+            id          = uids[[i]],
+            name        = meta$name[[i]],
+            package     = meta$package[[i]],
+            category    = meta$category[[i]],
+            description = meta$description[[i]],
+            arguments   = args_list
+          )
+        })
       })
     },
     name        = "list_available_blocks",
     description = paste(
       "List every registered block constructor -- block types the",
-      "user can add to the board. One row per type with id, name,",
-      "package, category, description, and a list-column of",
-      "argument-name to argument-description mappings."
+      "user can add to the board. Each entry has id, name, package,",
+      "category, description, and `arguments`: a named object where",
+      "each key is the EXACT constructor argument name and each",
+      "value is `{description, example}`. When passing `args` to",
+      "add_block, the top-level keys MUST match these argument",
+      "names verbatim. If a description says the value is an",
+      "object/dict of fields, those nested fields go INSIDE that",
+      "argument, not at the top level. `block_name` is always",
+      "accepted and is not listed here."
     ),
     arguments   = list()
   )

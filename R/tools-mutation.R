@@ -40,7 +40,13 @@ parse_args_json <- function(s, tool) {
     return(list())
   }
 
-  parsed <- jsonlite::fromJSON(s, simplifyVector = TRUE)
+  # simplifyDataFrame = FALSE so arrays of same-shape objects stay as
+  # lists of named lists (e.g. filter conditions, mutate mutations,
+  # summary entries) instead of collapsing into a data frame. Keep
+  # simplifyVector = TRUE so arrays of scalars still become character
+  # / numeric vectors (e.g. vars=["AGE","SEX"]).
+  parsed <- jsonlite::fromJSON(s, simplifyVector = TRUE,
+                               simplifyDataFrame = FALSE)
 
   if (is.null(parsed)) {
     return(list())
@@ -104,8 +110,13 @@ tool_add_block <- function(board, pending, session) {
       "reported by list_available_blocks. `args` is a JSON object",
       "(passed as a string) of constructor arguments -- field",
       "names must match the arg names reported by",
-      "list_available_blocks for the chosen type. `id` is optional",
-      "-- if omitted, a unique id is generated."
+      "list_available_blocks for the chosen type. You can also",
+      "include `block_name` (a string) in `args` to set the",
+      "human-readable label shown in the UI; this is universal",
+      "across every block type and does NOT appear in",
+      "list_available_blocks. Prefer setting `block_name` here",
+      "at creation rather than via modify_block afterwards. `id`",
+      "is optional -- if omitted, a unique id is generated."
     ),
     arguments = list(
       type = ellmer::type_string(
@@ -218,14 +229,20 @@ tool_add_link <- function(board, pending, session) {
     name        = "add_link",
     description = paste(
       "Add a link that wires the output of block `from` into",
-      "argument `input` of block `to`. Both blocks must exist on",
-      "the board or be staged for creation in this turn."
+      "input slot `input` of block `to`. Both blocks must exist on",
+      "the board or be staged for creation in this turn. In blockr,",
+      "every block exposes its upstream slot under the literal name",
+      "\"data\" -- this is true even when the upstream value is a",
+      "dm, a list, or anything other than a data frame (the slot",
+      "name describes the role, not the type). Pass input=\"data\"",
+      "unless an existing block's describe_block output explicitly",
+      "lists a different input name."
     ),
     arguments = list(
       from  = ellmer::type_string("Source block id."),
       to    = ellmer::type_string("Destination block id."),
       input = ellmer::type_string(
-        "Input slot on the destination block."
+        "Input slot on the destination block. Almost always \"data\"."
       ),
       id = ellmer::type_string(
         "Optional id for the new link. Generated if omitted.",

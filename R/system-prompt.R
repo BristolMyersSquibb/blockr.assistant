@@ -55,6 +55,12 @@ default_system_prompt <- function(board = NULL, client = NULL,
     "the Board section above (and block_name, always). For other",
     "changes use remove_block + add_block.",
     "",
+    "When you create a block, set its display label in the same",
+    "call by including `block_name` in `args`. This is universal",
+    "and works for every block type. Don't issue a follow-up",
+    "modify_block just to set the name -- that wastes a tool call",
+    "and, for blocks created earlier this same turn, will fail.",
+    "",
     "Answer concisely.",
     sep = "\n"
   )

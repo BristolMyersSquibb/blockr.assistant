@@ -158,6 +158,33 @@ stage_block_rm <- function(pending, board, id) {
       setdiff(names(new$blocks$add), id)
     ]
 
+    # Cascade: drop any staged links that reference the block we just
+    # un-staged. Otherwise validate_pending() rejects the payload
+    # because links would reference an unknown id, which traps the
+    # model in the remove+add recovery pattern the modify_block error
+    # message recommends.
+    refs_id <- function(lst) {
+      vapply(lst, function(l) identical(l$from, id) || identical(l$to, id),
+             logical(1))
+    }
+    if (length(new$links$add)) {
+      keep <- !refs_id(new$links$add)
+      new$links$add <- new$links$add[keep]
+    }
+    if (length(new$links$mod)) {
+      # mod entries don't carry from/to deltas in a known shape; keep
+      # only those that don't target this block via id-keyed lookup
+      # against the current committed board.
+      brd  <- isolate(board$board)
+      lnks <- blockr.core::board_links(brd)
+      ref_mod <- vapply(names(new$links$mod), function(lid) {
+        if (!lid %in% names(lnks)) return(FALSE)
+        l <- lnks[[lid]]
+        identical(l$from, id) || identical(l$to, id)
+      }, logical(1))
+      new$links$mod <- new$links$mod[!ref_mod]
+    }
+
   } else {
 
     if (id %in% names(cur$blocks$mod)) {
