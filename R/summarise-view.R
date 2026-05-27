@@ -21,9 +21,9 @@ summarise_view <- function(x, ...) {
 #' @export
 summarise_view.dock_layout <- function(x, ...) {
 
-  wire <- layout_to_wire(x)
+  spec <- layout_to_spec(x)
 
-  panels <- collect_panel_ids(wire$children)
+  panels <- collect_panel_ids(spec$children)
 
   panels_str <- if (length(panels)) {
     paste(panels, collapse = ", ")

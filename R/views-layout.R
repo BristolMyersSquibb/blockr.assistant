@@ -1,7 +1,9 @@
-#' Layout JSON wire shape
+#' Layout JSON spec form
 #'
 #' Stable mapping between a `dock_layout` and a JSON-friendly R
-#' structure the LLM reads and writes:
+#' structure -- the spec form that crosses the assistant <-> tool
+#' boundary. Mirrors (and is the inverse of)
+#' `blockr.dock::as_layout_spec()`:
 #'
 #' - bare ID string -> scalar string
 #' - tabbed leaf, default active (first) -> array of strings
@@ -11,7 +13,7 @@
 #'   -> object with `children` (array), `orientation`, optional `sizes`,
 #'   and `active_group`
 #'
-#' Round-trips: `layout_from_wire(layout_to_wire(ly))` is equivalent
+#' Round-trips: `layout_from_spec(layout_to_spec(ly))` is equivalent
 #' to `ly` for any `dock_layout`.
 #'
 #' @noRd
@@ -33,7 +35,7 @@ is_even_sizes <- function(sizes) {
     all(abs(sizes - mean(sizes)) < 1e-9)
 }
 
-node_to_wire <- function(node) {
+node_to_spec <- function(node) {
 
   if (identical(node[["type"]], "leaf")) {
 
@@ -55,7 +57,7 @@ node_to_wire <- function(node) {
     )
   }
 
-  children <- lapply(node[["data"]], node_to_wire)
+  children <- lapply(node[["data"]], node_to_spec)
 
   sizes <- vapply(
     node[["data"]],
@@ -64,13 +66,13 @@ node_to_wire <- function(node) {
   )
 
   if (is_even_sizes(sizes)) {
-    return(children)
+    return(list(group = children))
   }
 
   list(group = children, sizes = sizes)
 }
 
-layout_to_wire <- function(layout) {
+layout_to_spec <- function(layout) {
 
   stopifnot(is_dock_layout(layout))
 
@@ -90,7 +92,7 @@ layout_to_wire <- function(layout) {
 
   if (identical(root[["type"]], "branch")) {
 
-    children <- lapply(root[["data"]], node_to_wire)
+    children <- lapply(root[["data"]], node_to_spec)
 
     sizes <- vapply(
       root[["data"]],
@@ -102,7 +104,7 @@ layout_to_wire <- function(layout) {
 
   } else {
 
-    children  <- list(node_to_wire(root))
+    children  <- list(node_to_spec(root))
     top_sizes <- NULL
   }
 
@@ -119,7 +121,7 @@ layout_to_wire <- function(layout) {
   out
 }
 
-wire_node_abort <- function(reason) {
+spec_abort <- function(reason) {
   stop("layout JSON: ", reason, call. = FALSE)
 }
 
@@ -132,7 +134,7 @@ coerce_sizes <- function(x, where) {
   nums <- suppressWarnings(as.numeric(unlist(x)))
 
   if (any(is.na(nums))) {
-    wire_node_abort(
+    spec_abort(
       sprintf("%s: `sizes` must be an array of numbers", where)
     )
   }
@@ -140,7 +142,7 @@ coerce_sizes <- function(x, where) {
   nums
 }
 
-wire_to_node <- function(x) {
+spec_to_node <- function(x) {
 
   if (is.character(x) && length(x) == 1L) {
     return(x)
@@ -151,7 +153,7 @@ wire_to_node <- function(x) {
   }
 
   if (!is.list(x)) {
-    wire_node_abort(
+    spec_abort(
       sprintf("expected string, array or object; got %s", class(x)[[1L]])
     )
   }
@@ -172,15 +174,19 @@ wire_to_node <- function(x) {
       return(do.call(panels, as.list(unlist(x))))
     }
 
-    children <- lapply(x, wire_to_node)
-
-    return(do.call(group, children))
+    spec_abort(
+      paste(
+        "an unnamed array can only hold panel IDs (tab leaf).",
+        "For a nested split, use `{\"group\": [<node>, ...]}` --",
+        "optionally with `\"sizes\": [...]`."
+      )
+    )
   }
 
   if ("panels" %in% nms) {
 
     if (!is.null(x[["group"]]) || !is.null(x[["children"]])) {
-      wire_node_abort(
+      spec_abort(
         "`panels` cannot be combined with `group` or `children`"
       )
     }
@@ -188,7 +194,7 @@ wire_to_node <- function(x) {
     extra <- setdiff(nms, c("panels", "active"))
 
     if (length(extra)) {
-      wire_node_abort(
+      spec_abort(
         sprintf(
           "unknown keys for panels object: %s",
           paste(extra, collapse = ", ")
@@ -210,7 +216,7 @@ wire_to_node <- function(x) {
   if ("group" %in% nms) {
 
     if (!is.null(x[["panels"]]) || !is.null(x[["children"]])) {
-      wire_node_abort(
+      spec_abort(
         "`group` cannot be combined with `panels` or `children`"
       )
     }
@@ -218,7 +224,7 @@ wire_to_node <- function(x) {
     extra <- setdiff(nms, c("group", "sizes"))
 
     if (length(extra)) {
-      wire_node_abort(
+      spec_abort(
         sprintf(
           "unknown keys for group object: %s",
           paste(extra, collapse = ", ")
@@ -226,7 +232,7 @@ wire_to_node <- function(x) {
       )
     }
 
-    children <- lapply(x[["group"]], wire_to_node)
+    children <- lapply(x[["group"]], spec_to_node)
     sizes    <- coerce_sizes(x[["sizes"]], "group")
 
     if (is.null(sizes)) {
@@ -239,7 +245,7 @@ wire_to_node <- function(x) {
   }
 
   if ("children" %in% nms) {
-    wire_node_abort(
+    spec_abort(
       paste(
         "`children` is only valid at the top level of a layout;",
         "use `group` (with optional `sizes`) for a nested split, or",
@@ -250,7 +256,7 @@ wire_to_node <- function(x) {
     )
   }
 
-  wire_node_abort(
+  spec_abort(
     sprintf(
       paste(
         "object must have `panels` or `group`; got keys: %s"
@@ -260,14 +266,14 @@ wire_to_node <- function(x) {
   )
 }
 
-layout_from_wire <- function(parsed) {
+layout_from_spec <- function(parsed) {
 
   if (!is.list(parsed)) {
-    wire_node_abort("top-level must be an object")
+    spec_abort("top-level must be an object")
   }
 
   if (!"children" %in% names(parsed)) {
-    wire_node_abort("top-level object requires `children`")
+    spec_abort("top-level object requires `children`")
   }
 
   extra <- setdiff(
@@ -276,14 +282,14 @@ layout_from_wire <- function(parsed) {
   )
 
   if (length(extra)) {
-    wire_node_abort(
+    spec_abort(
       sprintf(
         "unknown top-level keys: %s", paste(extra, collapse = ", ")
       )
     )
   }
 
-  children <- lapply(parsed[["children"]], wire_to_node)
+  children <- lapply(parsed[["children"]], spec_to_node)
 
   orientation <- parsed[["orientation"]] %||% "horizontal"
 
@@ -320,5 +326,5 @@ parse_layout_json <- function(s) {
     }
   )
 
-  layout_from_wire(parsed)
+  layout_from_spec(parsed)
 }

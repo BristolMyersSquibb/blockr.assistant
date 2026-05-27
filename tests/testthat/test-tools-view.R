@@ -292,19 +292,19 @@ test_that("rename_view rejects an unknown source", {
   expect_match(res, "does not exist")
 })
 
-test_that("rename round-trips through layout_to_wire (regression)", {
+test_that("rename round-trips through layout_to_spec (regression)", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(
     env$board, env$pending, view_data = NULL, session = NULL
   )
 
-  before <- isolate(layout_to_wire(board_layouts(env$board$board)$Analysis))
+  before <- isolate(layout_to_spec(board_layouts(env$board$board)$Analysis))
 
   rnv(from = "Analysis", to = "Alpha")
 
   staged_layout <- isolate(env$pending()$views$add[["Alpha"]])
-  after <- layout_to_wire(staged_layout)
+  after <- layout_to_spec(staged_layout)
 
   expect_identical(before, after)
 })

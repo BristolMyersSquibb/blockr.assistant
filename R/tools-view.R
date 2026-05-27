@@ -75,7 +75,7 @@ tool_list_views <- function(board, view_data, session) {
           list(
             name   = nm,
             active = identical(nm, active),
-            layout = layout_to_wire(layouts[[nm]])
+            layout = layout_to_spec(layouts[[nm]])
           )
         })
       })
@@ -100,9 +100,9 @@ tool_validate_layout <- function(board, pending, session) {
 
         parsed <- parse_layout_json(layout)
 
-        wire <- layout_to_wire(parsed)
+        spec <- layout_to_spec(parsed)
 
-        used  <- unique(collect_panel_ids(wire$children))
+        used  <- unique(collect_panel_ids(spec$children))
         valid <- valid_panel_ids(board, pending)
         bad   <- setdiff(used, valid)
 
@@ -121,7 +121,7 @@ tool_validate_layout <- function(board, pending, session) {
 
         sprintf(
           "OK -- layout parses and all panel IDs resolve. Normalized: %s",
-          jsonlite::toJSON(wire, auto_unbox = TRUE)
+          jsonlite::toJSON(spec, auto_unbox = TRUE)
         )
       })
     },
