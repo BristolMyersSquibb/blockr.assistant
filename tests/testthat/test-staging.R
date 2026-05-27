@@ -22,13 +22,19 @@ test_that("empty_pending has the expected shape", {
 
   p <- empty_pending()
 
-  expect_named(p, c("blocks", "links", "stacks"))
+  expect_named(p, c("blocks", "links", "stacks", "views"))
   for (slot in c("blocks", "links", "stacks")) {
     expect_named(p[[slot]], c("add", "mod", "rm"))
     expect_length(p[[slot]]$add, 0L)
     expect_length(p[[slot]]$mod, 0L)
     expect_length(p[[slot]]$rm, 0L)
   }
+
+  expect_named(p$views, c("add", "mod", "rm", "active"))
+  expect_length(p$views$add, 0L)
+  expect_length(p$views$mod, 0L)
+  expect_length(p$views$rm, 0L)
+  expect_null(p$views$active)
 })
 
 test_that("has_any_changes detects content in every slot", {
@@ -45,6 +51,14 @@ test_that("has_any_changes detects content in every slot", {
 
   p <- empty_pending()
   p$stacks$mod <- list(y = list(name = "s"))
+  expect_true(has_any_changes(p))
+
+  p <- empty_pending()
+  p$views$rm <- "V"
+  expect_true(has_any_changes(p))
+
+  p <- empty_pending()
+  p$views$active <- "V"
   expect_true(has_any_changes(p))
 })
 

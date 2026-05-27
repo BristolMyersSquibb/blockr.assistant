@@ -23,6 +23,8 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_length(res, 1L)
   expect_match(res, "You are an assistant embedded next to a blockr")
   expect_match(res, "ids are immutable once committed")
+  expect_match(res, "## Layout", fixed = TRUE)
+  expect_match(res, "Views are named tabs")
   expect_no_match(res, "## Tools", fixed = TRUE)
   expect_no_match(res, "## Board", fixed = TRUE)
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
@@ -66,6 +68,24 @@ test_that("default_system_prompt() empty board flags the empty case", {
   res <- default_system_prompt(board = board)
 
   expect_match(res, "(empty board -- no blocks yet)", fixed = TRUE)
+})
+
+test_that("default_system_prompt() lists views on a multi-view dock_board", {
+
+  brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris")),
+    layouts = list(
+      Analysis = dock_layout("a", active = TRUE),
+      Overview = dock_layout("a")
+    )
+  )
+
+  res <- default_system_prompt(board = reactiveValues(board = brd))
+
+  expect_match(res, "2 view(s)", fixed = TRUE)
+  expect_match(res, "### Views")
+  expect_match(res, "- Analysis (active)", fixed = TRUE)
+  expect_match(res, "- Overview", fixed = TRUE)
 })
 
 test_that("default_system_prompt() surfaces the flush-rejection note", {

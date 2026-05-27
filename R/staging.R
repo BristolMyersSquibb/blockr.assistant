@@ -15,6 +15,12 @@ empty_pending <- function() {
       add = stacks(),
       mod = list(),
       rm  = character()
+    ),
+    views = list(
+      add    = list(),
+      mod    = list(),
+      rm     = character(),
+      active = NULL
     )
   )
 }
@@ -41,10 +47,16 @@ reset_pending <- function(pending) {
 
 has_any_changes <- function(payload) {
 
+  views_active <- !is.null(payload$views$active)
+
   any(
     lengths(payload$blocks) > 0L,
     lengths(payload$links)  > 0L,
-    lengths(payload$stacks) > 0L
+    lengths(payload$stacks) > 0L,
+    length(payload$views$add) > 0L,
+    length(payload$views$mod) > 0L,
+    length(payload$views$rm)  > 0L,
+    views_active
   )
 }
 
@@ -356,6 +368,118 @@ stage_stack_rm <- function(pending, board, id) {
   }
 
   commit_pending(pending, isolate(board$board), new, "remove_stack", id)
+}
+
+stage_view_add <- function(pending, board, name, layout, active = FALSE) {
+
+  cur <- isolate(pending())
+
+  if (name %in% names(cur$views$add)) {
+    stage_abort("add_view", name, "view is already staged for creation")
+  }
+
+  if (name %in% names(cur$views$mod)) {
+    stage_abort(
+      "add_view", name,
+      "view exists and is staged for modification; use modify_view"
+    )
+  }
+
+  if (name %in% cur$views$rm) {
+    stage_abort(
+      "add_view", name,
+      "view is staged for removal; use modify_view instead"
+    )
+  }
+
+  new <- cur
+  new$views$add <- c(new$views$add, set_names(list(layout), name))
+
+  if (isTRUE(active)) {
+    new$views$active <- name
+  }
+
+  commit_pending(pending, isolate(board$board), new, "add_view", name)
+}
+
+stage_view_mod <- function(pending, board, name, layout) {
+
+  cur <- isolate(pending())
+
+  if (name %in% names(cur$views$add)) {
+    stage_abort(
+      "modify_view", name,
+      paste0(
+        "view is staged for creation this turn; pass the updated ",
+        "layout to add_view instead"
+      )
+    )
+  }
+
+  if (name %in% cur$views$rm) {
+    stage_abort(
+      "modify_view", name,
+      "view is staged for removal; mod has no effect"
+    )
+  }
+
+  new <- cur
+  new$views$mod[[name]] <- layout
+
+  commit_pending(pending, isolate(board$board), new, "modify_view", name)
+}
+
+stage_view_rm <- function(pending, board, name) {
+
+  cur <- isolate(pending())
+
+  if (name %in% cur$views$rm) {
+    stage_abort("remove_view", name, "view is already staged for removal")
+  }
+
+  new <- cur
+
+  if (name %in% names(cur$views$add)) {
+
+    new$views$add <- new$views$add[
+      setdiff(names(new$views$add), name)
+    ]
+
+  } else {
+
+    if (name %in% names(cur$views$mod)) {
+      new$views$mod <- new$views$mod[
+        setdiff(names(new$views$mod), name)
+      ]
+    }
+
+    new$views$rm <- c(new$views$rm, name)
+  }
+
+  if (identical(new$views$active, name)) {
+    new$views$active <- NULL
+  }
+
+  commit_pending(pending, isolate(board$board), new, "remove_view", name)
+}
+
+stage_view_active <- function(pending, board, name) {
+
+  cur <- isolate(pending())
+
+  if (name %in% cur$views$rm) {
+    stage_abort(
+      "set_active_view", name,
+      "view is staged for removal; cannot mark it active"
+    )
+  }
+
+  new <- cur
+  new$views$active <- name
+
+  commit_pending(
+    pending, isolate(board$board), new, "set_active_view", name
+  )
 }
 
 flush_pending <- function(pending, update, last_flush_error = NULL) {

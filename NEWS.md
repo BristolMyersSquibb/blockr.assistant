@@ -1,3 +1,32 @@
+# blockr.assistant (development version)
+
+* Adds an LLM tool surface for view CRUD and layout mutations: six
+  new tools (`list_views`, `add_view`, `remove_view`, `modify_view`,
+  `set_active_view`, `rename_view`) backed by an extended staging
+  payload that grows a `views = list(add, mod, rm, active)` slot
+  alongside the existing `blocks` / `links` / `stacks` slots. The
+  staged delta flushes atomically via the same `update()` channel
+  used by interactive actions, composing across slots in a single
+  lifecycle tick.
+
+* Layouts move over the wire as a JSON spec form (bare ID,
+  `panels(active = ...)`, `group(sizes = ...)`, top-level
+  `dock_layout(orientation, sizes, active_group)`) that round-trips
+  through new `layout_to_wire()` and `layout_from_wire()` helpers.
+  The default system prompt picks up a Layout subsection documenting
+  the shape and a Views section in the board summary (one line per
+  view, driven by a new exported `summarise_view()` S3 generic that
+  custom layout classes can override). `rename_view` is synthesised
+  from add + rm + active carry-over to avoid an extra payload slot;
+  the upstream dock receiver is free to add a native `rename` later.
+
+* Requires the dock `views` payload slot and `view_data` reactive
+  from BMS/blockr.dock#150 / BMS/blockr.dock#146 plus the
+  `augment_board_update()` / `apply_board_update()` generics from
+  BMS/blockr.core#185 (relaxed `validate_board_update_structure()`
+  so subclass-defined payload slots pass through to subclass
+  methods). Fixes #18.
+
 # blockr.assistant 0.1.0
 
 Feature-complete close-out of the initial roadmap (Phases 1-5).

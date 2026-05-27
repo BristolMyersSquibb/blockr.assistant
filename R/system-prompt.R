@@ -55,6 +55,30 @@ default_system_prompt <- function(board = NULL, client = NULL,
     "the Board section above (and block_name, always). For other",
     "changes use remove_block + add_block.",
     "",
+    "## Layout",
+    "",
+    "Views are named tabs; each holds its own arrangement of panels",
+    "(blocks and extensions). modify_view and add_view take a full",
+    "layout in JSON spec form -- read the current shape with",
+    "list_views, edit the structure, and write it back. The layout",
+    "shape is recursive:",
+    "",
+    "- a bare ID string is a single-panel leaf",
+    "- an array of IDs is a tabbed leaf (first is active by default)",
+    "- `{\"panels\": [...], \"active\": \"<id>\"}` is a tabbed leaf with",
+    "  explicit active tab",
+    "- `{\"group\": [<children>], \"sizes\": [...]}` splits children in",
+    "  the parent's orientation with explicit ratios; even splits",
+    "  are an unnamed array of children at that position",
+    "- top level: `{\"children\": [...], \"orientation\":",
+    "  \"horizontal\"|\"vertical\", \"sizes\": [...], \"active_group\":",
+    "  \"...\"}`",
+    "",
+    "Blocks referenced by a view layout must exist on the board (or",
+    "be staged for creation in the same turn). Removing a block",
+    "automatically drops its panels from every view containing it",
+    "-- no explicit cleanup needed.",
+    "",
     "Answer concisely.",
     sep = "\n"
   )
@@ -132,13 +156,14 @@ summarise_board <- function(board, max_chars = 4000L) {
   blks <- board_blocks(b)
   lnks <- board_links(b)
   stks <- board_stacks(b)
+  vws  <- board_views(b)
 
   header <- sprintf(
-    "%d block(s), %d link(s), %d stack(s).",
-    length(blks), length(lnks), length(stks)
+    "%d block(s), %d link(s), %d stack(s), %d view(s).",
+    length(blks), length(lnks), length(stks), length(vws)
   )
 
-  if (!length(blks) && !length(lnks) && !length(stks)) {
+  if (!length(blks) && !length(lnks) && !length(stks) && length(vws) <= 1L) {
     return(paste(header, "(empty board -- no blocks yet)"))
   }
 
@@ -147,7 +172,8 @@ summarise_board <- function(board, max_chars = 4000L) {
     "",
     summarise_blocks(blks, b),
     summarise_links(lnks),
-    summarise_stacks(stks)
+    summarise_stacks(stks),
+    summarise_views(vws, b)
   )
 
   out <- paste(body, collapse = "\n")
@@ -158,12 +184,21 @@ summarise_board <- function(board, max_chars = 4000L) {
       paste(
         header,
         "(too many entities to inline; call list_blocks,",
-        "list_links and list_stacks for the full set)"
+        "list_links, list_stacks and list_views for the full set)"
       )
     )
   }
 
   out
+}
+
+board_views <- function(b) {
+
+  if (!inherits(b, "dock_board")) {
+    return(structure(list(), class = "dock_layouts"))
+  }
+
+  board_layouts(b)
 }
 
 summarise_blocks <- function(blks, board) {
@@ -212,6 +247,23 @@ summarise_stacks <- function(stks) {
     "### Stacks",
     chr_ply(names(stks), function(id) {
       sprintf("- %s %s", id, summarise_stack(stks[[id]]))
+    })
+  )
+}
+
+summarise_views <- function(vws, b) {
+
+  if (length(vws) <= 1L) {
+    return(character())
+  }
+
+  active <- tryCatch(active_view(vws), error = function(e) NA_character_)
+
+  c(
+    "### Views",
+    chr_ply(names(vws), function(nm) {
+      marker <- if (identical(nm, active)) " (active)" else ""
+      sprintf("- %s%s %s", nm, marker, summarise_view(vws[[nm]]))
     })
   )
 }
