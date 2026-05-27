@@ -2,6 +2,7 @@ register_view_tools <- function(client, board, pending, view_data,
                                 session) {
 
   client$register_tool(tool_list_views(board, view_data, session))
+  client$register_tool(tool_validate_layout(board, pending, session))
   client$register_tool(tool_add_view(board, pending, session))
   client$register_tool(tool_remove_view(board, pending, view_data, session))
   client$register_tool(tool_modify_view(board, pending, session))
@@ -9,6 +10,25 @@ register_view_tools <- function(client, board, pending, view_data,
   client$register_tool(tool_rename_view(board, pending, view_data, session))
 
   invisible(client)
+}
+
+valid_panel_ids <- function(board, pending) {
+
+  brd <- isolate(board$board)
+  pen <- isolate(pending())
+
+  block_ids <- setdiff(
+    c(names(board_blocks(brd)), names(pen$blocks$add)),
+    pen$blocks$rm
+  )
+
+  ext_ids <- if (inherits(brd, "dock_board")) {
+    dock_ext_ids(brd)
+  } else {
+    character()
+  }
+
+  c(block_ids, ext_ids)
 }
 
 current_layouts <- function(board, view_data) {
@@ -69,6 +89,54 @@ tool_list_views <- function(board, view_data, session) {
       "any UI-driven rearrangements since the last commit."
     ),
     arguments = list()
+  )
+}
+
+tool_validate_layout <- function(board, pending, session) {
+
+  ellmer::tool(
+    function(layout) {
+      with_tool_errors("validate_layout", {
+
+        parsed <- parse_layout_json(layout)
+
+        wire <- layout_to_wire(parsed)
+
+        used  <- unique(collect_panel_ids(wire$children))
+        valid <- valid_panel_ids(board, pending)
+        bad   <- setdiff(used, valid)
+
+        if (length(bad)) {
+          stop(
+            sprintf(
+              paste(
+                "panel ID(s) do not resolve to current blocks or",
+                "extensions (call list_blocks for current ids): %s"
+              ),
+              paste(bad, collapse = ", ")
+            ),
+            call. = FALSE
+          )
+        }
+
+        sprintf(
+          "OK -- layout parses and all panel IDs resolve. Normalized: %s",
+          jsonlite::toJSON(wire, auto_unbox = TRUE)
+        )
+      })
+    },
+    name = "validate_layout",
+    description = paste(
+      "Parse and panel-id-check a layout JSON without staging.",
+      "Returns OK plus the normalized layout on success, or a",
+      "classed error describing what's wrong. Cheap probe before",
+      "add_view / modify_view; never mutates board state."
+    ),
+    arguments = list(
+      layout = ellmer::type_string(
+        "JSON layout object; same shape as add_view's `layout`."
+      )
+    )
   )
 }
 

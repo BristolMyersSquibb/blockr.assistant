@@ -148,7 +148,7 @@ test_that("server registers the read and mutation tools on the client", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 22L)
+      expect_length(tools, 23L)
       expect_setequal(
         names(tools),
         c(
@@ -157,7 +157,8 @@ test_that("server registers the read and mutation tools on the client", {
           "add_block", "remove_block", "modify_block",
           "add_link", "remove_link", "modify_link",
           "add_stack", "remove_stack", "modify_stack",
-          "list_views", "add_view", "remove_view", "modify_view",
+          "list_views", "validate_layout",
+          "add_view", "remove_view", "modify_view",
           "set_active_view", "rename_view"
         )
       )
@@ -672,8 +673,8 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
       )
       expect_length(assistant_turns, 1L)
 
-      # Tools re-registered (22 surface-tools, same as initial mount)
-      expect_length(client_r()$get_tools(), 22L)
+      # Tools re-registered (23 surface-tools, same as initial mount)
+      expect_length(client_r()$get_tools(), 23L)
     },
     args = list(
       board = reactiveValues(board = new_board()),

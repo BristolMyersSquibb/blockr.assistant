@@ -54,6 +54,60 @@ test_that("list_views prefers live view_data when supplied", {
   expect_identical(out[[1L]]$name, "Hot")
 })
 
+test_that("validate_layout returns OK and the normalized layout", {
+
+  env <- new_view_tool_env()
+  vl <- tool_validate_layout(env$board, env$pending, session = NULL)
+
+  res <- vl(
+    layout = "{\"children\": [\"a\", \"b\"], \"orientation\": \"horizontal\"}"
+  )
+
+  expect_match(res, "^OK -- layout parses")
+  expect_match(res, "\"children\":\\[\"a\",\"b\"\\]")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("validate_layout surfaces structural errors without staging", {
+
+  env <- new_view_tool_env()
+  vl <- tool_validate_layout(env$board, env$pending, session = NULL)
+
+  res <- vl(layout = paste0(
+    "{\"children\": [",
+    "  {\"children\": [\"a\"], \"orientation\": \"vertical\"}",
+    "], \"orientation\": \"horizontal\"}"
+  ))
+
+  expect_match(res, "^validate_layout failed:")
+  expect_match(res, "`children` is only valid at the top level")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("validate_layout rejects unknown panel IDs", {
+
+  env <- new_view_tool_env()
+  vl <- tool_validate_layout(env$board, env$pending, session = NULL)
+
+  res <- vl(layout = "{\"children\": [\"a\", \"ghost\"]}")
+
+  expect_match(res, "^validate_layout failed:")
+  expect_match(res, "ghost")
+})
+
+test_that("validate_layout accepts staged-add panel IDs", {
+
+  env <- new_view_tool_env()
+
+  ab <- tool_add_block(env$board, env$pending, NULL)
+  ab(type = "head_block", args = "{\"n\": 5}", id = "new_head")
+
+  vl <- tool_validate_layout(env$board, env$pending, session = NULL)
+  res <- vl(layout = "{\"children\": [\"a\", \"new_head\"]}")
+
+  expect_match(res, "^OK")
+})
+
 test_that("add_view stages a parsed layout and optional active", {
 
   env <- new_view_tool_env()
