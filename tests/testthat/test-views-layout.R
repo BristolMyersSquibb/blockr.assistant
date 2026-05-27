@@ -121,3 +121,45 @@ test_that("parse_layout_json builds a dock_layout from a string", {
 
   expect_true(is_dock_layout(ly))
 })
+
+test_that("parse_layout_json coerces list-form `sizes` to numeric", {
+
+  # simplifyVector = FALSE yields list-of-numbers; group()'s
+  # validate_sizes rejects non-numeric. coerce_sizes() bridges.
+  ly <- parse_layout_json(paste0(
+    "{\"children\": [",
+    "  {\"group\": [\"a\", \"b\", \"c\"],",
+    "   \"sizes\": [33.33, 33.33, 33.34]},",
+    "  \"d\"",
+    "], \"orientation\": \"horizontal\", \"sizes\": [70, 30]}"
+  ))
+
+  expect_true(is_dock_layout(ly))
+
+  wire <- layout_to_wire(ly)
+  expect_equal(wire$sizes, c(70, 30))
+})
+
+test_that("parse_layout_json rejects non-numeric `sizes`", {
+
+  expect_error(
+    parse_layout_json(
+      "{\"children\": [\"a\", \"b\"], \"sizes\": [\"big\", \"small\"]}"
+    ),
+    "must be an array of numbers"
+  )
+})
+
+test_that("wire rejects nested `children` with a helpful message", {
+
+  # Most natural model mistake: recursing the top-level shape.
+  expect_error(
+    parse_layout_json(paste0(
+      "{\"children\": [",
+      "  {\"children\": [\"a\", \"b\"], \"orientation\": \"vertical\"},",
+      "  \"c\"",
+      "], \"orientation\": \"horizontal\"}"
+    )),
+    "`children` is only valid at the top level"
+  )
+})

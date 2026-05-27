@@ -123,6 +123,23 @@ wire_node_abort <- function(reason) {
   stop("layout JSON: ", reason, call. = FALSE)
 }
 
+coerce_sizes <- function(x, where) {
+
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  nums <- suppressWarnings(as.numeric(unlist(x)))
+
+  if (any(is.na(nums))) {
+    wire_node_abort(
+      sprintf("%s: `sizes` must be an array of numbers", where)
+    )
+  }
+
+  nums
+}
+
 wire_to_node <- function(x) {
 
   if (is.character(x) && length(x) == 1L) {
@@ -210,21 +227,33 @@ wire_to_node <- function(x) {
     }
 
     children <- lapply(x[["group"]], wire_to_node)
+    sizes    <- coerce_sizes(x[["sizes"]], "group")
 
-    if (is.null(x[["sizes"]])) {
+    if (is.null(sizes)) {
       return(do.call(group, children))
     }
 
     return(
-      do.call(group, c(children, list(sizes = x[["sizes"]])))
+      do.call(group, c(children, list(sizes = sizes)))
+    )
+  }
+
+  if ("children" %in% nms) {
+    wire_node_abort(
+      paste(
+        "`children` is only valid at the top level of a layout;",
+        "use `group` (with optional `sizes`) for a nested split, or",
+        "an array of strings / `panels` object for a tabbed leaf.",
+        "Inner branches alternate orientation with depth automatically",
+        "-- there is no per-branch `orientation` key."
+      )
     )
   }
 
   wire_node_abort(
     sprintf(
       paste(
-        "object must have `panels`, `group`, or be a top-level",
-        "layout; got keys: %s"
+        "object must have `panels` or `group`; got keys: %s"
       ),
       paste(nms, collapse = ", ")
     )
@@ -260,8 +289,10 @@ layout_from_wire <- function(parsed) {
 
   args <- c(children, list(orientation = orientation))
 
-  if (!is.null(parsed[["sizes"]])) {
-    args[["sizes"]] <- parsed[["sizes"]]
+  sizes <- coerce_sizes(parsed[["sizes"]], "top-level")
+
+  if (!is.null(sizes)) {
+    args[["sizes"]] <- sizes
   }
 
   result <- do.call(dock_layout, args)
