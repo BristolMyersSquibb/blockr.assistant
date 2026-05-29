@@ -1,13 +1,12 @@
-register_view_tools <- function(client, board, pending, view_data,
-                                session) {
+register_view_tools <- function(client, board, pending, session) {
 
-  client$register_tool(tool_list_views(board, view_data, session))
+  client$register_tool(tool_list_views(board, session))
   client$register_tool(tool_validate_layout(board, pending, session))
   client$register_tool(tool_add_view(board, pending, session))
-  client$register_tool(tool_remove_view(board, pending, view_data, session))
+  client$register_tool(tool_remove_view(board, pending, session))
   client$register_tool(tool_modify_view(board, pending, session))
-  client$register_tool(tool_set_active_view(board, pending, view_data, session))
-  client$register_tool(tool_rename_view(board, pending, view_data, session))
+  client$register_tool(tool_set_active_view(board, pending, session))
+  client$register_tool(tool_rename_view(board, pending, session))
 
   invisible(client)
 }
@@ -31,36 +30,29 @@ valid_panel_ids <- function(board, pending) {
   c(block_ids, ext_ids)
 }
 
-current_layouts <- function(board, view_data) {
-
-  vd <- if (is.null(view_data)) NULL else isolate(view_data())
-
-  if (!is.null(vd)) {
-    return(vd)
-  }
-
+current_layouts <- function(board) {
   board_layouts(isolate(board$board))
 }
 
-current_view_names <- function(board, view_data) {
-  names(current_layouts(board, view_data))
+current_view_names <- function(board) {
+  names(current_layouts(board))
 }
 
-post_pending_view_names <- function(board, pending, view_data) {
+post_pending_view_names <- function(board, pending) {
 
-  live <- current_view_names(board, view_data)
+  live <- current_view_names(board)
   pen  <- isolate(pending())
 
   setdiff(c(live, names(pen$views$add)), pen$views$rm)
 }
 
-tool_list_views <- function(board, view_data, session) {
+tool_list_views <- function(board, session) {
 
   ellmer::tool(
     function() {
       with_tool_errors("list_views", {
 
-        layouts <- current_layouts(board, view_data)
+        layouts <- current_layouts(board)
 
         if (!length(layouts)) {
           return(list())
@@ -75,7 +67,7 @@ tool_list_views <- function(board, view_data, session) {
           list(
             name   = nm,
             active = identical(nm, active),
-            layout = layout_to_spec(layouts[[nm]])
+            layout = layout_to_llm_spec(layouts[[nm]])
           )
         })
       })
@@ -85,8 +77,8 @@ tool_list_views <- function(board, view_data, session) {
       "List all views (named tabs) on the board. One entry per",
       "view: name, whether it's the currently-active view, and",
       "the view's layout in the JSON spec form documented in the",
-      "Layout section. Reads the live layout state, so it reflects",
-      "any UI-driven rearrangements since the last commit."
+      "Layout section. Reflects UI-driven rearrangements once they",
+      "have synced back to the board."
     ),
     arguments = list()
   )
@@ -98,11 +90,9 @@ tool_validate_layout <- function(board, pending, session) {
     function(layout) {
       with_tool_errors("validate_layout", {
 
-        parsed <- parse_layout_json(layout)
+        parsed <- layout_from_json(layout)
 
-        spec <- layout_to_spec(parsed)
-
-        used  <- unique(collect_panel_ids(spec$children))
+        used  <- panel_obj_ids(layout_panel_ids(parsed))
         valid <- valid_panel_ids(board, pending)
         bad   <- setdiff(used, valid)
 
@@ -121,7 +111,7 @@ tool_validate_layout <- function(board, pending, session) {
 
         sprintf(
           "OK -- layout parses and all panel IDs resolve. Normalized: %s",
-          jsonlite::toJSON(spec, auto_unbox = TRUE)
+          jsonlite::toJSON(layout_to_llm_spec(parsed), auto_unbox = TRUE)
         )
       })
     },
@@ -146,7 +136,7 @@ tool_add_view <- function(board, pending, session) {
     function(name, layout, active = FALSE) {
       with_tool_errors("add_view", {
 
-        layout_obj <- parse_layout_json(layout)
+        layout_obj <- layout_from_json(layout)
 
         stage_view_add(
           pending, board, name, layout_obj, active = isTRUE(active)
@@ -170,12 +160,14 @@ tool_add_view <- function(board, pending, session) {
       name   = ellmer::type_string("Name for the new view."),
       layout = ellmer::type_string(
         paste(
-          "JSON object describing the view's layout. Shape:",
-          "{\"children\": [...], \"orientation\": \"horizontal\" |",
-          "\"vertical\", \"sizes\": [...], \"active_group\": \"...\"}.",
-          "Children may be bare ID strings, arrays of IDs (tabbed",
-          "leaves), {\"panels\": [...], \"active\": \"...\"} objects,",
-          "or {\"group\": [...], \"sizes\": [...]} objects."
+          "JSON object describing the view's layout. Top-level shape:",
+          "{\"orientation\": \"horizontal\" | \"vertical\",",
+          "\"children\": [...], \"sizes\": [...]}. Each child is a bare",
+          "ID string (single-panel leaf), a {\"panels\": [...],",
+          "\"active\": \"...\"} object (tabbed leaf), or a",
+          "{\"children\": [...], \"sizes\": [...]} object (nested",
+          "split). See the Layout section for the full spec and",
+          "worked examples."
         )
       ),
       active = ellmer::type_boolean(
@@ -186,14 +178,14 @@ tool_add_view <- function(board, pending, session) {
   )
 }
 
-tool_remove_view <- function(board, pending, view_data, session) {
+tool_remove_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(name) {
       with_tool_errors("remove_view", {
 
         remaining <- setdiff(
-          post_pending_view_names(board, pending, view_data),
+          post_pending_view_names(board, pending),
           name
         )
 
@@ -229,7 +221,7 @@ tool_modify_view <- function(board, pending, session) {
     function(name, layout) {
       with_tool_errors("modify_view", {
 
-        layout_obj <- parse_layout_json(layout)
+        layout_obj <- layout_from_json(layout)
 
         stage_view_mod(pending, board, name, layout_obj)
 
@@ -255,13 +247,13 @@ tool_modify_view <- function(board, pending, session) {
   )
 }
 
-tool_set_active_view <- function(board, pending, view_data, session) {
+tool_set_active_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(name) {
       with_tool_errors("set_active_view", {
 
-        candidates <- post_pending_view_names(board, pending, view_data)
+        candidates <- post_pending_view_names(board, pending)
 
         if (!name %in% candidates) {
           stop(
@@ -292,13 +284,13 @@ tool_set_active_view <- function(board, pending, view_data, session) {
   )
 }
 
-tool_rename_view <- function(board, pending, view_data, session) {
+tool_rename_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(from, to) {
       with_tool_errors("rename_view", {
 
-        layouts <- current_layouts(board, view_data)
+        layouts <- current_layouts(board)
 
         if (!from %in% names(layouts)) {
           stop(
@@ -307,7 +299,7 @@ tool_rename_view <- function(board, pending, view_data, session) {
           )
         }
 
-        if (to %in% post_pending_view_names(board, pending, view_data)) {
+        if (to %in% post_pending_view_names(board, pending)) {
           stop(
             sprintf("a view named %s already exists", to),
             call. = FALSE

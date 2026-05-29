@@ -9,21 +9,21 @@
   used by interactive actions, composing across slots in a single
   lifecycle tick.
 
-* Layouts move over the wire as a JSON spec form (bare ID,
-  `panels(active = ...)`, `group(sizes = ...)`, top-level
-  `dock_layout(orientation, sizes, active_group)`) that round-trips
-  through new `layout_to_wire()` and `layout_from_wire()` helpers.
-  The default system prompt picks up a Layout subsection documenting
-  the shape and a Views section in the board summary (one line per
-  view, driven by a new exported `summarise_view()` S3 generic that
-  custom layout classes can override). `rename_view` is synthesised
-  from add + rm + active carry-over to avoid an extra payload slot;
-  the upstream dock receiver is free to add a native `rename` later.
+* Layouts move over the wire as the JSON spec form owned by
+  blockr.dock: the tools parse and render with dock's exported
+  `layout_from_json()` / `layout_to_json()` / `layout_panel_ids()`,
+  presenting bare block / extension IDs (dock resolves them to
+  canonical panel IDs on flush). The default system prompt picks up a
+  Layout subsection documenting the shape and a Views section in the
+  board summary (one line per view, driven by a new exported
+  `summarise_view()` S3 generic that custom layout classes can
+  override). `rename_view` is synthesised from add + rm + active
+  carry-over to avoid an extra payload slot; the upstream dock
+  receiver is free to add a native `rename` later.
 
-* Requires the dock `views` payload slot and `view_data` reactive
-  from BMS/blockr.dock#150 / BMS/blockr.dock#146 plus the
-  `augment_board_update()` / `apply_board_update()` generics from
-  BMS/blockr.core#185 (relaxed `validate_board_update_structure()`
+* Requires the dock `views` payload slot from BMS/blockr.dock#150
+  plus the `augment_board_update()` / `apply_board_update()` generics
+  from BMS/blockr.core#185 (relaxed `validate_board_update_structure()`
   so subclass-defined payload slots pass through to subclass
   methods). Fixes #18.
 

@@ -21,9 +21,7 @@ summarise_view <- function(x, ...) {
 #' @export
 summarise_view.dock_layout <- function(x, ...) {
 
-  spec <- layout_to_spec(x)
-
-  panels <- collect_panel_ids(spec$children)
+  panels <- panel_obj_ids(layout_panel_ids(x))
 
   panels_str <- if (length(panels)) {
     paste(panels, collapse = ", ")
@@ -32,39 +30,4 @@ summarise_view.dock_layout <- function(x, ...) {
   }
 
   sprintf("(%d panel(s): %s)", length(panels), panels_str)
-}
-
-collect_panel_ids <- function(node) {
-
-  if (is.character(node)) {
-    return(node)
-  }
-
-  if (is.list(node) && is.null(names(node))) {
-    return(unlist(lapply(node, collect_panel_ids), use.names = FALSE))
-  }
-
-  if (is.list(node)) {
-
-    if (!is.null(node$panels)) {
-      return(unlist(node$panels, use.names = FALSE))
-    }
-
-    if (!is.null(node$group)) {
-      return(
-        unlist(lapply(node$group, collect_panel_ids), use.names = FALSE)
-      )
-    }
-
-    if (!is.null(node$children)) {
-      return(
-        unlist(
-          lapply(node$children, collect_panel_ids),
-          use.names = FALSE
-        )
-      )
-    }
-  }
-
-  character()
 }

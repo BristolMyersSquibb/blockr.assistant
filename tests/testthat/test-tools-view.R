@@ -23,7 +23,7 @@ test_that("list_views returns one entry per view with name, active, layout", {
 
   env <- new_view_tool_env()
 
-  lv <- tool_list_views(env$board, view_data = NULL, session = NULL)
+  lv <- tool_list_views(env$board, session = NULL)
   out <- lv()
 
   expect_length(out, 2L)
@@ -36,22 +36,7 @@ test_that("list_views returns one entry per view with name, active, layout", {
   expect_identical(active[nms == "Overview"], FALSE)
 
   analysis_layout <- out[[which(nms == "Analysis")]]$layout
-  expect_named(analysis_layout, c("children", "orientation", "active_group"))
-})
-
-test_that("list_views prefers live view_data when supplied", {
-
-  env <- new_view_tool_env()
-
-  live <- as_dock_layouts(dock_layout("a", "b", active = TRUE))
-  names(live) <- "Hot"
-  vd <- reactive(live)
-
-  lv <- tool_list_views(env$board, view_data = vd, session = NULL)
-  out <- isolate(lv())
-
-  expect_length(out, 1L)
-  expect_identical(out[[1L]]$name, "Hot")
+  expect_named(analysis_layout, c("orientation", "children"))
 })
 
 test_that("validate_layout returns OK and the normalized layout", {
@@ -75,12 +60,12 @@ test_that("validate_layout surfaces structural errors without staging", {
 
   res <- vl(layout = paste0(
     "{\"children\": [",
-    "  {\"children\": [\"a\"], \"orientation\": \"vertical\"}",
+    "  {\"unexpected\": \"a\"}",
     "], \"orientation\": \"horizontal\"}"
   ))
 
   expect_match(res, "^validate_layout failed:")
-  expect_match(res, "`children` is only valid at the top level")
+  expect_match(res, "must be a string or an object")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -145,18 +130,18 @@ test_that("add_view rejects malformed layout objects with a classed error", {
 
   res <- av(
     name   = "X",
-    layout = "{\"orientation\": \"horizontal\"}"
+    layout = "{\"children\": [{\"unexpected\": \"a\"}]}"
   )
 
   expect_match(res, "^add_view failed:")
-  expect_match(res, "requires `children`")
+  expect_match(res, "must be a string or an object")
 })
 
 test_that("remove_view stages an rm and rejects the last remaining view", {
 
   env <- new_view_tool_env()
   rv <- tool_remove_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- rv(name = "Overview")
@@ -168,7 +153,7 @@ test_that("remove_view stages an rm and rejects the last remaining view", {
   )
   solo_env <- new_view_tool_env(solo_brd)
   rv_solo <- tool_remove_view(
-    solo_env$board, solo_env$pending, view_data = NULL, session = NULL
+    solo_env$board, solo_env$pending, session = NULL
   )
 
   res <- rv_solo(name = "P")
@@ -209,7 +194,7 @@ test_that("set_active_view stages the active marker", {
 
   env <- new_view_tool_env()
   sav <- tool_set_active_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- sav(name = "Overview")
@@ -228,7 +213,7 @@ test_that("set_active_view accepts a view staged for creation this turn", {
   )
 
   sav <- tool_set_active_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
   res <- sav(name = "Reports")
 
@@ -240,7 +225,7 @@ test_that("set_active_view rejects an unknown view", {
 
   env <- new_view_tool_env()
   sav <- tool_set_active_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- sav(name = "Ghost")
@@ -252,7 +237,7 @@ test_that("rename_view synthesises add + rm + active carry-over", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- rnv(from = "Analysis", to = "Deep Dive")
@@ -270,7 +255,7 @@ test_that("rename_view rejects when target already exists", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- rnv(from = "Analysis", to = "Overview")
@@ -283,7 +268,7 @@ test_that("rename_view rejects an unknown source", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
   res <- rnv(from = "Ghost", to = "Other")
@@ -292,19 +277,19 @@ test_that("rename_view rejects an unknown source", {
   expect_match(res, "does not exist")
 })
 
-test_that("rename round-trips through layout_to_spec (regression)", {
+test_that("rename carries the layout over unchanged (regression)", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(
-    env$board, env$pending, view_data = NULL, session = NULL
+    env$board, env$pending, session = NULL
   )
 
-  before <- isolate(layout_to_spec(board_layouts(env$board$board)$Analysis))
+  before <- isolate(as.list(board_layouts(env$board$board)$Analysis))
 
   rnv(from = "Analysis", to = "Alpha")
 
   staged_layout <- isolate(env$pending()$views$add[["Alpha"]])
-  after <- layout_to_spec(staged_layout)
+  after <- as.list(staged_layout)
 
   expect_identical(before, after)
 })

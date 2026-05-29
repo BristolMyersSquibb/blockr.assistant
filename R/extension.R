@@ -141,9 +141,6 @@ asst_ext_srv <- function(system_prompt, messages) {
 
   function(id, board, update, ...) {
 
-    dots <- list(...)
-    view_data <- dots$view_data
-
     moduleServer(
       id,
       function(input, output, session) {
@@ -177,7 +174,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, session
           )
           register_view_tools(
-            cl, board, pending_update, view_data, session
+            cl, board, pending_update, session
           )
 
           # Drop trailing turns that represent an incomplete or
