@@ -470,7 +470,7 @@ The lenient table closes the trap.</li>
 <li>
 <strong>The flush-time validator is the safety net.</strong> The
 point of staging is per-call feedback, but the source of truth for “is
-this payload safe” is <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/validate_board_update.html" class="external-link">validate_board_update()</a></code> at flush
+this payload safe” is <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/board_update.html" class="external-link">validate_board_update()</a></code> at flush
 time. Lenient stage-time collapse can’t produce an invalid flush — if
 the combined intent expressed by the collapsed payload is structurally
 bad, the dispatch-time validator catches it.</li>

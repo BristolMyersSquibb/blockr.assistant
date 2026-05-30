@@ -325,7 +325,7 @@ Why this trade-off:
 - **The flush-time validator is the safety net.** The point of staging
   is per-call feedback, but the source of truth for “is this payload
   safe” is
-  [`validate_board_update()`](https://bristolmyerssquibb.github.io/blockr.core/reference/validate_board_update.html)
+  [`validate_board_update()`](https://bristolmyerssquibb.github.io/blockr.core/reference/board_update.html)
   at flush time. Lenient stage-time collapse can’t produce an invalid
   flush — if the combined intent expressed by the collapsed payload is
   structurally bad, the dispatch-time validator catches it.
