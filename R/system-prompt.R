@@ -55,6 +55,84 @@ default_system_prompt <- function(board = NULL, client = NULL,
     "the Board section above (and block_name, always). For other",
     "changes use remove_block + add_block.",
     "",
+    "## Layout",
+    "",
+    "Views are named tabs; each holds its own arrangement of panels",
+    "(blocks and extensions). modify_view and add_view take a full",
+    "layout in JSON spec form -- read the current shape with",
+    "list_views, edit the structure, and write it back.",
+    "",
+    "Top-level shape (object):",
+    "  {\"orientation\": \"horizontal\"|\"vertical\",",
+    "   \"children\": [<node>, ...],",
+    "   \"sizes\": [<num>, ...],            // optional, length == #children",
+    "   \"focus\": \"<panel id>\"}            // optional, focused panel",
+    "",
+    "Each <node> inside `children` is one of:",
+    "",
+    "- a bare ID string: a single-panel leaf",
+    "- `{\"panels\": [<id>, ...], \"active\": \"<id>\"}`: a tabbed leaf",
+    "  (`active` optional, defaults to the first). A tab group is",
+    "  ALWAYS this object -- never a bare array of IDs.",
+    "- `{\"children\": [<node>, ...], \"sizes\": [<num>, ...]}`: a nested",
+    "  split (sizes optional). Nested branches use the same `children`",
+    "  key as the top level. Orientation alternates with depth",
+    "  automatically -- only the top level names an `orientation`;",
+    "  there is no per-branch `orientation` key.",
+    "",
+    "Sizes are positive numbers, one per child. They are ratios; their",
+    "absolute scale does not matter (`[1, 2]`, `[0.33, 0.67]`, and",
+    "`[33, 67]` are equivalent).",
+    "",
+    "Worked examples (blocks: data, head, scatter; extension:",
+    "assistant_extension):",
+    "",
+    "  * Stack blocks vertically on the left, assistant on the right:",
+    "    {\"orientation\": \"horizontal\",",
+    "     \"children\": [",
+    "       {\"children\": [\"data\", \"head\", \"scatter\"]},",
+    "       \"assistant_extension\"],",
+    "     \"sizes\": [0.7, 0.3]}",
+    "    Top split is horizontal (inner branch + assistant). The inner",
+    "    branch names no orientation; depth-alternation makes it",
+    "    vertical automatically.",
+    "",
+    "  * Combine data + head into a tab group, scatter beside them:",
+    "    {\"orientation\": \"horizontal\",",
+    "     \"children\": [",
+    "       {\"panels\": [\"data\", \"head\"], \"active\": \"data\"},",
+    "       \"scatter\",",
+    "       \"assistant_extension\"],",
+    "     \"sizes\": [0.4, 0.35, 0.25]}",
+    "",
+    "  * Everything in one column:",
+    "    {\"orientation\": \"vertical\",",
+    "     \"children\": [\"data\", \"head\", \"scatter\",",
+    "                   \"assistant_extension\"]}",
+    "",
+    "  * Nested layout, depth 3 (data top-left; head and scatter",
+    "    split below it; assistant down the right side):",
+    "    {\"orientation\": \"horizontal\",",
+    "     \"children\": [",
+    "       {\"children\": [",
+    "          \"data\",",
+    "          {\"children\": [\"head\", \"scatter\"]}",
+    "       ]},",
+    "       \"assistant_extension\"],",
+    "     \"sizes\": [0.7, 0.3]}",
+    "    Orientation alternates with depth: top is horizontal, the",
+    "    outer nested branch is vertical (data above head|scatter), the",
+    "    inner branch is horizontal again (head | scatter).",
+    "",
+    "Probe with `validate_layout(layout)` before staging if you're",
+    "unsure -- it parses, checks panel IDs, and returns the",
+    "normalized form without touching board state.",
+    "",
+    "Blocks referenced by a view layout must exist on the board (or",
+    "be staged for creation in the same turn). Removing a block",
+    "automatically drops its panels from every view containing it",
+    "-- no explicit cleanup needed.",
+    "",
     "Answer concisely.",
     sep = "\n"
   )
@@ -132,13 +210,14 @@ summarise_board <- function(board, max_chars = 4000L) {
   blks <- board_blocks(b)
   lnks <- board_links(b)
   stks <- board_stacks(b)
+  vws  <- board_views(b)
 
   header <- sprintf(
-    "%d block(s), %d link(s), %d stack(s).",
-    length(blks), length(lnks), length(stks)
+    "%d block(s), %d link(s), %d stack(s), %d view(s).",
+    length(blks), length(lnks), length(stks), length(vws)
   )
 
-  if (!length(blks) && !length(lnks) && !length(stks)) {
+  if (!length(blks) && !length(lnks) && !length(stks) && length(vws) <= 1L) {
     return(paste(header, "(empty board -- no blocks yet)"))
   }
 
@@ -147,7 +226,8 @@ summarise_board <- function(board, max_chars = 4000L) {
     "",
     summarise_blocks(blks, b),
     summarise_links(lnks),
-    summarise_stacks(stks)
+    summarise_stacks(stks),
+    summarise_views(vws, b)
   )
 
   out <- paste(body, collapse = "\n")
@@ -158,12 +238,21 @@ summarise_board <- function(board, max_chars = 4000L) {
       paste(
         header,
         "(too many entities to inline; call list_blocks,",
-        "list_links and list_stacks for the full set)"
+        "list_links, list_stacks and list_views for the full set)"
       )
     )
   }
 
   out
+}
+
+board_views <- function(b) {
+
+  if (!inherits(b, "dock_board")) {
+    return(structure(list(), class = "dock_layouts"))
+  }
+
+  board_layouts(b)
 }
 
 summarise_blocks <- function(blks, board) {
@@ -214,4 +303,34 @@ summarise_stacks <- function(stks) {
       sprintf("- %s %s", id, summarise_stack(stks[[id]]))
     })
   )
+}
+
+summarise_views <- function(vws, b) {
+
+  if (length(vws) <= 1L) {
+    return(character())
+  }
+
+  active <- tryCatch(active_view(vws), error = function(e) NA_character_)
+
+  c(
+    "### Views",
+    chr_ply(names(vws), function(nm) {
+      marker <- if (identical(nm, active)) " (active)" else ""
+      sprintf("- %s%s %s", nm, marker, summarise_view(vws[[nm]]))
+    })
+  )
+}
+
+summarise_view <- function(layout) {
+
+  panels <- panel_obj_ids(layout_panel_ids(layout))
+
+  panels_str <- if (length(panels)) {
+    paste(panels, collapse = ", ")
+  } else {
+    "<empty>"
+  }
+
+  sprintf("(%d panel(s): %s)", length(panels), panels_str)
 }

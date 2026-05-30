@@ -46,6 +46,14 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   )
   withr::defer(app$stop())
 
+  # The chat panel mounts via a deferred reactive cascade (build client ->
+  # mount_idx -> renderUI), which can land a flush or two after the initial
+  # load idle. Wait for shinychat's element before asserting on it.
+  app$wait_for_js(
+    "document.querySelector('shiny-chat-container') !== null",
+    timeout = 15 * 1000
+  )
+
   panel_html <- app$get_html(".asst-panel")
   expect_true(
     nzchar(panel_html %||% ""),

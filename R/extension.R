@@ -173,6 +173,9 @@ asst_ext_srv <- function(system_prompt, messages) {
           register_mutation_tools(
             cl, board, pending_update, session
           )
+          register_view_tools(
+            cl, board, pending_update, session
+          )
 
           # Drop trailing turns that represent an incomplete or
           # failed exchange. Two shapes show up after a stream error

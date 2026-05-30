@@ -19,7 +19,7 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:
     blockr.core (>= 0.1.3),
-    blockr.dock (>= 0.1.2),
+    blockr.dock (>= 0.1.1),
     bsicons,
     btw,
     ellmer,
@@ -33,8 +33,9 @@ Suggests:
     testthat (>= 3.0.0),
     withr
 Remotes:
-    BristolMyersSquibb/blockr.core#178,
-    BristolMyersSquibb/blockr.dock#133
+    BristolMyersSquibb/blockr.core,
+    BristolMyersSquibb/blockr.dock,
+    posit-dev/shinychat/pkg-r
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder:
