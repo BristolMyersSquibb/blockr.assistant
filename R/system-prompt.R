@@ -321,3 +321,16 @@ summarise_views <- function(vws, b) {
     })
   )
 }
+
+summarise_view <- function(layout) {
+
+  panels <- panel_obj_ids(layout_panel_ids(layout))
+
+  panels_str <- if (length(panels)) {
+    paste(panels, collapse = ", ")
+  } else {
+    "<empty>"
+  }
+
+  sprintf("(%d panel(s): %s)", length(panels), panels_str)
+}

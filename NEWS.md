@@ -15,9 +15,8 @@
   presenting bare block / extension IDs (dock resolves them to
   canonical panel IDs on flush). The default system prompt picks up a
   Layout subsection documenting the shape and a Views section in the
-  board summary (one line per view, driven by a new exported
-  `summarise_view()` S3 generic that custom layout classes can
-  override). `rename_view` is synthesised from add + rm + active
+  board summary (one line per view: name, active marker, panel
+  count). `rename_view` is synthesised from add + rm + active
   carry-over to avoid an extra payload slot; the upstream dock
   receiver is free to add a native `rename` later.
 
