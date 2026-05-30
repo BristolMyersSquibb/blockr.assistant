@@ -20,7 +20,7 @@ layout_to_llm_spec <- function(layout) {
 strip_panel_ids <- function(node) {
 
   if (is.character(node)) {
-    return(unname(panel_obj_ids(node)))
+    return(panel_obj_ids(node))
   }
 
   if (!is.list(node)) {
@@ -29,11 +29,10 @@ strip_panel_ids <- function(node) {
 
   if (!is.null(node[["panels"]])) {
 
-    ids <- unname(panel_obj_ids(unlist(node[["panels"]])))
-    node[["panels"]] <- as.list(ids)
+    node[["panels"]] <- as.list(panel_obj_ids(unlist(node[["panels"]])))
 
     if (!is.null(node[["active"]])) {
-      node[["active"]] <- unname(panel_obj_ids(node[["active"]]))
+      node[["active"]] <- panel_obj_ids(node[["active"]])
     }
 
     return(node)
@@ -41,10 +40,10 @@ strip_panel_ids <- function(node) {
 
   if (!is.null(node[["children"]])) {
 
-    node[["children"]] <- unname(lapply(node[["children"]], strip_panel_ids))
+    node[["children"]] <- lapply(node[["children"]], strip_panel_ids)
 
     if (!is.null(node[["focus"]])) {
-      node[["focus"]] <- unname(panel_obj_ids(node[["focus"]]))
+      node[["focus"]] <- panel_obj_ids(node[["focus"]])
     }
 
     return(node)
