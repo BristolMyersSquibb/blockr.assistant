@@ -25,6 +25,7 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_match(res, "ids are immutable once committed")
   expect_match(res, "## Layout", fixed = TRUE)
   expect_match(res, "Views are named tabs")
+  expect_match(res, "may appear in more than one view")
   expect_no_match(res, "## Tools", fixed = TRUE)
   expect_no_match(res, "## Board", fixed = TRUE)
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
