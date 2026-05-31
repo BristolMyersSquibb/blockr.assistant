@@ -23,6 +23,7 @@ Imports:
     bsicons,
     btw,
     ellmer,
+    glue,
     jsonlite,
     shiny,
     shinychat

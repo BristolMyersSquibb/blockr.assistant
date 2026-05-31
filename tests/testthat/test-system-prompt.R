@@ -31,6 +31,10 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
 })
 
+test_that("default_system_prompt() static document matches the golden", {
+  expect_snapshot(cat(default_system_prompt()))
+})
+
 test_that("default_system_prompt() with client adds the catalogue", {
 
   client <- fake_chat_function()
