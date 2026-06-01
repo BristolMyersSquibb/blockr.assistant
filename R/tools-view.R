@@ -160,14 +160,9 @@ tool_add_view <- function(board, pending, session) {
       name   = ellmer::type_string("Name for the new view."),
       layout = ellmer::type_string(
         paste(
-          "JSON object describing the view's layout. Top-level shape:",
-          "{\"orientation\": \"horizontal\" | \"vertical\",",
-          "\"children\": [...], \"sizes\": [...]}. Each child is a bare",
-          "ID string (single-panel leaf), a {\"panels\": [...],",
-          "\"active\": \"...\"} object (tabbed leaf), or a",
-          "{\"children\": [...], \"sizes\": [...]} object (nested",
-          "split). See the Layout section for the full spec and",
-          "worked examples."
+          "JSON object describing the view's layout, in the shape",
+          "`list_views` returns. See the Layout section for the full",
+          "spec and worked examples."
         )
       ),
       active = ellmer::type_boolean(

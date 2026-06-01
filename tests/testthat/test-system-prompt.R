@@ -31,6 +31,43 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
 })
 
+test_that("default_system_prompt() static document matches the golden", {
+  expect_snapshot(cat(default_system_prompt()))
+})
+
+test_that("default_system_prompt() golden on a populated board", {
+
+  brd <- new_dock_board(
+    blocks = c(
+      data = new_dataset_block("iris"),
+      head = new_head_block()
+    ),
+    links = c(ab = new_link("data", "head", "data")),
+    layouts = list(
+      Analysis = dock_layout("data", "head", active = TRUE),
+      Overview = dock_layout("data")
+    )
+  )
+
+  board   <- reactiveValues(board = brd)
+  pending <- reactiveVal(empty_pending())
+  client  <- fake_chat_function()
+
+  register_read_tools(client, board, reactiveVal(), NULL)
+  register_mutation_tools(client, board, pending, NULL)
+  register_view_tools(client, board, pending, NULL)
+
+  flush <- reactiveVal("validator rejected cycle: a -> b -> a")
+
+  prompt <- default_system_prompt(
+    board = board,
+    client = client,
+    last_flush = flush
+  )
+
+  expect_snapshot(cat(prompt))
+})
+
 test_that("default_system_prompt() with client adds the catalogue", {
 
   client <- fake_chat_function()
