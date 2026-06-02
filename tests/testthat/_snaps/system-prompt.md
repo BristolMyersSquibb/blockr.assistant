@@ -25,10 +25,16 @@
       
       ## Layout
       
-      Views are named tabs; each holds its own arrangement of panels
-      (blocks and extensions). modify_view and add_view take a full
-      layout in JSON spec form -- read the current shape with
-      list_views, edit the structure, and write it back.
+      Views are tabs; each holds its own arrangement of panels (blocks
+      and extensions). modify_view and add_view take a full layout in
+      JSON spec form -- read the current shape with list_views, edit
+      the structure, and write it back.
+      
+      Each view has a stable `id` and a display `name`. Address an
+      existing view by its `id` (from list_views) in modify_view,
+      remove_view, set_active_view and rename_view. add_view takes a
+      display `name`; the board assigns the id. rename_view changes
+      only the label, never the id.
       
       The same block or extension may appear in more than one view -- a
       panel is a single instance that renders in whichever view is
@@ -135,10 +141,16 @@
       
       ## Layout
       
-      Views are named tabs; each holds its own arrangement of panels
-      (blocks and extensions). modify_view and add_view take a full
-      layout in JSON spec form -- read the current shape with
-      list_views, edit the structure, and write it back.
+      Views are tabs; each holds its own arrangement of panels (blocks
+      and extensions). modify_view and add_view take a full layout in
+      JSON spec form -- read the current shape with list_views, edit
+      the structure, and write it back.
+      
+      Each view has a stable `id` and a display `name`. Address an
+      existing view by its `id` (from list_views) in modify_view,
+      remove_view, set_active_view and rename_view. add_view takes a
+      display `name`; the board assigns the id. rename_view changes
+      only the label, never the id.
       
       The same block or extension may appear in more than one view -- a
       panel is a single instance that renders in whichever view is
@@ -235,13 +247,13 @@
       - `add_stack(blocks, name?, id?)`: Group a set of blocks into a stack. `blocks` is a character vector of block ids; `name` is an optional human-readable label.
       - `remove_stack(id)`: Remove a stack. Member blocks are not removed; only the grouping disappears.
       - `modify_stack(id, blocks?, name?)`: Change a stack's member blocks and/or name. Either or both arguments may be omitted; only supplied fields are changed.
-      - `list_views()`: List all views (named tabs) on the board. One entry per view: name, whether it's the currently-active view, and the view's layout in the JSON spec form documented in the Layout section. Reflects UI-driven rearrangements once they have synced back to the board.
+      - `list_views()`: List all views (tabs) on the board. One entry per view: its stable `id` (the handle modify_view / remove_view / set_active_view / rename_view address the view by), its display `name`, whether it's the currently-active view, and its `layout` in the JSON spec form documented in the Layout section. Reflects UI-driven rearrangements once they have synced back to the board.
       - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view / modify_view; never mutates board state.
-      - `add_view(name, layout, active?)`: Add a new view (named tab) with the given layout. `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
-      - `remove_view(name)`: Remove a view by name. Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
-      - `modify_view(name, layout)`: Replace a view's layout. `layout` is a JSON object in the same shape `list_views` returns -- read the current layout, edit it, and write it back. Blocks referenced in the new layout must exist on the board or be staged for creation in this turn.
-      - `set_active_view(name)`: Switch the active view (the tab shown by default on next render). The named view must exist on the board or be staged for creation in this turn.
-      - `rename_view(from, to)`: Rename a view. Carries over the current layout and the active marker (if `from` was the active view, `to` becomes active). Implemented as add(to, <layout>) + rm(from) under the hood -- the two changes apply atomically at flush.
+      - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
+      - `remove_view(id)`: Remove a view by id (see list_views). Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
+      - `modify_view(id, layout)`: Replace a view's layout, addressed by id (see list_views). `layout` is a JSON object in the same shape `list_views` returns -- read the current layout, edit it, and write it back. Blocks referenced in the new layout must exist on the board or be staged for creation in this turn.
+      - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
+      - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
       
       ## Board
       2 block(s), 1 link(s), 0 stack(s), 2 view(s).
@@ -252,8 +264,8 @@
       ### Links
       - ab: data -> head$data
       ### Views
-      - Analysis (active) (2 panel(s): data, head)
-      - Overview (1 panel(s): data)
+      - Analysis (id: Analysis) (active) (2 panel(s): data, head)
+      - Overview (id: Overview) (1 panel(s): data)
       
       Note: your previous turn's changes were rejected: validator rejected cycle: a -> b -> a. The board did not change. Re-issue corrected calls.
 

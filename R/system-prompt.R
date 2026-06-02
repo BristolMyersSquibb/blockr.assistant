@@ -232,13 +232,17 @@ summarise_views <- function(vws, b) {
     return(character())
   }
 
+  labels <- view_names(vws)
   active <- tryCatch(active_view(vws), error = function(e) NA_character_)
 
   c(
     "### Views",
-    chr_ply(names(vws), function(nm) {
-      marker <- if (identical(nm, active)) " (active)" else ""
-      sprintf("- %s%s %s", nm, marker, summarise_view(vws[[nm]]))
+    chr_ply(names(vws), function(id) {
+      marker <- if (identical(id, active)) " (active)" else ""
+      sprintf(
+        "- %s (id: %s)%s %s",
+        labels[[id]], id, marker, summarise_view(vws[[id]])
+      )
     })
   )
 }

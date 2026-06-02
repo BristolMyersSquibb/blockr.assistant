@@ -24,7 +24,8 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_match(res, "You are an assistant embedded next to a blockr")
   expect_match(res, "ids are immutable once committed")
   expect_match(res, "## Layout", fixed = TRUE)
-  expect_match(res, "Views are named tabs")
+  expect_match(res, "Views are tabs")
+  expect_match(res, "the board assigns the id", fixed = TRUE)
   expect_match(res, "may appear in more than one view")
   expect_no_match(res, "## Tools", fixed = TRUE)
   expect_no_match(res, "## Board", fixed = TRUE)
@@ -113,8 +114,8 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   brd <- new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
     layouts = list(
-      Analysis = dock_layout("a", active = TRUE),
-      Overview = dock_layout("a")
+      v_main = dock_layout("a", name = "Analysis", active = TRUE),
+      v_over = dock_layout("a", name = "Overview")
     )
   )
 
@@ -122,8 +123,8 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
 
   expect_match(res, "2 view(s)", fixed = TRUE)
   expect_match(res, "### Views")
-  expect_match(res, "- Analysis (active)", fixed = TRUE)
-  expect_match(res, "- Overview", fixed = TRUE)
+  expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
+  expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
 })
 
 test_that("default_system_prompt() surfaces the flush-rejection note", {
