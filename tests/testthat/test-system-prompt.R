@@ -45,7 +45,7 @@ test_that("default_system_prompt() golden on a populated board", {
     ),
     links = c(ab = new_link("data", "head", "data")),
     layouts = list(
-      Analysis = dock_layout("data", "head", active = TRUE),
+      Analysis = dock_layout("data", "head"),
       Overview = dock_layout("data")
     )
   )
@@ -114,7 +114,7 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   brd <- new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
     layouts = list(
-      v_main = dock_layout("a", name = "Analysis", active = TRUE),
+      v_main = dock_layout("a", name = "Analysis"),
       v_over = dock_layout("a", name = "Overview")
     )
   )

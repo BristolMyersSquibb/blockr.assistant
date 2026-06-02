@@ -6,7 +6,7 @@ make_view_board <- function() {
     ),
     links = c(l = new_link("a", "b", "data")),
     layouts = list(
-      Analysis = dock_layout("a", "b", active = TRUE),
+      Analysis = dock_layout("a", "b"),
       Overview = dock_layout("a")
     )
   )

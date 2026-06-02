@@ -6,7 +6,7 @@ make_view_tool_board <- function() {
     ),
     links = c(l = new_link("a", "b", "data")),
     layouts = list(
-      v_main = dock_layout("a", "b", name = "Analysis", active = TRUE),
+      v_main = dock_layout("a", "b", name = "Analysis"),
       v_over = dock_layout("a", name = "Overview")
     )
   )
