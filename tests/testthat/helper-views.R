@@ -2,8 +2,9 @@
 # forward-references a view added in the same delta (by its add key) to
 # the freshly-minted id. The assistant addresses existing views by id, so
 # "add a view and make it active" can only name the not-yet-minted view by
-# its add key -- which the dock must resolve. Pending blockr.dock #174;
-# the affected tests skip until it lands. See blockr.assistant #30.
+# its add key -- which the dock must resolve. Shipped in blockr.dock #175
+# (PR for #174); this guard keeps the add-activate tests honest against a
+# dock build that predates it. See blockr.assistant #30.
 forward_ref_active_supported <- function() {
 
   brd <- new_dock_board(
