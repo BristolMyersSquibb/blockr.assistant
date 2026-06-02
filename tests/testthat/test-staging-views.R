@@ -34,8 +34,6 @@ test_that("stage_view_add stages an add keyed by display name", {
 
 test_that("stage_view_add active=TRUE flags the new view active by its key", {
 
-  skip_without_forward_ref()
-
   env <- new_views_env()
 
   stage_view_add(
@@ -154,8 +152,6 @@ test_that("stage_view_rm rejects an already-pending rm", {
 })
 
 test_that("stage_view_rm clears active when removing the active-staged view", {
-
-  skip_without_forward_ref()
 
   env <- new_views_env()
   stage_view_add(
