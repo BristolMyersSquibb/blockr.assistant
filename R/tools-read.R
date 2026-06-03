@@ -10,6 +10,9 @@ register_read_tools <- function(client, board, update, session) {
   client$register_tool(
     tool_get_block_result(board, update, session)
   )
+  client$register_tool(
+    tool_get_block_conditions(board, update, session)
+  )
   client$register_tool(tool_query_data(board, update, session))
 
   invisible(client)
@@ -255,6 +258,51 @@ tool_get_block_result <- function(board, update, session) {
       "output. Data frames are summarised with skimr-style stats;",
       "other objects fall back to a truncated print. Returns an",
       "error string if the block has not evaluated successfully."
+    ),
+    arguments   = list(
+      id = ellmer::type_string("Block id, as returned by list_blocks.")
+    )
+  )
+}
+
+tool_get_block_conditions <- function(board, update, session) {
+
+  ellmer::tool(
+    function(id) {
+      with_tool_errors("get_block_conditions", {
+
+        blks <- isolate(board$blocks)
+
+        if (!id %in% names(blks)) {
+          return(
+            sprintf(
+              "No block with id %s. Call list_blocks first.", id
+            )
+          )
+        }
+
+        cond <- blks[[id]]$server$cond
+
+        if (is.null(cond)) {
+          return(
+            sprintf("Block %s has no condition state to report yet.", id)
+          )
+        }
+
+        df <- summarise_conditions(isolate(reactiveValuesToList(cond)))
+
+        format_conditions(df, id)
+      })
+    },
+    name        = "get_block_conditions",
+    description = paste(
+      "Return a block's currently captured conditions -- the errors,",
+      "warnings and messages raised across its evaluation phases --",
+      "grouped by severity and noting the phase each came from. The",
+      "sibling of get_block_result for an unhealthy block: a block that",
+      "errors on eval leaves its result empty, so the actual message",
+      "surfaces only here. Reports no active conditions when the block",
+      "is healthy."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
