@@ -1,9 +1,15 @@
 ## Layout
 
-Views are named tabs; each holds its own arrangement of panels
-(blocks and extensions). modify_view and add_view take a full
-layout in JSON spec form -- read the current shape with
-list_views, edit the structure, and write it back.
+Views are tabs; each holds its own arrangement of panels (blocks
+and extensions). modify_view and add_view take a full layout in
+JSON spec form -- read the current shape with list_views, edit
+the structure, and write it back.
+
+Each view has a stable `id` and a display `name`. Address an
+existing view by its `id` (from list_views) in modify_view,
+remove_view, set_active_view and rename_view. add_view takes a
+display `name`; the board assigns the id. rename_view changes
+only the label, never the id.
 
 The same block or extension may appear in more than one view -- a
 panel is a single instance that renders in whichever view is

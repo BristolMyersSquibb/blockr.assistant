@@ -20,7 +20,8 @@ empty_pending <- function() {
       add    = list(),
       mod    = list(),
       rm     = character(),
-      active = NULL
+      active = NULL,
+      rename = list()
     )
   )
 }
@@ -56,6 +57,7 @@ has_any_changes <- function(payload) {
     length(payload$views$add) > 0L,
     length(payload$views$mod) > 0L,
     length(payload$views$rm)  > 0L,
+    length(payload$views$rename) > 0L,
     views_active
   )
 }
@@ -480,6 +482,23 @@ stage_view_active <- function(pending, board, name) {
   commit_pending(
     pending, isolate(board$board), new, "set_active_view", name
   )
+}
+
+stage_view_rename <- function(pending, board, id, name) {
+
+  cur <- isolate(pending())
+
+  if (id %in% cur$views$rm) {
+    stage_abort(
+      "rename_view", id,
+      "view is staged for removal; cannot rename it"
+    )
+  }
+
+  new <- cur
+  new$views$rename[[id]] <- name
+
+  commit_pending(pending, isolate(board$board), new, "rename_view", id)
 }
 
 flush_pending <- function(pending, update, last_flush_error = NULL) {

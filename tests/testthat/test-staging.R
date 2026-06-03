@@ -30,11 +30,12 @@ test_that("empty_pending has the expected shape", {
     expect_length(p[[slot]]$rm, 0L)
   }
 
-  expect_named(p$views, c("add", "mod", "rm", "active"))
+  expect_named(p$views, c("add", "mod", "rm", "active", "rename"))
   expect_length(p$views$add, 0L)
   expect_length(p$views$mod, 0L)
   expect_length(p$views$rm, 0L)
   expect_null(p$views$active)
+  expect_length(p$views$rename, 0L)
 })
 
 test_that("has_any_changes detects content in every slot", {
@@ -59,6 +60,10 @@ test_that("has_any_changes detects content in every slot", {
 
   p <- empty_pending()
   p$views$active <- "V"
+  expect_true(has_any_changes(p))
+
+  p <- empty_pending()
+  p$views$rename <- list(V = "New")
   expect_true(has_any_changes(p))
 })
 

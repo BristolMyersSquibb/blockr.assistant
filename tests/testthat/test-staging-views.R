@@ -6,7 +6,7 @@ make_view_board <- function() {
     ),
     links = c(l = new_link("a", "b", "data")),
     layouts = list(
-      Analysis = dock_layout("a", "b", active = TRUE),
+      Analysis = dock_layout("a", "b"),
       Overview = dock_layout("a")
     )
   )
@@ -19,7 +19,20 @@ new_views_env <- function(brd = make_view_board()) {
   )
 }
 
-test_that("stage_view_add stages an add and optional active flip", {
+test_that("stage_view_add stages an add keyed by display name", {
+
+  env <- new_views_env()
+
+  stage_view_add(env$pending, env$board, "Reports", dock_layout("a"))
+
+  p <- isolate(env$pending())
+
+  expect_named(p$views$add, "Reports")
+  expect_true(is_dock_layout(p$views$add[["Reports"]]))
+  expect_null(p$views$active)
+})
+
+test_that("stage_view_add active=TRUE flags the new view active by its key", {
 
   env <- new_views_env()
 
@@ -28,11 +41,7 @@ test_that("stage_view_add stages an add and optional active flip", {
     active = TRUE
   )
 
-  p <- isolate(env$pending())
-
-  expect_named(p$views$add, "Reports")
-  expect_true(is_dock_layout(p$views$add[["Reports"]]))
-  expect_identical(p$views$active, "Reports")
+  expect_identical(isolate(env$pending()$views$active), "Reports")
 })
 
 test_that("stage_view_add rejects a duplicate pending add", {
@@ -47,15 +56,13 @@ test_that("stage_view_add rejects a duplicate pending add", {
   )
 })
 
-test_that("stage_view_add rejects when name clashes with existing view", {
+test_that("stage_view_add allows a display name already used by a view", {
 
   env <- new_views_env()
 
-  expect_error(
-    stage_view_add(env$pending, env$board, "Analysis", dock_layout("a")),
-    "add_view(Analysis) failed:",
-    fixed = TRUE
-  )
+  stage_view_add(env$pending, env$board, "Analysis", dock_layout("a"))
+
+  expect_named(isolate(env$pending()$views$add), "Analysis")
 })
 
 test_that("stage_view_add rejects against pending mod and pending rm", {
@@ -169,6 +176,30 @@ test_that("stage_view_active stages and rejects when target is pending rm", {
 
   expect_error(
     stage_view_active(env$pending, env$board, "Overview"),
+    "staged for removal",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_view_rename stages a rename keyed by id", {
+
+  env <- new_views_env()
+
+  stage_view_rename(env$pending, env$board, "Analysis", "Deep Dive")
+
+  p <- isolate(env$pending())
+  expect_identical(p$views$rename[["Analysis"]], "Deep Dive")
+  expect_length(p$views$add, 0L)
+  expect_length(p$views$rm, 0L)
+})
+
+test_that("stage_view_rename rejects a view staged for removal", {
+
+  env <- new_views_env()
+  stage_view_rm(env$pending, env$board, "Overview")
+
+  expect_error(
+    stage_view_rename(env$pending, env$board, "Overview", "X"),
     "staged for removal",
     fixed = TRUE
   )
