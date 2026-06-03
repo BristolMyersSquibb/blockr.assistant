@@ -1,4 +1,4 @@
-new_doc_extension <- function(content = "", title = "") {
+new_doc_extension <- function(content = "", title = "", description = NULL) {
   new_dock_extension(
     server = function(id, ...) {
       moduleServer(
@@ -15,17 +15,18 @@ new_doc_extension <- function(content = "", title = "") {
     },
     ui = function(id) tagList(),
     name = "Document",
+    description = description,
     class = "doc_extension",
     ctor = function(content = "", title = "") NULL,
     external_ctrl = TRUE
   )
 }
 
-make_ext_tool_board <- function() {
+make_ext_tool_board <- function(description = NULL) {
   new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
     extensions = as_dock_extensions(
-      list(new_doc_extension(content = "# old"))
+      list(new_doc_extension(content = "# old", description = description))
     )
   )
 }
@@ -55,9 +56,23 @@ test_that("list_extensions reports id, name, controllable vars, live values", {
   entry <- out[[1L]]
   expect_identical(entry$id, "doc_extension")
   expect_identical(entry$name, "Document")
+  expect_false("description" %in% names(entry))
   expect_setequal(entry$controllable, c("content", "title"))
   expect_named(entry$values, "content")
   expect_identical(entry$values$content, "# live")
+})
+
+test_that("list_extensions surfaces an extension description when present", {
+
+  env <- new_ext_tool_env(
+    make_ext_tool_board(description = "Embed block results via blockr://<id>.")
+  )
+  le  <- tool_list_extensions(env$board, extensions = NULL, session = NULL)
+
+  expect_identical(
+    le()[[1L]]$description,
+    "Embed block results via blockr://<id>."
+  )
 })
 
 test_that("list_extensions lists controllable vars without a live peer env", {

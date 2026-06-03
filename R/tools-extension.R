@@ -49,11 +49,14 @@ tool_list_extensions <- function(board, extensions, session) {
             vars
           )
 
-          list(
-            id           = id,
-            name         = extension_name(exts[[id]]),
-            controllable = vars,
-            values       = compact(values)
+          compact(
+            list(
+              id           = id,
+              name         = extension_name(exts[[id]]),
+              description  = extension_description(exts[[id]]),
+              controllable = vars,
+              values       = compact(values)
+            )
           )
         })
       })
@@ -61,7 +64,9 @@ tool_list_extensions <- function(board, extensions, session) {
     name = "list_extensions",
     description = paste(
       "List dock extensions on the board. One entry per extension:",
-      "its id, display name, the variables that are externally",
+      "its id, display name, an optional `description` explaining what",
+      "the extension is and how to drive it (present only when the",
+      "extension supplies one), the variables that are externally",
       "controllable via modify_extension, and their current values.",
       "An empty `controllable` list means the extension exposes no",
       "modifiable variables. Dock boards only."
