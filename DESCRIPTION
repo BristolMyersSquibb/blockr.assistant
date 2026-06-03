@@ -35,7 +35,7 @@ Suggests:
     withr
 Remotes:
     BristolMyersSquibb/blockr.core,
-    BristolMyersSquibb/blockr.dock@184-ext-description,
+    BristolMyersSquibb/blockr.dock,
     posit-dev/shinychat/pkg-r
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
