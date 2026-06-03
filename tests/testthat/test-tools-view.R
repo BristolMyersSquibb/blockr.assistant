@@ -19,14 +19,14 @@ new_view_tool_env <- function(brd = make_view_tool_board()) {
   )
 }
 
-test_that("pinned blockr.dock resolves the add-and-activate forward-ref", {
+test_that("installed blockr.dock resolves the add-and-activate forward-ref", {
 
-  # Canary for the Remotes pin. add_view(active = TRUE) and set_active_view
-  # on a view added this turn send the add key as `active`; the dock must
-  # resolve it to the minted id (blockr.dock #175). A pin to a dock that
-  # predates #175 fails here -- with a message that names the dependency --
-  # rather than letting the add-activate tests silently skip and the
-  # feature ship broken.
+  # Canary on the blockr.dock dependency. add_view(active = TRUE) and
+  # set_active_view on a view added this turn send the add key as `active`;
+  # the dock must resolve it to the minted id (blockr.dock #175). A build
+  # against a dock that predates #175 fails here -- with a message that
+  # names the dependency -- rather than letting the add-activate tests
+  # silently skip and the feature ship broken.
   expect_true(forward_ref_active_supported())
 })
 

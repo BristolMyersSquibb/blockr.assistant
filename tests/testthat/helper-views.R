@@ -3,8 +3,8 @@
 # the freshly-minted id -- the contract add-and-activate relies on,
 # shipped in blockr.dock #175 (PR for #174). The add-activate tests assert
 # the behaviour unconditionally; the dedicated canary test that calls this
-# names the exact dependency, so a Remotes pin to a dock predating #175
-# fails loudly rather than silently skipping the feature. See
+# names the exact dependency, so a build against a blockr.dock predating
+# #175 fails loudly rather than silently skipping the feature. See
 # blockr.assistant #30.
 forward_ref_active_supported <- function() {
 
