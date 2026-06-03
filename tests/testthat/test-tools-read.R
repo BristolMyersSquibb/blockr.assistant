@@ -179,6 +179,63 @@ test_that("tool_get_block_result summarises a successful result", {
   expect_length(res, 1L)
 })
 
+test_that("tool_get_block_conditions returns recovery hint for unknown id", {
+
+  board <- reactiveValues(blocks = list())
+
+  res <- call_tool(tool_get_block_conditions(board, NULL, NULL), id = "bogus")
+
+  expect_match(res, "No block with id bogus", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions notes a block with no cond state", {
+
+  board <- reactiveValues(blocks = list(d = list(server = list())))
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_match(res, "no condition state", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions groups captured conditions by severity", {
+
+  mk <- function(x) structure(x, id = x, class = "block_cnd")
+
+  cond <- do.call(
+    reactiveValues,
+    list(
+      eval = list(error = list(mk("could not find foo"))),
+      data = list(warning = list(mk("NAs introduced")))
+    )
+  )
+  board <- reactiveValues(blocks = list(d = list(server = list(cond = cond))))
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_match(res, "Error (1):", fixed = TRUE)
+  expect_match(res, "- [eval] could not find foo", fixed = TRUE)
+  expect_match(res, "- [data] NAs introduced", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions reports a healthy block", {
+
+  cond <- do.call(
+    reactiveValues,
+    list(eval = list(error = list(), warning = list(), message = list()))
+  )
+  board <- reactiveValues(blocks = list(d = list(server = list(cond = cond))))
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_match(res, "no active conditions", fixed = TRUE)
+})
+
 test_that("register_read_tools wires every read tool onto a chat client", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -191,5 +248,5 @@ test_that("register_read_tools wires every read tool onto a chat client", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
 
-  expect_equal(length(client$get_tools()) - before, 7L)
+  expect_equal(length(client$get_tools()) - before, 8L)
 })

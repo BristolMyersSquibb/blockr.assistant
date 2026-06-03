@@ -145,7 +145,7 @@ summarise_board <- function(board, max_chars = 4000L) {
   body <- c(
     header,
     "",
-    summarise_blocks(blks, b),
+    summarise_blocks(blks, b, block_condition_markers(board)),
     summarise_links(lnks),
     summarise_stacks(stks),
     summarise_views(vws, b)
@@ -176,7 +176,7 @@ board_views <- function(b) {
   board_layouts(b)
 }
 
-summarise_blocks <- function(blks, board) {
+summarise_blocks <- function(blks, board, markers = character()) {
 
   if (!length(blks)) {
     return(character())
@@ -185,7 +185,14 @@ summarise_blocks <- function(blks, board) {
   c(
     "### Blocks",
     chr_ply(names(blks), function(id) {
-      summarise_block(blks[[id]], board = board, id = id)
+
+      line <- summarise_block(blks[[id]], board = board, id = id)
+
+      if (id %in% names(markers) && nzchar(markers[[id]])) {
+        paste0(line, " ", markers[[id]])
+      } else {
+        line
+      }
     })
   )
 }
