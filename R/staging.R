@@ -22,6 +22,9 @@ empty_pending <- function() {
       rm     = character(),
       active = NULL,
       rename = list()
+    ),
+    extensions = list(
+      mod = list()
     )
   )
 }
@@ -58,6 +61,7 @@ has_any_changes <- function(payload) {
     length(payload$views$mod) > 0L,
     length(payload$views$rm)  > 0L,
     length(payload$views$rename) > 0L,
+    length(payload$extensions$mod) > 0L,
     views_active
   )
 }
@@ -499,6 +503,28 @@ stage_view_rename <- function(pending, board, id, name) {
   new$views$rename[[id]] <- name
 
   commit_pending(pending, isolate(board$board), new, "rename_view", id)
+}
+
+stage_extension_mod <- function(pending, board, id, delta) {
+
+  cur <- isolate(pending())
+
+  new <- cur
+
+  if (id %in% names(cur$extensions$mod)) {
+
+    new$extensions$mod[[id]] <- merge_args(cur$extensions$mod[[id]], delta)
+
+  } else {
+
+    new$extensions$mod <- c(
+      new$extensions$mod, set_names(list(delta), id)
+    )
+  }
+
+  commit_pending(
+    pending, isolate(board$board), new, "modify_extension", id
+  )
 }
 
 flush_pending <- function(pending, update, last_flush_error = NULL) {

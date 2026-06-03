@@ -139,7 +139,7 @@ asst_ext_styles <- function() {
 
 asst_ext_srv <- function(system_prompt, messages) {
 
-  function(id, board, update, ...) {
+  function(id, board, update, extensions = NULL, ...) {
 
     moduleServer(
       id,
@@ -176,6 +176,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           register_view_tools(
             cl, board, pending_update, session
           )
+
+          if (inherits(isolate(board$board), "dock_board")) {
+            register_extension_tools(
+              cl, board, pending_update, extensions, session
+            )
+          }
 
           # Drop trailing turns that represent an incomplete or
           # failed exchange. Two shapes show up after a stream error

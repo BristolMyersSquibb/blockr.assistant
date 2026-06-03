@@ -171,6 +171,35 @@ test_that("server registers the read and mutation tools on the client", {
   )
 })
 
+test_that("a dock board additionally registers the extension tools", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_dock_board(
+    blocks  = c(a = new_dataset_block("iris")),
+    layouts = list(Main = dock_layout("a"))
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+
+      expect_length(tools, 25L)
+      expect_true(
+        all(c("list_extensions", "modify_extension") %in% names(tools))
+      )
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("registered list_blocks tool reflects the live board contents", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)

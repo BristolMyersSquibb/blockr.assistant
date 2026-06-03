@@ -22,7 +22,7 @@ test_that("empty_pending has the expected shape", {
 
   p <- empty_pending()
 
-  expect_named(p, c("blocks", "links", "stacks", "views"))
+  expect_named(p, c("blocks", "links", "stacks", "views", "extensions"))
   for (slot in c("blocks", "links", "stacks")) {
     expect_named(p[[slot]], c("add", "mod", "rm"))
     expect_length(p[[slot]]$add, 0L)
@@ -36,6 +36,9 @@ test_that("empty_pending has the expected shape", {
   expect_length(p$views$rm, 0L)
   expect_null(p$views$active)
   expect_length(p$views$rename, 0L)
+
+  expect_named(p$extensions, "mod")
+  expect_length(p$extensions$mod, 0L)
 })
 
 test_that("has_any_changes detects content in every slot", {
@@ -64,6 +67,10 @@ test_that("has_any_changes detects content in every slot", {
 
   p <- empty_pending()
   p$views$rename <- list(V = "New")
+  expect_true(has_any_changes(p))
+
+  p <- empty_pending()
+  p$extensions$mod <- list(doc_extension = list(content = "# x"))
   expect_true(has_any_changes(p))
 })
 
