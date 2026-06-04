@@ -1,5 +1,20 @@
 # blockr.assistant (development version)
 
+* After the assistant applies its staged changes at turn end, it now
+  reports the outcome back to the model so it can correct a problem it
+  introduced without waiting for the user to notice a red block. Two
+  failure channels are surfaced: a board update the model triggered
+  that was rejected or failed to apply (read from `board$last_update`,
+  the machine-readable update outcome added in BMS/blockr.core#200),
+  and blocks that begin raising errors or warnings once the change
+  re-evaluates. The latter are diffed against a snapshot taken at the
+  start of the user's turn, so only newly introduced conditions are
+  reported, and are collected after the post-apply re-evaluation
+  cascade settles. When something is found, the assistant injects a
+  short follow-up turn describing it, prompting the model to fix or
+  confirm -- bounded per user turn so a stubborn problem cannot loop.
+  Reuses the `summarise_conditions()` flattener from #32. Fixes #29.
+
 * Adds an LLM tool surface for view CRUD and layout mutations: six
   new tools (`list_views`, `add_view`, `remove_view`, `modify_view`,
   `set_active_view`, `rename_view`) backed by an extended staging

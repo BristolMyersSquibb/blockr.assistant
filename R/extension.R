@@ -155,6 +155,17 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
 
+        baseline_conds   <- reactiveVal(list())
+        react_count      <- reactiveVal(0L)
+        react_seq        <- reactiveVal(0L)
+        settle_ctx       <- reactiveVal(NULL)
+        last_auto_react  <- reactiveVal(NULL)
+        awaiting_outcome <- reactiveVal(FALSE)
+        injecting        <- reactiveVal(FALSE)
+
+        max_auto_react <- 2L
+        settle_ms      <- 250
+
         messages_rec <- reactiveVal(coal(messages, list()))
 
         client_r   <- reactiveVal(NULL)
@@ -340,9 +351,46 @@ asst_ext_srv <- function(system_prompt, messages) {
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 
+        auto_react <- function(msg) {
+
+          if (is.null(msg) || isolate(react_count()) >= max_auto_react) {
+            return(invisible())
+          }
+
+          react_count(isolate(react_count()) + 1L)
+          react_seq(isolate(react_seq()) + 1L)
+          last_auto_react(list(n = isolate(react_seq()), msg = msg))
+
+          invisible()
+        }
+
+        observeEvent(
+          last_auto_react(),
+          {
+            mod <- isolate(mod_r())
+
+            if (is.null(mod)) {
+              return()
+            }
+
+            injecting(TRUE)
+            mod$update_user_input(
+              value = last_auto_react()$msg, submit = TRUE
+            )
+          },
+          ignoreNULL = TRUE
+        )
+
         observeEvent(
           last_input_r(),
           {
+            if (isolate(injecting())) {
+              injecting(FALSE)
+            } else {
+              baseline_conds(snapshot_conditions(board))
+              react_count(0L)
+            }
+
             reset_pending(pending_update)
             record_new_turns()
           },
@@ -352,10 +400,81 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_turn_r(),
           {
+            if (has_any_changes(isolate(pending_update()))) {
+              awaiting_outcome(TRUE)
+            }
+
             flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
           },
           ignoreNULL = TRUE
+        )
+
+        observeEvent(
+          board$last_update,
+          {
+            outcome <- board$last_update
+
+            if (is.null(outcome) || !isolate(awaiting_outcome())) {
+              return()
+            }
+
+            awaiting_outcome(FALSE)
+
+            if (isFALSE(outcome$ok)) {
+              auto_react(format_flush_feedback(outcome, list()))
+            } else {
+              settle_ctx(list(seq = outcome$seq))
+            }
+          },
+          ignoreNULL = TRUE
+        )
+
+        settle_fingerprint <- reactive({
+
+          ctx <- settle_ctx()
+
+          if (is.null(ctx)) {
+            return(NULL)
+          }
+
+          # Depend on every block's result and conditions so the debounce
+          # re-arms until the post-apply re-evaluation cascade settles.
+          for (srv in isolate(board$blocks)) {
+
+            try(srv$server$result(), silent = TRUE)
+
+            if (!is.null(srv$server$cond)) {
+              reactiveValuesToList(srv$server$cond)
+            }
+          }
+
+          ctx$seq
+        })
+
+        settled <- debounce(settle_fingerprint, settle_ms)
+
+        observeEvent(
+          settled(),
+          {
+            if (is.null(isolate(settle_ctx()))) {
+              return()
+            }
+
+            settle_ctx(NULL)
+
+            auto_react(
+              format_flush_feedback(
+                list(ok = TRUE),
+                new_block_conditions(
+                  isolate(baseline_conds()),
+                  snapshot_conditions(board)
+                )
+              )
+            )
+          },
+          ignoreNULL = TRUE,
+          ignoreInit = TRUE
         )
 
         output$tokens <- renderUI(
