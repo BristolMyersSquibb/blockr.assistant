@@ -14,9 +14,10 @@ with a new id, but that tears down the block server and
 re-evaluates downstream blocks -- ask before proceeding. For
 a still-staged entity, use remove + add to change the id.
 
-modify_block can only change keys reported as modifiable in
-the Board section above (and block_name, always). For other
-changes use remove_block + add_block.
+modify_block can only change a block's externally-controllable
+constructor inputs -- marked with a trailing `*` in the Board
+section above -- plus block_name (always). For other changes use
+remove_block + add_block.
 
 <<layout>>
 

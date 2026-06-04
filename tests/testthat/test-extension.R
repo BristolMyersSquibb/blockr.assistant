@@ -467,7 +467,7 @@ test_that("initial refresh sets the composed prompt on the client", {
       prompt <- client_r()$get_system_prompt()
       expect_match(prompt, "## Tools", fixed = TRUE)
       expect_match(prompt, "## Board", fixed = TRUE)
-      expect_match(prompt, "d (dataset_block)", fixed = TRUE)
+      expect_match(prompt, "d <dataset_block>", fixed = TRUE)
     },
     args = list(
       board = reactiveValues(board = brd),
@@ -519,7 +519,7 @@ test_that("board$board change triggers a fresh prompt", {
 
       after <- client_r()$get_system_prompt()
       expect_match(after, "1 block(s)", fixed = TRUE)
-      expect_match(after, "x (dataset_block)", fixed = TRUE)
+      expect_match(after, "x <dataset_block>", fixed = TRUE)
     },
     args = list(
       board = reactiveValues(board = new_board()),

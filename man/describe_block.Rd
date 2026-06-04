@@ -25,7 +25,7 @@ be).}
 }
 \value{
 Character vector of lines (consistent with
-\code{\link[=summarise_result]{summarise_result()}} and \code{\link[=describe_stack]{describe_stack()}}). The tool that
+\code{summarise_result()} and \code{\link[=describe_stack]{describe_stack()}}). The tool that
 consumes this collapses with \code{paste(..., collapse = "\\n")}
 before returning to ellmer.
 }
