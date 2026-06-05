@@ -201,6 +201,25 @@ test_that("summarise_board on a populated board emits per-entity lines", {
   expect_match(res, "l: d -> h$data", fixed = TRUE)
 })
 
+test_that("summarise_board lists the board's options with categories", {
+
+  brd <- new_board(
+    blocks  = c(d = new_dataset_block("iris")),
+    options = new_board_options(
+      new_board_name_option(),
+      new_n_rows_option(50L)
+    )
+  )
+  board <- reactiveValues(board = brd)
+
+  res <- summarise_board(board)
+
+  expect_match(res, "### Options", fixed = TRUE)
+  expect_match(res, "- board_name (Board options)", fixed = TRUE)
+  expect_match(res, "- n_rows (Table options)", fixed = TRUE)
+  expect_match(res, "Current values via list_board_options", fixed = TRUE)
+})
+
 test_that("summarise_board flags unhealthy blocks, not healthy ones", {
 
   mk <- function(x) structure(x, id = x, class = "block_cnd")
