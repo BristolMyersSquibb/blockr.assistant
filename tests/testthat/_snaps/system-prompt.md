@@ -267,6 +267,9 @@
       ### Views
       - Analysis (id: Analysis) (active) (2 panel(s): data, head)
       - Overview (id: Overview) (1 panel(s): data)
+      ### Options
+      - board_name (Board options)
+      Current values via list_board_options; change with set_board_option.
       
       Note: your previous turn's changes were rejected: validator rejected cycle: a -> b -> a. The board did not change. Re-issue corrected calls.
 

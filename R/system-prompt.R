@@ -148,7 +148,8 @@ summarise_board <- function(board, max_chars = 4000L) {
     summarise_blocks(blks, b, block_condition_markers(board)),
     summarise_links(lnks),
     summarise_stacks(stks),
-    summarise_views(vws, b)
+    summarise_views(vws, b),
+    summarise_board_options(board_options(b))
   )
 
   out <- paste(body, collapse = "\n")
@@ -230,6 +231,26 @@ summarise_stacks <- function(stks) {
     chr_ply(names(stks), function(id) {
       sprintf("- %s %s", id, summarise_stack(stks[[id]]))
     })
+  )
+}
+
+summarise_board_options <- function(opts) {
+
+  if (!length(opts)) {
+    return(character())
+  }
+
+  c(
+    "### Options",
+    chr_ply(names(opts), function(id) {
+      category <- coal(board_option_category(opts[[id]]), NA_character_)
+      if (is.na(category)) {
+        sprintf("- %s", id)
+      } else {
+        sprintf("- %s (%s)", id, category)
+      }
+    }),
+    "Current values via list_board_options; change with set_board_option."
   )
 }
 

@@ -15,6 +15,17 @@
   confirm -- bounded per user turn so a stubborn problem cannot loop.
   Reuses the `summarise_conditions()` flattener from #32. Fixes #29.
 
+* Adds an LLM tool surface for board options: `list_board_options`
+  reports each option's id, category, current value and default, and
+  `set_board_option` sets a value, coercing it through the option's
+  own transform. Unlike block / link / stack mutations, option values
+  are session-scoped rather than part of the board-update payload, so
+  `set_board_option` writes immediately via blockr.core's
+  `set_board_option_value()` instead of staging into the turn-end
+  flush. The `llm_model` option is excluded from the setter, since
+  changing it rebuilds the assistant's own chat client. The board
+  summary gains an Options section listing the option surface.
+
 * Adds an LLM tool surface for view CRUD and layout mutations: six
   new tools (`list_views`, `add_view`, `remove_view`, `modify_view`,
   `set_active_view`, `rename_view`) backed by an extended staging

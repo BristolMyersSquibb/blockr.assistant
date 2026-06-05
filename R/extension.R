@@ -189,6 +189,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           register_view_tools(
             cl, board, pending_update, session
           )
+          register_board_options_tools(cl, board, session)
 
           if (inherits(isolate(board$board), "dock_board")) {
             register_extension_tools(
