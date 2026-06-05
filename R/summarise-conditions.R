@@ -15,10 +15,13 @@ summarise_conditions <- function(cond) {
         return(NULL)
       }
 
+      flat <- unlst(msgs)
+
       data.frame(
         severity  = sev,
         phase     = rep(phases, lens),
-        message   = chr_ply(unlst(msgs), as.character),
+        message   = chr_ply(flat, as.character),
+        id        = chr_ply(flat, attr, "id"),
         row.names = NULL
       )
     }
@@ -31,7 +34,8 @@ summarise_conditions <- function(cond) {
       data.frame(
         severity = character(),
         phase    = character(),
-        message  = character()
+        message  = character(),
+        id       = character()
       )
     )
   }

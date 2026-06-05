@@ -7,7 +7,7 @@ test_that("summarise_conditions flattens an empty cond to a 0-row frame", {
   res <- summarise_conditions(list())
 
   expect_s3_class(res, "data.frame")
-  expect_named(res, c("severity", "phase", "message"))
+  expect_named(res, c("severity", "phase", "message", "id"))
   expect_equal(nrow(res), 0L)
 })
 
@@ -32,6 +32,7 @@ test_that("summarise_conditions groups by severity and notes the phase", {
   expect_equal(res$severity, c("error", "warning"))
   expect_equal(res$phase, c("eval", "data"))
   expect_equal(res$message, c("boom", "coerced"))
+  expect_equal(res$id, c("boom", "coerced"))
 })
 
 test_that("summarise_conditions orders severities error > warning > message", {

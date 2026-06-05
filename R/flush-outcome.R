@@ -28,7 +28,7 @@ condition_keys <- function(df) {
     return(character())
   }
 
-  paste(df$severity, df$phase, df$message, sep = "\x1f")
+  paste(df$severity, df$phase, df$id, sep = "\x1f")
 }
 
 new_block_conditions <- function(baseline, current) {

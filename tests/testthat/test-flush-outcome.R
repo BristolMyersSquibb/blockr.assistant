@@ -187,18 +187,18 @@ test_that("a rejected board update is reported back to the model", {
     {
       session$flushReact()
 
-      awaiting_outcome(TRUE)
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 1L, ok = FALSE, phase = "validate", message = "cycle detected"
       )
       session$flushReact()
 
-      fb <- last_auto_react()
+      fb <- react$feedback
 
       expect_false(is.null(fb))
       expect_match(fb$msg, "rejected during the validate phase", fixed = TRUE)
       expect_match(fb$msg, "cycle detected", fixed = TRUE)
-      expect_identical(react_count(), 1L)
+      expect_identical(react$count, 1L)
     },
     args = server_args(last_update = NULL),
     session = with_llm_session()
@@ -219,7 +219,7 @@ test_that("a board update the model did not trigger is ignored", {
       )
       session$flushReact()
 
-      expect_null(last_auto_react())
+      expect_null(react$feedback)
     },
     args = server_args(last_update = NULL),
     session = with_llm_session()
@@ -235,7 +235,7 @@ test_that("a block broken by the applied change is reported after settling", {
     {
       session$flushReact()
 
-      awaiting_outcome(TRUE)
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
       )
@@ -243,7 +243,7 @@ test_that("a block broken by the applied change is reported after settling", {
       session$elapse(settle_ms + 50)
       session$flushReact()
 
-      fb <- last_auto_react()
+      fb <- react$feedback
 
       expect_false(is.null(fb))
       expect_match(fb$msg, "now report problems", fixed = TRUE)
@@ -266,7 +266,7 @@ test_that("a clean apply triggers no auto-reaction", {
     {
       session$flushReact()
 
-      awaiting_outcome(TRUE)
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
       )
@@ -274,7 +274,7 @@ test_that("a clean apply triggers no auto-reaction", {
       session$elapse(settle_ms + 50)
       session$flushReact()
 
-      expect_null(last_auto_react())
+      expect_null(react$feedback)
     },
     args = server_args(
       last_update = NULL,
@@ -299,14 +299,14 @@ test_that("auto-reactions are bounded per user turn", {
     {
       session$flushReact()
 
-      react_count(2L)
-      awaiting_outcome(TRUE)
+      react$count <- 2L
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 3L, ok = FALSE, phase = "apply", message = "boom"
       )
       session$flushReact()
 
-      expect_null(last_auto_react())
+      expect_null(react$feedback)
     },
     args = server_args(last_update = NULL),
     session = with_llm_session()
@@ -322,20 +322,20 @@ test_that("identical feedback in a later turn still re-triggers injection", {
     {
       session$flushReact()
 
-      awaiting_outcome(TRUE)
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 1L, ok = FALSE, phase = "apply", message = "boom"
       )
       session$flushReact()
-      first <- last_auto_react()
+      first <- react$feedback
 
-      react_count(0L)
-      awaiting_outcome(TRUE)
+      react$count <- 0L
+      react$awaiting <- TRUE
       board$last_update <- list(
         seq = 2L, ok = FALSE, phase = "apply", message = "boom"
       )
       session$flushReact()
-      second <- last_auto_react()
+      second <- react$feedback
 
       expect_identical(first$msg, second$msg)
       expect_false(identical(first$n, second$n))

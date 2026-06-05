@@ -155,13 +155,15 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
 
-        baseline_conds   <- reactiveVal(list())
-        react_count      <- reactiveVal(0L)
-        react_seq        <- reactiveVal(0L)
-        settle_ctx       <- reactiveVal(NULL)
-        last_auto_react  <- reactiveVal(NULL)
-        awaiting_outcome <- reactiveVal(FALSE)
-        injecting        <- reactiveVal(FALSE)
+        react <- reactiveValues(
+          baseline  = list(),
+          count     = 0L,
+          seq       = 0L,
+          settle    = NULL,
+          feedback  = NULL,
+          awaiting  = FALSE,
+          injecting = FALSE
+        )
 
         max_auto_react <- 2L
         settle_ms      <- 250
@@ -353,19 +355,19 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         auto_react <- function(msg) {
 
-          if (is.null(msg) || isolate(react_count()) >= max_auto_react) {
+          if (is.null(msg) || isolate(react$count) >= max_auto_react) {
             return(invisible())
           }
 
-          react_count(isolate(react_count()) + 1L)
-          react_seq(isolate(react_seq()) + 1L)
-          last_auto_react(list(n = isolate(react_seq()), msg = msg))
+          react$count    <- isolate(react$count) + 1L
+          react$seq      <- isolate(react$seq) + 1L
+          react$feedback <- list(n = isolate(react$seq), msg = msg)
 
           invisible()
         }
 
         observeEvent(
-          last_auto_react(),
+          react$feedback,
           {
             mod <- isolate(mod_r())
 
@@ -373,9 +375,9 @@ asst_ext_srv <- function(system_prompt, messages) {
               return()
             }
 
-            injecting(TRUE)
+            react$injecting <- TRUE
             mod$update_user_input(
-              value = last_auto_react()$msg, submit = TRUE
+              value = react$feedback$msg, submit = TRUE
             )
           },
           ignoreNULL = TRUE
@@ -384,11 +386,11 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_input_r(),
           {
-            if (isolate(injecting())) {
-              injecting(FALSE)
+            if (isolate(react$injecting)) {
+              react$injecting <- FALSE
             } else {
-              baseline_conds(snapshot_conditions(board))
-              react_count(0L)
+              react$baseline <- snapshot_conditions(board)
+              react$count <- 0L
             }
 
             reset_pending(pending_update)
@@ -401,7 +403,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           last_turn_r(),
           {
             if (has_any_changes(isolate(pending_update()))) {
-              awaiting_outcome(TRUE)
+              react$awaiting <- TRUE
             }
 
             flush_pending(pending_update, update, last_flush_error)
@@ -415,16 +417,16 @@ asst_ext_srv <- function(system_prompt, messages) {
           {
             outcome <- board$last_update
 
-            if (is.null(outcome) || !isolate(awaiting_outcome())) {
+            if (is.null(outcome) || !isolate(react$awaiting)) {
               return()
             }
 
-            awaiting_outcome(FALSE)
+            react$awaiting <- FALSE
 
             if (isFALSE(outcome$ok)) {
               auto_react(format_flush_feedback(outcome, list()))
             } else {
-              settle_ctx(list(seq = outcome$seq))
+              react$settle <- list(seq = outcome$seq)
             }
           },
           ignoreNULL = TRUE
@@ -432,7 +434,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         settle_fingerprint <- reactive({
 
-          ctx <- settle_ctx()
+          ctx <- react$settle
 
           if (is.null(ctx)) {
             return(NULL)
@@ -457,17 +459,17 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           settled(),
           {
-            if (is.null(isolate(settle_ctx()))) {
+            if (is.null(isolate(react$settle))) {
               return()
             }
 
-            settle_ctx(NULL)
+            react$settle <- NULL
 
             auto_react(
               format_flush_feedback(
                 list(ok = TRUE),
                 new_block_conditions(
-                  isolate(baseline_conds()),
+                  isolate(react$baseline),
                   snapshot_conditions(board)
                 )
               )
