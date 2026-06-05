@@ -22,27 +22,11 @@ snapshot_conditions <- function(board) {
   lapply(servers, block_report_conditions)
 }
 
-condition_keys <- function(df) {
-
-  if (!nrow(df)) {
-    return(character())
-  }
-
-  paste(df$severity, df$phase, df$id, sep = "\x1f")
-}
-
 new_block_conditions <- function(baseline, current) {
 
   diff_one <- function(id) {
-
     cur <- current[[id]]
-    base <- baseline[[id]]
-
-    if (is.null(base)) {
-      return(cur)
-    }
-
-    cur[!condition_keys(cur) %in% condition_keys(base), , drop = FALSE]
+    cur[!cur$id %in% baseline[[id]]$id, , drop = FALSE]
   }
 
   fresh <- lapply(names(current), diff_one)

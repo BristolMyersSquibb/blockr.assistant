@@ -15,10 +15,6 @@ eval_error <- function(msg) {
                    message = list()))
 }
 
-test_that("condition_keys is empty for a 0-row frame", {
-  expect_identical(condition_keys(summarise_conditions(list())), character())
-})
-
 test_that("new_block_conditions returns conditions absent from the baseline", {
 
   base <- list(a = summarise_conditions(list()))
