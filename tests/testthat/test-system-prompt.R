@@ -222,31 +222,13 @@ test_that("summarise_board lists the board's options with categories", {
 
 test_that("summarise_board flags unhealthy blocks, not healthy ones", {
 
-  mk <- function(x) structure(x, id = x, class = "block_cnd")
-
   brd <- new_board(
     blocks = c(d = new_dataset_block("iris"), h = new_head_block())
   )
   board <- reactiveValues(
-    board  = brd,
-    blocks = list(
-      d = list(
-        server = list(
-          cond = do.call(
-            reactiveValues,
-            list(eval = list(error = list(mk("boom"))))
-          )
-        )
-      ),
-      h = list(
-        server = list(
-          cond = do.call(
-            reactiveValues,
-            list(eval = list(error = list(), warning = list()))
-          )
-        )
-      )
-    )
+    board = brd,
+    blocks = list(d = list(), h = list()),
+    conditions = reactiveVal(cnd_frame(cnd_row("d", "error", "boom")))
   )
 
   lines <- strsplit(summarise_board(board), "\n")[[1]]
