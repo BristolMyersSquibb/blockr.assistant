@@ -359,6 +359,24 @@ asst_ext_srv <- function(system_prompt, messages) {
           refresh_prompt()
         })
 
+        # B1 (opt-in via `blockr.assistant_immediate_commit`): flush each
+        # staged mutation as soon as it is staged, so the block goes live and
+        # the model can read its real result mid-turn (get_block_result) and
+        # self-correct -- instead of building blind until the turn-end flush.
+        # Reuses the normal flush path; the turn-end flush below becomes a
+        # no-op once everything is already applied.
+        if (isTRUE(getOption("blockr.assistant_immediate_commit", FALSE))) {
+          observeEvent(
+            pending_update(),
+            {
+              if (has_any_changes(isolate(pending_update()))) {
+                flush_pending(pending_update, update, last_flush_error)
+              }
+            },
+            ignoreInit = TRUE
+          )
+        }
+
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 

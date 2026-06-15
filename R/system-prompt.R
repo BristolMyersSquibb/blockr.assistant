@@ -83,12 +83,39 @@ default_system_prompt <- function(board = NULL, client = NULL,
     ""
   }
 
+  # Commit model: staging (default) vs immediate-commit (B1, opt-in via
+  # `blockr.assistant_immediate_commit`). In immediate mode each mutation
+  # applies live and the block evaluates, so the model can verify with
+  # get_block_result mid-turn and self-correct -- the read-act-observe loop.
+  commit_model <- if (isTRUE(getOption("blockr.assistant_immediate_commit", FALSE))) {
+    paste(
+      "Each mutation you make applies to the board IMMEDIATELY and the",
+      "block evaluates. Build incrementally and VERIFY as you go: after",
+      "adding a block and wiring its inputs, call get_block_result on it",
+      "(and get_block_conditions if it errors) to confirm it produces",
+      "data. If it errors or is empty, fix it (modify_block, or",
+      "remove_block + add_block) and check again BEFORE moving on -- a",
+      "wrong column name is the usual cause; query_data the upstream to",
+      "see the real columns. Don't build the whole pipeline blind; go",
+      "block by block: add -> wire -> verify -> fix."
+    )
+  } else {
+    paste(
+      "Inspection tools always read the committed board, not your staged",
+      "changes. Mutation tools *stage* a change; nothing applies mid-turn.",
+      "All staged calls from your turn flush as one atomic update when",
+      "your turn ends. Your own tool-call history is the record of what is",
+      "pending."
+    )
+  }
+
   slots <- list(
     layout = read_prompt("layout"),
     tools = tools,
     board = board_summary,
     flush_note = flush_note,
-    eval_note = eval_note
+    eval_note = eval_note,
+    commit_model = commit_model
   )
 
   as.character(
