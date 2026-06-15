@@ -44,7 +44,11 @@ summarise_block.block <- function(x, board, id, ...) {
 
     paste(
       chr_ply(names(args), function(nm) {
-        sprintf("%s=%s", nm, format(args[[nm]]))
+        # format() can yield character(0) (empty arg) or a vector
+        # (e.g. crossfilter active_dims); collapse to a single string
+        # so the enclosing sprintf/chr_ply never sees length != 1.
+        val <- paste0(format(args[[nm]]), collapse = ", ")
+        sprintf("%s=%s", nm, val)
       }),
       collapse = ", "
     )

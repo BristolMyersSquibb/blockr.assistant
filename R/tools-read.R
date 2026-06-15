@@ -197,6 +197,25 @@ tool_list_available_blocks <- function(board, update, session) {
 
         meta <- registry_metadata(uids, "all")
 
+        # Surface each block's example args object (registered alongside the
+        # argument descriptions) as a JSON string. This shows the model the
+        # exact shape AND the exact argument names to send -- without it the
+        # model invents plausible-but-wrong names (e.g. drilldown/direction
+        # for a chart's drill/sort_dir) that the constructor's `...` then
+        # swallows silently. If a listed argument is itself an object, the
+        # example also shows how its fields nest under that argument name.
+        example <- vapply(
+          meta$arguments,
+          function(a) {
+            ex <- attr(a, "examples")
+            if (is.null(ex) || !length(ex)) {
+              return(NA_character_)
+            }
+            as.character(jsonlite::toJSON(ex, auto_unbox = TRUE, null = "null"))
+          },
+          character(1)
+        )
+
         data.frame(
           id          = uids,
           name        = meta$name,
@@ -204,6 +223,7 @@ tool_list_available_blocks <- function(board, update, session) {
           category    = meta$category,
           description = meta$description,
           arguments   = I(meta$arguments),
+          example     = example,
           row.names   = NULL
         )
       })
@@ -212,8 +232,12 @@ tool_list_available_blocks <- function(board, update, session) {
     description = paste(
       "List every registered block constructor -- block types the",
       "user can add to the board. One row per type with id, name,",
-      "package, category, description, and a list-column of",
-      "argument-name to argument-description mappings."
+      "package, category, description, a list-column of",
+      "argument-name to argument-description mappings, and an",
+      "`example` JSON string showing the exact arg NAMES and shape to",
+      "pass to add_block. Always mirror the example's keys exactly;",
+      "if a listed argument is itself an object, nest its fields under",
+      "that argument name rather than at the top level."
     ),
     arguments   = list()
   )

@@ -89,6 +89,33 @@ tool_add_block <- function(board, pending, session) {
 
         parsed <- parse_args_json(args, "add_block")
 
+        # Guard against the common failure where the model passes a block's
+        # nested config fields at the top level (e.g. {"summaries":...}) rather
+        # than wrapped under their argument ({"state":{...}}). do.call() would
+        # otherwise absorb the stray names into the constructor's `...` and
+        # build a silently-empty block. Validate against the args the model was
+        # actually told about (the registry metadata), plus block_name.
+        reg_args <- names(registry_metadata(type)$arguments[[1L]])
+        if (length(reg_args)) {
+          unknown <- setdiff(names(parsed), c(reg_args, "block_name"))
+          if (length(unknown)) {
+            stop(
+              sprintf(
+                paste(
+                  "add_block('%s') got unrecognized argument(s): %s. The",
+                  "configurable argument(s) are: %s. Use exactly these names",
+                  "(mirror the `example` from list_available_blocks); if a",
+                  "listed argument is itself an object, nest its fields under",
+                  "that argument name rather than at the top level."
+                ),
+                type, paste(unknown, collapse = ", "),
+                paste(reg_args, collapse = ", ")
+              ),
+              call. = FALSE
+            )
+          }
+        }
+
         block <- do.call(create_block, c(list(type), parsed))
 
         stage_block_add(pending, board, id, block)
