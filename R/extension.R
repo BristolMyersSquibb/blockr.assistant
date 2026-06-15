@@ -96,6 +96,15 @@ asst_ext_styles <- function() {
         flex: 1 1 0;
         min-height: 0;
       }
+      /* Form controls (the chat textarea + buttons) don't inherit
+         font-family by default, so the chat renders in a different font than
+         the rest of the app. Per the blockr design system
+         (blockr.docs design-system/typography.md: 'font: inherit on form
+         controls') pin them to the ambient page font. */
+      .asst-chat-slot shiny-chat-input textarea,
+      .asst-chat-slot shiny-chat-input button {
+        font-family: inherit;
+      }
       .asst-token-slot.shiny-html-output {
         display: flex;
         justify-content: flex-end;
