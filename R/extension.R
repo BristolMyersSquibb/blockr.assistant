@@ -163,6 +163,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
+        last_eval_report <- reactiveVal(NULL)
 
         messages_rec <- reactiveVal(coal(messages, list()))
 
@@ -301,7 +302,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           if (is.null(cl)) return(invisible())
 
           prompt <- tryCatch(
-            compose(board, cl, last_flush_error),
+            compose(board, cl, last_flush_error, last_eval_report),
             error = function(e) {
               notify(
                 paste(
@@ -343,6 +344,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         observe({
           board$board
           last_flush_error()
+          last_eval_report()
           client_r()
           refresh_prompt()
         })
@@ -362,8 +364,34 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_turn_r(),
           {
+            # Ids the model touched this turn -- captured BEFORE flush resets
+            # the pending payload, so we know which blocks to read back.
+            touched <- isolate({
+              pp <- pending_update()
+              unique(c(names(pp$blocks$add), names(pp$blocks$mod)))
+            })
+
             flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
+
+            # Live post-flush check (#1/#2): once the board has re-evaluated,
+            # read the touched blocks' real results/conditions and surface any
+            # error/empty into the next prompt. Deferred because block servers
+            # evaluate over subsequent reactive flushes; timing here is loose
+            # (the note only needs to be ready before the user's next message).
+            # The bounded auto-correct loop (#3) builds on this same signal.
+            if (length(touched)) {
+              later::later(
+                function() {
+                  shiny::withReactiveDomain(session, {
+                    last_eval_report(eval_report(board, touched))
+                  })
+                },
+                delay = 1.5
+              )
+            } else {
+              last_eval_report(NULL)
+            }
           },
           ignoreNULL = TRUE
         )

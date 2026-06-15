@@ -32,7 +32,8 @@
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  last_flush = NULL, ...) {
+                                  last_flush = NULL, last_eval = NULL,
+                                  ...) {
 
   tools <- if (!is.null(client)) {
     paste0("\n\n## Tools\n", format_tool_catalogue(client))
@@ -63,11 +64,31 @@ default_system_prompt <- function(board = NULL, client = NULL,
     ""
   }
 
+  # Live post-flush evaluation report: blocks from the user's last change that
+  # errored or came back empty (read from the real session, not recomputed).
+  # `last_eval` may be a reactiveVal or a plain character vector of problem
+  # lines; NULL/empty means everything evaluated cleanly.
+  report <- if (is.function(last_eval)) isolate(last_eval()) else last_eval
+
+  eval_note <- if (length(report)) {
+    paste0(
+      "\n\n## Blocks that did not evaluate cleanly\n",
+      "These blocks from your last change errored or came back empty. ",
+      "Fix them (a wrong column name is the usual cause -- the real ",
+      "upstream columns are listed; or use query_data to confirm), then ",
+      "re-issue the corrected modify_block / add_block:\n",
+      paste(report, collapse = "\n")
+    )
+  } else {
+    ""
+  }
+
   slots <- list(
     layout = read_prompt("layout"),
     tools = tools,
     board = board_summary,
-    flush_note = flush_note
+    flush_note = flush_note,
+    eval_note = eval_note
   )
 
   as.character(
