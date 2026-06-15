@@ -201,16 +201,15 @@ test_that("tool_get_block_conditions notes a block with no cond state", {
 
 test_that("tool_get_block_conditions groups captured conditions by severity", {
 
-  mk <- function(x) structure(x, id = x, class = "block_cnd")
-
-  cond <- do.call(
-    reactiveValues,
-    list(
-      eval = list(error = list(mk("could not find foo"))),
-      data = list(warning = list(mk("NAs introduced")))
+  cond <- reactiveVal(
+    cnd_frame(
+      cnd_row("d", "error", "could not find foo"),
+      cnd_row("d", "warning", "NAs introduced", phase = "data")
     )
   )
-  board <- reactiveValues(blocks = list(d = list(server = list(cond = cond))))
+  board <- reactiveValues(
+    blocks = list(d = list(server = list(conditions = cond)))
+  )
 
   res <- isolate(
     call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
@@ -223,11 +222,11 @@ test_that("tool_get_block_conditions groups captured conditions by severity", {
 
 test_that("tool_get_block_conditions reports a healthy block", {
 
-  cond <- do.call(
-    reactiveValues,
-    list(eval = list(error = list(), warning = list(), message = list()))
+  board <- reactiveValues(
+    blocks = list(
+      d = list(server = list(conditions = reactiveVal(cnd_frame())))
+    )
   )
-  board <- reactiveValues(blocks = list(d = list(server = list(cond = cond))))
 
   res <- isolate(
     call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")

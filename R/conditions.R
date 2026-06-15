@@ -1,48 +1,3 @@
-summarise_conditions <- function(cond) {
-
-  phase_order <- c("data", "state", "eval", "render", "block")
-  phases <- names(cond)
-  phases <- c(intersect(phase_order, phases), setdiff(phases, phase_order))
-
-  per_severity <- lapply(
-    c("error", "warning", "message"),
-    function(sev) {
-
-      msgs <- lst_xtr(cond[phases], sev)
-      lens <- lengths(msgs)
-
-      if (!any(lens)) {
-        return(NULL)
-      }
-
-      flat <- unlst(msgs)
-
-      data.frame(
-        severity  = sev,
-        phase     = rep(phases, lens),
-        message   = chr_ply(flat, as.character),
-        id        = chr_ply(flat, attr, "id"),
-        row.names = NULL
-      )
-    }
-  )
-
-  out <- do.call(rbind, per_severity)
-
-  if (is.null(out)) {
-    return(
-      data.frame(
-        severity = character(),
-        phase    = character(),
-        message  = character(),
-        id       = character()
-      )
-    )
-  }
-
-  out
-}
-
 format_conditions <- function(df, id) {
 
   if (!nrow(df)) {
@@ -108,26 +63,20 @@ format_condition_marker <- function(df) {
   sprintf("[%s]", paste(parts, collapse = ", "))
 }
 
-block_condition_marker <- function(blk) {
-
-  cond <- blk$server$cond
-
-  if (is.null(cond)) {
-    return("")
-  }
-
-  format_condition_marker(
-    summarise_conditions(isolate(reactiveValuesToList(cond)))
-  )
+block_condition_marker <- function(id, conditions) {
+  format_condition_marker(conditions[conditions$block == id, , drop = FALSE])
 }
 
 block_condition_markers <- function(board) {
 
-  servers <- isolate(board$blocks)
+  ids <- names(isolate(board$blocks))
 
-  if (!length(servers)) {
+  if (!length(ids)) {
     return(character())
   }
 
-  set_names(chr_ply(servers, block_condition_marker), names(servers))
+  set_names(
+    chr_ply(ids, block_condition_marker, isolate(board$conditions())),
+    ids
+  )
 }

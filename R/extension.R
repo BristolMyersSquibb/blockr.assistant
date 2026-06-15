@@ -155,8 +155,8 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
 
-        react <- reactiveValues(
-          baseline  = list(),
+        report <- reactiveValues(
+          baseline  = NULL,
           count     = 0L,
           seq       = 0L,
           settle    = NULL,
@@ -356,19 +356,19 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         auto_react <- function(msg) {
 
-          if (is.null(msg) || isolate(react$count) >= max_auto_react) {
+          if (is.null(msg) || isolate(report$count) >= max_auto_react) {
             return(invisible())
           }
 
-          react$count    <- isolate(react$count) + 1L
-          react$seq      <- isolate(react$seq) + 1L
-          react$feedback <- list(n = isolate(react$seq), msg = msg)
+          report$count <- isolate(report$count) + 1L
+          report$seq <- isolate(report$seq) + 1L
+          report$feedback <- list(n = isolate(report$seq), msg = msg)
 
           invisible()
         }
 
         observeEvent(
-          react$feedback,
+          report$feedback,
           {
             mod <- isolate(mod_r())
 
@@ -376,9 +376,9 @@ asst_ext_srv <- function(system_prompt, messages) {
               return()
             }
 
-            react$injecting <- TRUE
+            report$injecting <- TRUE
             mod$update_user_input(
-              value = react$feedback$msg, submit = TRUE
+              value = report$feedback$msg, submit = TRUE
             )
           },
           ignoreNULL = TRUE
@@ -387,11 +387,11 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_input_r(),
           {
-            if (isolate(react$injecting)) {
-              react$injecting <- FALSE
+            if (isolate(report$injecting)) {
+              report$injecting <- FALSE
             } else {
-              react$baseline <- snapshot_conditions(board)
-              react$count <- 0L
+              report$baseline <- isolate(board$conditions())
+              report$count <- 0L
             }
 
             reset_pending(pending_update)
@@ -404,7 +404,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           last_turn_r(),
           {
             if (has_any_changes(isolate(pending_update()))) {
-              react$awaiting <- TRUE
+              report$awaiting <- TRUE
             }
 
             flush_pending(pending_update, update, last_flush_error)
@@ -418,39 +418,32 @@ asst_ext_srv <- function(system_prompt, messages) {
           {
             outcome <- board$last_update
 
-            if (is.null(outcome) || !isolate(react$awaiting)) {
+            if (is.null(outcome) || !isolate(report$awaiting)) {
               return()
             }
 
-            react$awaiting <- FALSE
+            report$awaiting <- FALSE
 
             if (isFALSE(outcome$ok)) {
-              auto_react(format_flush_feedback(outcome, list()))
+              auto_react(format_flush_feedback(outcome))
             } else {
-              react$settle <- list(seq = outcome$seq)
+              report$settle <- list(seq = outcome$seq)
             }
           },
           ignoreNULL = TRUE
         )
 
+        # Depend on the board-wide conditions frame so the debounce re-arms
+        # until the post-apply re-evaluation cascade settles.
         settle_fingerprint <- reactive({
 
-          ctx <- react$settle
+          ctx <- report$settle
 
           if (is.null(ctx)) {
             return(NULL)
           }
 
-          # Depend on every block's result and conditions so the debounce
-          # re-arms until the post-apply re-evaluation cascade settles.
-          for (srv in isolate(board$blocks)) {
-
-            try(srv$server$result(), silent = TRUE)
-
-            if (!is.null(srv$server$cond)) {
-              reactiveValuesToList(srv$server$cond)
-            }
-          }
+          board$conditions()
 
           ctx$seq
         })
@@ -460,18 +453,18 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           settled(),
           {
-            if (is.null(isolate(react$settle))) {
+            if (is.null(isolate(report$settle))) {
               return()
             }
 
-            react$settle <- NULL
+            report$settle <- NULL
 
             auto_react(
               format_flush_feedback(
                 list(ok = TRUE),
-                new_block_conditions(
-                  isolate(react$baseline),
-                  snapshot_conditions(board)
+                added_conditions(
+                  isolate(report$baseline),
+                  isolate(board$conditions())
                 )
               )
             )

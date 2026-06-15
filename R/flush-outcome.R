@@ -1,41 +1,14 @@
-block_report_conditions <- function(blk) {
+added_conditions <- function(baseline, current) {
 
-  cond <- blk$server$cond
+  seen <- paste(baseline$block, baseline$id, sep = "\r")
 
-  if (is.null(cond)) {
-    return(summarise_conditions(list()))
-  }
-
-  df <- summarise_conditions(isolate(reactiveValuesToList(cond)))
-
-  df[df$severity %in% c("error", "warning"), , drop = FALSE]
+  current[
+    !paste(current$block, current$id, sep = "\r") %in% seen, ,
+    drop = FALSE
+  ]
 }
 
-snapshot_conditions <- function(board) {
-
-  servers <- isolate(board$blocks)
-
-  if (!length(servers)) {
-    return(list())
-  }
-
-  lapply(servers, block_report_conditions)
-}
-
-new_block_conditions <- function(baseline, current) {
-
-  diff_one <- function(id) {
-    cur <- current[[id]]
-    cur[!cur$id %in% baseline[[id]]$id, , drop = FALSE]
-  }
-
-  fresh <- lapply(names(current), diff_one)
-  names(fresh) <- names(current)
-
-  Filter(NROW, fresh)
-}
-
-format_flush_feedback <- function(outcome, new_conds) {
+format_flush_feedback <- function(outcome, conditions = NULL) {
 
   parts <- character()
 
@@ -52,11 +25,12 @@ format_flush_feedback <- function(outcome, new_conds) {
     )
   }
 
-  if (length(new_conds)) {
+  if (!is.null(conditions) && nrow(conditions)) {
+    by_block <- split(conditions, conditions$block)
     parts <- c(
       parts,
       "After applying your changes, some blocks now report problems:",
-      chr_mply(format_conditions, new_conds, names(new_conds))
+      chr_mply(format_conditions, by_block, names(by_block))
     )
   }
 

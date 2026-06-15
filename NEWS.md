@@ -4,16 +4,18 @@
   reports the outcome back to the model so it can correct a problem it
   introduced without waiting for the user to notice a red block. Two
   failure channels are surfaced: a board update the model triggered
-  that was rejected or failed to apply (read from `board$last_update`,
-  the machine-readable update outcome added in BMS/blockr.core#200),
-  and blocks that begin raising errors or warnings once the change
-  re-evaluates. The latter are diffed against a snapshot taken at the
-  start of the user's turn, so only newly introduced conditions are
-  reported, and are collected after the post-apply re-evaluation
-  cascade settles. When something is found, the assistant injects a
-  short follow-up turn describing it, prompting the model to fix or
-  confirm -- bounded per user turn so a stubborn problem cannot loop.
-  Reuses the `summarise_conditions()` flattener from #32. Fixes #29.
+  that was rejected or failed to apply (`board$last_update`, from
+  BMS/blockr.core#200), and blocks that begin raising errors or
+  warnings once the change re-evaluates. The latter come from the
+  board-level `board$conditions` reactive added in BMS/blockr.core#218:
+  the assistant snapshots it at the start of the user's turn and, once
+  the post-apply re-evaluation settles, reports the conditions that
+  appeared since (a set-difference keyed on core's condition id). When
+  something is found it injects a short follow-up turn, bounded per
+  user turn so a stubborn problem cannot loop. The `get_block_conditions`
+  read tool and the per-block health markers in the board summary now
+  read the same `board$conditions` source, replacing the package's own
+  condition flattener. Fixes #29.
 
 * Adds an LLM tool surface for board options: `list_board_options`
   reports each option's id, category, current value and default, and
