@@ -165,6 +165,16 @@ asst_ext_srv <- function(system_prompt, messages) {
         last_flush_error <- reactiveVal(NULL)
         last_eval_report <- reactiveVal(NULL)
 
+        # Bounded auto-correct (#3): when a flush leaves a block ERROR/EMPTY,
+        # automatically prompt the model to fix it -- but only a few times per
+        # genuine user request, so a model that can't fix it can't loop forever.
+        # `autocorrect_left` is the remaining budget (reset on each real user
+        # turn); `autocorrect_inject` flags that the next chat input is one WE
+        # injected (so it doesn't reset the budget or count as a user request).
+        autocorrect_left    <- reactiveVal(0L)
+        autocorrect_inject  <- reactiveVal(FALSE)
+        autocorrect_trigger <- reactiveVal(NULL)
+
         messages_rec <- reactiveVal(coal(messages, list()))
 
         client_r   <- reactiveVal(NULL)
@@ -355,6 +365,13 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_input_r(),
           {
+            # A genuine user message gets a fresh auto-correct budget; an input
+            # we injected ourselves must NOT (or it would never converge).
+            if (isolate(autocorrect_inject())) {
+              autocorrect_inject(FALSE)
+            } else {
+              autocorrect_left(auto_correct_rounds())
+            }
             reset_pending(pending_update)
             record_new_turns()
           },
@@ -384,7 +401,24 @@ asst_ext_srv <- function(system_prompt, messages) {
               later::later(
                 function() {
                   shiny::withReactiveDomain(session, {
-                    last_eval_report(eval_report(board, touched))
+                    report <- eval_report(board, touched)
+                    last_eval_report(report)
+
+                    # Bounded auto-correct (#3): if blocks broke and budget
+                    # remains, inject a correction turn. update_chat_user_input
+                    # submits as if the user sent it, so the module runs a full
+                    # model turn -> it fixes -> flush -> this check runs again.
+                    # Converges to clean or exhausts the budget, then stops and
+                    # leaves the note for the user's next turn.
+                    if (length(report) && isolate(autocorrect_left()) > 0L) {
+                      autocorrect_left(isolate(autocorrect_left()) - 1L)
+                      autocorrect_inject(TRUE)
+                      # Hand off to a real observer: sendCustomMessage (used by
+                      # update_chat_user_input) does not reliably reach the
+                      # browser from inside a later() callback, so trigger the
+                      # injection from the reactive flush instead.
+                      autocorrect_trigger(autocorrect_message(report))
+                    }
                   })
                 },
                 delay = 1.5
@@ -392,6 +426,26 @@ asst_ext_srv <- function(system_prompt, messages) {
             } else {
               last_eval_report(NULL)
             }
+          },
+          ignoreNULL = TRUE
+        )
+
+        # Perform the auto-correct injection inside a reactive flush so the
+        # custom message actually reaches the browser (see #3 above).
+        observeEvent(
+          autocorrect_trigger(),
+          {
+            msg <- autocorrect_trigger()
+            autocorrect_trigger(NULL)
+            # chat_mod_ui mounts the chat container at NS(id, "chat"), so the
+            # update target is "<chat_sub_id>-chat", not the module id itself.
+            cid <- shiny::NS(chat_sub_id(isolate(mount_idx())), "chat")
+            shinychat::update_chat_user_input(
+              cid,
+              value   = msg,
+              submit  = TRUE,
+              session = session
+            )
           },
           ignoreNULL = TRUE
         )

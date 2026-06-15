@@ -52,6 +52,28 @@ eval_report <- function(board, ids) {
   problems
 }
 
+# Max auto-correct rounds per genuine user request (bounded so a model that
+# can't fix the error can't loop forever / spend unbounded tokens). 0 disables.
+auto_correct_rounds <- function() {
+  n <- suppressWarnings(as.integer(
+    getOption("blockr.assistant_autocorrect_rounds", 2L)
+  ))
+  if (is.na(n) || n < 0L) 0L else n
+}
+
+# The message injected as a user turn to drive a fix. Phrased as an automated
+# check so the conversation stays legible.
+autocorrect_message <- function(report) {
+  paste0(
+    "[automated check] After your last change, these blocks did not evaluate ",
+    "cleanly. Fix them now -- the usual cause is a column name that isn't in ",
+    "the real upstream data (the available columns are listed); correct it ",
+    "with modify_block (or remove_block + add_block), do not just describe it. ",
+    "If unsure of a name, use query_data on the upstream first. Then stop.\n\n",
+    paste(report, collapse = "\n")
+  )
+}
+
 # Pull the error message(s) off a block server's condition state (the same
 # `$cond` get_block_conditions reads), or NULL if none.
 block_eval_error <- function(srv) {
