@@ -216,6 +216,24 @@ tool_list_available_blocks <- function(board, update, session) {
           character(1)
         )
 
+        # Surface each block type's INPUT slot names (the `input=` values that
+        # add_link expects), comma-joined. Without this the model invents slot
+        # names (e.g. "dm_in") and every add_link is rejected, leaving the
+        # blocks staged but unwired. Most blocks take "data"; multi-input
+        # blocks differ (dm_filter_by_data: "data, by"; join: "x, y"). Empty
+        # for source blocks that take no input.
+        inputs <- vapply(
+          uids,
+          function(id) {
+            ins <- tryCatch(
+              blockr.core::block_inputs(create_block(id)),
+              error = function(e) character()
+            )
+            if (!length(ins)) NA_character_ else paste(ins, collapse = ", ")
+          },
+          character(1)
+        )
+
         data.frame(
           id          = uids,
           name        = meta$name,
@@ -224,6 +242,7 @@ tool_list_available_blocks <- function(board, update, session) {
           description = meta$description,
           arguments   = I(meta$arguments),
           example     = example,
+          inputs      = inputs,
           row.names   = NULL
         )
       })
@@ -237,7 +256,10 @@ tool_list_available_blocks <- function(board, update, session) {
       "`example` JSON string showing the exact arg NAMES and shape to",
       "pass to add_block. Always mirror the example's keys exactly;",
       "if a listed argument is itself an object, nest its fields under",
-      "that argument name rather than at the top level."
+      "that argument name rather than at the top level. The `inputs`",
+      "column lists the block's input-slot names -- use these verbatim as",
+      "the `input=` value in add_link (most blocks take \"data\"; some take",
+      "several, e.g. \"data, by\"). Never invent a slot name."
     ),
     arguments   = list()
   )
