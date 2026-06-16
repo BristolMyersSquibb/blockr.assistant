@@ -44,21 +44,6 @@ test_that("format_condition_marker counts, pluralises, and orders severities", {
   expect_match(res, intToUtf8(0x26a0), fixed = TRUE)
 })
 
-test_that("block_condition_marker is empty when the block has no conditions", {
-
-  expect_identical(
-    block_condition_marker("a", cnd_frame(cnd_row("b", "error", "boom"))),
-    ""
-  )
-})
-
-test_that("block_condition_marker marks a block from the board frame", {
-
-  res <- block_condition_marker("a", cnd_frame(cnd_row("a", "error", "boom")))
-
-  expect_match(res, "1 error", fixed = TRUE)
-})
-
 test_that("block_condition_markers maps live blocks to markers", {
 
   board <- reactiveValues(

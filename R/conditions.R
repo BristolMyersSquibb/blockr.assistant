@@ -63,10 +63,6 @@ format_condition_marker <- function(df) {
   sprintf("[%s]", paste(parts, collapse = ", "))
 }
 
-block_condition_marker <- function(id, conditions) {
-  format_condition_marker(conditions[conditions$block == id, , drop = FALSE])
-}
-
 block_condition_markers <- function(board) {
 
   ids <- names(isolate(board$blocks))
@@ -75,8 +71,8 @@ block_condition_markers <- function(board) {
     return(character())
   }
 
-  set_names(
-    chr_ply(ids, block_condition_marker, isolate(board$conditions())),
-    ids
-  )
+  conds <- isolate(board$conditions())
+  by_block <- split(conds, factor(conds$block, levels = ids))
+
+  chr_ply(by_block, format_condition_marker, use_names = TRUE)
 }
