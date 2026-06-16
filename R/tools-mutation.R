@@ -40,7 +40,18 @@ parse_args_json <- function(s, tool) {
     return(list())
   }
 
-  parsed <- jsonlite::fromJSON(s, simplifyVector = TRUE)
+  # simplifyVector keeps scalar arrays as atomic vectors (e.g. by: ["Species"]
+  # -> c("Species")), but simplifyDataFrame/Matrix MUST stay FALSE: an
+  # array-of-objects (filter `conditions`, summarize `summaries`) would
+  # otherwise collapse into a data.frame, which the blocks' list-of-records
+  # state can't consume -- silently empty on main, a `$`-on-atomic crash on
+  # the flat-args blocks. Keep them as lists of named records.
+  parsed <- jsonlite::fromJSON(
+    s,
+    simplifyVector = TRUE,
+    simplifyDataFrame = FALSE,
+    simplifyMatrix = FALSE
+  )
 
   if (is.null(parsed)) {
     return(list())
