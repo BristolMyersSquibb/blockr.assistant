@@ -158,14 +158,10 @@ test_that("a block broken by the applied change is reported after settling", {
       session$flushReact()
 
       report$awaiting <- TRUE
+      conds(cnd_frame(cnd_row("a", "error", "boom")))
       board$last_update <- list(
         seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
       )
-      session$flushReact()
-
-      conds(cnd_frame(cnd_row("a", "error", "boom")))
-      session$flushReact()
-      session$elapse(settle_ms + 50)
       session$flushReact()
 
       fb <- report$feedback
@@ -192,8 +188,6 @@ test_that("a clean apply triggers no auto-reaction", {
       board$last_update <- list(
         seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
       )
-      session$flushReact()
-      session$elapse(settle_ms + 50)
       session$flushReact()
 
       expect_null(report$feedback)

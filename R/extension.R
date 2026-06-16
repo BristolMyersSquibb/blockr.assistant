@@ -159,14 +159,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           baseline  = NULL,
           count     = 0L,
           seq       = 0L,
-          settle    = NULL,
           feedback  = NULL,
           awaiting  = FALSE,
           injecting = FALSE
         )
 
         max_auto_react <- 2L
-        settle_ms      <- 250
 
         messages_rec <- reactiveVal(coal(messages, list()))
 
@@ -426,51 +424,27 @@ asst_ext_srv <- function(system_prompt, messages) {
 
             if (isFALSE(outcome$ok)) {
               auto_react(format_flush_feedback(outcome))
-            } else {
-              report$settle <- list(seq = outcome$seq)
-            }
-          },
-          ignoreNULL = TRUE
-        )
-
-        # Depend on the board-wide conditions frame so the debounce re-arms
-        # until the post-apply re-evaluation cascade settles.
-        settle_fingerprint <- reactive({
-
-          ctx <- report$settle
-
-          if (is.null(ctx)) {
-            return(NULL)
-          }
-
-          board$conditions()
-
-          ctx$seq
-        })
-
-        settled <- debounce(settle_fingerprint, settle_ms)
-
-        observeEvent(
-          settled(),
-          {
-            if (is.null(isolate(report$settle))) {
               return()
             }
 
-            report$settle <- NULL
-
-            auto_react(
-              format_flush_feedback(
-                list(ok = TRUE),
-                added_conditions(
-                  isolate(report$baseline),
-                  isolate(board$conditions())
+            # The block re-evaluation this update triggers drains within the
+            # current reactive flush; collect once it has completed.
+            session$onFlushed(
+              function() {
+                auto_react(
+                  format_flush_feedback(
+                    list(ok = TRUE),
+                    added_conditions(
+                      isolate(report$baseline),
+                      isolate(board$conditions())
+                    )
+                  )
                 )
-              )
+              },
+              once = TRUE
             )
           },
-          ignoreNULL = TRUE,
-          ignoreInit = TRUE
+          ignoreNULL = TRUE
         )
 
         output$tokens <- renderUI(
