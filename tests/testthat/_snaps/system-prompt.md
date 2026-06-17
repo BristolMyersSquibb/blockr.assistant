@@ -19,9 +19,10 @@
       re-evaluates downstream blocks -- ask before proceeding. For
       a still-staged entity, use remove + add to change the id.
       
-      modify_block can only change keys reported as modifiable in
-      the Board section above (and block_name, always). For other
-      changes use remove_block + add_block.
+      modify_block can only change a block's externally-controllable
+      constructor inputs -- marked with a trailing `*` in the Board
+      section above -- plus block_name (always). For other changes use
+      remove_block + add_block.
       
       ## Layout
       
@@ -135,9 +136,10 @@
       re-evaluates downstream blocks -- ask before proceeding. For
       a still-staged entity, use remove + add to change the id.
       
-      modify_block can only change keys reported as modifiable in
-      the Board section above (and block_name, always). For other
-      changes use remove_block + add_block.
+      modify_block can only change a block's externally-controllable
+      constructor inputs -- marked with a trailing `*` in the Board
+      section above -- plus block_name (always). For other changes use
+      remove_block + add_block.
       
       ## Layout
       
@@ -241,7 +243,7 @@
       - `query_data(code)`: Evaluate R code against the board's block results. Every committed block's evaluated result is bound in scope by its block id (e.g. for a block with id `data` write `head(data)`). Returns captured stdout plus the auto-printed value of the last expression -- the same shape an R REPL would produce. Use this for questions the Board section doesn't carry: unique values, group counts, ad-hoc filters, joins across blocks. Read-only; the board is not modified.
       - `add_block(type, args, id?)`: Add a new block to the board. `type` is a block id as reported by list_available_blocks. `args` is a JSON object (passed as a string) of constructor arguments -- field names must match the arg names reported by list_available_blocks for the chosen type. `id` is optional -- if omitted, a unique id is generated.
       - `remove_block(id)`: Remove a block from the board. Any links to or from the block are cleaned up at apply time by core; the model does not need to remove them explicitly.
-      - `modify_block(id, args)`: Change one or more constructor arguments of an existing block. `args` is a JSON object (passed as a string) of just the keys being changed; unmentioned keys keep their current values. Modifiable keys for a given block are those listed as externally controllable by describe_block (and `block_name`, always); non-controllable keys are rejected at stage time, in which case use remove_block + add_block.
+      - `modify_block(id, args)`: Change one or more constructor arguments of an existing block. `args` is a JSON object (passed as a string) of just the keys being changed; unmentioned keys keep their current values. Modifiable keys are a block's externally-controllable inputs -- marked `*` in the Board summary, detailed by describe_block -- plus `block_name`, always; non-controllable keys are rejected at stage time, in which case use remove_block + add_block.
       - `add_link(from, to, input, id?)`: Add a link that wires the output of block `from` into argument `input` of block `to`. Both blocks must exist on the board or be staged for creation in this turn.
       - `remove_link(id)`: Remove a link by its id.
       - `modify_link(id, from?, to?, input?)`: Retarget an existing link. Any combination of `from`, `to`, and `input` may be supplied; only supplied fields are changed. Omitted fields keep their current values.
@@ -260,13 +262,13 @@
       2 block(s), 1 link(s), 0 stack(s), 2 view(s).
       
       ### Blocks
-      - data (dataset_block): dataset=iris, package=datasets [modifiable: dataset, block_name]
-      - head (head_block): n=6, direction=head [modifiable: block_name only]
+      - data <dataset_block> dataset*, package
+      - head <head_block> n, direction
       ### Links
       - ab: data -> head$data
       ### Views
-      - Analysis (id: Analysis) (active) (2 panel(s): data, head)
-      - Overview (id: Overview) (1 panel(s): data)
+      - Analysis (id: Analysis) (active) <dock_layout> data, head
+      - Overview (id: Overview) <dock_layout> data
       ### Options
       - board_name (Board options)
       Current values via list_board_options; change with set_board_option.

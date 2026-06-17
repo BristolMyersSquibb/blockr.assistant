@@ -10,7 +10,7 @@
 #' @param ... For future use.
 #'
 #' @return Character vector of lines (consistent with
-#'   [summarise_result()] and [describe_block()]). The tool that
+#'   `summarise_result()` and [describe_block()]). The tool that
 #'   consumes this collapses with `paste(..., collapse = "\n")`
 #'   before returning to ellmer.
 #'

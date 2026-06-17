@@ -97,7 +97,7 @@ test_that("default_system_prompt() with board adds the summary", {
 
   expect_match(res, "## Board", fixed = TRUE)
   expect_match(res, "1 block(s), 0 link(s), 0 stack(s)", fixed = TRUE)
-  expect_match(res, "d (dataset_block)", fixed = TRUE)
+  expect_match(res, "d <dataset_block>", fixed = TRUE)
 })
 
 test_that("default_system_prompt() empty board flags the empty case", {
@@ -195,8 +195,8 @@ test_that("summarise_board on a populated board emits per-entity lines", {
 
   expect_match(res, "2 block(s), 1 link(s)", fixed = TRUE)
   expect_match(res, "### Blocks", fixed = TRUE)
-  expect_match(res, "d (dataset_block)", fixed = TRUE)
-  expect_match(res, "h (head_block)", fixed = TRUE)
+  expect_match(res, "d <dataset_block>", fixed = TRUE)
+  expect_match(res, "h <head_block>", fixed = TRUE)
   expect_match(res, "### Links", fixed = TRUE)
   expect_match(res, "l: d -> h$data", fixed = TRUE)
 })
@@ -232,8 +232,8 @@ test_that("summarise_board flags unhealthy blocks, not healthy ones", {
   )
 
   lines <- strsplit(summarise_board(board), "\n")[[1]]
-  d_line <- grep("d (dataset_block)", lines, fixed = TRUE, value = TRUE)
-  h_line <- grep("h (head_block)", lines, fixed = TRUE, value = TRUE)
+  d_line <- grep("d <dataset_block>", lines, fixed = TRUE, value = TRUE)
+  h_line <- grep("h <head_block>", lines, fixed = TRUE, value = TRUE)
 
   expect_match(d_line, "1 error", fixed = TRUE)
   expect_no_match(h_line, "error", fixed = TRUE)
@@ -248,55 +248,4 @@ test_that("summarise_board falls back to header when over the cap", {
 
   expect_match(res, "1 block(s)", fixed = TRUE)
   expect_match(res, "(too many entities to inline", fixed = TRUE)
-})
-
-test_that("summarise_block dispatches on block class", {
-
-  registerS3method(
-    "summarise_block", "fake_for_dispatch",
-    function(x, board, id, ...) "OVERRIDDEN",
-    envir = globalenv()
-  )
-  withr::defer(
-    suppressWarnings(
-      rm("summarise_block.fake_for_dispatch", envir = globalenv())
-    )
-  )
-
-  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
-  blks <- board_blocks(brd)
-  class(blks[["d"]]) <- c("fake_for_dispatch", class(blks[["d"]]))
-  board_blocks(brd) <- blks
-
-  board <- reactiveValues(board = brd)
-  res <- summarise_board(board)
-
-  expect_match(res, "OVERRIDDEN", fixed = TRUE)
-})
-
-test_that("summarise_stack dispatches on stack class", {
-
-  registerS3method(
-    "summarise_stack", "fake_stack_for_dispatch",
-    function(x, ...) "STACK_OVERRIDDEN",
-    envir = globalenv()
-  )
-  withr::defer(
-    suppressWarnings(
-      rm("summarise_stack.fake_stack_for_dispatch", envir = globalenv())
-    )
-  )
-
-  brd <- new_board(
-    blocks = c(d = new_dataset_block("iris")),
-    stacks = c(s = new_stack(blocks = "d", name = "test"))
-  )
-  stks <- board_stacks(brd)
-  class(stks[["s"]]) <- c("fake_stack_for_dispatch", class(stks[["s"]]))
-  board_stacks(brd) <- stks
-
-  board <- reactiveValues(board = brd)
-  res <- summarise_board(board)
-
-  expect_match(res, "STACK_OVERRIDDEN", fixed = TRUE)
 })

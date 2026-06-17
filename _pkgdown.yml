@@ -38,6 +38,3 @@ reference:
     contents:
       - describe_block
       - describe_stack
-      - summarise_block
-      - summarise_stack
-      - summarise_result

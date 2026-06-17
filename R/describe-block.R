@@ -19,7 +19,7 @@
 #' @param ... For future use.
 #'
 #' @return Character vector of lines (consistent with
-#'   [summarise_result()] and [describe_stack()]). The tool that
+#'   `summarise_result()` and [describe_stack()]). The tool that
 #'   consumes this collapses with `paste(..., collapse = "\n")`
 #'   before returning to ellmer.
 #'
@@ -32,15 +32,13 @@ describe_block.block <- function(x, board, id, ...) {
 
   core <- format(x)
 
-  ctrl <- attr(x, "external_ctrl")
+  ctrl <- external_ctrl_vars(x)
   ctrl_line <- sprintf(
     "Modifiable via modify_block: %s",
-    if (isTRUE(ctrl)) {
-      "all constructor arguments and block_name"
-    } else if (isFALSE(ctrl) || !length(ctrl)) {
+    if (identical(ctrl, "block_name")) {
       "block_name only"
     } else {
-      paste(c(ctrl, "block_name"), collapse = ", ")
+      paste(ctrl, collapse = ", ")
     }
   )
 

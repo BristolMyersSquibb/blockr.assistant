@@ -16,7 +16,7 @@ describe_stack(x, ...)
 }
 \value{
 Character vector of lines (consistent with
-\code{\link[=summarise_result]{summarise_result()}} and \code{\link[=describe_block]{describe_block()}}). The tool that
+\code{summarise_result()} and \code{\link[=describe_block]{describe_block()}}). The tool that
 consumes this collapses with \code{paste(..., collapse = "\\n")}
 before returning to ellmer.
 }

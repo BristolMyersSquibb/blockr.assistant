@@ -145,7 +145,7 @@ summarise_board <- function(board, max_chars = 4000L) {
   body <- c(
     header,
     "",
-    summarise_blocks(blks, b, block_condition_markers(board)),
+    summarise_blocks(blks, block_condition_markers(board)),
     summarise_links(lnks),
     summarise_stacks(stks),
     summarise_views(vws, b),
@@ -177,7 +177,7 @@ board_views <- function(b) {
   board_layouts(b)
 }
 
-summarise_blocks <- function(blks, board, markers = character()) {
+summarise_blocks <- function(blks, markers = character()) {
 
   if (!length(blks)) {
     return(character())
@@ -187,7 +187,7 @@ summarise_blocks <- function(blks, board, markers = character()) {
     "### Blocks",
     chr_ply(names(blks), function(id) {
 
-      line <- summarise_block(blks[[id]], board = board, id = id)
+      line <- paste0("- ", id, " ", str_value(blks[[id]]))
 
       if (id %in% names(markers) && nzchar(markers[[id]])) {
         paste0(line, " ", markers[[id]])
@@ -228,9 +228,7 @@ summarise_stacks <- function(stks) {
 
   c(
     "### Stacks",
-    chr_ply(names(stks), function(id) {
-      sprintf("- %s %s", id, summarise_stack(stks[[id]]))
-    })
+    paste0("- ", names(stks), " ", chr_ply(stks, str_value))
   )
 }
 
@@ -269,21 +267,8 @@ summarise_views <- function(vws, b) {
       marker <- if (identical(id, active)) " (active)" else ""
       sprintf(
         "- %s (id: %s)%s %s",
-        labels[[id]], id, marker, summarise_view(vws[[id]])
+        labels[[id]], id, marker, str_value(vws[[id]])
       )
     })
   )
-}
-
-summarise_view <- function(layout) {
-
-  panels <- panel_obj_ids(layout_panel_ids(layout))
-
-  panels_str <- if (length(panels)) {
-    paste(panels, collapse = ", ")
-  } else {
-    "<empty>"
-  }
-
-  sprintf("(%d panel(s): %s)", length(panels), panels_str)
 }

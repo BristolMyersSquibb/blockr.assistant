@@ -178,10 +178,11 @@ tool_modify_block <- function(board, pending, session) {
       "Change one or more constructor arguments of an existing",
       "block. `args` is a JSON object (passed as a string) of just",
       "the keys being changed; unmentioned keys keep their current",
-      "values. Modifiable keys for a given block are those listed",
-      "as externally controllable by describe_block (and",
-      "`block_name`, always); non-controllable keys are rejected",
-      "at stage time, in which case use remove_block + add_block."
+      "values. Modifiable keys are a block's externally-controllable",
+      "inputs -- marked `*` in the Board summary, detailed by",
+      "describe_block -- plus `block_name`, always; non-controllable",
+      "keys are rejected at stage time, in which case use",
+      "remove_block + add_block."
     ),
     arguments = list(
       id = ellmer::type_string("Id of the block to modify."),
