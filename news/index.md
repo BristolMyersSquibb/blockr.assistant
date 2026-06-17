@@ -31,6 +31,25 @@
   own chat client. The board summary gains an Options section listing
   the option surface.
 
+- The board summary in the dynamic system prompt now renders each entity
+  through blockr.core’s
+  [`str_value()`](https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html)
+  generic (and the `str_value` methods blockr.dock supplies for its
+  classes), instead of the assistant-owned `summarise_*` S3 generics.
+  Those had a single method each, dispatching on classes owned by
+  packages *below* this one, so they could never be extended downstream;
+  they are now plain internal helpers that call
+  [`str_value()`](https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html).
+  Each entity’s compact rendering is owned by its home package – the
+  correct extension point and dependency direction – so a stack’s colour
+  now appears automatically. The per-block line reports the
+  externally-controllable constructor inputs (marked `*`) rather than
+  frozen initial argument values, which also removes the old
+  `blockr.core:::initial_block_state()` workaround. `describe_block`
+  still reports modifiable keys, now via the exported
+  [`external_ctrl_vars()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html)
+  rather than the raw `external_ctrl` attribute (#20).
+
 - Adds an LLM tool surface for view CRUD and layout mutations: six new
   tools (`list_views`, `add_view`, `remove_view`, `modify_view`,
   `set_active_view`, `rename_view`) backed by an extended staging

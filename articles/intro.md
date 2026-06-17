@@ -137,32 +137,35 @@ with no arguments at the REPL to inspect just the intro block.
 
 ## Extend per block class
 
-The package exports five S3 generics that let block / stack authors
-customise how their classes appear to the model:
+The package exports two S3 generics that let block / stack authors
+customise the detailed descriptions the model can request on demand:
 
 | Generic | Used by | When you’d override |
 |----|----|----|
-| `summarise_block(x, board, id)` | dynamic prompt, per-block line | compact prompt-context line for your class |
-| `summarise_stack(x)` | dynamic prompt, per-stack line | ditto for stacks |
 | `describe_block(x, board, id)` | `describe_block` tool | full description on user demand |
 | `describe_stack(x)` | `list_stacks` tool description column | ditto for stacks |
-| `summarise_result(x)` | `get_block_result` tool | how the block’s evaluated result renders |
 
-The two pairs (`summarise_*` vs `describe_*`) split density from detail:
-`summarise_block` runs on every turn and should stay compact (one line);
-`describe_block` runs only when the model calls the tool and can be as
-detailed as the model needs.
+The default methods report the class, name, arguments, external control
+and incoming links; override them when your class carries extra state
+worth surfacing.
 
-A worked example for a bespoke block class:
+The compact one-line-per-entity board summary in the dynamic system
+prompt is produced internally, off blockr.core’s
+[`str_value()`](https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html)
+generic – the value-returning compact counterpart to
+[`str()`](https://rdrr.io/r/utils/str.html), owned below this package –
+not an assistant-specific generic. To influence how your block, stack or
+layout renders there, define a
+[`str_value()`](https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html)
+method in its home package: the correct extension point and dependency
+direction (the assistant sits above core / dock / dag, so it cannot own
+a generic those packages would implement). A `dock_stack`’s colour
+reaches the summary exactly that way.
+
+A worked example overriding the detailed description for a bespoke block
+class:
 
 ``` r
-
-summarise_block.fancy_block <- function(x, board, id, ...) {
-  sprintf(
-    "- %s (fancy_block): rule=%s, threshold=%s",
-    id, attr(x, "rule"), attr(x, "threshold")
-  )
-}
 
 describe_block.fancy_block <- function(x, board, id, ...) {
   c(

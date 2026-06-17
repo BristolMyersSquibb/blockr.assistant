@@ -204,8 +204,8 @@ at the REPL to inspect just the intro block.</p>
 <div class="section level2">
 <h2 id="extend-per-block-class">Extend per block class<a class="anchor" aria-label="anchor" href="#extend-per-block-class"></a>
 </h2>
-<p>The package exports five S3 generics that let block / stack authors
-customise how their classes appear to the model:</p>
+<p>The package exports two S3 generics that let block / stack authors
+customise the detailed descriptions the model can request on demand:</p>
 <table class="table">
 <colgroup>
 <col width="33%">
@@ -219,16 +219,6 @@ customise how their classes appear to the model:</p>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td><code>summarise_block(x, board, id)</code></td>
-<td>dynamic prompt, per-block line</td>
-<td>compact prompt-context line for your class</td>
-</tr>
-<tr class="even">
-<td><code>summarise_stack(x)</code></td>
-<td>dynamic prompt, per-stack line</td>
-<td>ditto for stacks</td>
-</tr>
-<tr class="odd">
 <td><code>describe_block(x, board, id)</code></td>
 <td>
 <code>describe_block</code> tool</td>
@@ -240,29 +230,25 @@ customise how their classes appear to the model:</p>
 <code>list_stacks</code> tool description column</td>
 <td>ditto for stacks</td>
 </tr>
-<tr class="odd">
-<td><code>summarise_result(x)</code></td>
-<td>
-<code>get_block_result</code> tool</td>
-<td>how the block’s evaluated result renders</td>
-</tr>
 </tbody>
 </table>
-<p>The two pairs (<code>summarise_*</code> vs <code>describe_*</code>)
-split density from detail: <code>summarise_block</code> runs on every
-turn and should stay compact (one line); <code>describe_block</code>
-runs only when the model calls the tool and can be as detailed as the
-model needs.</p>
-<p>A worked example for a bespoke block class:</p>
+<p>The default methods report the class, name, arguments, external
+control and incoming links; override them when your class carries extra
+state worth surfacing.</p>
+<p>The compact one-line-per-entity board summary in the dynamic system
+prompt is produced internally, off blockr.core’s
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html" class="external-link">str_value()</a></code> generic – the value-returning compact
+counterpart to <code><a href="https://rdrr.io/r/utils/str.html" class="external-link">str()</a></code>, owned below this package – not an
+assistant-specific generic. To influence how your block, stack or layout
+renders there, define a <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/str_value.html" class="external-link">str_value()</a></code> method in its home
+package: the correct extension point and dependency direction (the
+assistant sits above core / dock / dag, so it cannot own a generic those
+packages would implement). A <code>dock_stack</code>’s colour reaches
+the summary exactly that way.</p>
+<p>A worked example overriding the detailed description for a bespoke
+block class:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">summarise_block.fancy_block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
-<span>    <span class="st">"- %s (fancy_block): rule=%s, threshold=%s"</span>,</span>
-<span>    <span class="va">id</span>, <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">x</span>, <span class="st">"rule"</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">x</span>, <span class="st">"threshold"</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="va">describe_block.fancy_block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<code class="sourceCode R"><span><span class="va">describe_block.fancy_block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    <span class="kw"><a href="https://rdrr.io/r/base/UseMethod.html" class="external-link">NextMethod</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>    <span class="st">""</span>,</span>

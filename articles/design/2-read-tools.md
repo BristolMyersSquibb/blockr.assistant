@@ -143,9 +143,8 @@ consequences:
 2.  We need an LLM-shaped *summary* whose format depends on the object’s
     class.
 
-We introduce
-[`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-as an exported S3 generic. The default method forwards to
+We introduce `summarise_result()` as an exported S3 generic. The default
+method forwards to
 [`btw::btw_this()`](https://posit-dev.github.io/btw/reference/btw_this.html),
 which already ships class-specific methods for data frames
 (`skimr`-style), tibbles, matrices, etc., and falls back to a truncated
@@ -240,11 +239,10 @@ from inside the tool function (which runs in the chat module’s reactive
 context during `chat_mod_server`’s turn handling) returns the current
 evaluated result.
 
-Phase 2 ships only the default
-[`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-method. Bespoke methods come when we hit a result class where the
-default output is unsatisfactory — at which point the override is one
-method definition, no plumbing.
+Phase 2 ships only the default `summarise_result()` method. Bespoke
+methods come when we hit a result class where the default output is
+unsatisfactory — at which point the override is one method definition,
+no plumbing.
 
 ### Read-only tools snapshot, they do not subscribe
 
@@ -397,8 +395,7 @@ uniformity.
   `id = ellmer::type_string("Block id, as returned by list_blocks.")`.
 - **Returns.** Character scalar — the concatenated output of
   `summarise_result(result)`. See *Result summarisation via
-  [`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)*
-  above for the generic and its default.
+  `summarise_result()`* above for the generic and its default.
 
 ## System prompt revision
 
@@ -725,9 +722,8 @@ on link {id}: cycle detected”).
   [`describe_stack()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_stack.md)
   generic and default method on `stack` returning a short id/name/blocks
   summary.
-- `R/summarise-result.R` *(new)* —
-  [`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-  generic and default method forwarding to
+- `R/summarise-result.R` *(new)* — `summarise_result()` generic and
+  default method forwarding to
   [`btw::btw_this()`](https://posit-dev.github.io/btw/reference/btw_this.html).
 - `R/tools-read.R` *(new)* — six tool factories plus
   `register_read_tools()`.
@@ -790,9 +786,7 @@ the gate before merge, not before CI green.
 - User asks “what does block X do?” → model invokes `describe_block` and
   replies with constructor args and current values.
 - User asks “what does the result of X look like?” → model invokes
-  `get_block_result` and returns a
-  [`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-  summary.
+  `get_block_result` and returns a `summarise_result()` summary.
 
 ## Known limitations carried into later phases
 

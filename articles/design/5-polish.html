@@ -648,7 +648,7 @@ cause either way.</p>
 inspection<a class="anchor" aria-label="anchor" href="#query_data-an-eval-escape-hatch-for-richer-inspection"></a>
 </h3>
 <p><code>get_block_result</code> returns a fixed
-<code><a href="../../reference/summarise_result.html">summarise_result()</a></code> projection of a single block — useful
+<code>summarise_result()</code> projection of a single block — useful
 for “what does this look like” but inadequate for “how many distinct
 values of <code>Species</code> are there”, “what’s the mean of column X
 grouped by Y”, “do rows from block A and block B match on id”. A static
@@ -912,7 +912,7 @@ comparison bookkeeping. The flush-rejection note covers the
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    <span class="st">"## Blocks"</span>,</span>
 <span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/chr_ply.html" class="external-link">chr_ply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">blks</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op">{</span></span>
-<span>      <span class="fu"><a href="../../reference/summarise_block.html">summarise_block</a></span><span class="op">(</span><span class="va">blks</span><span class="op">[[</span><span class="va">id</span><span class="op">]</span><span class="op">]</span>, board <span class="op">=</span> <span class="cn">NULL</span>, id <span class="op">=</span> <span class="va">id</span><span class="op">)</span></span>
+<span>      <span class="fu">summarise_block</span><span class="op">(</span><span class="va">blks</span><span class="op">[[</span><span class="va">id</span><span class="op">]</span><span class="op">]</span>, board <span class="op">=</span> <span class="cn">NULL</span>, id <span class="op">=</span> <span class="va">id</span><span class="op">)</span></span>
 <span>    <span class="op">}</span><span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span>
@@ -941,7 +941,7 @@ comparison bookkeeping. The flush-rejection note covers the
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    <span class="st">"## Stacks"</span>,</span>
 <span>    <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/chr_ply.html" class="external-link">chr_ply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">stks</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op">{</span></span>
-<span>      <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"- %s %s"</span>, <span class="va">id</span>, <span class="fu"><a href="../../reference/summarise_stack.html">summarise_stack</a></span><span class="op">(</span><span class="va">stks</span><span class="op">[[</span><span class="va">id</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"- %s %s"</span>, <span class="va">id</span>, <span class="fu">summarise_stack</span><span class="op">(</span><span class="va">stks</span><span class="op">[[</span><span class="va">id</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
 <span>    <span class="op">}</span><span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span></code></pre></div>

@@ -27,9 +27,7 @@ describe_stack(x, ...)
 
 ## Value
 
-Character vector of lines (consistent with
-[`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-and
+Character vector of lines (consistent with `summarise_result()` and
 [`describe_block()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_block.md)).
 The tool that consumes this collapses with `paste(..., collapse = "\n")`
 before returning to ellmer.

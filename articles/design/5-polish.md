@@ -505,14 +505,13 @@ fault — the error notification points at the root cause either way.
 
 ### `query_data`: an eval escape hatch for richer inspection
 
-`get_block_result` returns a fixed
-[`summarise_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/summarise_result.md)
-projection of a single block — useful for “what does this look like” but
-inadequate for “how many distinct values of `Species` are there”,
-“what’s the mean of column X grouped by Y”, “do rows from block A and
-block B match on id”. A static prompt can’t carry every such projection,
-and inflating the per-block summary to cover them would burn tokens on
-every turn for occasional value.
+`get_block_result` returns a fixed `summarise_result()` projection of a
+single block — useful for “what does this look like” but inadequate for
+“how many distinct values of `Species` are there”, “what’s the mean of
+column X grouped by Y”, “do rows from block A and block B match on id”.
+A static prompt can’t carry every such projection, and inflating the
+per-block summary to cover them would burn tokens on every turn for
+occasional value.
 
 The remedy: a `query_data(code)` read tool that evaluates model-supplied
 R against a scoping env built from
