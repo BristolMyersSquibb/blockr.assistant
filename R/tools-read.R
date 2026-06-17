@@ -281,17 +281,15 @@ tool_get_block_conditions <- function(board, update, session) {
           )
         }
 
-        cond <- blks[[id]]$server$cond
+        conditions <- blks[[id]]$server$conditions
 
-        if (is.null(cond)) {
+        if (is.null(conditions)) {
           return(
             sprintf("Block %s has no condition state to report yet.", id)
           )
         }
 
-        df <- summarise_conditions(isolate(reactiveValuesToList(cond)))
-
-        format_conditions(df, id)
+        format_conditions(isolate(conditions()), id)
       })
     },
     name        = "get_block_conditions",

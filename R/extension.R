@@ -155,6 +155,17 @@ asst_ext_srv <- function(system_prompt, messages) {
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
 
+        report <- reactiveValues(
+          baseline  = NULL,
+          count     = 0L,
+          seq       = 0L,
+          feedback  = NULL,
+          awaiting  = FALSE,
+          injecting = FALSE
+        )
+
+        max_auto_react <- 2L
+
         messages_rec <- reactiveVal(coal(messages, list()))
 
         client_r   <- reactiveVal(NULL)
@@ -341,9 +352,46 @@ asst_ext_srv <- function(system_prompt, messages) {
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 
+        auto_react <- function(msg) {
+
+          if (is.null(msg) || isolate(report$count) >= max_auto_react) {
+            return(invisible())
+          }
+
+          report$count <- isolate(report$count) + 1L
+          report$seq <- isolate(report$seq) + 1L
+          report$feedback <- list(n = isolate(report$seq), msg = msg)
+
+          invisible()
+        }
+
+        observeEvent(
+          report$feedback,
+          {
+            mod <- isolate(mod_r())
+
+            if (is.null(mod)) {
+              return()
+            }
+
+            report$injecting <- TRUE
+            mod$update_user_input(
+              value = report$feedback$msg, submit = TRUE
+            )
+          },
+          ignoreNULL = TRUE
+        )
+
         observeEvent(
           last_input_r(),
           {
+            if (isolate(report$injecting)) {
+              report$injecting <- FALSE
+            } else {
+              report$baseline <- isolate(board$conditions())
+              report$count <- 0L
+            }
+
             reset_pending(pending_update)
             record_new_turns()
           },
@@ -353,8 +401,48 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_turn_r(),
           {
+            if (has_any_changes(isolate(pending_update()))) {
+              report$awaiting <- TRUE
+            }
+
             flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
+          },
+          ignoreNULL = TRUE
+        )
+
+        observeEvent(
+          board$last_update,
+          {
+            outcome <- board$last_update
+
+            if (is.null(outcome) || !isolate(report$awaiting)) {
+              return()
+            }
+
+            report$awaiting <- FALSE
+
+            if (isFALSE(outcome$ok)) {
+              auto_react(format_flush_feedback(outcome))
+              return()
+            }
+
+            # The block re-evaluation this update triggers drains within the
+            # current reactive flush; collect once it has completed.
+            session$onFlushed(
+              function() {
+                auto_react(
+                  format_flush_feedback(
+                    list(ok = TRUE),
+                    added_conditions(
+                      isolate(report$baseline),
+                      isolate(board$conditions())
+                    )
+                  )
+                )
+              },
+              once = TRUE
+            )
           },
           ignoreNULL = TRUE
         )
