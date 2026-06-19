@@ -113,7 +113,7 @@ tool_set_board_option <- function(board, session) {
 
         coerced <- board_option_value(opts[[id]], parse_option_value(value))
 
-        set_board_option_value(id, coerced, session)
+        set_board_option_value(id, coerced, isolate(board$board), session)
 
         sprintf("Set board option %s to %s.", id, format_option_value(coerced))
       })
