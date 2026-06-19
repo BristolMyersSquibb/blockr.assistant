@@ -2,6 +2,12 @@
 
 ## blockr.assistant (development version)
 
+- `set_board_option` now passes the board to blockr.core’s
+  [`set_board_option_value()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_board_options.html),
+  adopting the required-`board` signature introduced in
+  BMS/blockr.core#229 so the write honours the board’s own lock policy
+  rather than bypassing it. Fixes \#52.
+
 - After the assistant applies its staged changes at turn end, it now
   reports the outcome back to the model so it can correct a problem it
   introduced without waiting for the user to notice a red block. Two
