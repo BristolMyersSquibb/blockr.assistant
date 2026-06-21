@@ -106,14 +106,21 @@ format_condition_marker <- function(df) {
 
 block_condition_marker <- function(blk) {
 
-  cond <- blk$server$cond
+  # `blk$server` may still be a not-yet-ready closure (blockr.dock prerenders
+  # blocks before their server objects materialise), so reach for `$cond`
+  # defensively -- same guard as block_eval_error(). A block whose server
+  # isn't ready simply contributes no marker.
+  cond <- tryCatch(blk$server$cond, error = function(e) NULL)
 
   if (is.null(cond)) {
     return("")
   }
 
-  format_condition_marker(
-    summarise_conditions(isolate(reactiveValuesToList(cond)))
+  tryCatch(
+    format_condition_marker(
+      summarise_conditions(isolate(reactiveValuesToList(cond)))
+    ),
+    error = function(e) ""
   )
 }
 
