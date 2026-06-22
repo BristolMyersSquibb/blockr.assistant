@@ -97,6 +97,34 @@ test_that("parse_args_json keeps an array of objects as a list of records", {
   expect_identical(parsed$items[[1L]]$type, "a")
 })
 
+test_that("add_block surfaces a constructor error instead of throwing", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  res <- add(
+    type = "head_block", args = "{\"direction\": \"sideways\"}", id = "h2"
+  )
+
+  expect_match(res, "add_block")
+  expect_match(res, "should be one of", fixed = TRUE)
+  expect_false("h2" %in% names(isolate(env$pending()$blocks$add)))
+})
+
+test_that("add_link rejects an over-saturated input instead of throwing", {
+
+  env <- new_mutation_env()
+  add <- tool_add_link(env$board, env$pending, NULL)
+
+  # head$data is already wired (lnk1: data -> head); a second link is rejected
+  # at stage time rather than producing an unbuildable board.
+  res <- add(from = "tail", to = "head", input = "data", id = "l2")
+
+  expect_match(res, "add_link")
+  expect_match(res, "failed", fixed = TRUE)
+  expect_false("l2" %in% names(isolate(env$pending()$links$add)))
+})
+
 test_that("modify_block accepts a controllable argument", {
 
   env <- new_mutation_env()
