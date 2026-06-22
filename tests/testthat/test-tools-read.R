@@ -152,6 +152,17 @@ test_that("tool_list_available_blocks returns registry metadata rows", {
   expect_gt(nrow(res), 0L)
 })
 
+test_that("tool_list_available_blocks surfaces block input slots", {
+
+  board <- reactiveValues(board = new_board())
+
+  res <- call_tool(tool_list_available_blocks(board, NULL, NULL))
+
+  expect_true("inputs" %in% names(res))
+  expect_identical(res$inputs[res$id == "head_block"], "data")
+  expect_true(is.na(res$inputs[res$id == "dataset_block"]))
+})
+
 test_that("tool_get_block_result returns recovery hint for unknown id", {
 
   board <- reactiveValues(blocks = list())

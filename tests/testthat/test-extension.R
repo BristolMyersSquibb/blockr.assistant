@@ -278,7 +278,7 @@ test_that("pending_update is initialised empty and survives a no-op flush", {
 
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
   calls <- 0L
-  fake_update <- function(payload) calls <<- calls + 1L
+  fake_update <- recording_update(function(payload) calls <<- calls + 1L)
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -310,10 +310,12 @@ test_that("staging across a turn flushes once and resets pending", {
 
   captured <- list()
   calls <- 0L
-  fake_update <- function(payload) {
-    calls <<- calls + 1L
-    captured[[length(captured) + 1L]] <<- payload
-  }
+  fake_update <- recording_update(
+    function(payload) {
+      calls <<- calls + 1L
+      captured[[length(captured) + 1L]] <<- payload
+    }
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -376,9 +378,9 @@ test_that("recovery sequence flushes a single corrected add", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   captured <- list()
-  fake_update <- function(payload) {
-    captured[[length(captured) + 1L]] <<- payload
-  }
+  fake_update <- recording_update(
+    function(payload) captured[[length(captured) + 1L]] <<- payload
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -573,9 +575,9 @@ test_that("flush rejection populates last_flush_error and the delta note", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  rejecting_update <- function(payload) {
-    stop("validator rejected this payload")
-  }
+  rejecting_update <- recording_update(
+    function(payload) stop("validator rejected this payload")
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -820,7 +822,7 @@ test_that("a successful follow-up flush clears the delta note", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  succeeding_update <- function(payload) invisible(payload)
+  succeeding_update <- recording_update()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),

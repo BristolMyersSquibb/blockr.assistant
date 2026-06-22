@@ -14,3 +14,22 @@ with_llm_session <- function() {
   )
   sess
 }
+
+# Faithful stand-in for core's `update` reactiveVal: readable via update() and
+# writable via update(payload). The assistant both reads it (touched-set
+# capture) and writes it (flush), so a write-only function mock is unfaithful.
+# `on_write` records the payload (or rejects, by stopping).
+recording_update <- function(on_write = function(payload) invisible()) {
+
+  rv <- shiny::reactiveVal()
+
+  function(payload) {
+
+    if (missing(payload)) {
+      return(rv())
+    }
+
+    on_write(payload)
+    rv(payload)
+  }
+}

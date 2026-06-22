@@ -40,7 +40,17 @@ parse_args_json <- function(s, tool) {
     return(list())
   }
 
-  parsed <- jsonlite::fromJSON(s, simplifyVector = TRUE)
+  # simplifyVector keeps scalar arrays atomic (by: ["x"] -> "x"), but
+  # array-of-objects arguments (filter `conditions`, summarize `summaries`) must
+  # stay lists of named records: simplifyDataFrame would collapse them into a
+  # data.frame the blocks' state cannot consume -- silently empty, or a
+  # $-on-atomic crash on the flat-argument blocks.
+  parsed <- jsonlite::fromJSON(
+    s,
+    simplifyVector = TRUE,
+    simplifyDataFrame = FALSE,
+    simplifyMatrix = FALSE
+  )
 
   if (is.null(parsed)) {
     return(list())
@@ -88,6 +98,26 @@ tool_add_block <- function(board, pending, session) {
         }
 
         parsed <- parse_args_json(args, "add_block")
+
+        reg_args <- names(registry_metadata(type)$arguments[[1L]])
+        unknown <- setdiff(names(parsed), c(reg_args, "block_name"))
+
+        if (length(reg_args) && length(unknown)) {
+          stop(
+            sprintf(
+              paste(
+                "add_block('%s') got unrecognized argument(s): %s.",
+                "Configurable arguments are: %s. Use exactly these names",
+                "(mirror the example from list_available_blocks); if a listed",
+                "argument is itself an object, nest its fields under that",
+                "argument name rather than passing them at the top level."
+              ),
+              type, paste(unknown, collapse = ", "),
+              paste(reg_args, collapse = ", ")
+            ),
+            call. = FALSE
+          )
+        }
 
         block <- do.call(create_block, c(list(type), parsed))
 

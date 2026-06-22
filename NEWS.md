@@ -1,5 +1,28 @@
 # blockr.assistant (development version)
 
+* The post-apply review the assistant sends itself now includes a
+  short result summary of each block the turn touched -- the added or
+  modified blocks, plus the destination of any added or removed link
+  -- so the model can catch a block that built but is silently wrong
+  (e.g. a filter that yields no rows), not only one that errors. The
+  touched set is read off core's normalised board update, reusing the
+  link-removal expansion `preprocess_board_update()` already performs
+  rather than recomputing it. The summary is capped at ten blocks with
+  a pointer to `get_block_result` / `query_data` for the rest, and the
+  review invites the model to inspect downstream results when a change
+  is likely to propagate. The per-turn auto-correction bound is raised
+  from two to three. Fixes #43.
+
+* `add_block` now rejects constructor arguments outside a block's
+  documented set (the names `list_available_blocks` reports), turning
+  the silent argument-swallow of a constructor `...` into an error the
+  model can act on. `list_available_blocks` gains an `inputs` column
+  naming each block's input slots, so links are wired to real slot
+  names rather than invented ones. JSON arguments that are arrays of
+  objects (a filter's `conditions`, a summarize's `summaries`) are now
+  kept as lists of records rather than collapsed into a data frame the
+  block state cannot consume.
+
 * `set_board_option` now passes the board to blockr.core's
   `set_board_option_value()`, adopting the required-`board` signature
   introduced in BMS/blockr.core#229 so the write honours the board's

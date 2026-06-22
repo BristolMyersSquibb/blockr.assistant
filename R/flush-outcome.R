@@ -8,7 +8,7 @@ added_conditions <- function(baseline, current) {
   ]
 }
 
-format_flush_feedback <- function(outcome, conditions = NULL) {
+format_flush_feedback <- function(outcome, conditions = NULL, results = NULL) {
 
   parts <- character()
 
@@ -23,6 +23,10 @@ format_flush_feedback <- function(outcome, conditions = NULL) {
         outcome$phase, outcome$message
       )
     )
+  }
+
+  if (length(results)) {
+    parts <- c(parts, paste(results, collapse = "\n"), review_invitation())
   }
 
   if (!is.null(conditions) && nrow(conditions)) {
@@ -49,4 +53,110 @@ format_flush_feedback <- function(outcome, conditions = NULL) {
     ),
     collapse = "\n\n"
   )
+}
+
+review_invitation <- function() {
+  paste(
+    "Confirm each changed block matches what the user asked for, or correct",
+    "it. Inspect downstream results with get_block_result or query_data when:",
+    "a problem is reported below; you are unsure how a change propagates; or",
+    "you made an upstream change (a column rename or removal, a new filter, a",
+    "type change) that downstream blocks may depend on."
+  )
+}
+
+link_dests <- function(lnks) {
+
+  if (!length(lnks)) {
+    return(character())
+  }
+
+  as.data.frame(lnks)$to
+}
+
+touched_blocks <- function(upd, board) {
+
+  if (is.null(upd)) {
+    return(character())
+  }
+
+  changed <- c(names(upd$blocks$add), names(upd$blocks$mod))
+
+  committed <- as.data.frame(board_links(board))
+
+  dest_of <- function(ids) {
+
+    if (!length(ids) || !nrow(committed)) {
+      return(character())
+    }
+
+    committed$to[committed$id %in% ids]
+  }
+
+  mod_new <- if (length(upd$links$mod)) {
+    chr_ply(
+      upd$links$mod,
+      function(d) coal(d$to, NA_character_),
+      use_names = FALSE
+    )
+  } else {
+    character()
+  }
+
+  unique(
+    c(
+      changed,
+      link_dests(upd$links$add),
+      dest_of(upd$links$rm),
+      dest_of(names(upd$links$mod)),
+      mod_new[!is.na(mod_new)]
+    )
+  )
+}
+
+collect_touched_results <- function(touched, board, cap = 10L) {
+
+  blks <- isolate(board$blocks)
+  ids <- intersect(touched, names(blks))
+
+  if (!length(ids)) {
+    return(NULL)
+  }
+
+  shown <- ids[seq_len(min(cap, length(ids)))]
+
+  lines <- chr_ply(
+    shown,
+    function(id) {
+
+      res <- tryCatch(
+        isolate(blks[[id]]$server$result()),
+        error = function(e) e
+      )
+
+      body <- if (inherits(res, "error")) {
+        "(no result yet -- see conditions below)"
+      } else {
+        paste(summarise_result(res), collapse = "\n")
+      }
+
+      sprintf("- %s:\n%s", id, body)
+    },
+    use_names = FALSE
+  )
+
+  if (length(ids) > length(shown)) {
+    lines <- c(
+      lines,
+      sprintf(
+        paste(
+          "(showing %d of %d changed blocks -- call get_block_result or",
+          "query_data for the rest)"
+        ),
+        length(shown), length(ids)
+      )
+    )
+  }
+
+  c("Results of the blocks you changed:", lines)
 }
