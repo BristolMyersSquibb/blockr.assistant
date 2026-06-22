@@ -154,6 +154,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         pending_update   <- reactiveVal(empty_pending())
         last_flush_error <- reactiveVal(NULL)
+        touched          <- reactiveVal(character())
 
         report <- reactiveValues(
           baseline  = NULL,
@@ -164,7 +165,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           injecting = FALSE
         )
 
-        max_auto_react <- 2L
+        max_auto_react <- 3L
 
         messages_rec <- reactiveVal(coal(messages, list()))
 
@@ -352,6 +353,26 @@ asst_ext_srv <- function(system_prompt, messages) {
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 
+        # Capture the blocks the model touched this turn off core's `update`
+        # reactiveVal. By the time a default-priority observer sees it,
+        # preprocess_board_update has expanded block removals into explicit
+        # link removals -- so we reuse core's cleanup instead of recomputing
+        # it. Gated on `awaiting`: only the model's own flush counts, not
+        # dock's background updates.
+        observeEvent(
+          update(),
+          {
+            if (isolate(report$awaiting)) {
+              touched(
+                union(
+                  isolate(touched()),
+                  touched_blocks(isolate(update()), isolate(board$board))
+                )
+              )
+            }
+          }
+        )
+
         auto_react <- function(msg) {
 
           if (is.null(msg) || isolate(report$count) >= max_auto_react) {
@@ -393,6 +414,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             }
 
             reset_pending(pending_update)
+            touched(character())
             record_new_turns()
           },
           ignoreNULL = TRUE
@@ -437,7 +459,8 @@ asst_ext_srv <- function(system_prompt, messages) {
                     added_conditions(
                       isolate(report$baseline),
                       isolate(board$conditions())
-                    )
+                    ),
+                    collect_touched_results(isolate(touched()), board)
                   )
                 )
               },

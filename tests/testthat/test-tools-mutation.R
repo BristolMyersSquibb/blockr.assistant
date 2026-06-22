@@ -61,6 +61,80 @@ test_that("add_block stages a constructed block from JSON args", {
   expect_s3_class(p$blocks$add[["new"]], "head_block")
 })
 
+test_that("add_block rejects arguments outside a block's documented set", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  res <- add(type = "dataset_block", args = "{\"bogus\": 1}", id = "d2")
+
+  expect_match(res, "unrecognized argument", fixed = TRUE)
+  expect_match(res, "bogus", fixed = TRUE)
+  expect_match(res, "dataset", fixed = TRUE)
+  expect_false("d2" %in% names(isolate(env$pending()$blocks$add)))
+})
+
+test_that("add_block accepts a documented argument", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  res <- add(
+    type = "dataset_block", args = "{\"dataset\": \"mtcars\"}", id = "d2"
+  )
+
+  expect_match(res, "Staged add_block(d2)", fixed = TRUE)
+})
+
+test_that("parse_args_json keeps an array of objects as a list of records", {
+
+  parsed <- parse_args_json(
+    "{\"items\": [{\"type\": \"a\"}, {\"type\": \"b\"}]}", "add_block"
+  )
+
+  expect_type(parsed$items, "list")
+  expect_false(is.data.frame(parsed$items))
+  expect_identical(parsed$items[[1L]]$type, "a")
+})
+
+test_that("add_block surfaces a constructor error instead of throwing", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  res <- add(
+    type = "head_block", args = "{\"direction\": \"sideways\"}", id = "h2"
+  )
+
+  expect_match(res, "add_block")
+  expect_match(res, "should be one of", fixed = TRUE)
+  expect_false("h2" %in% names(isolate(env$pending()$blocks$add)))
+})
+
+test_that("add_link rejects an over-saturated input instead of throwing", {
+
+  env <- new_mutation_env()
+  add <- tool_add_link(env$board, env$pending, NULL)
+
+  # head$data is already wired (lnk1: data -> head); a second link is rejected
+  # at stage time rather than producing an unbuildable board.
+  res <- add(from = "tail", to = "head", input = "data", id = "l2")
+
+  expect_match(res, "add_link")
+  expect_match(res, "failed", fixed = TRUE)
+  expect_false("l2" %in% names(isolate(env$pending()$links$add)))
+})
+
+test_that("modify_block accepts a controllable argument", {
+
+  env <- new_mutation_env()
+  mod <- tool_modify_block(env$board, env$pending, NULL)
+
+  res <- mod(id = "head", args = "{\"n\": 5}")
+
+  expect_match(res, "Staged modify_block(head)", fixed = TRUE)
+})
+
 test_that("add_block surfaces JSON parse errors", {
 
   env <- new_mutation_env()

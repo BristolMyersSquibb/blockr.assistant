@@ -197,6 +197,18 @@ tool_list_available_blocks <- function(board, update, session) {
 
         meta <- registry_metadata(uids, "all")
 
+        inputs <- chr_ply(
+          uids,
+          function(id) {
+            ins <- tryCatch(
+              block_inputs(create_block(id)),
+              error = function(e) character()
+            )
+            if (length(ins)) paste(ins, collapse = ", ") else NA_character_
+          },
+          use_names = FALSE
+        )
+
         data.frame(
           id          = uids,
           name        = meta$name,
@@ -204,6 +216,7 @@ tool_list_available_blocks <- function(board, update, session) {
           category    = meta$category,
           description = meta$description,
           arguments   = I(meta$arguments),
+          inputs      = inputs,
           row.names   = NULL
         )
       })
@@ -212,8 +225,11 @@ tool_list_available_blocks <- function(board, update, session) {
     description = paste(
       "List every registered block constructor -- block types the",
       "user can add to the board. One row per type with id, name,",
-      "package, category, description, and a list-column of",
-      "argument-name to argument-description mappings."
+      "package, category, description, a list-column of",
+      "argument-name to argument-description mappings, and an `inputs`",
+      "column listing the block's input-slot names. Use those verbatim",
+      "as the `input=` value in add_link (most blocks take \"data\"; some",
+      "take several, e.g. \"data, by\") -- never invent a slot name."
     ),
     arguments   = list()
   )
