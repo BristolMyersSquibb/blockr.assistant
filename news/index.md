@@ -2,6 +2,41 @@
 
 ## blockr.assistant (development version)
 
+- The post-apply review now reports each touched block together with its
+  immediate neighbours – the blocks feeding it and the blocks it feeds –
+  not just the block itself. A block wired to a column or element that
+  is not in its input – the usual cause of an empty or errored panel –
+  previously left the model to guess the fix from the error alone; it
+  now also sees the input’s own result (and the consumers, to confirm
+  the change propagated), so it can correct the reference or loosen an
+  over-strict filter on its next turn instead of leaving the user a
+  blank panel. The neighbours are folded into the existing touched-block
+  set, so they are summarised, capped, and fed back through the same
+  path – no result is interpreted on the model’s behalf. The number of
+  blocks reported is capped (default 50) by the option
+  `blockr.assistant_review_max_blocks`. Fixes \#51.
+
+- Result summaries shown to the model are now produced by a
+  [`describe_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_result.md)
+  S3 generic, alongside the existing
+  [`describe_block()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_block.md)
+  and
+  [`describe_stack()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_stack.md).
+  A package contributing an unusual result type can add a method to
+  describe it directly, in blockr terms; the default method delegates to
+  [`btw::btw_this()`](https://posit-dev.github.io/btw/reference/btw_this.html).
+  The output is hard-capped before it reaches the prompt, and a
+  description that errors – a block may return any R object, and a
+  multi-element character vector previously took the whole review down –
+  now surfaces the error message instead. So the review stays bounded by
+  the block cap times the per-result budget, and one odd result can no
+  longer break it. The same character cap is applied to the
+  `describe_block` and `list_stacks` tool responses, so no single tool
+  reply can flood the prompt either. The per-response character budget
+  (default 2000) is set by the option
+  `blockr.assistant_summary_max_chars`. Both options also read the
+  matching `BLOCKR_*` environment variable.
+
 - The post-apply review the assistant sends itself now includes a short
   result summary of each block the turn touched – the added or modified
   blocks, plus the destination of any added or removed link – so the
