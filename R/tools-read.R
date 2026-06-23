@@ -200,10 +200,19 @@ tool_list_available_blocks <- function(board, update, session) {
         inputs <- chr_ply(
           uids,
           function(id) {
-            ins <- tryCatch(
-              block_inputs(create_block(id)),
-              error = function(e) character()
-            )
+
+            blk <- tryCatch(create_block(id), error = function(e) NULL)
+
+            if (is.null(blk)) {
+              return(NA_character_)
+            }
+
+            if (is.na(block_arity(blk))) {
+              return("...")
+            }
+
+            ins <- block_inputs(blk)
+
             if (length(ins)) paste(ins, collapse = ", ") else NA_character_
           },
           use_names = FALSE
@@ -229,7 +238,12 @@ tool_list_available_blocks <- function(board, update, session) {
       "argument-name to argument-description mappings, and an `inputs`",
       "column listing the block's input-slot names. Use those verbatim",
       "as the `input=` value in add_link (most blocks take \"data\"; some",
-      "take several, e.g. \"data, by\") -- never invent a slot name."
+      "take several, e.g. \"data, by\") -- never invent a slot name.",
+      "An empty `inputs` (NA) is a source block that takes no incoming",
+      "links. An `inputs` of \"...\" is a variadic block (e.g. rbind,",
+      "glue) that accepts any number of links: give each link its own",
+      "distinct `input` name, or pass \"\" to auto-number them -- never",
+      "pass \"...\" itself."
     ),
     arguments   = list()
   )
