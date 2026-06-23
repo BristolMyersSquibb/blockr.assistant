@@ -93,9 +93,12 @@ tool_describe_block <- function(board, update, session) {
           )
         }
 
-        paste(
-          describe_block(blks[[id]], board = brd, id = id),
-          collapse = "\n"
+        truncate_chars(
+          paste(
+            describe_block(blks[[id]], board = brd, id = id),
+            collapse = "\n"
+          ),
+          summary_max_chars()
         )
       })
     },
@@ -157,7 +160,9 @@ tool_list_stacks <- function(board, update, session) {
             paste(stack_blocks(s), collapse = ", ")
           }),
           description = chr_ply(stks, function(s) {
-            paste(describe_stack(s), collapse = "\n")
+            truncate_chars(
+              paste(describe_stack(s), collapse = "\n"), summary_max_chars()
+            )
           }),
           row.names   = NULL
         )
