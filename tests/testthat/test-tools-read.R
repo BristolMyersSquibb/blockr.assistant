@@ -160,7 +160,9 @@ test_that("tool_list_available_blocks surfaces block input slots", {
 
   expect_true("inputs" %in% names(res))
   expect_identical(res$inputs[res$id == "head_block"], "data")
+  expect_identical(res$inputs[res$id == "merge_block"], "x, y")
   expect_true(is.na(res$inputs[res$id == "dataset_block"]))
+  expect_identical(res$inputs[res$id == "rbind_block"], "...")
 })
 
 test_that("tool_get_block_result returns recovery hint for unknown id", {
