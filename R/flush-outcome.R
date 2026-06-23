@@ -114,14 +114,28 @@ touched_blocks <- function(upd, board) {
   )
 }
 
-collect_touched_results <- function(touched, board, cap = 10L) {
+review_max_blocks <- function() {
+  as.integer(blockr_option("assistant_review_max_blocks", 50L))
+}
+
+collect_touched_results <- function(touched, board,
+                                    cap = review_max_blocks()) {
 
   blks <- isolate(board$blocks)
-  ids <- intersect(touched, names(blks))
+  ids  <- intersect(touched, names(blks))
 
   if (!length(ids)) {
     return(NULL)
   }
+
+  # Report the touched blocks together with their immediate neighbours -- the
+  # blocks feeding them and the blocks they feed. To judge whether a block
+  # built the right thing (or why it errored or came back empty) the model
+  # needs its inputs; to see whether the change propagated it needs its
+  # consumers. Touched blocks lead so the cap spends its budget on them first;
+  # per-result size is bounded in summarise_result(), so the worst-case review
+  # is `cap` blocks times that per-result bound.
+  ids <- intersect(union(ids, neighbor_blocks(ids, board)), names(blks))
 
   shown <- ids[seq_len(min(cap, length(ids)))]
 
@@ -150,7 +164,7 @@ collect_touched_results <- function(touched, board, cap = 10L) {
       lines,
       sprintf(
         paste(
-          "(showing %d of %d changed blocks -- call get_block_result or",
+          "(showing %d of %d blocks -- call get_block_result or",
           "query_data for the rest)"
         ),
         length(shown), length(ids)
@@ -158,5 +172,22 @@ collect_touched_results <- function(touched, board, cap = 10L) {
     )
   }
 
-  c("Results of the blocks you changed:", lines)
+  c("Results of the blocks you changed and the blocks linked to them:", lines)
+}
+
+neighbor_blocks <- function(ids, board) {
+
+  brd <- isolate(board$board)
+
+  if (is.null(brd)) {
+    return(character())
+  }
+
+  lnks <- as.data.frame(board_links(brd))
+
+  if (!nrow(lnks)) {
+    return(character())
+  }
+
+  unique(c(lnks$from[lnks$to %in% ids], lnks$to[lnks$from %in% ids]))
 }

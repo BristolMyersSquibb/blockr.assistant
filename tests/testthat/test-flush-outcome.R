@@ -152,7 +152,7 @@ test_that("collect_touched_results summarises each touched block", {
 
   out <- collect_touched_results(c("a", "b"), board)
 
-  expect_identical(out[[1L]], "Results of the blocks you changed:")
+  expect_match(out[[1L]], "Results of the blocks you changed", fixed = TRUE)
   expect_true(any(grepl("- a:", out, fixed = TRUE)))
   expect_true(any(grepl("- b:", out, fixed = TRUE)))
 })
@@ -164,6 +164,120 @@ test_that("collect_touched_results notes a block with no result", {
   out <- collect_touched_results("a", board)
 
   expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+})
+
+board_with_links <- function(brd, blocks) {
+  list(board = brd, blocks = blocks)
+}
+
+test_that("neighbor_blocks returns the blocks feeding and fed by the ids", {
+
+  brd <- new_board(
+    blocks = c(
+      a = new_dataset_block("iris"),
+      b = new_dataset_block("mtcars"),
+      m = new_merge_block(),
+      c = new_head_block()
+    ),
+    links = c(
+      new_link("a", "m", "x"),
+      new_link("b", "m", "y"),
+      new_link("m", "c", "data")
+    )
+  )
+
+  expect_setequal(neighbor_blocks("m", list(board = brd)), c("a", "b", "c"))
+  expect_identical(neighbor_blocks("a", list(board = brd)), "m")
+  expect_identical(neighbor_blocks("m", list()), character())
+})
+
+test_that("collect_touched_results pulls in a touched block's neighbours", {
+
+  brd <- new_board(
+    blocks = c(
+      up = new_dataset_block("iris"),
+      mid = new_head_block(),
+      sink = new_head_block()
+    ),
+    links = c(new_link("up", "mid", "data"), new_link("mid", "sink", "data"))
+  )
+
+  board <- board_with_links(
+    brd,
+    list(
+      up = fake_block(data.frame(VISITNUM = 1L, AVISITN = 2L, TRTP = "A")),
+      mid = fake_block(error = "object 'VISITN' not found"),
+      sink = fake_block(data.frame(z = 1))
+    )
+  )
+
+  out <- collect_touched_results("mid", board)
+
+  expect_true(any(grepl("- mid:", out, fixed = TRUE)))
+  expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+  expect_true(any(grepl("- up:", out, fixed = TRUE)))
+  expect_true(any(grepl("VISITNUM", out, fixed = TRUE)))
+  expect_true(any(grepl("- sink:", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results summarises a non-data-frame input", {
+
+  brd <- new_board(
+    blocks = c(up = new_dataset_block("mtcars"), down = new_head_block()),
+    links = c(new_link("up", "down", "data"))
+  )
+
+  board <- board_with_links(
+    brd,
+    list(
+      up = fake_block(lm(mpg ~ wt, mtcars)),
+      down = fake_block(error = "non-numeric argument")
+    )
+  )
+
+  out <- collect_touched_results("down", board)
+
+  expect_true(any(grepl("- up:", out, fixed = TRUE)))
+  expect_true(any(grepl("Coefficients", out, fixed = TRUE)))
+})
+
+test_that("a touched block's neighbours fall under the same cap", {
+
+  brd <- new_board(
+    blocks = c(up = new_dataset_block("iris"), down = new_head_block()),
+    links = c(new_link("up", "down", "data"))
+  )
+
+  board <- board_with_links(
+    brd,
+    list(
+      up = fake_block(data.frame(a = 1)),
+      down = fake_block(data.frame(b = 1))
+    )
+  )
+
+  out <- collect_touched_results("down", board, cap = 1L)
+
+  expect_identical(sum(grepl("^- ", out)), 1L)
+  expect_true(any(grepl("- down:", out, fixed = TRUE)))
+  expect_true(any(grepl("showing 1 of 2", out, fixed = TRUE)))
+})
+
+test_that("the block cap is option-driven, defaulting to 50", {
+
+  expect_identical(review_max_blocks(), 50L)
+
+  board <- list(
+    blocks = list(
+      a = fake_block(data.frame(x = 1)),
+      b = fake_block(data.frame(y = 1))
+    )
+  )
+
+  withr::local_options(blockr.assistant_review_max_blocks = 1L)
+  out <- collect_touched_results(c("a", "b"), board)
+
+  expect_true(any(grepl("showing 1 of 2", out, fixed = TRUE)))
 })
 
 test_that("collect_touched_results caps the listing and notes the remainder", {
