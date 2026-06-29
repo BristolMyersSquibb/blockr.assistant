@@ -28,6 +28,7 @@ Imports:
     shiny,
     shinychat
 Suggests:
+    chromote,
     knitr,
     rmarkdown,
     shinytest2,

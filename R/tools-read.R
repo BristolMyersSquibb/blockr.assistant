@@ -180,6 +180,19 @@ tool_list_stacks <- function(board, update, session) {
   )
 }
 
+arg_spec <- function(x) {
+  compact(
+    list(
+      description = block_arg_description(x),
+      type = block_arg_type(x)
+    )
+  )
+}
+
+arg_specs <- function(args) {
+  set_names(lapply(args, arg_spec), names(args))
+}
+
 tool_list_available_blocks <- function(board, update, session) {
 
   ellmer::tool(
@@ -195,12 +208,16 @@ tool_list_available_blocks <- function(board, update, session) {
               name        = character(),
               package     = character(),
               category    = character(),
-              description = character()
+              description = character(),
+              guidance    = character(),
+              arguments   = I(list()),
+              examples    = I(list()),
+              inputs      = character()
             )
           )
         }
 
-        meta <- registry_metadata(uids, "all")
+        meta <- block_metadata(uids)
 
         inputs <- chr_ply(
           uids,
@@ -229,7 +246,9 @@ tool_list_available_blocks <- function(board, update, session) {
           package     = meta$package,
           category    = meta$category,
           description = meta$description,
-          arguments   = I(meta$arguments),
+          guidance    = meta$guidance,
+          arguments   = I(lapply(meta$arguments, arg_specs)),
+          examples    = I(meta$examples),
           inputs      = inputs,
           row.names   = NULL
         )
@@ -239,9 +258,15 @@ tool_list_available_blocks <- function(board, update, session) {
     description = paste(
       "List every registered block constructor -- block types the",
       "user can add to the board. One row per type with id, name,",
-      "package, category, description, a list-column of",
-      "argument-name to argument-description mappings, and an `inputs`",
-      "column listing the block's input-slot names. Use those verbatim",
+      "package, category, description, a `guidance` column (model-facing",
+      "construction notes, NA when none), an `arguments` list-column",
+      "mapping each argument name to its description and, when the block",
+      "declares one, a JSON-Schema `type` descriptor (e.g. an enum's",
+      "allowed values), an `examples` list-column of complete worked",
+      "configurations keyed by argument name (empty when none), and an",
+      "`inputs` column listing the block's input-slot names. Consult",
+      "`guidance`, `examples` and the argument `type`s before",
+      "configuring a block. Use the `inputs` names verbatim",
       "as the `input=` value in add_link (most blocks take \"data\"; some",
       "take several, e.g. \"data, by\") -- never invent a slot name.",
       "An empty `inputs` (NA) is a source block that takes no incoming",

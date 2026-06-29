@@ -146,10 +146,45 @@ test_that("tool_list_available_blocks returns registry metadata rows", {
 
   expect_s3_class(res, "data.frame")
   expect_true(
-    all(c("id", "name", "package", "category", "description", "arguments")
-        %in% names(res))
+    all(
+      c("id", "name", "package", "category", "description", "guidance",
+        "arguments", "examples", "inputs") %in% names(res)
+    )
   )
   expect_gt(nrow(res), 0L)
+})
+
+test_that("tool_list_available_blocks surfaces construction metadata", {
+
+  register_block(
+    ctor        = new_head_block,
+    name        = "Fixture Head",
+    description = "Fixture block for metadata tests.",
+    uid         = "fixture_meta_block",
+    category    = "transform",
+    arguments   = new_block_args(
+      n = new_block_arg("Rows to keep", example = 3L, type = arg_integer()),
+      direction = new_block_arg("Which end", type = arg_enum(c("head", "tail")))
+    ),
+    guidance    = "Pick n to match the question.",
+    examples    = list(list(n = 3L)),
+    overwrite   = TRUE
+  )
+  withr::defer(unregister_blocks("fixture_meta_block"))
+
+  board <- reactiveValues(board = new_board())
+
+  res <- call_tool(tool_list_available_blocks(board, NULL, NULL))
+  row <- res[res$id == "fixture_meta_block", ]
+
+  expect_identical(row$guidance, "Pick n to match the question.")
+  expect_identical(row$examples[[1L]], list(list(n = 3L)))
+
+  args <- row$arguments[[1L]]
+  expect_identical(args$n$description, "Rows to keep")
+  expect_identical(args$n$type$type, "integer")
+  expect_identical(args$direction$type$type, "string")
+  expect_true(all(c("head", "tail") %in% args$direction$type$enum))
 })
 
 test_that("tool_list_available_blocks surfaces block input slots", {
