@@ -86,7 +86,7 @@ current board via `board$board` / `board$blocks`.
 
 Two axes need extensibility surfaces — both S3 generics, both following
 patterns the blockr ecosystem already uses for things like
-[`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html)
+[`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html)
 and
 [`block_inputs()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html).
 
@@ -303,8 +303,7 @@ model, the argument schema, and the return shape.
 - **Arguments.** none.
 - **Returns.** A data.frame with columns `id`, `type`, `name`,
   `package`. `type` is `class(block)[[1L]]`; `name` and `package` come
-  from `block_metadata(block)` /
-  [`registry_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/register_block.html).
+  from `block_metadata(block)`.
 
 ### `describe_block`
 
@@ -361,24 +360,32 @@ model, the argument schema, and the return shape.
 
 - **Description.** “List every registered block constructor — block
   types the user can add to the board. One row per type with id, name,
-  package, category, description, and the constructor’s argument
-  descriptions.”
+  package, category, description, model-facing construction guidance,
+  the constructor’s argument descriptions and types, and worked
+  examples.”
 - **Arguments.** none.
 - **Returns.** A data.frame with columns `id`, `name`, `package`,
-  `category`, `description`, `arguments` (list-column whose entries are
-  the named arg-name → description lists from
-  `registry_metadata(..., "arguments")`). The `id` column is the
-  registry uid that `add_block` will accept in Phase 4.
+  `category`, `description`, `guidance` (model-facing construction
+  notes, `NA` when none), `arguments` (list-column mapping each argument
+  name to its description and, when declared, a JSON-Schema `type`
+  descriptor), `examples` (list-column of complete worked configurations
+  keyed by argument name, empty when none), and `inputs`. All but
+  `inputs` are read from blockr.core’s
+  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html);
+  `inputs` is derived from each constructor’s instantiated
+  [`block_inputs()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html).
+  The `id` column is the registry uid that `add_block` accepts.
 - **Rationale for skipping a `describe_available_block` tool.**
   Everything
-  [`registry_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/register_block.html)
+  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html)
   knows about a registered type is static and bounded — name,
-  description, category, package, argument descriptions — and fits in
-  one row. Splitting an enumeration tool from a detail tool the way
-  `list_blocks` / `describe_block` are split would buy us nothing: there
-  is no “runtime state” for an unmounted block type, and the per-row
-  payload here is comparable in size to a `describe_block` response. One
-  tool, one round-trip.
+  description, category, package, argument descriptions and types,
+  construction guidance, and worked examples — and fits in one row.
+  Splitting an enumeration tool from a detail tool the way `list_blocks`
+  / `describe_block` are split would buy us nothing: there is no
+  “runtime state” for an unmounted block type, and the per-row payload
+  here is comparable in size to a `describe_block` response. One tool,
+  one round-trip.
 
 This is the one tool whose return value is fully determined by the
 package-load-time state of the block registry, with no dependency on
@@ -693,7 +700,7 @@ rather than seeing an opaque crash. Two layers:
   tool — e.g. “No block with id X. Call list_blocks first.” These are
   deliberate early returns, not exceptions.
 - **Implementation-level errors** (a
-  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html)
+  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html)
   call throws, a custom `describe_block.<class>` method errors out, a
   `summarise_result` override raises) are caught by the internal helper
   `with_tool_errors(name, expr)` that wraps every tool body in a

@@ -178,7 +178,7 @@ inside the <code>ToolDef</code> is itself a closure over the
 </h3>
 <p>Two axes need extensibility surfaces — both S3 generics, both
 following patterns the blockr ecosystem already uses for things like
-<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_metadata()</a></code> and <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_inputs()</a></code>.</p>
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html" class="external-link">block_metadata()</a></code> and <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_inputs()</a></code>.</p>
 <p><strong>Per-block-class — the <code><a href="../../reference/describe_block.html">describe_block()</a></code>
 generic.</strong> The <code>describe_block</code> <em>tool</em>
 registered with <code>ellmer</code> takes an <code>id</code>, fetches
@@ -398,8 +398,8 @@ a data frame with one row per block: <code>id</code>, <code>type</code>,
 <strong>Returns.</strong> A data.frame with columns <code>id</code>,
 <code>type</code>, <code>name</code>, <code>package</code>.
 <code>type</code> is <code>class(block)[[1L]]</code>; <code>name</code>
-and <code>package</code> come from <code>block_metadata(block)</code> /
-<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/register_block.html" class="external-link">registry_metadata()</a></code>.</li>
+and <code>package</code> come from
+<code>block_metadata(block)</code>.</li>
 </ul>
 </div>
 <div class="section level3">
@@ -487,29 +487,36 @@ single string per row.</li>
 <li>
 <strong>Description.</strong> “List every registered block
 constructor — block types the user can add to the board. One row per
-type with id, name, package, category, description, and the
-constructor’s argument descriptions.”</li>
+type with id, name, package, category, description, model-facing
+construction guidance, the constructor’s argument descriptions and
+types, and worked examples.”</li>
 <li>
 <strong>Arguments.</strong> none.</li>
 <li>
 <strong>Returns.</strong> A data.frame with columns <code>id</code>,
 <code>name</code>, <code>package</code>, <code>category</code>,
-<code>description</code>, <code>arguments</code> (list-column whose
-entries are the named arg-name → description lists from
-<code>registry_metadata(..., "arguments")</code>). The <code>id</code>
-column is the registry uid that <code>add_block</code> will accept in
-Phase 4.</li>
+<code>description</code>, <code>guidance</code> (model-facing
+construction notes, <code>NA</code> when none), <code>arguments</code>
+(list-column mapping each argument name to its description and, when
+declared, a JSON-Schema <code>type</code> descriptor),
+<code>examples</code> (list-column of complete worked configurations
+keyed by argument name, empty when none), and <code>inputs</code>. All
+but <code>inputs</code> are read from blockr.core’s
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html" class="external-link">block_metadata()</a></code>; <code>inputs</code> is derived from each
+constructor’s instantiated <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_inputs()</a></code>. The
+<code>id</code> column is the registry uid that <code>add_block</code>
+accepts.</li>
 <li>
 <strong>Rationale for skipping a
 <code>describe_available_block</code> tool.</strong> Everything
-<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/register_block.html" class="external-link">registry_metadata()</a></code> knows about a registered type is static
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html" class="external-link">block_metadata()</a></code> knows about a registered type is static
 and bounded — name, description, category, package, argument
-descriptions — and fits in one row. Splitting an enumeration tool from a
-detail tool the way <code>list_blocks</code> /
-<code>describe_block</code> are split would buy us nothing: there is no
-“runtime state” for an unmounted block type, and the per-row payload
-here is comparable in size to a <code>describe_block</code> response.
-One tool, one round-trip.</li>
+descriptions and types, construction guidance, and worked examples — and
+fits in one row. Splitting an enumeration tool from a detail tool the
+way <code>list_blocks</code> / <code>describe_block</code> are split
+would buy us nothing: there is no “runtime state” for an unmounted block
+type, and the per-row payload here is comparable in size to a
+<code>describe_block</code> response. One tool, one round-trip.</li>
 </ul>
 <p>This is the one tool whose return value is fully determined by the
 package-load-time state of the block registry, with no dependency on
@@ -592,7 +599,7 @@ is one find-and-replace.</p>
 <span><span class="co">#' @export</span></span>
 <span><span class="va">describe_block.block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span></span>
-<span>  <span class="va">meta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_metadata</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
+<span>  <span class="va">meta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html" class="external-link">block_metadata</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
 <span>  <span class="va">args</span> <span class="op">&lt;-</span> <span class="fu">initial_block_state</span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
 <span>  <span class="va">ctrl</span> <span class="op">&lt;-</span> <span class="fu">block_external_ctrl_vars</span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
 <span>  <span class="va">inc</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/board_blocks.html" class="external-link">board_links</a></span><span class="op">(</span><span class="va">board</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/board_blocks.html" class="external-link">board_links</a></span><span class="op">(</span><span class="va">board</span><span class="op">)</span><span class="op">$</span><span class="va">to</span> <span class="op">==</span> <span class="va">id</span>, <span class="op">]</span></span>
@@ -836,7 +843,7 @@ right discovery tool — e.g. “No block with id X. Call list_blocks
 first.” These are deliberate early returns, not exceptions.</li>
 <li>
 <strong>Implementation-level errors</strong> (a
-<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_name.html" class="external-link">block_metadata()</a></code> call throws, a custom
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html" class="external-link">block_metadata()</a></code> call throws, a custom
 <code>describe_block.&lt;class&gt;</code> method errors out, a
 <code>summarise_result</code> override raises) are caught by the
 internal helper <code>with_tool_errors(name, expr)</code> that wraps

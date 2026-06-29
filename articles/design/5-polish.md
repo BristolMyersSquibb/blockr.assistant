@@ -1447,8 +1447,7 @@ helpers are internal.
   extension uses the default function again (not a stale snapshot).
 - Phase 1-4 acceptance criteria continue to pass.
 - `devtools::check()` passes 0/0/0.
-- [`lintr::lint_package()`](https://lintr.r-lib.org/reference/lint.html)
-  passes 0 lints.
+- `lintr::lint_package()` passes 0 lints.
 
 ### Manual (demo app, live LLM)
 

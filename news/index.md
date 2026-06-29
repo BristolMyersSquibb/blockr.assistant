@@ -2,6 +2,30 @@
 
 ## blockr.assistant (development version)
 
+- `list_available_blocks` now surfaces the block construction metadata
+  blockr.core formalised in BMS/blockr.core#121. It gains a `guidance`
+  column (model-facing construction notes) and an `examples` column
+  (complete worked configurations keyed by argument name), and its
+  `arguments` column now maps each argument to its description and
+  machine-readable JSON-Schema `type` descriptor
+  ([`arg_string()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_block_arg.html),
+  [`arg_enum()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_block_arg.html),
+  …) rather than a bare description string – so an argument’s allowed
+  values and shape reach the model, not just prose. All of it is read
+  through core’s new
+  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html)
+  / `block_arg_*()` accessors. Previously the `examples` / `prompt`
+  attributes the registry carried were dropped before the model ever saw
+  them, so the assistant had neither a worked example nor construction
+  guidance when configuring a block; `add_block` now points the model at
+  both. The deprecated
+  [`registry_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/register_block.html)
+  calls are replaced by
+  [`block_metadata()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html)
+  and
+  [`block_meta_arguments()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_metadata.html).
+  Fixes \#54.
+
 - The post-apply review now reports each touched block together with its
   immediate neighbours – the blocks feeding it and the blocks it feeds –
   not just the block itself. A block wired to a column or element that
