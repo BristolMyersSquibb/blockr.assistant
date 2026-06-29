@@ -99,7 +99,7 @@ tool_add_block <- function(board, pending, session) {
 
         parsed <- parse_args_json(args, "add_block")
 
-        reg_args <- names(registry_metadata(type)$arguments[[1L]])
+        reg_args <- names(block_meta_arguments(type))
         unknown <- setdiff(names(parsed), c(reg_args, "block_name"))
 
         if (length(reg_args) && length(unknown)) {
@@ -144,8 +144,9 @@ tool_add_block <- function(board, pending, session) {
       args = ellmer::type_string(
         paste(
           "JSON object of constructor arguments, e.g. '{\"n\": 10}'.",
-          "Field names match list_available_blocks. Pass '{}' if",
-          "the block has no required args."
+          "Field names match list_available_blocks; follow the worked",
+          "example and guidance it reports for the chosen type. Pass",
+          "'{}' if the block has no required args."
         )
       ),
       id = ellmer::type_string(
