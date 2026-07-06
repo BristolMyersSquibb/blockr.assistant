@@ -50,6 +50,33 @@ for (pkg in blockr_pkgs) {
   else library(pkg, character.only = TRUE)
 }
 
+# ---- LLM model choices (sidebar selector) ----------------------------------
+# blockr.core builds the board's "LLM Model" option from the `blockr.chat_function`
+# option. A single function means no dropdown; a NAMED LIST of functions renders
+# a selector in the board-options sidebar, one entry per name, and the assistant
+# rebuilds its chat client whenever you switch. Each constructor MUST have the
+# exact signature `function(system_prompt = NULL, params = NULL)` (blockr.core
+# validates this) and return an ellmer chat client. Here we offer both the full
+# gpt-5.4 and the cheaper gpt-5.4-nano; the first entry is the default.
+options(
+  blockr.chat_function = list(
+    "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
+      ellmer::chat_openai(
+        model = "gpt-5.4",
+        system_prompt = system_prompt,
+        params = params
+      )
+    },
+    "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
+      ellmer::chat_openai(
+        model = "gpt-5.4-nano",
+        system_prompt = system_prompt,
+        params = params
+      )
+    }
+  )
+)
+
 # Clinical source data for the patient-profile branch (public CDISC ADaM).
 library(pharmaverseadam)   # adsl, adae, advs
 library(dm)                # dm() container
