@@ -103,7 +103,9 @@ commit_model_note <- function() {
       "the usual cause of errors or empty results; query_data the upstream",
       "block to see the real column names and values. Do not build a long",
       "pipeline blind: go add -> wire -> verify -> fix. Never report",
-      "success on a block you have not seen produce a sensible result."
+      "success on a block you have not seen produce a sensible result.",
+      "Mutation tools confirm with 'Staged ...'; in this mode a staged",
+      "change is applied right away."
     )
   } else {
     paste(

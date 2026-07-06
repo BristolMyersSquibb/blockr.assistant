@@ -477,19 +477,20 @@ asst_ext_srv <- function(system_prompt, messages) {
           ignoreNULL = TRUE
         )
 
-        # Immediate-commit mode: flush each staged mutation as soon as it is
-        # staged, so the block goes live and the model can read its real
-        # result mid-turn (get_block_result) and self-correct -- instead of
-        # building blind until the turn-end flush. Relies on the async chat
-        # flushing between tool calls. The turn-end flush below becomes a
-        # no-op once everything is already applied.
+        # Immediate-commit mode: flush each staged block/link/stack mutation
+        # as soon as it is staged, so the block goes live and the model can
+        # read its real result mid-turn (get_block_result) and self-correct --
+        # instead of building blind until the turn-end flush. View/extension
+        # changes stay staged: applying a layout mid-turn can relocate the
+        # assistant's own panel and kill the running stream. Relies on the
+        # async chat flushing between tool calls.
         if (immediate_commit()) {
           observeEvent(
             pending_update(),
             {
-              if (has_any_changes(isolate(pending_update()))) {
+              if (has_core_changes(isolate(pending_update()))) {
                 report$awaiting <- TRUE
-                flush_pending(pending_update, update, last_flush_error)
+                flush_pending_core(pending_update, update, last_flush_error)
               }
             },
             ignoreInit = TRUE

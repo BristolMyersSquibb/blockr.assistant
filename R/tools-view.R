@@ -153,7 +153,7 @@ tool_add_view <- function(board, pending, session) {
         )
 
         sprintf(
-          "Staged add_view(%s)%s -- will apply at turn end.",
+          "Staged add_view(%s)%s.",
           name,
           if (isTRUE(active)) " as active" else ""
         )
@@ -202,7 +202,7 @@ tool_remove_view <- function(board, pending, session) {
         stage_view_rm(pending, board, id)
 
         sprintf(
-          "Staged remove_view(%s) -- will apply at turn end.", id
+          "Staged remove_view(%s).", id
         )
       })
     },
@@ -230,7 +230,7 @@ tool_modify_view <- function(board, pending, session) {
         stage_view_mod(pending, board, id, layout_obj)
 
         sprintf(
-          "Staged modify_view(%s) -- will apply at turn end.", id
+          "Staged modify_view(%s).", id
         )
       })
     },
@@ -272,7 +272,7 @@ tool_set_active_view <- function(board, pending, session) {
         stage_view_active(pending, board, id)
 
         sprintf(
-          "Staged set_active_view(%s) -- will apply at turn end.", id
+          "Staged set_active_view(%s).", id
         )
       })
     },
@@ -310,7 +310,7 @@ tool_rename_view <- function(board, pending, session) {
         stage_view_rename(pending, board, id, name)
 
         sprintf(
-          "Staged rename_view(%s -> %s) -- will apply at turn end.",
+          "Staged rename_view(%s -> %s).",
           id, name
         )
       })

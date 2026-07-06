@@ -279,13 +279,19 @@ promises_action <- function(reply) {
     return(FALSE)
   }
 
+  verbs <- paste0(
+    "(add|build|create|wire|pull|extract|compute|set up|configure|",
+    "adjust|correct|fix|modify|change|update|remove|replace|rewire)"
+  )
+
   grepl(
     paste0(
       "(?i)\\b(",
-      "i('ll| will) (now )?(add|build|create|wire|pull|extract|compute|",
-      "set up|configure)",
+      "i('ll| will) (now |then )?", verbs,
+      "|i need to ", verbs,
+      "|to fix this",
       "|next step, i|next, i('ll| will)",
-      "|let me (add|build|create|set up)",
+      "|let me ", verbs,
       ")"
     ),
     reply,

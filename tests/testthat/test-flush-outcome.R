@@ -610,6 +610,13 @@ test_that("promises_action flags future commitments, not questions/answers", {
   expect_true(promises_action("Next step, I'll add the summarize block."))
   expect_true(promises_action("I will now add blocks to compute the change."))
   expect_true(promises_action("Let me add a dm_pull block first."))
+  # verbatim from a live run that slipped past the first verb list
+  expect_true(promises_action(
+    "To fix this I need to correct adaschg_traj so it genuinely summarizes."
+  ))
+  expect_true(promises_action(
+    "I will adjust the summarize configuration so the output contains TRTP."
+  ))
 
   expect_false(promises_action("Which endpoint do you care about?"))
   expect_false(promises_action("The board has 3 blocks: a, b, c."))

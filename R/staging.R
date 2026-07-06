@@ -527,6 +527,66 @@ stage_extension_mod <- function(pending, board, id, delta) {
   )
 }
 
+# Blocks/links/stacks change what the model must VERIFY, so immediate-commit
+# applies them mid-turn. View/extension mutations are pure layout: applying
+# them mid-turn can relocate the assistant's own panel and kill the running
+# stream (dock re-attach), and there is nothing to verify -- they stay staged
+# until the turn-end flush.
+has_core_changes <- function(payload) {
+  any(
+    lengths(payload$blocks) > 0L,
+    lengths(payload$links)  > 0L,
+    lengths(payload$stacks) > 0L
+  )
+}
+
+# Immediate-commit mid-turn path: flush only the block/link/stack part of the
+# pending payload, leaving view and extension staging in place for turn end.
+flush_pending_core <- function(pending, update, last_flush_error = NULL) {
+
+  payload <- isolate(pending())
+
+  if (!has_core_changes(payload)) {
+    return(invisible(FALSE))
+  }
+
+  empty <- empty_pending()
+
+  core <- empty
+  core$blocks <- payload$blocks
+  core$links  <- payload$links
+  core$stacks <- payload$stacks
+
+  rest <- payload
+  rest$blocks <- empty$blocks
+  rest$links  <- empty$links
+  rest$stacks <- empty$stacks
+
+  tryCatch(
+    {
+      update(core)
+      if (!is.null(last_flush_error)) {
+        last_flush_error(NULL)
+      }
+    },
+    error = function(e) {
+
+      if (!is.null(last_flush_error)) {
+        last_flush_error(conditionMessage(e))
+      }
+
+      warning(
+        "flush_pending_core: dispatch rejected payload: ",
+        conditionMessage(e),
+        call. = FALSE
+      )
+    },
+    finally = pending(rest)
+  )
+
+  invisible(TRUE)
+}
+
 flush_pending <- function(pending, update, last_flush_error = NULL) {
 
   payload <- isolate(pending())

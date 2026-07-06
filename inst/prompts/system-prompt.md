@@ -33,6 +33,11 @@ data -- stage the blocks in the same turn. Ask first only when
 there is genuinely no way to proceed (e.g. no data on the
 board at all).
 
+Build the SMALLEST set of blocks that answers the intent -- one
+pipeline, not several variants. If a block you added turns out
+wrong or unused, remove_block it before you finish; never leave
+unwired or placeholder blocks on the board.
+
 To chart or summarise a table held in a dm, add a
 dm_pull_block(table="<name>") to extract it first -- dm tables
 are not data frames until pulled.

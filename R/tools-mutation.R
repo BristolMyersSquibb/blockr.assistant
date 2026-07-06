@@ -124,7 +124,7 @@ tool_add_block <- function(board, pending, session) {
         stage_block_add(pending, board, id, block)
 
         sprintf(
-          "Staged add_block(%s) -- will apply at turn end.", id
+          "Staged add_block(%s).", id
         )
       })
     },
@@ -166,7 +166,7 @@ tool_remove_block <- function(board, pending, session) {
         stage_block_rm(pending, board, id)
 
         sprintf(
-          "Staged remove_block(%s) -- will apply at turn end.", id
+          "Staged remove_block(%s).", id
         )
       })
     },
@@ -200,7 +200,7 @@ tool_modify_block <- function(board, pending, session) {
         stage_block_mod(pending, board, id, delta)
 
         sprintf(
-          "Staged modify_block(%s) -- will apply at turn end.", id
+          "Staged modify_block(%s).", id
         )
       })
     },
@@ -242,7 +242,7 @@ tool_add_link <- function(board, pending, session) {
         stage_link_add(pending, board, id, link)
 
         sprintf(
-          "Staged add_link(%s: %s -> %s$%s) -- will apply at turn end.",
+          "Staged add_link(%s: %s -> %s$%s).",
           id, from, to, input
         )
       })
@@ -276,7 +276,7 @@ tool_remove_link <- function(board, pending, session) {
         stage_link_rm(pending, board, id)
 
         sprintf(
-          "Staged remove_link(%s) -- will apply at turn end.", id
+          "Staged remove_link(%s).", id
         )
       })
     },
@@ -306,7 +306,7 @@ tool_modify_link <- function(board, pending, session) {
         stage_link_mod(pending, board, id, delta)
 
         sprintf(
-          "Staged modify_link(%s) -- will apply at turn end.", id
+          "Staged modify_link(%s).", id
         )
       })
     },
@@ -353,7 +353,7 @@ tool_add_stack <- function(board, pending, session) {
         stage_stack_add(pending, board, id, stack)
 
         sprintf(
-          "Staged add_stack(%s) -- will apply at turn end.", id
+          "Staged add_stack(%s).", id
         )
       })
     },
@@ -389,7 +389,7 @@ tool_remove_stack <- function(board, pending, session) {
         stage_stack_rm(pending, board, id)
 
         sprintf(
-          "Staged remove_stack(%s) -- will apply at turn end.", id
+          "Staged remove_stack(%s).", id
         )
       })
     },
@@ -422,7 +422,7 @@ tool_modify_stack <- function(board, pending, session) {
         stage_stack_mod(pending, board, id, delta)
 
         sprintf(
-          "Staged modify_stack(%s) -- will apply at turn end.", id
+          "Staged modify_stack(%s).", id
         )
       })
     },
