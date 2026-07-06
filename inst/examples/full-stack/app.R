@@ -10,16 +10,19 @@
 #     port = 3838
 #   )
 #
-# What each package contributes:
-#   blockr.core       new_dataset_block(), new_static_block()  — data sources
-#   blockr.viz        new_chart_block(), new_summary_table_block()  — display
-#   blockr.extra      new_function_block()  — arbitrary R transform
-#   blockr.pharma     new_patient_profile_block()  — clinical per-patient view
+# What each package contributes (the palette the assistant can build from):
+#   blockr.core       dataset + glue blocks (its other blocks are hidden below)
+#   blockr.io         read / write / download file blocks
+#   blockr.ggplot     ggplot plot blocks (ggplot, facet, theme, grid)
+#   blockr.viz        chart + summary-table + tile display blocks
+#   blockr.dm         relational dm blocks (dm, crossfilter, joins)
+#   blockr.extra      function block — arbitrary R transform
+#   blockr.pharma     patient-profile clinical block
 #   blockr.dock       new_dock_board()  — the docking layout host
-#   blockr.dag        new_dag_extension()  — the Workflow (DAG) panel
+#   blockr.dag        new_dag_extension()  — the Workflow (DAG) panel (right)
 #   blockr.ai         ai_ctrl_block()  — per-block "AI Assist" chat control
 #   blockr.code       generate_flat_code()  — idiomatic code-export plugin
-#   blockr.assistant  new_assistant_extension()  — board-level LLM chat pane
+#   blockr.assistant  new_assistant_extension()  — board-level LLM chat pane (left)
 #
 # Try in the Assistant pane: "Add the mtcars dataset", "Now add a scatter plot of
 # mpg vs wt", or "Summarise median and IQR of mpg and hp grouped by cyl".
@@ -33,10 +36,13 @@
 if (!exists("dev_local")) dev_local <- FALSE
 
 blockr_pkgs <- c(
-  "blockr.core",       # board + data/static blocks, serve(), plugins
+  "blockr.core",       # dataset + glue blocks (rest hidden), board, serve(), plugins
+  "blockr.io",         # read / write / download file blocks
   "blockr.dock",       # new_dock_board() docking layout host
   "blockr.dag",        # Workflow (DAG) extension
-  "blockr.viz",        # chart + summary-table display blocks
+  "blockr.ggplot",     # ggplot plot blocks (ggplot, facet, theme, grid)
+  "blockr.viz",        # chart + summary-table + tile display blocks
+  "blockr.dm",         # relational dm blocks (dm, crossfilter, joins)
   "blockr.extra",      # function block (arbitrary R)
   "blockr.pharma",     # patient-profile clinical block
   "blockr.code",       # idiomatic code-export plugin
@@ -48,6 +54,23 @@ for (pkg in blockr_pkgs) {
   if (dev_local) pkgload::load_all(pkg, quiet = TRUE)
   else library(pkg, character.only = TRUE)
 }
+
+# ---- Curate the block browser ----------------------------------------------
+# The board opens empty and is built by talking to the assistant, so keep the
+# add-block menu tight. From blockr.core show ONLY the `dataset` and `glue`
+# blocks; every other loaded package keeps its own blocks. This drops core's
+# low-level / noise blocks (subset, merge, rbind, head, scatter, csv,
+# filebrowser, upload) via blockr.core::unregister_blocks(). We select by the
+# registry's `package` attribute so only core blocks are affected.
+core_keep <- c("dataset_block", "glue_block")
+core_drop <- setdiff(
+  names(Filter(
+    function(entry) identical(attr(entry, "package"), "blockr.core"),
+    available_blocks()
+  )),
+  core_keep
+)
+unregister_blocks(core_drop)
 
 # ---- LLM model choices (sidebar selector) ----------------------------------
 # blockr.core builds the board's "LLM Model" option from the `blockr.chat_function`
@@ -96,6 +119,13 @@ board <- new_dock_board(
   extensions = list(
     assistant = new_assistant_extension(),  # blockr.assistant chat pane
     dag       = new_dag_extension()          # blockr.dag Workflow panel
+  ),
+  # Assistant on the LEFT, the Workflow (DAG) panel on the RIGHT.
+  layouts = dock_layout(
+    "assistant_extension",  # left
+    "dag_extension",        # right
+    orientation = "horizontal",
+    sizes = c(3, 2)
   )
 )
 
