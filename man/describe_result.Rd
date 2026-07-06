@@ -3,11 +3,14 @@
 \name{describe_result}
 \alias{describe_result}
 \alias{describe_result.default}
+\alias{describe_result.dm}
 \title{Describe a block result for the LLM}
 \usage{
 describe_result(x, ...)
 
 \method{describe_result}{default}(x, ...)
+
+\method{describe_result}{dm}(x, ...)
 }
 \arguments{
 \item{x}{A block result (any R object).}

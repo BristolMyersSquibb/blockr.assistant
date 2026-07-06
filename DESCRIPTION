@@ -28,7 +28,9 @@ Imports:
     shiny,
     shinychat
 Suggests:
+    blockr.ai,
     chromote,
+    dm,
     knitr,
     rmarkdown,
     shinytest2,
@@ -37,9 +39,11 @@ Suggests:
 Remotes:
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr.dock,
+    BristolMyersSquibb/blockr.ai,
     posit-dev/shinychat/pkg-r
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder:
     knitr
 Config/roxygen2/version: 8.0.0
+RoxygenNote: 7.3.3

@@ -67,7 +67,8 @@ default_system_prompt <- function(board = NULL, client = NULL,
     layout = read_prompt("layout"),
     tools = tools,
     board = board_summary,
-    flush_note = flush_note
+    flush_note = flush_note,
+    commit_model = commit_model_note()
   )
 
   as.character(
@@ -79,6 +80,40 @@ default_system_prompt <- function(board = NULL, client = NULL,
       .trim = FALSE
     )
   )
+}
+
+# Commit model: immediate (default) applies each staged mutation to the live
+# board as soon as it is staged, so the block evaluates and the model can
+# verify its real result mid-turn and self-correct -- the read-act-observe
+# loop. Staged mode batches everything into one atomic flush at turn end.
+immediate_commit <- function() {
+  isTRUE(blockr_option("assistant_immediate_commit", TRUE))
+}
+
+commit_model_note <- function() {
+
+  if (immediate_commit()) {
+    paste(
+      "Each mutation you make applies to the board IMMEDIATELY and the",
+      "block evaluates. Build incrementally and VERIFY as you go: after",
+      "adding a block and wiring its inputs, call get_block_result on it",
+      "(and get_block_conditions if it errors) to confirm it produces the",
+      "data you intended -- then fix it (modify_block, or remove_block +",
+      "add_block) and check again BEFORE moving on. A wrong column name is",
+      "the usual cause of errors or empty results; query_data the upstream",
+      "block to see the real column names and values. Do not build a long",
+      "pipeline blind: go add -> wire -> verify -> fix. Never report",
+      "success on a block you have not seen produce a sensible result."
+    )
+  } else {
+    paste(
+      "Inspection tools always read the committed board, not your staged",
+      "changes. Mutation tools *stage* a change; nothing applies mid-turn.",
+      "All staged calls from your turn flush as one atomic update when",
+      "your turn ends. Your own tool-call history is the record of what is",
+      "pending."
+    )
+  }
 }
 
 read_prompt <- function(name) {

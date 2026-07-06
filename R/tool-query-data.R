@@ -67,7 +67,12 @@ tool_query_data <- function(board, update, session) {
       "last expression -- the same shape an R REPL would produce.",
       "Use this for questions the Board section doesn't carry:",
       "unique values, group counts, ad-hoc filters, joins across",
-      "blocks. Read-only; the board is not modified."
+      "blocks. Read-only; the board is not modified.",
+      "\n\nA dm block's result is a `dm` object bound by its id (NOT its",
+      "individual tables). Reach a table via `<id>$<table>` -- e.g. if",
+      "the dm block id is `dm`, write `head(dm$adsl)` or",
+      "`names(dm$adae)`, not bare `adsl`. To actually use a dm table in",
+      "a chart/summary, add a dm_pull_block."
     ),
     arguments = list(
       code = ellmer::type_string(

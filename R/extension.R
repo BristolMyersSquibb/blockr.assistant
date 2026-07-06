@@ -162,10 +162,19 @@ asst_ext_srv <- function(system_prompt, messages) {
           seq       = 0L,
           feedback  = NULL,
           awaiting  = FALSE,
-          injecting = FALSE
+          injecting = FALSE,
+          # immediate-commit bookkeeping: whether anything applied during the
+          # current model turn, the last mid-turn apply failure, and the
+          # consecutive problem-round counter driving surrender guidance
+          turn_active = FALSE,
+          applied     = FALSE,
+          mid_fail    = NULL,
+          consec      = 0L
         )
 
-        max_auto_react <- 3L
+        max_auto_react <- as.integer(
+          blockr_option("assistant_autocorrect_rounds", 3L)
+        )
 
         messages_rec <- reactiveVal(coal(messages, list()))
 
@@ -403,6 +412,49 @@ asst_ext_srv <- function(system_prompt, messages) {
           ignoreNULL = TRUE
         )
 
+        # The consolidated post-apply review: rejection/new-conditions/results
+        # feedback, escalating to surrender guidance after two consecutive
+        # rounds that still show problems. Runs onFlushed so the block
+        # re-evaluation an update triggers has drained.
+        schedule_review <- function(fail_outcome = NULL) {
+
+          session$onFlushed(
+            function() {
+
+              newcond <- added_conditions(
+                isolate(report$baseline),
+                isolate(board$conditions())
+              )
+
+              results <- collect_touched_results(isolate(touched()), board)
+
+              fb <- format_flush_feedback(
+                coal(fail_outcome, list(ok = TRUE)),
+                newcond,
+                results
+              )
+
+              has_problem <- (!is.null(fail_outcome) &&
+                isFALSE(fail_outcome$ok)) ||
+                (!is.null(newcond) && nrow(newcond) > 0L) ||
+                length(attr(results, "noop_ids")) > 0L
+
+              if (has_problem) {
+                report$consec <- isolate(report$consec) + 1L
+                if (!is.null(fb) && isolate(report$consec) >= 2L) {
+                  err <- if (!is.null(fail_outcome)) fail_outcome$message
+                  fb <- paste(fb, surrender_guidance(err), sep = "\n\n")
+                }
+              } else {
+                report$consec <- 0L
+              }
+
+              auto_react(fb)
+            },
+            once = TRUE
+          )
+        }
+
         observeEvent(
           last_input_r(),
           {
@@ -411,7 +463,12 @@ asst_ext_srv <- function(system_prompt, messages) {
             } else {
               report$baseline <- isolate(board$conditions())
               report$count <- 0L
+              report$consec <- 0L
             }
+
+            report$turn_active <- TRUE
+            report$applied <- FALSE
+            report$mid_fail <- NULL
 
             reset_pending(pending_update)
             touched(character())
@@ -420,15 +477,54 @@ asst_ext_srv <- function(system_prompt, messages) {
           ignoreNULL = TRUE
         )
 
+        # Immediate-commit mode: flush each staged mutation as soon as it is
+        # staged, so the block goes live and the model can read its real
+        # result mid-turn (get_block_result) and self-correct -- instead of
+        # building blind until the turn-end flush. Relies on the async chat
+        # flushing between tool calls. The turn-end flush below becomes a
+        # no-op once everything is already applied.
+        if (immediate_commit()) {
+          observeEvent(
+            pending_update(),
+            {
+              if (has_any_changes(isolate(pending_update()))) {
+                report$awaiting <- TRUE
+                flush_pending(pending_update, update, last_flush_error)
+              }
+            },
+            ignoreInit = TRUE
+          )
+        }
+
         observeEvent(
           last_turn_r(),
           {
-            if (has_any_changes(isolate(pending_update()))) {
+            report$turn_active <- FALSE
+
+            leftover <- has_any_changes(isolate(pending_update()))
+
+            if (leftover) {
               report$awaiting <- TRUE
             }
 
             flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
+
+            if (!leftover) {
+              if (isolate(report$applied)) {
+                # immediate mode applied everything mid-turn; there is no
+                # upcoming last_update event, so run the review now
+                schedule_review(isolate(report$mid_fail))
+              } else if (
+                promises_action(
+                  tryCatch(turn_text(last_turn_r()), error = function(e) "")
+                )
+              ) {
+                # nothing staged, nothing applied, yet the reply promises
+                # action: the silent-stop failure -- nudge once
+                auto_react(no_progress_feedback())
+              }
+            }
           },
           ignoreNULL = TRUE
         )
@@ -444,28 +540,31 @@ asst_ext_srv <- function(system_prompt, messages) {
 
             report$awaiting <- FALSE
 
-            if (isFALSE(outcome$ok)) {
-              auto_react(format_flush_feedback(outcome))
+            if (isolate(report$turn_active)) {
+              # mid-turn apply (immediate mode): the model verifies itself
+              # via get_block_result; stash failures for the consolidated
+              # post-turn review instead of injecting into a running turn
+              report$applied <- TRUE
+              if (isFALSE(outcome$ok)) {
+                report$mid_fail <- outcome
+              }
               return()
             }
 
-            # The block re-evaluation this update triggers drains within the
-            # current reactive flush; collect once it has completed.
-            session$onFlushed(
-              function() {
-                auto_react(
-                  format_flush_feedback(
-                    list(ok = TRUE),
-                    added_conditions(
-                      isolate(report$baseline),
-                      isolate(board$conditions())
-                    ),
-                    collect_touched_results(isolate(touched()), board)
-                  )
+            if (isFALSE(outcome$ok)) {
+              report$consec <- isolate(report$consec) + 1L
+              fb <- format_flush_feedback(outcome)
+              if (!is.null(fb) && isolate(report$consec) >= 2L) {
+                fb <- paste(
+                  fb, surrender_guidance(outcome$message),
+                  sep = "\n\n"
                 )
-              },
-              once = TRUE
-            )
+              }
+              auto_react(fb)
+              return()
+            }
+
+            schedule_review()
           },
           ignoreNULL = TRUE
         )

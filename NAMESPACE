@@ -2,6 +2,7 @@
 
 S3method(describe_block,block)
 S3method(describe_result,default)
+S3method(describe_result,dm)
 S3method(describe_stack,stack)
 export(default_system_prompt)
 export(describe_block)

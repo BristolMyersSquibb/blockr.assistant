@@ -163,7 +163,7 @@ test_that("collect_touched_results notes a block with no result", {
 
   out <- collect_touched_results("a", board)
 
-  expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+  expect_true(any(grepl("no result:", out, fixed = TRUE)))
 })
 
 board_with_links <- function(brd, blocks) {
@@ -214,7 +214,7 @@ test_that("collect_touched_results pulls in a touched block's neighbours", {
   out <- collect_touched_results("mid", board)
 
   expect_true(any(grepl("- mid:", out, fixed = TRUE)))
-  expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+  expect_true(any(grepl("no result:", out, fixed = TRUE)))
   expect_true(any(grepl("- up:", out, fixed = TRUE)))
   expect_true(any(grepl("VISITNUM", out, fixed = TRUE)))
   expect_true(any(grepl("- sink:", out, fixed = TRUE)))
@@ -447,7 +447,7 @@ test_that("auto-reactions are bounded per user turn", {
   )
 })
 
-test_that("identical feedback in a later turn still re-triggers injection", {
+test_that("a second consecutive failure re-injects with surrender guidance", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -471,8 +471,12 @@ test_that("identical feedback in a later turn still re-triggers injection", {
       session$flushReact()
       second <- report$feedback
 
-      expect_identical(first$msg, second$msg)
+      # both rounds inject (distinct n); the repeat escalates: same rejection
+      # text plus the change-strategy/escalate guidance with the verbatim error
       expect_false(identical(first$n, second$n))
+      expect_true(startsWith(second$msg, first$msg))
+      expect_match(second$msg, "Strategy note", fixed = TRUE)
+      expect_match(second$msg, "Verbatim error: boom", fixed = TRUE)
     },
     args = server_args(reactiveVal(cnd_frame())),
     session = with_llm_session()
@@ -560,7 +564,7 @@ test_that("the review survives a touched block that errors on eval", {
       fb <- report$feedback
 
       expect_false(is.null(fb))
-      expect_match(fb$msg, "no result yet", fixed = TRUE)
+      expect_match(fb$msg, "no result:", fixed = TRUE)
     },
     args = board_with_links_args(
       new_board(),
@@ -599,4 +603,41 @@ test_that("a clean build still fires a review carrying touched results", {
     ),
     session = with_llm_session()
   )
+})
+
+test_that("promises_action flags future commitments, not questions/answers", {
+
+  expect_true(promises_action("Next step, I'll add the summarize block."))
+  expect_true(promises_action("I will now add blocks to compute the change."))
+  expect_true(promises_action("Let me add a dm_pull block first."))
+
+  expect_false(promises_action("Which endpoint do you care about?"))
+  expect_false(promises_action("The board has 3 blocks: a, b, c."))
+  expect_false(promises_action("I added the chart and wired it to adsl."))
+  expect_false(promises_action(""))
+  expect_false(promises_action(NULL))
+})
+
+test_that("effect_is_noop matches only the explicit sentinels", {
+
+  expect_true(effect_is_noop("no rows or columns changed"))
+  expect_true(effect_is_noop("table populated but DEGENERATE"))
+  expect_true(effect_is_noop("cells not populated"))
+
+  expect_false(effect_is_noop(""))
+  expect_false(effect_is_noop("rows: 254 -> 254 (UNCHANGED); cols: +CHG"))
+})
+
+test_that("format_flush_feedback surfaces no-op blocks from the results attr", {
+
+  results <- structure(
+    c("Results of the blocks you changed and the blocks linked to them:",
+      "- f:\nsome summary"),
+    noop_ids = "f"
+  )
+
+  fb <- format_flush_feedback(list(ok = TRUE), NULL, results)
+
+  expect_match(fb, "left their data unchanged", fixed = TRUE)
+  expect_match(fb, "f", fixed = TRUE)
 })
