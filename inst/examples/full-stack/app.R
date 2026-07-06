@@ -57,25 +57,34 @@ for (pkg in blockr_pkgs) {
 # exact signature `function(system_prompt = NULL, params = NULL)` (blockr.core
 # validates this) and return an ellmer chat client. Here we offer both the full
 # the cheaper gpt-5.4-nano and the full gpt-5.4; the first entry is the default.
-options(
-  blockr.html_table_preview = TRUE,
-  blockr.chat_function = list(
-    "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
-      ellmer::chat_openai(
-        model = "gpt-5.4-nano",
-        system_prompt = system_prompt,
-        params = params
-      )
-    },
-    "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
-      ellmer::chat_openai(
-        model = "gpt-5.4",
-        system_prompt = system_prompt,
-        params = params
-      )
-    }
+options(blockr.html_table_preview = TRUE)
+
+# Only register our own model selector when nothing upstream has already set one.
+# On blockr.cloud an R_PROFILE_USER gateway pre-sets `blockr.chat_function` to
+# route through the capped LiteLLM proxy (served models: gpt-4o-mini, gpt-5-nano);
+# overriding it here would send chat straight to api.openai.com with the gateway's
+# virtual key and 401. Locally the option is unset, so we offer the gpt-5.4 family
+# (needs your own OPENAI_API_KEY / models your account can access).
+if (is.null(getOption("blockr.chat_function"))) {
+  options(
+    blockr.chat_function = list(
+      "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
+        ellmer::chat_openai(
+          model = "gpt-5.4-nano",
+          system_prompt = system_prompt,
+          params = params
+        )
+      },
+      "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
+        ellmer::chat_openai(
+          model = "gpt-5.4",
+          system_prompt = system_prompt,
+          params = params
+        )
+      }
+    )
   )
-)
+}
 
 # ---- Board -----------------------------------------------------------------
 # An empty board: no blocks, no links. Only the two extensions are mounted, so
