@@ -59,6 +59,7 @@ for (pkg in blockr_pkgs) {
 # validates this) and return an ellmer chat client. Here we offer both the full
 # the cheaper gpt-5.4-nano and the full gpt-5.4; the first entry is the default.
 options(
+  blockr.html_table_preview = TRUE,
   blockr.chat_function = list(
     "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
       ellmer::chat_openai(
