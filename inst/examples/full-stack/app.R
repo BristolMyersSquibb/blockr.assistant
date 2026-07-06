@@ -1,8 +1,9 @@
 # blockr.assistant full-stack demo — the whole board-facing blockr stack in one
-# deployable app. A small two-branch board (general analytics on mtcars + a
-# single-patient clinical profile) that exercises one block or plugin from every
-# major package, with the LLM assistant mounted alongside. Deploy this directory
-# as-is (ShinyProxy / rsconnect: it's a self-contained `app.R`), or run locally:
+# deployable app, started from an EMPTY board. Nothing is on the canvas: just the
+# LLM assistant chat pane and an empty Workflow (DAG) panel. You build the entire
+# board from scratch by talking to the assistant, which can add any block from the
+# loaded packages below. Deploy this directory as-is (ShinyProxy / rsconnect: it's
+# a self-contained `app.R`), or run locally:
 #
 #   shiny::runApp(
 #     system.file("examples/full-stack", package = "blockr.assistant"),
@@ -20,12 +21,10 @@
 #   blockr.code       generate_flat_code()  — idiomatic code-export plugin
 #   blockr.assistant  new_assistant_extension()  — board-level LLM chat pane
 #
-# Try in the Assistant pane: "What is on the board?", "Add a scatter plot of
-# mpg vs wt", or expand "AI Assist" on the summary table and type "median and
-# IQR of mpg and hp grouped by cyl".
+# Try in the Assistant pane: "Add the mtcars dataset", "Now add a scatter plot of
+# mpg vs wt", or "Summarise median and IQR of mpg and hp grouped by cyl".
 #
-# Needs an LLM key for the AI features (e.g. OPENAI_API_KEY / ANTHROPIC_API_KEY);
-# the board itself renders without one.
+# Needs an LLM key for the AI features (e.g. OPENAI_API_KEY / ANTHROPIC_API_KEY).
 
 # ---- Package loading (dual: installed vs local source) ---------------------
 # `dev_local = FALSE` (the default, and what ships) attaches the INSTALLED
@@ -78,62 +77,13 @@ options(
   )
 )
 
-# Clinical source data for the patient-profile branch (public CDISC ADaM).
-library(pharmaverseadam)   # adsl, adae, advs
-library(dm)                # dm() container
-
-# ---- Single-patient dm for the patient-profile block -----------------------
-# The patient-profile block consumes a `dm` already filtered to ONE subject.
-# In a full board that filter comes from an upstream drilldown selector; here
-# we build it in plain R and hand it in via a static block, keeping the demo
-# self-contained.
-one <- adsl$USUBJID[1]
-pp_dm <- dm(
-  adsl = adsl[adsl$USUBJID == one, ],
-  adae = adae[adae$USUBJID == one, ],
-  advs = advs[advs$USUBJID == one, ]
-)
-
 # ---- Board -----------------------------------------------------------------
+# An empty board: no blocks, no links. Only the two extensions are mounted, so
+# the app opens on a blank canvas with the assistant chat pane and an empty
+# Workflow (DAG) panel. Everything else is added interactively via the assistant.
 board <- new_dock_board(
-  blocks = c(
-    # === Branch A: general analytics (mtcars) ===
-    cars = new_dataset_block("mtcars"),
-
-    # blockr.extra — arbitrary R transform (add a km/l column)
-    prep = new_function_block(
-      fn = "function(data) { data$kmpl <- data$mpg * 0.4251; data }"
-    ),
-
-    # blockr.viz — count of cars per cylinder (AI Assist: change grouping)
-    chart = new_chart_block(
-      chart_type = "bar",
-      group = "cyl",
-      value = ".count",
-      func = "count"
-    ),
-
-    # blockr.viz — grouped summary table (AI Assist: pick vars / stats)
-    summary = new_summary_table_block(
-      vars = c("mpg", "hp", "wt"),
-      by = "cyl"
-    ),
-
-    # === Branch B: single-patient clinical profile ===
-    patient = new_static_block(pp_dm),
-    profile = new_patient_profile_block(
-      selected = c("patient_overview", "ae_gantt")
-    )
-  ),
-  links = c(
-    # Branch A
-    new_link("cars", "prep", "data"),
-    new_link("prep", "chart", "data"),
-    new_link("prep", "summary", "data"),
-
-    # Branch B
-    new_link("patient", "profile", "data")
-  ),
+  blocks = list(),
+  links = list(),
   extensions = list(
     assistant = new_assistant_extension(),  # blockr.assistant chat pane
     dag       = new_dag_extension()          # blockr.dag Workflow panel
