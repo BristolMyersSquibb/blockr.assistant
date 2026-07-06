@@ -57,19 +57,19 @@ for (pkg in blockr_pkgs) {
 # rebuilds its chat client whenever you switch. Each constructor MUST have the
 # exact signature `function(system_prompt = NULL, params = NULL)` (blockr.core
 # validates this) and return an ellmer chat client. Here we offer both the full
-# gpt-5.4 and the cheaper gpt-5.4-nano; the first entry is the default.
+# the cheaper gpt-5.4-nano and the full gpt-5.4; the first entry is the default.
 options(
   blockr.chat_function = list(
-    "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
+    "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
       ellmer::chat_openai(
-        model = "gpt-5.4",
+        model = "gpt-5.4-nano",
         system_prompt = system_prompt,
         params = params
       )
     },
-    "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
+    "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
       ellmer::chat_openai(
-        model = "gpt-5.4-nano",
+        model = "gpt-5.4",
         system_prompt = system_prompt,
         params = params
       )
