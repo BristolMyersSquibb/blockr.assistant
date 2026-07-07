@@ -7,6 +7,7 @@
 new_assistant_extension(
   system_prompt = default_system_prompt,
   messages = NULL,
+  history = FALSE,
   ...
 )
 }
@@ -19,6 +20,16 @@ exported \link{default_system_prompt} function.}
 \item{messages}{Optional list of recorded turns (as produced by
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
 server start. \code{NULL} starts with an empty conversation.}
+
+\item{history}{Forwarded to \code{\link[shinychat:chat_app]{shinychat::chat_mod_server()}}'s
+\code{history} argument. When \code{TRUE} (shinychat's own default), each
+conversation is persisted to an on-disk store
+(\code{.shinychat/conversations}, keyed per user) and restored for that
+user on the next connection -- so a browser reload brings the
+previous chat back. Defaults to \code{FALSE} here, so every new session
+(including a reload) starts with an empty conversation. This also
+avoids accumulating transcripts on disk, which matters on shared /
+pre-warmed deployments (e.g. ShinyProxy container sharing).}
 
 \item{...}{Forwarded to \code{\link[blockr.dock:extension]{blockr.dock::new_dock_extension()}}.}
 }

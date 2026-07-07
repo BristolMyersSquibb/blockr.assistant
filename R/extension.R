@@ -31,6 +31,15 @@
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
 #'   server start. `NULL` starts with an empty conversation.
+#' @param history Forwarded to [shinychat::chat_mod_server()]'s
+#'   `history` argument. When `TRUE` (shinychat's own default), each
+#'   conversation is persisted to an on-disk store
+#'   (`.shinychat/conversations`, keyed per user) and restored for that
+#'   user on the next connection -- so a browser reload brings the
+#'   previous chat back. Defaults to `FALSE` here, so every new session
+#'   (including a reload) starts with an empty conversation. This also
+#'   avoids accumulating transcripts on disk, which matters on shared /
+#'   pre-warmed deployments (e.g. ShinyProxy container sharing).
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -43,9 +52,10 @@
 #' @export
 new_assistant_extension <- function(system_prompt = default_system_prompt,
                                     messages = NULL,
+                                    history = FALSE,
                                     ...) {
   new_dock_extension(
-    server = asst_ext_srv(system_prompt, messages),
+    server = asst_ext_srv(system_prompt, messages, history),
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
@@ -137,7 +147,7 @@ asst_ext_styles <- function() {
   )
 }
 
-asst_ext_srv <- function(system_prompt, messages) {
+asst_ext_srv <- function(system_prompt, messages, history = FALSE) {
 
   function(id, board, update, extensions = NULL, ...) {
 
@@ -290,13 +300,15 @@ asst_ext_srv <- function(system_prompt, messages) {
         })
 
         # Mount the chat module against the current client.
-        # shinychat::chat_mod_server() calls chat_restore() internally,
-        # which fires client_set_ui() on the next reactive flush --
-        # that hook already replays every prior turn into the
-        # freshly-rendered UI via chat_append(). No manual replay
-        # needed (and earlier attempts targeted the wrong DOM id
-        # because the chat container lives under shinychat's own
-        # NS("chat")).
+        # With `history = TRUE`, shinychat::chat_mod_server() persists
+        # each conversation to an on-disk store and calls chat_restore()
+        # internally, which fires client_set_ui() on the next reactive
+        # flush -- replaying every prior turn into the freshly-rendered
+        # UI via chat_append(). We default `history = FALSE` (see
+        # new_assistant_extension()) so a new session -- including a
+        # browser reload -- starts empty rather than resurrecting the
+        # previous chat; any explicit `messages` seed is still honoured
+        # by make_client() above.
         observe({
 
           idx <- mount_idx()
@@ -304,7 +316,9 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
-          mod_r(shinychat::chat_mod_server(chat_sub_id(idx), cl))
+          mod_r(
+            shinychat::chat_mod_server(chat_sub_id(idx), cl, history = history)
+          )
         })
 
         refresh_prompt <- function() {
