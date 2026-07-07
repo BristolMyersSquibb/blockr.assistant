@@ -82,32 +82,43 @@ unregister_blocks(core_drop)
 # the cheaper gpt-5.4-nano and the full gpt-5.4; the first entry is the default.
 options(blockr.html_table_preview = TRUE)
 
-# Only register our own model selector when nothing upstream has already set one.
-# On blockr.cloud an R_PROFILE_USER gateway pre-sets `blockr.chat_function` to
-# route through the capped LiteLLM proxy (served models: gpt-4o-mini, gpt-5-nano);
-# overriding it here would send chat straight to api.openai.com with the gateway's
-# virtual key and 401. Locally the option is unset, so we offer the gpt-5.4 family
-# (needs your own OPENAI_API_KEY / models your account can access).
-if (is.null(getOption("blockr.chat_function"))) {
-  options(
-    blockr.chat_function = list(
-      "gpt-5.4-nano" = function(system_prompt = NULL, params = NULL) {
-        ellmer::chat_openai(
-          model = "gpt-5.4-nano",
-          system_prompt = system_prompt,
-          params = params
-        )
-      },
-      "gpt-5.4" = function(system_prompt = NULL, params = NULL) {
-        ellmer::chat_openai(
-          model = "gpt-5.4",
-          system_prompt = system_prompt,
-          params = params
-        )
-      }
-    )
-  )
+# This demo pins its own two models — gpt-5.4-nano (default) and the stronger
+# gpt-5.4 — rather than deferring to the shared gallery gateway (which offers
+# gpt-4o-mini). On blockr.cloud an R_PROFILE_USER gateway pre-sets
+# `blockr.chat_function` to route through the capped LiteLLM proxy; we detect
+# that (the option is already set) and reuse its base_url + virtual key so OUR
+# two models also go through LiteLLM — never straight to api.openai.com, which
+# would 401 on the virtual key. Locally (no gateway) we call OpenAI directly with
+# your own OPENAI_API_KEY.
+via_gateway <- !is.null(getOption("blockr.chat_function"))
+gw_base     <- Sys.getenv("LLM_GATEWAY_URL", "http://litellm:4000/v1")
+gw_key      <- Sys.getenv("LITELLM_KEY", Sys.getenv("OPENAI_API_KEY"))
+
+make_chat <- function(model) {
+  function(system_prompt = NULL, params = NULL) {
+    if (via_gateway) {
+      ellmer::chat_openai(
+        model = model, base_url = gw_base, api_key = gw_key,
+        system_prompt = system_prompt, params = params
+      )
+    } else {
+      ellmer::chat_openai(
+        model = model, system_prompt = system_prompt, params = params
+      )
+    }
+  }
 }
+
+options(
+  # First entry is the model-selector default. Also point the per-block AI
+  # (blockr.ai reads blockr.ai_model) at the same default, else it uses its own
+  # gpt-4o-mini default — not in this list — and falls back to OpenAI-direct 401.
+  blockr.ai_model = "gpt-5.4-nano",
+  blockr.chat_function = list(
+    "gpt-5.4-nano" = make_chat("gpt-5.4-nano"),
+    "gpt-5.4"      = make_chat("gpt-5.4")
+  )
+)
 
 # ---- Board -----------------------------------------------------------------
 # An empty board: no blocks, no links. Only the two extensions are mounted, so
