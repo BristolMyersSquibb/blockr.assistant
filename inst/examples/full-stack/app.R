@@ -37,6 +37,7 @@ if (!exists("dev_local")) dev_local <- FALSE
 
 blockr_pkgs <- c(
   "blockr.core",       # dataset + glue blocks (rest hidden), board, serve(), plugins
+  "blockr.session",    # project save / load / versions
   "blockr.io",         # read / write / download file blocks
   "blockr.dock",       # new_dock_board() docking layout host
   "blockr.dag",        # Workflow (DAG) extension
@@ -144,5 +145,6 @@ board <- new_dock_board(
 # generate_flat_code() (blockr.code) swaps in the idiomatic code exporter.
 serve(
   board,
-  plugins = custom_plugins(c(ai_ctrl_block(), generate_flat_code()))
+  plugins = custom_plugins(c(ai_ctrl_block(), generate_flat_code(), manage_project())),
+  loader = blockr.session::rack_loader()
 )
