@@ -253,7 +253,7 @@ push, only pull. This keeps the tool layer cheap and free of leaked
 observers when the chat client is rebuilt.
 
 All reactive reads inside tool bodies are wrapped in `isolate()`.
-[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
 invokes tool functions from inside its own observer chain, so an
 un-isolated read of `board$board` would register the enclosing observer
 as a dependent of the board slot. Each subsequent board mutation would

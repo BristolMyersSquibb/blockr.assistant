@@ -17,11 +17,11 @@ In:
 - [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
   constructor returning a `dock_extension`.
 - A chat panel UI based on
-  [`shinychat::chat_mod_ui()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html).
+  [`shinychat::chat_mod_ui()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html).
 - An extension server that reads `llm_model` from the board options,
   invokes the constructor, and hands the resulting
   [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html) to
-  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html).
+  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html).
 - A short, overridable default system prompt.
 - A `state` shape that round-trips the system prompt and the full
   conversation through `blockr.dock`’s ser/des.
@@ -68,7 +68,7 @@ restart. Lifting this restriction is future work.
 
 **Stream cancellation is delegated to `shinychat`, not built
 ourselves.**
-[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
 already instantiates an
 [`ellmer::stream_controller()`](https://ellmer.tidyverse.org/reference/stream_controller.html)
 internally and wires `input$chat_cancel` to `controller$cancel()`. The

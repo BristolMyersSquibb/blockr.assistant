@@ -151,11 +151,11 @@ to the single board it is mounted on.</li>
 <li>
 <code><a href="../../reference/new_assistant_extension.html">new_assistant_extension()</a></code> returns a
 <code>dock_extension</code> whose UI is a
-<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_ui()</a></code> panel and whose server constructs
+<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_ui()</a></code> panel and whose server constructs
 an <code><a href="https://ellmer.tidyverse.org/reference/Chat.html" class="external-link">ellmer::Chat</a></code> from the board’s <code>llm_model</code>
 option, registers the tool layer over closures of
 <code>(board, update, session)</code>, and hands the chat to
-<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_server()</a></code>.</li>
+<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_server()</a></code>.</li>
 <li>Each tool is an R closure that captures the live <code>board</code>
 and <code>update</code> references. Inspection tools read from
 <code>board$board</code>. Mutation tools emit
@@ -225,13 +225,13 @@ each one.</p>
 </h3>
 <p><em>File:</em> <code>1-shell.Rmd</code></p>
 <p><code><a href="../../reference/new_assistant_extension.html">new_assistant_extension()</a></code> constructor, dock UI/server, a
-<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_ui</a></code> / <code>chat_mod_server</code>
+<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_ui</a></code> / <code>chat_mod_server</code>
 panel, and an <code><a href="https://ellmer.tidyverse.org/reference/Chat.html" class="external-link">ellmer::Chat</a></code> constructed from the board’s
 <code>llm_model</code> option. Includes from day one:</p>
 <ul>
 <li>Streaming responses, history, basic token telemetry.</li>
 <li>A visible “stop” affordance — provided for free by
-<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_server()</a></code>, which constructs an
+<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_server()</a></code>, which constructs an
 <code><a href="https://ellmer.tidyverse.org/reference/stream_controller.html" class="external-link">ellmer::stream_controller()</a></code> internally and wires its own
 cancel input. No work for us beyond verifying it end-to-end.</li>
 <li>A default, overridable assistant persona shipped with the package —
@@ -424,7 +424,7 @@ they apply.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

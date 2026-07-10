@@ -89,11 +89,11 @@ of the board yet — that is Phase 2.</p>
 <li>
 <code><a href="../../reference/new_assistant_extension.html">new_assistant_extension()</a></code> constructor returning a
 <code>dock_extension</code>.</li>
-<li>A chat panel UI based on <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_ui()</a></code>.</li>
+<li>A chat panel UI based on <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_ui()</a></code>.</li>
 <li>An extension server that reads <code>llm_model</code> from the board
 options, invokes the constructor, and hands the resulting
 <code><a href="https://ellmer.tidyverse.org/reference/Chat.html" class="external-link">ellmer::Chat</a></code> to
-<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_server()</a></code>.</li>
+<code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_server()</a></code>.</li>
 <li>A short, overridable default system prompt.</li>
 <li>A <code>state</code> shape that round-trips the system prompt and
 the full conversation through <code>blockr.dock</code>’s ser/des.</li>
@@ -142,7 +142,7 @@ Phase 1 the option is read once at extension-server start; changing
 models mid-session requires a session restart. Lifting this restriction
 is future work.</p>
 <p><strong>Stream cancellation is delegated to <code>shinychat</code>,
-not built ourselves.</strong> <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_server()</a></code>
+not built ourselves.</strong> <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_server()</a></code>
 already instantiates an <code><a href="https://ellmer.tidyverse.org/reference/stream_controller.html" class="external-link">ellmer::stream_controller()</a></code>
 internally and wires <code>input$chat_cancel</code> to
 <code>controller$cancel()</code>. The stop button surfaces from the
@@ -195,7 +195,7 @@ S7 object) just so it could round-trip through <code>state</code>.</p>
 </h2>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">asst_ext_ui</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">id</span>, <span class="va">board</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu">shinychat</span><span class="fu">::</span><span class="fu"><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">chat_mod_ui</a></span><span class="op">(</span><span class="fu">NS</span><span class="op">(</span><span class="va">id</span>, <span class="st">"chat"</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu">shinychat</span><span class="fu">::</span><span class="fu"><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">chat_mod_ui</a></span><span class="op">(</span><span class="fu">NS</span><span class="op">(</span><span class="va">id</span>, <span class="st">"chat"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span></code></pre></div>
 <p><code>chat_mod_ui()</code> renders the message list, the input box
 and the stop button. We namespace the inner id (<code>"chat"</code>) so
@@ -221,7 +221,7 @@ without colliding with <code>chat_mod_ui</code>’s internal ids.</p>
 <span>        <span class="va">client</span><span class="op">$</span><span class="fu">set_turns</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">messages</span>, <span class="fu">ellmer</span><span class="fu">::</span><span class="va"><a href="https://ellmer.tidyverse.org/reference/contents_record.html" class="external-link">contents_replay</a></span><span class="op">)</span><span class="op">)</span></span>
 <span>      <span class="op">}</span></span>
 <span></span>
-<span>      <span class="va">mod</span> <span class="op">&lt;-</span> <span class="fu">shinychat</span><span class="fu">::</span><span class="fu"><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">chat_mod_server</a></span><span class="op">(</span><span class="st">"chat"</span>, <span class="va">client</span><span class="op">)</span></span>
+<span>      <span class="va">mod</span> <span class="op">&lt;-</span> <span class="fu">shinychat</span><span class="fu">::</span><span class="fu"><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">chat_mod_server</a></span><span class="op">(</span><span class="st">"chat"</span>, <span class="va">client</span><span class="op">)</span></span>
 <span></span>
 <span>      <span class="va">messages</span> <span class="op">&lt;-</span> <span class="fu">reactiveVal</span><span class="op">(</span><span class="va">messages</span> <span class="op"><a href="https://rdrr.io/r/base/Control.html" class="external-link">%||%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
@@ -444,7 +444,7 @@ saves and restores boards across sessions.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

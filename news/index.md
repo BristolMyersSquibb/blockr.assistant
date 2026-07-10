@@ -2,6 +2,20 @@
 
 ## blockr.assistant (development version)
 
+- The view-layout tools track blockr.dock’s restructured layout API, in
+  which a view carries panel *membership* and a separate `dock_grid`
+  carries the *arrangement* – dock’s bare `dock_layout()` constructor
+  and `layout_from_json()` are gone. `add_view` still seeds a new view’s
+  arrangement from the layout you pass, and `list_views` /
+  `validate_layout` speak the same compact JSON spec as before, now
+  parsed into a `dock_grid`. `modify_view` changes what it can: it sets
+  which panels a view holds – adding those the layout introduces and
+  removing those it omits – while the live arrangement stays dock’s to
+  own (its settled-echo grid mirror is the sole grid writer), so
+  retained panels keep their spots and newly added ones take a default
+  position. Restores a clean install and `R CMD check` against
+  blockr.dock `main`. Fixes \#65.
+
 - `list_available_blocks` now surfaces the block construction metadata
   blockr.core formalised in BMS/blockr.core#121. It gains a `guidance`
   column (model-facing construction notes) and an `examples` column
@@ -149,12 +163,9 @@
   tick.
 
 - Layouts move over the wire as the JSON spec form owned by blockr.dock:
-  the tools parse and render with dock’s exported
-  [`layout_from_json()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/layout-json.html)
-  /
-  [`layout_to_json()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/layout-json.html)
-  /
-  [`layout_panel_ids()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/layout-json.html),
+  the tools parse and render with dock’s exported `layout_from_json()` /
+  `layout_to_json()` /
+  [`layout_panel_ids()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/panel-ids.html),
   presenting bare block / extension IDs (dock resolves them to canonical
   panel IDs on flush). The default system prompt picks up a Layout
   subsection documenting the shape and a Views section in the board

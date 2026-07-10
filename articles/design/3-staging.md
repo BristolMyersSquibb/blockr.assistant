@@ -148,12 +148,12 @@ always does, just empty.
 
 ### Turn boundaries: stage on tool call, flush on `last_turn`
 
-[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+[`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
 returns a module result whose `last_input()` reactive fires when the
 user submits a message and `last_turn()` reactive fires when the
 assistant finishes its turn. Concretely, `last_turn` is written by an
 observer keyed on `append_stream_task$status() == "success"`
-([`shinychat::chat_mod_server`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+([`shinychat::chat_mod_server`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
 source) — and the stream task uses `client$stream_async()`, which
 handles all tool roundtrips internally before resolving. So `last_turn`
 fires *once* per assistant turn after all tool calls have run, not once

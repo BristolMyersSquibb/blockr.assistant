@@ -336,7 +336,7 @@ the block registry). They do not set up
 for them to push, only pull. This keeps the tool layer cheap and free of
 leaked observers when the chat client is rebuilt.</p>
 <p>All reactive reads inside tool bodies are wrapped in
-<code>isolate()</code>. <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_app.html" class="external-link">shinychat::chat_mod_server()</a></code>
+<code>isolate()</code>. <code><a href="https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html" class="external-link">shinychat::chat_mod_server()</a></code>
 invokes tool functions from inside its own observer chain, so an
 un-isolated read of <code>board$board</code> would register the
 enclosing observer as a dependent of the board slot. Each subsequent
@@ -999,7 +999,7 @@ cheap to swap.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

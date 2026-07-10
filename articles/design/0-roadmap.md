@@ -75,12 +75,12 @@ Concretely:
 
 - [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
   returns a `dock_extension` whose UI is a
-  [`shinychat::chat_mod_ui()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+  [`shinychat::chat_mod_ui()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
   panel and whose server constructs an
   [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html)
   from the board’s `llm_model` option, registers the tool layer over
   closures of `(board, update, session)`, and hands the chat to
-  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html).
+  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html).
 - Each tool is an R closure that captures the live `board` and `update`
   references. Inspection tools read from `board$board`. Mutation tools
   emit `update(list(blocks = …, links = …, stacks = …))` payloads, or
@@ -143,14 +143,14 @@ package compiles and demos something at the end of each one.
 
 [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
 constructor, dock UI/server, a
-[`shinychat::chat_mod_ui`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html)
+[`shinychat::chat_mod_ui`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html)
 / `chat_mod_server` panel, and an
 [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html)
 constructed from the board’s `llm_model` option. Includes from day one:
 
 - Streaming responses, history, basic token telemetry.
 - A visible “stop” affordance — provided for free by
-  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_app.html),
+  [`shinychat::chat_mod_server()`](https://posit-dev.github.io/shinychat/r/reference/chat_mod_ui.html),
   which constructs an
   [`ellmer::stream_controller()`](https://ellmer.tidyverse.org/reference/stream_controller.html)
   internally and wires its own cancel input. No work for us beyond
