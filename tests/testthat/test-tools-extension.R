@@ -25,8 +25,10 @@ new_doc_extension <- function(content = "", title = "", description = NULL) {
 make_ext_tool_board <- function(description = NULL) {
   new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
-    extensions = as_dock_extensions(
-      list(new_doc_extension(content = "# old", description = description))
+    extensions = list(
+      doc_extension = new_doc_extension(
+        content = "# old", description = description
+      )
     )
   )
 }
