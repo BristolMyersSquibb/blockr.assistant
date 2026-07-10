@@ -1,5 +1,13 @@
 # blockr.assistant (development version)
 
+* `focus_panel(view, panel)` brings a panel already in a view to the
+  front of its tab group and focuses it, switching to that view if it
+  isn't the active one. It stages blockr.dock's `select` panel-op
+  verb -- the last one no assistant tool emitted -- so the view-edit
+  surface now covers add / remove / move / focus. Use it to surface a
+  specific block or extension, e.g. one the assistant just added or
+  evaluated. Fixes #71.
+
 * Editing an existing view is now done with atomic panel-op tools --
   `add_panel_to_view()`, `remove_panel_from_view()` and
   `move_panel()` -- that map one-to-one onto blockr.dock's panel

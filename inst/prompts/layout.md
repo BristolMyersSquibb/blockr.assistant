@@ -20,6 +20,10 @@ update at turn end:
 - move_panel(view, panel, near, side): reposition a panel already
   in the view next to `near` on the given `side`. Membership is
   unchanged.
+- focus_panel(view, panel): bring a panel already in the view to
+  the front of its tab group and focus it, switching to the view
+  if it isn't the active one. Use it to surface a specific block
+  or extension -- e.g. one you just added or evaluated.
 
 dock owns the live arrangement, so placement is a hint, not a
 guarantee of exact geometry. `near` must be a panel already in

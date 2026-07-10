@@ -7,6 +7,7 @@ register_view_tools <- function(client, board, pending, session) {
   client$register_tool(tool_add_panel_to_view(board, pending, session))
   client$register_tool(tool_remove_panel_from_view(board, pending, session))
   client$register_tool(tool_move_panel(board, pending, session))
+  client$register_tool(tool_focus_panel(board, pending, session))
   client$register_tool(tool_set_active_view(board, pending, session))
   client$register_tool(tool_rename_view(board, pending, session))
 
@@ -124,6 +125,17 @@ addressable_views <- function(board, pending) {
     c(current_view_ids(board), names(pen$views$add)),
     pen$views$rm
   )
+}
+
+effective_active_view <- function(board, pending) {
+
+  staged <- isolate(pending())$views$active
+
+  if (not_null(staged)) {
+    return(staged)
+  }
+
+  tryCatch(active_view(isolate(board$board)), error = function(e) NULL)
 }
 
 tool_list_views <- function(board, session) {
@@ -419,6 +431,53 @@ tool_move_panel <- function(board, pending, session) {
         valid_panel_sides(),
         "Which side of `near` the panel moves to.",
         required = FALSE
+      )
+    )
+  )
+}
+
+tool_focus_panel <- function(board, pending, session) {
+
+  ellmer::tool(
+    function(view, panel) {
+      with_tool_errors("focus_panel", {
+
+        ref <- resolve_panel_op_ref(panel, NULL, NULL, board, pending)
+
+        stage_view_panel_op(
+          pending, board, "focus_panel", view, "select", ref
+        )
+
+        switched <- !identical(view, effective_active_view(board, pending))
+
+        if (switched) {
+          stage_view_active(pending, board, view)
+        }
+
+        sprintf(
+          "Staged focus_panel(%s, %s)%s -- will apply at turn end.",
+          view, panel,
+          if (switched) " and switched to that view" else ""
+        )
+      })
+    },
+    name = "focus_panel",
+    description = paste(
+      "Bring a panel already in a view to the front of its tab group",
+      "and focus it, addressed by view id (see list_views). `panel`",
+      "must currently be a member of the view. If `view` isn't the",
+      "active one, the board switches to it so the panel is actually",
+      "surfaced. Use it to draw attention to a specific block or",
+      "extension -- e.g. one you just added or whose result you just",
+      "evaluated. Membership and arrangement are unchanged; only the",
+      "front tab and active view move."
+    ),
+    arguments = list(
+      view = ellmer::type_string(
+        "Id of the view holding the panel (see list_views)."
+      ),
+      panel = ellmer::type_string(
+        "Block or extension id to bring to the front."
       )
     )
   )

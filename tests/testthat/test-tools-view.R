@@ -292,6 +292,63 @@ test_that("move_panel rejects a move onto a non-member anchor", {
   expect_match(res, "not a view member")
 })
 
+test_that("focus_panel stages a select on the active view without switching", {
+
+  env <- new_view_tool_env()
+  fp <- tool_focus_panel(env$board, env$pending, session = NULL)
+
+  res <- fp(view = "v_main", panel = "b")
+
+  expect_match(res, "Staged focus_panel(v_main, b) --", fixed = TRUE)
+
+  p <- isolate(env$pending())
+  sel <- p$views$mod[["v_main"]]$select
+  expect_identical(as.character(sel), "block_panel-b")
+  expect_null(p$views$active)
+})
+
+test_that("focus_panel on a non-active view also switches to it", {
+
+  env <- new_view_tool_env()
+  fp <- tool_focus_panel(env$board, env$pending, session = NULL)
+
+  res <- fp(view = "v_over", panel = "a")
+
+  expect_match(
+    res, "Staged focus_panel(v_over, a) and switched to that view",
+    fixed = TRUE
+  )
+
+  p <- isolate(env$pending())
+  sel <- p$views$mod[["v_over"]]$select
+  expect_identical(as.character(sel), "block_panel-a")
+  expect_identical(p$views$active, "v_over")
+})
+
+test_that("focus_panel rejects a panel that isn't a member of the view", {
+
+  env <- new_view_tool_env()
+  fp <- tool_focus_panel(env$board, env$pending, session = NULL)
+
+  res <- fp(view = "v_over", panel = "b")
+
+  expect_match(res, "focus_panel\\(v_over\\) failed:")
+  expect_match(res, "not a view member")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("focus_panel rejects an unknown panel before staging", {
+
+  env <- new_view_tool_env()
+  fp <- tool_focus_panel(env$board, env$pending, session = NULL)
+
+  res <- fp(view = "v_main", panel = "ghost")
+
+  expect_match(res, "^focus_panel failed:")
+  expect_match(res, "does not resolve to a current block or extension")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
 test_that("set_active_view stages the active marker by id", {
 
   env <- new_view_tool_env()

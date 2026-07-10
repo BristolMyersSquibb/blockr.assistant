@@ -195,6 +195,70 @@ test_that("removing a panel drops a pending move of it", {
   expect_null(mod$move)
 })
 
+test_that("stage_view_panel_op stages a select verb as a single-valued slot", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "focus_panel", "Analysis", "select", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "select")
+  expect_identical(as.character(mod$select), "block_panel-b")
+})
+
+test_that("a second select on a view replaces the first (one focus per view)", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "focus_panel", "Analysis", "select", blk("a")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "focus_panel", "Analysis", "select", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_identical(as.character(mod$select), "block_panel-b")
+})
+
+test_that("removing a panel clears a pending select of it", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "focus_panel", "Analysis", "select", blk("b")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "remove_panel_from_view", "Analysis", "rm", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_null(mod$select)
+  expect_identical(as.character(mod$rm[["block_panel-b"]]), "block_panel-b")
+})
+
+test_that("select composes alongside an add on one view", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("b")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "focus_panel", "Overview", "select", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Overview"]]
+
+  expect_setequal(names(mod), c("add", "select"))
+  expect_identical(as.character(mod$select), "block_panel-b")
+})
+
 test_that("stage_view_panel_op rejects a staged-add or staged-rm view", {
 
   env <- new_views_env()
