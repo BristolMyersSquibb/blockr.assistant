@@ -27,21 +27,35 @@
       ## Layout
       
       Views are tabs; each holds an arrangement of panels (blocks and
-      extensions). Both add_view and modify_view take a layout in JSON
-      spec form. add_view creates a view arranged exactly as the layout
-      you pass. modify_view sets which panels an existing view holds:
-      the layout's panels become its members -- those it introduces are
-      added, those it omits are removed -- but the live arrangement is
-      dock's to own, so panels already in the view keep their spots and
-      newly added ones land in a default position. To lay a view out a
-      specific way, create it with add_view. Read the current shape
-      with list_views.
+      extensions). add_view takes a layout in the JSON spec form below
+      and creates a view arranged exactly as you pass it -- a whole
+      layout is the sanctioned move only at a view's birth. Read the
+      current shape with list_views.
+      
+      To change an existing view, don't re-emit a layout -- edit it in
+      place with the atomic panel-op tools, which compose into one
+      update at turn end:
+      
+      - add_panel_to_view(view, panel, near, side): add a block or
+        extension to the view. `near` (a panel already in the view) and
+        `side` (within / left / right / above / below, relative to
+        near) are optional placement hints; omit both for a default
+        spot. `within` tabs the panel into near's group.
+      - remove_panel_from_view(view, panel): drop a panel from the
+        view. The block or extension stays on the board.
+      - move_panel(view, panel, near, side): reposition a panel already
+        in the view next to `near` on the given `side`. Membership is
+        unchanged.
+      
+      dock owns the live arrangement, so placement is a hint, not a
+      guarantee of exact geometry. `near` must be a panel already in
+      the view, not one you are adding in the same turn.
       
       Each view has a stable `id` and a display `name`. Address an
-      existing view by its `id` (from list_views) in modify_view,
-      remove_view, set_active_view and rename_view. add_view takes a
-      display `name`; the board assigns the id. rename_view changes
-      only the label, never the id.
+      existing view by its `id` (from list_views) in the panel-op
+      tools, remove_view, set_active_view and rename_view. add_view
+      takes a display `name`; the board assigns the id. rename_view
+      changes only the label, never the id.
       
       The same block or extension may appear in more than one view -- a
       panel is a single instance that renders in whichever view is
@@ -110,9 +124,9 @@
           outer nested branch is vertical (data above head|scatter), the
           inner branch is horizontal again (head | scatter).
       
-      Probe with `validate_layout(layout)` before staging if you're
-      unsure -- it parses, checks panel IDs, and returns the
-      normalized form without touching board state.
+      Probe an add_view layout with `validate_layout(layout)` if you're
+      unsure -- it parses, checks panel IDs, and returns the normalized
+      form without touching board state.
       
       Blocks referenced by a view layout must exist on the board (or
       be staged for creation in the same turn). Removing a block
@@ -150,21 +164,35 @@
       ## Layout
       
       Views are tabs; each holds an arrangement of panels (blocks and
-      extensions). Both add_view and modify_view take a layout in JSON
-      spec form. add_view creates a view arranged exactly as the layout
-      you pass. modify_view sets which panels an existing view holds:
-      the layout's panels become its members -- those it introduces are
-      added, those it omits are removed -- but the live arrangement is
-      dock's to own, so panels already in the view keep their spots and
-      newly added ones land in a default position. To lay a view out a
-      specific way, create it with add_view. Read the current shape
-      with list_views.
+      extensions). add_view takes a layout in the JSON spec form below
+      and creates a view arranged exactly as you pass it -- a whole
+      layout is the sanctioned move only at a view's birth. Read the
+      current shape with list_views.
+      
+      To change an existing view, don't re-emit a layout -- edit it in
+      place with the atomic panel-op tools, which compose into one
+      update at turn end:
+      
+      - add_panel_to_view(view, panel, near, side): add a block or
+        extension to the view. `near` (a panel already in the view) and
+        `side` (within / left / right / above / below, relative to
+        near) are optional placement hints; omit both for a default
+        spot. `within` tabs the panel into near's group.
+      - remove_panel_from_view(view, panel): drop a panel from the
+        view. The block or extension stays on the board.
+      - move_panel(view, panel, near, side): reposition a panel already
+        in the view next to `near` on the given `side`. Membership is
+        unchanged.
+      
+      dock owns the live arrangement, so placement is a hint, not a
+      guarantee of exact geometry. `near` must be a panel already in
+      the view, not one you are adding in the same turn.
       
       Each view has a stable `id` and a display `name`. Address an
-      existing view by its `id` (from list_views) in modify_view,
-      remove_view, set_active_view and rename_view. add_view takes a
-      display `name`; the board assigns the id. rename_view changes
-      only the label, never the id.
+      existing view by its `id` (from list_views) in the panel-op
+      tools, remove_view, set_active_view and rename_view. add_view
+      takes a display `name`; the board assigns the id. rename_view
+      changes only the label, never the id.
       
       The same block or extension may appear in more than one view -- a
       panel is a single instance that renders in whichever view is
@@ -233,9 +261,9 @@
           outer nested branch is vertical (data above head|scatter), the
           inner branch is horizontal again (head | scatter).
       
-      Probe with `validate_layout(layout)` before staging if you're
-      unsure -- it parses, checks panel IDs, and returns the
-      normalized form without touching board state.
+      Probe an add_view layout with `validate_layout(layout)` if you're
+      unsure -- it parses, checks panel IDs, and returns the normalized
+      form without touching board state.
       
       Blocks referenced by a view layout must exist on the board (or
       be staged for creation in the same turn). Removing a block
@@ -262,11 +290,13 @@
       - `add_stack(blocks, name?, id?)`: Group a set of blocks into a stack. `blocks` is a character vector of block ids; `name` is an optional human-readable label.
       - `remove_stack(id)`: Remove a stack. Member blocks are not removed; only the grouping disappears.
       - `modify_stack(id, blocks?, name?)`: Change a stack's member blocks and/or name. Either or both arguments may be omitted; only supplied fields are changed.
-      - `list_views()`: List all views (tabs) on the board. One entry per view: its stable `id` (the handle modify_view / remove_view / set_active_view / rename_view address the view by), its display `name`, whether it's the currently-active view, and its `layout` in the JSON spec form documented in the Layout section. Reflects UI-driven rearrangements once they have synced back to the board.
-      - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view / modify_view; never mutates board state.
+      - `list_views()`: List all views (tabs) on the board. One entry per view: its stable `id` (the handle the panel-op, remove_view, set_active_view and rename_view tools address the view by), its display `name`, whether it's the currently-active view, and its `layout` in the JSON spec form documented in the Layout section. Reflects UI-driven rearrangements once they have synced back to the board.
+      - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view; never mutates board state.
       - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
       - `remove_view(id)`: Remove a view by id (see list_views). Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
-      - `modify_view(id, layout)`: Set which panels a view holds, addressed by id (see list_views). `layout` is a JSON object in the same shape `list_views` returns; its panels become the view's members -- those the layout adds are added, those it omits are removed. Existing panels keep their current arrangement and newly added ones take a default spot (dock owns arrangement); to author a specific arrangement, create the view with add_view. Blocks referenced must exist on the board or be staged for creation this turn.
+      - `add_panel_to_view(view, panel, near?, side?)`: Add a block or extension to a view as a panel, addressed by view id (see list_views). `panel` is the block or extension id; it must be on the board or staged for creation this turn. Optionally place it with `near` (a panel already in the view) and `side` (which side of `near` -- within tabs it into that group); omit both to let dock pick a default spot. Adding a panel already in the view is an error -- reposition it with move_panel instead.
+      - `remove_panel_from_view(view, panel)`: Remove a panel from a view, addressed by view id (see list_views). `panel` is the block or extension id; it must currently be a member of the view. The block or extension stays on the board -- only its panel in this view is dropped. Removing a block from the board drops its panels everywhere on its own; no explicit cleanup needed.
+      - `move_panel(view, panel, near, side?)`: Reposition a panel already in a view, addressed by view id (see list_views). Moves `panel` next to `near` (another panel in the same view), on the given `side` (within tabs it into `near`'s group). Both must be current members of the view; membership is unchanged -- only the arrangement moves.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
       

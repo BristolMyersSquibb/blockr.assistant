@@ -4,11 +4,71 @@ register_view_tools <- function(client, board, pending, session) {
   client$register_tool(tool_validate_layout(board, pending, session))
   client$register_tool(tool_add_view(board, pending, session))
   client$register_tool(tool_remove_view(board, pending, session))
-  client$register_tool(tool_modify_view(board, pending, session))
+  client$register_tool(tool_add_panel_to_view(board, pending, session))
+  client$register_tool(tool_remove_panel_from_view(board, pending, session))
+  client$register_tool(tool_move_panel(board, pending, session))
   client$register_tool(tool_set_active_view(board, pending, session))
   client$register_tool(tool_rename_view(board, pending, session))
 
   invisible(client)
+}
+
+# Resolve a model-supplied bare panel id (and optional placement hint) to the
+# typed ref the panel-op tools stage, validating that the panel -- and any
+# `near` anchor -- names a current or staged-this-turn block or extension. dock
+# re-checks membership and anchor validity for the whole batch at commit.
+resolve_panel_op_ref <- function(panel, near, side, board, pending) {
+
+  sets  <- panel_id_sets(board, pending)
+  valid <- c(sets$blocks, sets$exts)
+
+  if (!panel %in% valid) {
+    stop(
+      sprintf(
+        paste(
+          "panel %s does not resolve to a current block or extension",
+          "(call list_blocks for current ids)"
+        ),
+        panel
+      ),
+      call. = FALSE
+    )
+  }
+
+  if (not_null(near) && !near %in% valid) {
+    stop(
+      sprintf(
+        "near panel %s does not resolve to a current block or extension",
+        near
+      ),
+      call. = FALSE
+    )
+  }
+
+  if (not_null(side) && !side %in% valid_panel_sides()) {
+    stop(
+      sprintf(
+        "side must be one of: %s", paste(valid_panel_sides(), collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+
+  panel_ref_from_id(panel, sets$blocks, sets$exts, near = near, side = side)
+}
+
+placement_suffix <- function(near, side) {
+
+  if (is.null(near) && is.null(side)) {
+    return("")
+  }
+
+  parts <- c(
+    if (not_null(side)) side,
+    if (not_null(near)) paste("of", near)
+  )
+
+  sprintf(" (%s)", paste(parts, collapse = " "))
 }
 
 panel_id_sets <- function(board, pending) {
@@ -98,8 +158,8 @@ tool_list_views <- function(board, session) {
     name = "list_views",
     description = paste(
       "List all views (tabs) on the board. One entry per view: its",
-      "stable `id` (the handle modify_view / remove_view /",
-      "set_active_view / rename_view address the view by), its",
+      "stable `id` (the handle the panel-op, remove_view,",
+      "set_active_view and rename_view tools address the view by), its",
       "display `name`, whether it's the currently-active view, and",
       "its `layout` in the JSON spec form documented in the Layout",
       "section. Reflects UI-driven rearrangements once they have",
@@ -146,7 +206,7 @@ tool_validate_layout <- function(board, pending, session) {
       "Parse and panel-id-check a layout JSON without staging.",
       "Returns OK plus the normalized layout on success, or a",
       "classed error describing what's wrong. Cheap probe before",
-      "add_view / modify_view; never mutates board state."
+      "add_view; never mutates board state."
     ),
     arguments = list(
       layout = ellmer::type_string(
@@ -236,38 +296,129 @@ tool_remove_view <- function(board, pending, session) {
   )
 }
 
-tool_modify_view <- function(board, pending, session) {
+tool_add_panel_to_view <- function(board, pending, session) {
 
   ellmer::tool(
-    function(id, layout) {
-      with_tool_errors("modify_view", {
+    function(view, panel, near = NULL, side = NULL) {
+      with_tool_errors("add_panel_to_view", {
 
-        sets       <- panel_id_sets(board, pending)
-        layout_obj <- layout_from_json(layout, sets$blocks, sets$exts)
+        ref <- resolve_panel_op_ref(panel, near, side, board, pending)
 
-        stage_view_mod(pending, board, id, layout_obj)
+        stage_view_panel_op(
+          pending, board, "add_panel_to_view", view, "add", ref
+        )
 
         sprintf(
-          "Staged modify_view(%s) -- will apply at turn end.", id
+          "Staged add_panel_to_view(%s, %s)%s -- will apply at turn end.",
+          view, panel, placement_suffix(near, side)
         )
       })
     },
-    name = "modify_view",
+    name = "add_panel_to_view",
     description = paste(
-      "Set which panels a view holds, addressed by id (see",
-      "list_views). `layout` is a JSON object in the same shape",
-      "`list_views` returns; its panels become the view's members --",
-      "those the layout adds are added, those it omits are removed.",
-      "Existing panels keep their current arrangement and newly added",
-      "ones take a default spot (dock owns arrangement); to author a",
-      "specific arrangement, create the view with add_view. Blocks",
-      "referenced must exist on the board or be staged for creation",
-      "this turn."
+      "Add a block or extension to a view as a panel, addressed by",
+      "view id (see list_views). `panel` is the block or extension id;",
+      "it must be on the board or staged for creation this turn.",
+      "Optionally place it with `near` (a panel already in the view)",
+      "and `side` (which side of `near` -- within tabs it into that",
+      "group); omit both to let dock pick a default spot. Adding a",
+      "panel already in the view is an error -- reposition it with",
+      "move_panel instead."
     ),
     arguments = list(
-      id = ellmer::type_string("Id of the view to modify."),
-      layout = ellmer::type_string(
-        "JSON layout object; same shape as add_view's `layout`."
+      view = ellmer::type_string(
+        "Id of the view to add the panel to (see list_views)."
+      ),
+      panel = ellmer::type_string(
+        "Block or extension id to add to the view."
+      ),
+      near = ellmer::type_string(
+        "Optional panel already in the view to place the new one next to.",
+        required = FALSE
+      ),
+      side = ellmer::type_enum(
+        valid_panel_sides(),
+        "Optional side of `near` to place the panel on.",
+        required = FALSE
+      )
+    )
+  )
+}
+
+tool_remove_panel_from_view <- function(board, pending, session) {
+
+  ellmer::tool(
+    function(view, panel) {
+      with_tool_errors("remove_panel_from_view", {
+
+        ref <- resolve_panel_op_ref(panel, NULL, NULL, board, pending)
+
+        stage_view_panel_op(
+          pending, board, "remove_panel_from_view", view, "rm", ref
+        )
+
+        sprintf(
+          "Staged remove_panel_from_view(%s, %s) -- will apply at turn end.",
+          view, panel
+        )
+      })
+    },
+    name = "remove_panel_from_view",
+    description = paste(
+      "Remove a panel from a view, addressed by view id (see",
+      "list_views). `panel` is the block or extension id; it must",
+      "currently be a member of the view. The block or extension stays",
+      "on the board -- only its panel in this view is dropped. Removing",
+      "a block from the board drops its panels everywhere on its own; no",
+      "explicit cleanup needed."
+    ),
+    arguments = list(
+      view = ellmer::type_string(
+        "Id of the view to remove the panel from."
+      ),
+      panel = ellmer::type_string(
+        "Block or extension id to drop from the view."
+      )
+    )
+  )
+}
+
+tool_move_panel <- function(board, pending, session) {
+
+  ellmer::tool(
+    function(view, panel, near, side = NULL) {
+      with_tool_errors("move_panel", {
+
+        ref <- resolve_panel_op_ref(panel, near, side, board, pending)
+
+        stage_view_panel_op(pending, board, "move_panel", view, "move", ref)
+
+        sprintf(
+          "Staged move_panel(%s, %s)%s -- will apply at turn end.",
+          view, panel, placement_suffix(near, side)
+        )
+      })
+    },
+    name = "move_panel",
+    description = paste(
+      "Reposition a panel already in a view, addressed by view id (see",
+      "list_views). Moves `panel` next to `near` (another panel in the",
+      "same view), on the given `side` (within tabs it into `near`'s",
+      "group). Both must be current members of the view; membership is",
+      "unchanged -- only the arrangement moves."
+    ),
+    arguments = list(
+      view = ellmer::type_string("Id of the view whose panel moves."),
+      panel = ellmer::type_string(
+        "Block or extension id of the panel to move."
+      ),
+      near = ellmer::type_string(
+        "Panel already in the view to move `panel` next to."
+      ),
+      side = ellmer::type_enum(
+        valid_panel_sides(),
+        "Which side of `near` the panel moves to.",
+        required = FALSE
       )
     )
   )

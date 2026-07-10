@@ -175,34 +175,121 @@ test_that("remove_view stages an rm by id and rejects the last view", {
   expect_length(isolate(solo_env$pending()$views$rm), 0L)
 })
 
-test_that("modify_view stages the membership delta by id", {
+test_that("add_panel_to_view stages an add verb with a placement hint", {
 
   env <- new_view_tool_env()
-  mv <- tool_modify_view(env$board, env$pending, session = NULL)
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
 
-  res <- mv(
-    id     = "v_main",
-    layout = "{\"children\": [\"a\"], \"orientation\": \"vertical\"}"
+  res <- apv(view = "v_over", panel = "b", near = "a", side = "right")
+
+  expect_match(
+    res, "Staged add_panel_to_view(v_over, b) (right of a)", fixed = TRUE
   )
 
-  expect_match(res, "Staged modify_view(v_main)", fixed = TRUE)
-
-  staged <- isolate(env$pending()$views$mod[["v_main"]])
-  expect_named(staged, "rm")
-  expect_identical(as.character(staged$rm[[1L]]), "block_panel-b")
+  ref <- isolate(env$pending()$views$mod[["v_over"]]$add[["block_panel-b"]])
+  expect_true(is_panel_ref(ref))
+  expect_identical(as.character(ref), "block_panel-b")
+  expect_identical(ref$near, "a")
+  expect_identical(ref$side, "right")
 })
 
-test_that("modify_view rejects an unknown view id via the dock validator", {
+test_that("add_panel_to_view without a hint stages a bare add", {
 
   env <- new_view_tool_env()
-  mv <- tool_modify_view(env$board, env$pending, session = NULL)
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
 
-  res <- mv(
-    id     = "does_not_exist",
-    layout = "{\"children\": [\"a\"]}"
-  )
+  res <- apv(view = "v_over", panel = "b")
 
-  expect_match(res, "modify_view\\(does_not_exist\\) failed:")
+  expect_match(res, "Staged add_panel_to_view(v_over, b) --", fixed = TRUE)
+
+  ref <- isolate(env$pending()$views$mod[["v_over"]]$add[["block_panel-b"]])
+  expect_null(ref$near)
+  expect_null(ref$side)
+})
+
+test_that("add_panel_to_view rejects an unknown panel before staging", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "ghost")
+
+  expect_match(res, "^add_panel_to_view failed:")
+  expect_match(res, "does not resolve to a current block or extension")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("add_panel_to_view rejects a bad side keyword", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", near = "a", side = "diagonal")
+
+  expect_match(res, "^add_panel_to_view failed:")
+  expect_match(res, "side must be one of")
+})
+
+test_that("add_panel_to_view rejects an add on a non-existent view", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "does_not_exist", panel = "b")
+
+  expect_match(res, "add_panel_to_view\\(does_not_exist\\) failed:")
+})
+
+test_that("remove_panel_from_view stages an rm verb by id", {
+
+  env <- new_view_tool_env()
+  rpv <- tool_remove_panel_from_view(env$board, env$pending, session = NULL)
+
+  res <- rpv(view = "v_main", panel = "b")
+
+  expect_match(res, "Staged remove_panel_from_view(v_main, b)", fixed = TRUE)
+
+  ref <- isolate(env$pending()$views$mod[["v_main"]]$rm[["block_panel-b"]])
+  expect_identical(as.character(ref), "block_panel-b")
+})
+
+test_that("add then remove of the same panel cancels out", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+  rpv <- tool_remove_panel_from_view(env$board, env$pending, session = NULL)
+
+  apv(view = "v_over", panel = "b")
+  rpv(view = "v_over", panel = "b")
+
+  expect_false("v_over" %in% names(isolate(env$pending()$views$mod)))
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("move_panel stages a move verb with a placement hint", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  res <- mp(view = "v_main", panel = "b", near = "a", side = "below")
+
+  expect_match(res, "Staged move_panel(v_main, b) (below of a)", fixed = TRUE)
+
+  ref <- isolate(env$pending()$views$mod[["v_main"]]$move[["block_panel-b"]])
+  expect_identical(as.character(ref), "block_panel-b")
+  expect_identical(ref$near, "a")
+  expect_identical(ref$side, "below")
+})
+
+test_that("move_panel rejects a move onto a non-member anchor", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  res <- mp(view = "v_over", panel = "a", near = "b", side = "right")
+
+  expect_match(res, "move_panel\\(v_over\\) failed:")
+  expect_match(res, "not a view member")
 })
 
 test_that("set_active_view stages the active marker by id", {
@@ -296,19 +383,20 @@ test_that("rename_view leaves view membership in place (regression)", {
   expect_length(isolate(env$pending()$views$mod), 0L)
 })
 
-test_that("add_block + modify_view compose atomically through validation", {
+test_that("add_block + add_panel_to_view compose through validation", {
 
   env <- new_view_tool_env()
 
   ab <- tool_add_block(env$board, env$pending, NULL)
   ab(type = "head_block", args = "{\"n\": 3}", id = "new_head")
 
-  mv <- tool_modify_view(env$board, env$pending, session = NULL)
-  layout_json <- paste0(
-    "{\"children\": [\"a\", \"new_head\"], ",
-    "\"orientation\": \"horizontal\"}"
-  )
-  res <- mv(id = "v_main", layout = layout_json)
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+  res <- apv(view = "v_main", panel = "new_head", near = "a", side = "right")
 
-  expect_match(res, "^Staged modify_view")
+  expect_match(res, "^Staged add_panel_to_view")
+
+  mod <- isolate(env$pending())$views$mod[["v_main"]]
+  expect_identical(
+    as.character(mod$add[["block_panel-new_head"]]), "block_panel-new_head"
+  )
 })

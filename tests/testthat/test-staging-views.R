@@ -69,13 +69,13 @@ test_that("stage_view_add allows a display name already used by a view", {
 test_that("stage_view_add rejects against pending mod and pending rm", {
 
   env <- new_views_env()
-  stage_view_mod(
-    env$pending, env$board, "Overview", dock_grid(blk("a"), blk("b"))
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("b")
   )
 
   expect_error(
     stage_view_add(env$pending, env$board, "Overview", dock_grid(blk("a"))),
-    "staged for modification",
+    "already staged for panel changes",
     fixed = TRUE
   )
 
@@ -89,40 +89,121 @@ test_that("stage_view_add rejects against pending mod and pending rm", {
   )
 })
 
-test_that("stage_view_mod stages the membership delta as panel-op verbs", {
+test_that("stage_view_panel_op stages an add verb keyed by panel id", {
 
   env <- new_views_env()
 
-  stage_view_mod(
-    env$pending, env$board, "Analysis",
-    dock_grid(blk("a"), blk("b"), blk("c"))
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Analysis", "add", blk("c")
   )
 
   mod <- isolate(env$pending())$views$mod[["Analysis"]]
 
   expect_named(mod, "add")
-  expect_identical(as.character(mod$add[[1L]]), "block_panel-c")
+  expect_identical(as.character(mod$add[["block_panel-c"]]), "block_panel-c")
 })
 
-test_that("stage_view_mod removes members the layout drops", {
+test_that("stage_view_panel_op stages an rm verb keyed by panel id", {
 
   env <- new_views_env()
 
-  stage_view_mod(env$pending, env$board, "Analysis", dock_grid(blk("a")))
+  stage_view_panel_op(
+    env$pending, env$board, "remove_panel_from_view", "Analysis", "rm", blk("b")
+  )
 
   mod <- isolate(env$pending())$views$mod[["Analysis"]]
 
   expect_named(mod, "rm")
-  expect_identical(as.character(mod$rm[[1L]]), "block_panel-b")
+  expect_identical(as.character(mod$rm[["block_panel-b"]]), "block_panel-b")
 })
 
-test_that("stage_view_mod rejects against add / rm", {
+test_that("stage_view_panel_op composes several ops on one view", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add",
+    blk("b", near = "a", side = "right")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("c")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "move_panel", "Overview", "move",
+    blk("a", near = "b", side = "left")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Overview"]]
+
+  expect_setequal(names(mod), c("add", "move"))
+  expect_setequal(names(mod$add), c("block_panel-b", "block_panel-c"))
+  expect_identical(mod$add[["block_panel-b"]]$side, "right")
+  expect_identical(as.character(mod$move[["block_panel-a"]]), "block_panel-a")
+})
+
+test_that("re-adding the same panel updates its hint in place", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add",
+    blk("b", near = "a", side = "right")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add",
+    blk("b", near = "a", side = "below")
+  )
+
+  add <- isolate(env$pending())$views$mod[["Overview"]]$add
+
+  expect_length(add, 1L)
+  expect_identical(add[["block_panel-b"]]$side, "below")
+})
+
+test_that("removing a panel added the same turn cancels the add", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("b")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "remove_panel_from_view", "Overview", "rm", blk("b")
+  )
+
+  p <- isolate(env$pending())
+
+  expect_false("Overview" %in% names(p$views$mod))
+  expect_false(has_any_changes(p))
+})
+
+test_that("removing a panel drops a pending move of it", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "move_panel", "Analysis", "move",
+    blk("b", near = "a", side = "right")
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "remove_panel_from_view", "Analysis", "rm", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "rm")
+  expect_null(mod$move)
+})
+
+test_that("stage_view_panel_op rejects a staged-add or staged-rm view", {
 
   env <- new_views_env()
   stage_view_add(env$pending, env$board, "New", dock_grid(blk("a")))
 
   expect_error(
-    stage_view_mod(env$pending, env$board, "New", dock_grid(blk("b"))),
+    stage_view_panel_op(
+      env$pending, env$board, "add_panel_to_view", "New", "add", blk("b")
+    ),
     "staged for creation",
     fixed = TRUE
   )
@@ -131,7 +212,9 @@ test_that("stage_view_mod rejects against add / rm", {
   stage_view_rm(env$pending, env$board, "Overview")
 
   expect_error(
-    stage_view_mod(env$pending, env$board, "Overview", dock_grid(blk("a"))),
+    stage_view_panel_op(
+      env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("b")
+    ),
     "staged for removal",
     fixed = TRUE
   )
@@ -152,8 +235,8 @@ test_that("stage_view_rm collapses onto a pending add (drops the add)", {
 test_that("stage_view_rm discards a pending mod when staging rm", {
 
   env <- new_views_env()
-  stage_view_mod(
-    env$pending, env$board, "Overview", dock_grid(blk("a"), blk("b"))
+  stage_view_panel_op(
+    env$pending, env$board, "add_panel_to_view", "Overview", "add", blk("b")
   )
 
   stage_view_rm(env$pending, env$board, "Overview")
@@ -234,10 +317,11 @@ test_that("commit_pending surfaces dock_board views validation errors", {
   env <- new_views_env()
 
   expect_error(
-    stage_view_mod(
-      env$pending, env$board, "DoesNotExist", dock_grid(blk("a"))
+    stage_view_panel_op(
+      env$pending, env$board, "add_panel_to_view", "DoesNotExist", "add",
+      blk("a")
     ),
-    "modify_view(DoesNotExist) failed:",
+    "add_panel_to_view(DoesNotExist) failed:",
     fixed = TRUE
   )
 })

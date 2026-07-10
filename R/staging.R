@@ -387,14 +387,14 @@ stage_view_add <- function(pending, board, name, layout, active = FALSE) {
   if (name %in% names(cur$views$mod)) {
     stage_abort(
       "add_view", name,
-      "view exists and is staged for modification; use modify_view"
+      "a view addressed by this id is already staged for panel changes"
     )
   }
 
   if (name %in% cur$views$rm) {
     stage_abort(
       "add_view", name,
-      "view is staged for removal; use modify_view instead"
+      "a view addressed by this id is staged for removal; edit it in place"
     )
   }
 
@@ -408,65 +408,64 @@ stage_view_add <- function(pending, board, name, layout, active = FALSE) {
   commit_pending(pending, isolate(board$board), new, "add_view", name)
 }
 
-stage_view_mod <- function(pending, board, id, layout) {
+# One atomic panel op (`add` / `rm` / `move`) stages a single verb entry into a
+# view's slice of the `views$mod` panel-op grammar, keyed by the panel it names
+# so a turn's ops on one view compose into a single delta. dock owns arrangement
+# (the settled-echo grid mirror is its sole writer), so these are membership +
+# placement-hint verbs, never a geometry write. `commit_pending()` augments and
+# validates the whole batch against the board, surfacing an unknown view, a
+# non-member removal or a stale placement anchor with dock's own error.
+stage_view_panel_op <- function(pending, board, op, view, verb, ref) {
 
   cur <- isolate(pending())
 
-  if (id %in% names(cur$views$add)) {
+  if (view %in% names(cur$views$add)) {
     stage_abort(
-      "modify_view", id,
-      paste0(
-        "view is staged for creation this turn; pass the updated ",
-        "layout to add_view instead"
-      )
+      op, view,
+      "view is staged for creation this turn; set its panels via add_view"
     )
   }
 
-  if (id %in% cur$views$rm) {
-    stage_abort(
-      "modify_view", id,
-      "view is staged for removal; mod has no effect"
-    )
+  if (view %in% cur$views$rm) {
+    stage_abort(op, view, "view is staged for removal; the op has no effect")
   }
-
-  brd <- isolate(board$board)
 
   new <- cur
-  new$views$mod[[id]] <- view_membership_delta(brd, id, layout)
+  new$views$mod[[view]] <- merge_panel_op(
+    coal(cur$views$mod[[view]], list(), fail_all = FALSE), verb, ref
+  )
 
-  commit_pending(pending, brd, new, "modify_view", id)
+  if (!length(new$views$mod[[view]])) {
+    new$views$mod[[view]] <- NULL
+  }
+
+  commit_pending(pending, isolate(board$board), new, op, view)
 }
 
-# A view's layout change reduces to a membership delta: dock owns arrangement
-# (the settled-echo grid mirror is its sole writer), so a modify replaces which
-# panels a view holds -- add those the layout introduces, remove those it drops
-# -- expressed as the panel-op verbs the `views$mod` grammar takes. An absent
-# view yields an all-add delta that `commit_pending()` rejects with the board's
-# own error.
-view_membership_delta <- function(board, id, layout) {
+# Fold a verb entry into a view's pending mod, keyed by panel id. A repeat op on
+# the same panel updates in place (last hint wins). A removal of a panel only
+# added this turn cancels the pending add rather than staging a contradictory
+# remove; a removal also drops any pending move of that panel.
+merge_panel_op <- function(mod, verb, ref) {
 
-  views <- board_views(board)
+  pid <- as.character(ref)
 
-  current <- if (id %in% names(views)) {
-    view_members(views[[id]])
-  } else {
-    character()
-  }
-  target <- layout_panel_ids(layout)
+  if (identical(verb, "rm")) {
 
-  verbs <- list()
+    if (pid %in% names(mod$add)) {
+      mod$add[[pid]] <- NULL
+      if (!length(mod$add)) mod$add <- NULL
+      return(mod)
+    }
 
-  added <- setdiff(target, current)
-  if (length(added)) {
-    verbs[["add"]] <- lapply(added, panel_ref)
+    if (pid %in% names(mod$move)) {
+      mod$move[[pid]] <- NULL
+      if (!length(mod$move)) mod$move <- NULL
+    }
   }
 
-  removed <- setdiff(current, target)
-  if (length(removed)) {
-    verbs[["rm"]] <- lapply(removed, panel_ref)
-  }
-
-  verbs
+  mod[[verb]][[pid]] <- ref
+  mod
 }
 
 stage_view_rm <- function(pending, board, name) {

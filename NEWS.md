@@ -1,5 +1,17 @@
 # blockr.assistant (development version)
 
+* Editing an existing view is now done with atomic panel-op tools --
+  `add_panel_to_view()`, `remove_panel_from_view()` and
+  `move_panel()` -- that map one-to-one onto blockr.dock's panel
+  operations, each carrying optional `near` / `side` placement hints
+  (`within` / `left` / `right` / `above` / `below`). They replace
+  `modify_view()`, whose whole-layout JSON was both awkward for a
+  model to edit and carried geometry that dock's membership-only view
+  validation now rejects. Each call stages one verb into the pending
+  update, and a turn's edits on a view compose into a single atomic
+  update at flush. A `resize_panel` tool awaits a dock `set_size`
+  proxy. Fixes #64.
+
 * The view-layout tools track blockr.dock's restructured layout
   API, in which a view carries panel *membership* and a separate
   `dock_grid` carries the *arrangement* -- dock's bare
@@ -7,13 +19,10 @@
   `add_view` still seeds a new view's arrangement from the layout
   you pass, and `list_views` / `validate_layout` speak the same
   compact JSON spec as before, now parsed into a `dock_grid`.
-  `modify_view` changes what it can: it sets which panels a view
-  holds -- adding those the layout introduces and removing those
-  it omits -- while the live arrangement stays dock's to own (its
-  settled-echo grid mirror is the sole grid writer), so retained
-  panels keep their spots and newly added ones take a default
-  position. Restores a clean install and `R CMD check` against
-  blockr.dock `main`. Fixes #65.
+  Changing which panels an existing view holds is a membership edit,
+  with the live arrangement staying dock's to own (its settled-echo
+  grid mirror is the sole grid writer). Restores a clean install and
+  `R CMD check` against blockr.dock `main`. Fixes #65.
 
 * `list_available_blocks` now surfaces the block construction
   metadata blockr.core formalised in BMS/blockr.core#121. It gains a
