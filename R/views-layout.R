@@ -175,9 +175,20 @@ panel_leaf <- function(id) {
   list(panels = id, active = id)
 }
 
-panel_ref <- function(id) {
+# A block or extension id (bare, as the model names it) becomes the typed panel
+# ref the `views$mod` panel-op grammar takes, carrying any placement hint.
+# Block-first, mirroring how dock resolves bare-id sugar: an id known only as an
+# extension becomes `ext()`, everything else `blk()`.
+panel_ref_from_id <- function(id, block_ids, ext_ids, near = NULL,
+                              side = NULL) {
 
-  obj <- panel_obj_ids(id)
+  if (id %in% ext_ids && !id %in% block_ids) {
+    ext(id, near = near, side = side)
+  } else {
+    blk(id, near = near, side = side)
+  }
+}
 
-  if (startsWith(id, "ext_panel-")) ext(obj) else blk(obj)
+valid_panel_sides <- function() {
+  c("within", "left", "right", "above", "below")
 }
