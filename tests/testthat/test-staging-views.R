@@ -2,12 +2,13 @@ make_view_board <- function() {
   new_dock_board(
     blocks = c(
       a = new_dataset_block("iris"),
-      b = new_head_block(external_ctrl = TRUE)
+      b = new_head_block(external_ctrl = TRUE),
+      c = new_head_block()
     ),
     links = c(l = new_link("a", "b", "data")),
-    layouts = list(
-      Analysis = dock_layout("a", "b"),
-      Overview = dock_layout("a")
+    views = list(
+      Analysis = c("a", "b"),
+      Overview = "a"
     )
   )
 }
@@ -23,12 +24,12 @@ test_that("stage_view_add stages an add keyed by display name", {
 
   env <- new_views_env()
 
-  stage_view_add(env$pending, env$board, "Reports", dock_layout("a"))
+  stage_view_add(env$pending, env$board, "Reports", dock_grid(blk("a")))
 
   p <- isolate(env$pending())
 
   expect_named(p$views$add, "Reports")
-  expect_true(is_dock_layout(p$views$add[["Reports"]]))
+  expect_true(is_dock_grid(p$views$add[["Reports"]]))
   expect_null(p$views$active)
 })
 
@@ -37,7 +38,7 @@ test_that("stage_view_add active=TRUE flags the new view active by its key", {
   env <- new_views_env()
 
   stage_view_add(
-    env$pending, env$board, "Reports", dock_layout("a"),
+    env$pending, env$board, "Reports", dock_grid(blk("a")),
     active = TRUE
   )
 
@@ -47,10 +48,10 @@ test_that("stage_view_add active=TRUE flags the new view active by its key", {
 test_that("stage_view_add rejects a duplicate pending add", {
 
   env <- new_views_env()
-  stage_view_add(env$pending, env$board, "New", dock_layout("a"))
+  stage_view_add(env$pending, env$board, "New", dock_grid(blk("a")))
 
   expect_error(
-    stage_view_add(env$pending, env$board, "New", dock_layout("a")),
+    stage_view_add(env$pending, env$board, "New", dock_grid(blk("a"))),
     "add_view(New) failed: view is already staged for creation",
     fixed = TRUE
   )
@@ -60,7 +61,7 @@ test_that("stage_view_add allows a display name already used by a view", {
 
   env <- new_views_env()
 
-  stage_view_add(env$pending, env$board, "Analysis", dock_layout("a"))
+  stage_view_add(env$pending, env$board, "Analysis", dock_grid(blk("a")))
 
   expect_named(isolate(env$pending()$views$add), "Analysis")
 })
@@ -68,10 +69,12 @@ test_that("stage_view_add allows a display name already used by a view", {
 test_that("stage_view_add rejects against pending mod and pending rm", {
 
   env <- new_views_env()
-  stage_view_mod(env$pending, env$board, "Overview", dock_layout("a"))
+  stage_view_mod(
+    env$pending, env$board, "Overview", dock_grid(blk("a"), blk("b"))
+  )
 
   expect_error(
-    stage_view_add(env$pending, env$board, "Overview", dock_layout("a")),
+    stage_view_add(env$pending, env$board, "Overview", dock_grid(blk("a"))),
     "staged for modification",
     fixed = TRUE
   )
@@ -80,27 +83,46 @@ test_that("stage_view_add rejects against pending mod and pending rm", {
   stage_view_rm(env$pending, env$board, "Overview")
 
   expect_error(
-    stage_view_add(env$pending, env$board, "Overview", dock_layout("a")),
+    stage_view_add(env$pending, env$board, "Overview", dock_grid(blk("a"))),
     "staged for removal",
     fixed = TRUE
   )
 })
 
-test_that("stage_view_mod merges and rejects against add / rm", {
+test_that("stage_view_mod stages the membership delta as panel-op verbs", {
 
   env <- new_views_env()
 
-  stage_view_mod(env$pending, env$board, "Analysis", dock_layout("a", "b"))
+  stage_view_mod(
+    env$pending, env$board, "Analysis",
+    dock_grid(blk("a"), blk("b"), blk("c"))
+  )
 
-  p <- isolate(env$pending())
-  expect_named(p$views$mod, "Analysis")
-  expect_true(is_dock_layout(p$views$mod[["Analysis"]]))
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "add")
+  expect_identical(as.character(mod$add[[1L]]), "block_panel-c")
+})
+
+test_that("stage_view_mod removes members the layout drops", {
 
   env <- new_views_env()
-  stage_view_add(env$pending, env$board, "New", dock_layout("a"))
+
+  stage_view_mod(env$pending, env$board, "Analysis", dock_grid(blk("a")))
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "rm")
+  expect_identical(as.character(mod$rm[[1L]]), "block_panel-b")
+})
+
+test_that("stage_view_mod rejects against add / rm", {
+
+  env <- new_views_env()
+  stage_view_add(env$pending, env$board, "New", dock_grid(blk("a")))
 
   expect_error(
-    stage_view_mod(env$pending, env$board, "New", dock_layout("b")),
+    stage_view_mod(env$pending, env$board, "New", dock_grid(blk("b"))),
     "staged for creation",
     fixed = TRUE
   )
@@ -109,7 +131,7 @@ test_that("stage_view_mod merges and rejects against add / rm", {
   stage_view_rm(env$pending, env$board, "Overview")
 
   expect_error(
-    stage_view_mod(env$pending, env$board, "Overview", dock_layout("a")),
+    stage_view_mod(env$pending, env$board, "Overview", dock_grid(blk("a"))),
     "staged for removal",
     fixed = TRUE
   )
@@ -118,7 +140,7 @@ test_that("stage_view_mod merges and rejects against add / rm", {
 test_that("stage_view_rm collapses onto a pending add (drops the add)", {
 
   env <- new_views_env()
-  stage_view_add(env$pending, env$board, "New", dock_layout("a"))
+  stage_view_add(env$pending, env$board, "New", dock_grid(blk("a")))
 
   stage_view_rm(env$pending, env$board, "New")
 
@@ -130,7 +152,9 @@ test_that("stage_view_rm collapses onto a pending add (drops the add)", {
 test_that("stage_view_rm discards a pending mod when staging rm", {
 
   env <- new_views_env()
-  stage_view_mod(env$pending, env$board, "Overview", dock_layout("a", "b"))
+  stage_view_mod(
+    env$pending, env$board, "Overview", dock_grid(blk("a"), blk("b"))
+  )
 
   stage_view_rm(env$pending, env$board, "Overview")
 
@@ -155,7 +179,7 @@ test_that("stage_view_rm clears active when removing the active-staged view", {
 
   env <- new_views_env()
   stage_view_add(
-    env$pending, env$board, "Reports", dock_layout("a"), active = TRUE
+    env$pending, env$board, "Reports", dock_grid(blk("a")), active = TRUE
   )
 
   stage_view_rm(env$pending, env$board, "Reports")
@@ -211,7 +235,7 @@ test_that("commit_pending surfaces dock_board views validation errors", {
 
   expect_error(
     stage_view_mod(
-      env$pending, env$board, "DoesNotExist", dock_layout("a")
+      env$pending, env$board, "DoesNotExist", dock_grid(blk("a"))
     ),
     "modify_view(DoesNotExist) failed:",
     fixed = TRUE

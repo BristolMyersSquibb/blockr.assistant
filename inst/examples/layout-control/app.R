@@ -18,14 +18,16 @@ board <- new_dock_board(
     new_link("filt", "plot", "data")
   ),
   extensions = list(assistant = new_assistant_extension()),
-  layouts = list(
-    Workbench = dock_layout(
-      group("data", "filt", "head"),
-      "assistant_extension",
-      sizes = c(0.6, 0.4),
-      active = TRUE
-    ),
-    Chart = dock_layout("plot")
+  views = list(
+    Workbench = list(blk("data"), blk("filt"), blk("head"), ext("assistant")),
+    Chart = "plot"
+  ),
+  grids = list(
+    Workbench = dock_grid(
+      group(blk("data"), blk("filt"), blk("head")),
+      ext("assistant"),
+      sizes = c(0.6, 0.4)
+    )
   )
 )
 

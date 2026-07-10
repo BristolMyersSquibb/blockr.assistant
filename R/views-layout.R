@@ -1,53 +1,183 @@
-#' Layout JSON for the assistant <-> tool boundary
-#'
-#' The wire format is owned by blockr.dock: `layout_from_json()` parses
-#' a JSON layout (or parsed spec list) into a `dock_layout`, and
-#' `layout_to_json()` / `as.list()` render one back out. The tools speak
-#' that format directly; the only assistant-side concern is panel-ID
-#' surface. Blocks and extensions are referenced by bare ID everywhere
-#' else the model looks (list_blocks, the board summary), so view
-#' layouts use bare IDs too. dock resolves bare IDs to canonical
-#' `block_panel-` / `ext_panel-` form on the way in (via
-#' `layout_from_json()` at flush) and exposes the inverse as
-#' `panel_obj_ids()`, which is all `layout_to_llm_spec()` needs on the
-#' way out.
-#'
-#' @noRd
-layout_to_llm_spec <- function(layout) {
-  strip_panel_ids(as.list(layout))
+# The wire format for view layouts at the assistant <-> tool boundary. The
+# model speaks a compact nested-layout JSON, owned here: an object with an
+# `orientation`, `children`, optional `sizes` and `focus`; each child is a
+# bare panel-id leaf, a `{panels, active}` tab group, or a nested
+# `{children, sizes}` split. Blocks and extensions are named by bare id
+# everywhere the model looks, so layouts use bare ids too. `layout_from_json()`
+# parses that into a blockr.dock `dock_grid`, resolving each bare id to its
+# canonical `block_panel-` / `ext_panel-` form; `layout_to_llm_spec()` is the
+# inverse, collapsing single-panel leaves and even splits back to the compact
+# form and stripping the prefixes with `panel_obj_ids()`.
+
+layout_from_json <- function(json, block_ids = character(),
+                             ext_ids = character()) {
+
+  spec <- if (is.character(json)) {
+    jsonlite::fromJSON(json, simplifyVector = FALSE)
+  } else {
+    json
+  }
+
+  as_dock_grid(
+    list(
+      orientation = coal(spec[["orientation"]], "horizontal", fail_all = FALSE),
+      children = lapply(
+        spec[["children"]], resolve_layout_node, block_ids, ext_ids
+      ),
+      sizes = as_grid_sizes(spec[["sizes"]]),
+      focus = resolve_panel_id(spec[["focus"]], block_ids, ext_ids)
+    )
+  )
 }
 
-strip_panel_ids <- function(node) {
+resolve_layout_node <- function(node, block_ids, ext_ids) {
 
   if (is.character(node)) {
-    return(panel_obj_ids(node))
+    id <- resolve_panel_id(node, block_ids, ext_ids)
+    return(list(panels = id, active = id))
   }
 
-  if (!is.list(node)) {
-    return(node)
+  if (not_null(node[["panels"]])) {
+
+    ids <- chr_ply(as.character(unlst(node[["panels"]])), resolve_panel_id,
+                   block_ids, ext_ids)
+
+    active <- coal(
+      resolve_panel_id(node[["active"]], block_ids, ext_ids),
+      ids[[1L]],
+      fail_all = FALSE
+    )
+
+    return(list(panels = ids, active = active))
   }
 
-  if (!is.null(node[["panels"]])) {
+  if (is.null(node[["children"]])) {
+    stop(
+      "each layout node must be a string or an object with `panels` ",
+      "or `children`",
+      call. = FALSE
+    )
+  }
 
-    node[["panels"]] <- as.list(panel_obj_ids(unlist(node[["panels"]])))
+  list(
+    children = lapply(
+      node[["children"]], resolve_layout_node, block_ids, ext_ids
+    ),
+    sizes = as_grid_sizes(node[["sizes"]])
+  )
+}
 
-    if (!is.null(node[["active"]])) {
-      node[["active"]] <- panel_obj_ids(node[["active"]])
+resolve_panel_id <- function(id, block_ids, ext_ids) {
+
+  if (is.null(id)) {
+    return(NULL)
+  }
+
+  if (grepl("^(block_panel-|ext_panel-)", id)) {
+    return(id)
+  }
+
+  if (id %in% ext_ids) {
+    as.character(as_ext_panel_id(id))
+  } else {
+    as.character(as_block_panel_id(id))
+  }
+}
+
+as_grid_sizes <- function(sizes) {
+  if (is.null(sizes)) NULL else as.numeric(unlst(sizes))
+}
+
+layout_to_llm_spec <- function(layout) {
+
+  grid <- as.list(layout)
+
+  spec <- list(
+    orientation = coal(grid[["orientation"]], "horizontal", fail_all = FALSE),
+    children = lapply(grid[["children"]], layout_node_to_spec)
+  )
+
+  sizes <- non_even_sizes(grid[["sizes"]], length(grid[["children"]]))
+
+  if (not_null(sizes)) {
+    spec[["sizes"]] <- sizes
+  }
+
+  if (not_null(grid[["focus"]])) {
+    spec[["focus"]] <- panel_obj_ids(grid[["focus"]])
+  }
+
+  spec
+}
+
+layout_node_to_spec <- function(node) {
+
+  if (not_null(node[["panels"]])) {
+
+    ids <- panel_obj_ids(as.character(unlst(node[["panels"]])))
+
+    if (length(ids) == 1L) {
+      return(ids)
     }
 
-    return(node)
+    return(
+      list(panels = as.list(ids), active = panel_obj_ids(node[["active"]]))
+    )
   }
 
-  if (!is.null(node[["children"]])) {
+  spec <- list(children = lapply(node[["children"]], layout_node_to_spec))
 
-    node[["children"]] <- lapply(node[["children"]], strip_panel_ids)
+  sizes <- non_even_sizes(node[["sizes"]], length(node[["children"]]))
 
-    if (!is.null(node[["focus"]])) {
-      node[["focus"]] <- panel_obj_ids(node[["focus"]])
-    }
-
-    return(node)
+  if (not_null(sizes)) {
+    spec[["sizes"]] <- sizes
   }
 
-  node
+  spec
+}
+
+non_even_sizes <- function(sizes, n) {
+
+  if (!length(sizes) || n < 2L) {
+    return(NULL)
+  }
+
+  if (isTRUE(all.equal(as.numeric(sizes), rep(1 / n, n)))) {
+    return(NULL)
+  }
+
+  as.numeric(sizes)
+}
+
+# A view's arrangement for display: its stored grid when that grid places
+# exactly the view's current members, else a flat split over the members (so
+# a grid that has drifted from membership never shows a ghost or hides a
+# panel). Membership is authoritative; the grid only arranges it.
+view_display_grid <- function(members, grid) {
+
+  if (is.null(grid) || !setequal(layout_panel_ids(grid), members)) {
+    return(flat_grid(members))
+  }
+
+  grid
+}
+
+flat_grid <- function(members) {
+  as_dock_grid(
+    list(
+      orientation = "horizontal",
+      children = lapply(members, panel_leaf)
+    )
+  )
+}
+
+panel_leaf <- function(id) {
+  list(panels = id, active = id)
+}
+
+panel_ref <- function(id) {
+
+  obj <- panel_obj_ids(id)
+
+  if (startsWith(id, "ext_panel-")) ext(obj) else blk(obj)
 }

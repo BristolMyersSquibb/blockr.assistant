@@ -30,7 +30,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
       "  ),",
       "  links = c(new_link('data', 'head', 'data')),",
       "  extensions = list(assistant = new_assistant_extension()),",
-      "  layout = list(list('data', 'head'), 'assistant')",
+      "  views = list(Main = list(blk('data'), blk('head'), ext('assistant')))",
       ")",
       "",
       "serve(board)"
