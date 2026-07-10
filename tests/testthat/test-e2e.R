@@ -1,3 +1,27 @@
+# AppDriver init occasionally hits a transient chromote navigate timeout on
+# CI (the app and ChromoteSession start, only Page.navigate stalls); a bounded
+# retry absorbs it rather than ejecting an otherwise-green run.
+new_app_driver_retrying <- function(app_dir, ..., attempts = 3L) {
+
+  for (i in seq_len(attempts)) {
+
+    app <- tryCatch(
+      shinytest2::AppDriver$new(app_dir, ...),
+      error = function(e) e
+    )
+
+    if (!inherits(app, "error")) {
+      return(app)
+    }
+
+    if (i == attempts) {
+      stop(app)
+    }
+
+    Sys.sleep(2)
+  }
+}
+
 test_that("demo app boots and the assistant panel reaches the DOM", {
 
   skip_on_cran()
@@ -38,7 +62,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     file.path(app_dir, "app.R")
   )
 
-  app <- shinytest2::AppDriver$new(
+  app <- new_app_driver_retrying(
     app_dir,
     name = "demo",
     seed = 42,
