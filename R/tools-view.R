@@ -11,7 +11,7 @@ register_view_tools <- function(client, board, pending, session) {
   invisible(client)
 }
 
-valid_panel_ids <- function(board, pending) {
+panel_id_sets <- function(board, pending) {
 
   brd <- isolate(board$board)
   pen <- isolate(pending())
@@ -27,15 +27,29 @@ valid_panel_ids <- function(board, pending) {
     character()
   }
 
-  c(block_ids, ext_ids)
+  list(blocks = block_ids, exts = ext_ids)
 }
 
-current_layouts <- function(board) {
-  board_layouts(isolate(board$board))
+valid_panel_ids <- function(board, pending) {
+
+  sets <- panel_id_sets(board, pending)
+
+  c(sets$blocks, sets$exts)
+}
+
+current_views <- function(board) {
+
+  brd <- isolate(board$board)
+
+  if (inherits(brd, "dock_board")) {
+    board_views(brd)
+  } else {
+    list()
+  }
 }
 
 current_view_ids <- function(board) {
-  names(current_layouts(board))
+  names(current_views(board))
 }
 
 # The view handles addressable this turn: the ids of views already on the
@@ -58,24 +72,25 @@ tool_list_views <- function(board, session) {
     function() {
       with_tool_errors("list_views", {
 
-        layouts <- current_layouts(board)
+        views <- current_views(board)
 
-        if (!length(layouts)) {
+        if (!length(views)) {
           return(list())
         }
 
-        labels <- view_names(layouts)
-        active <- tryCatch(
-          active_view(layouts),
-          error = function(e) NA_character_
-        )
+        brd    <- isolate(board$board)
+        grids  <- board_grids(brd)
+        labels <- view_names(views)
+        active <- tryCatch(active_view(brd), error = function(e) NA_character_)
 
-        lapply(names(layouts), function(id) {
+        lapply(names(views), function(id) {
           list(
             id     = id,
             name   = labels[[id]],
             active = identical(id, active),
-            layout = layout_to_llm_spec(layouts[[id]])
+            layout = layout_to_llm_spec(
+              view_display_grid(view_members(views[[id]]), grids[[id]])
+            )
           )
         })
       })
@@ -100,10 +115,11 @@ tool_validate_layout <- function(board, pending, session) {
     function(layout) {
       with_tool_errors("validate_layout", {
 
-        parsed <- layout_from_json(layout)
+        sets   <- panel_id_sets(board, pending)
+        parsed <- layout_from_json(layout, sets$blocks, sets$exts)
 
         used  <- panel_obj_ids(layout_panel_ids(parsed))
-        valid <- valid_panel_ids(board, pending)
+        valid <- c(sets$blocks, sets$exts)
         bad   <- setdiff(used, valid)
 
         if (length(bad)) {
@@ -146,7 +162,8 @@ tool_add_view <- function(board, pending, session) {
     function(name, layout, active = FALSE) {
       with_tool_errors("add_view", {
 
-        layout_obj <- layout_from_json(layout)
+        sets       <- panel_id_sets(board, pending)
+        layout_obj <- layout_from_json(layout, sets$blocks, sets$exts)
 
         stage_view_add(
           pending, board, name, layout_obj, active = isTRUE(active)
@@ -225,7 +242,8 @@ tool_modify_view <- function(board, pending, session) {
     function(id, layout) {
       with_tool_errors("modify_view", {
 
-        layout_obj <- layout_from_json(layout)
+        sets       <- panel_id_sets(board, pending)
+        layout_obj <- layout_from_json(layout, sets$blocks, sets$exts)
 
         stage_view_mod(pending, board, id, layout_obj)
 
@@ -236,11 +254,15 @@ tool_modify_view <- function(board, pending, session) {
     },
     name = "modify_view",
     description = paste(
-      "Replace a view's layout, addressed by id (see list_views).",
-      "`layout` is a JSON object in the same shape `list_views`",
-      "returns -- read the current layout, edit it, and write it",
-      "back. Blocks referenced in the new layout must exist on the",
-      "board or be staged for creation in this turn."
+      "Set which panels a view holds, addressed by id (see",
+      "list_views). `layout` is a JSON object in the same shape",
+      "`list_views` returns; its panels become the view's members --",
+      "those the layout adds are added, those it omits are removed.",
+      "Existing panels keep their current arrangement and newly added",
+      "ones take a default spot (dock owns arrangement); to author a",
+      "specific arrangement, create the view with add_view. Blocks",
+      "referenced must exist on the board or be staged for creation",
+      "this turn."
     ),
     arguments = list(
       id = ellmer::type_string("Id of the view to modify."),

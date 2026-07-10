@@ -161,8 +161,8 @@ test_that("a dock board additionally registers the extension tools", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   brd <- new_dock_board(
-    blocks  = c(a = new_dataset_block("iris")),
-    layouts = list(Main = dock_layout("a"))
+    blocks = c(a = new_dataset_block("iris")),
+    views  = list(Main = "a")
   )
 
   testServer(

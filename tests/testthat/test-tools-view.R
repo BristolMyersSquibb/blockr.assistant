@@ -5,9 +5,9 @@ make_view_tool_board <- function() {
       b = new_head_block(external_ctrl = TRUE)
     ),
     links = c(l = new_link("a", "b", "data")),
-    layouts = list(
-      v_main = dock_layout("a", "b", name = "Analysis"),
-      v_over = dock_layout("a", name = "Overview")
+    views = list(
+      v_main = dock_view(c("a", "b"), name = "Analysis"),
+      v_over = dock_view("a", name = "Overview")
     )
   )
 }
@@ -110,7 +110,7 @@ test_that("add_view stages a parsed layout under its display name", {
 
   p <- isolate(env$pending())
   expect_named(p$views$add, "Reports")
-  expect_true(is_dock_layout(p$views$add[["Reports"]]))
+  expect_true(is_dock_grid(p$views$add[["Reports"]]))
   expect_null(p$views$active)
 })
 
@@ -165,7 +165,7 @@ test_that("remove_view stages an rm by id and rejects the last view", {
 
   solo_brd <- new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
-    layouts = list(only = dock_layout("a", name = "Page"))
+    views = list(only = dock_view("a", name = "Page"))
   )
   solo_env <- new_view_tool_env(solo_brd)
   rv_solo <- tool_remove_view(solo_env$board, solo_env$pending, session = NULL)
@@ -175,7 +175,7 @@ test_that("remove_view stages an rm by id and rejects the last view", {
   expect_length(isolate(solo_env$pending()$views$rm), 0L)
 })
 
-test_that("modify_view parses and stages the replacement layout by id", {
+test_that("modify_view stages the membership delta by id", {
 
   env <- new_view_tool_env()
   mv <- tool_modify_view(env$board, env$pending, session = NULL)
@@ -188,7 +188,8 @@ test_that("modify_view parses and stages the replacement layout by id", {
   expect_match(res, "Staged modify_view(v_main)", fixed = TRUE)
 
   staged <- isolate(env$pending()$views$mod[["v_main"]])
-  expect_true(is_dock_layout(staged))
+  expect_named(staged, "rm")
+  expect_identical(as.character(staged$rm[[1L]]), "block_panel-b")
 })
 
 test_that("modify_view rejects an unknown view id via the dock validator", {
@@ -279,19 +280,20 @@ test_that("rename_view rejects an unknown view id", {
   expect_match(res, "does not exist")
 })
 
-test_that("rename_view leaves the board layout in place (regression)", {
+test_that("rename_view leaves view membership in place (regression)", {
 
   env <- new_view_tool_env()
   rnv <- tool_rename_view(env$board, env$pending, session = NULL)
 
-  before <- isolate(as.list(board_layouts(env$board$board)[["v_main"]]))
+  before <- isolate(view_members(board_views(env$board$board)[["v_main"]]))
 
   rnv(id = "v_main", name = "Alpha")
 
-  after <- isolate(as.list(board_layouts(env$board$board)[["v_main"]]))
+  after <- isolate(view_members(board_views(env$board$board)[["v_main"]]))
 
   expect_identical(before, after)
   expect_length(isolate(env$pending()$views$add), 0L)
+  expect_length(isolate(env$pending()$views$mod), 0L)
 })
 
 test_that("add_block + modify_view compose atomically through validation", {

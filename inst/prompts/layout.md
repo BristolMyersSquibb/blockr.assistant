@@ -1,9 +1,15 @@
 ## Layout
 
-Views are tabs; each holds its own arrangement of panels (blocks
-and extensions). modify_view and add_view take a full layout in
-JSON spec form -- read the current shape with list_views, edit
-the structure, and write it back.
+Views are tabs; each holds an arrangement of panels (blocks and
+extensions). Both add_view and modify_view take a layout in JSON
+spec form. add_view creates a view arranged exactly as the layout
+you pass. modify_view sets which panels an existing view holds:
+the layout's panels become its members -- those it introduces are
+added, those it omits are removed -- but the live arrangement is
+dock's to own, so panels already in the view keep their spots and
+newly added ones land in a default position. To lay a view out a
+specific way, create it with add_view. Read the current shape
+with list_views.
 
 Each view has a stable `id` and a display `name`. Address an
 existing view by its `id` (from list_views) in modify_view,

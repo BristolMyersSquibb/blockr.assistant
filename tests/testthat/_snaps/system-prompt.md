@@ -26,10 +26,16 @@
       
       ## Layout
       
-      Views are tabs; each holds its own arrangement of panels (blocks
-      and extensions). modify_view and add_view take a full layout in
-      JSON spec form -- read the current shape with list_views, edit
-      the structure, and write it back.
+      Views are tabs; each holds an arrangement of panels (blocks and
+      extensions). Both add_view and modify_view take a layout in JSON
+      spec form. add_view creates a view arranged exactly as the layout
+      you pass. modify_view sets which panels an existing view holds:
+      the layout's panels become its members -- those it introduces are
+      added, those it omits are removed -- but the live arrangement is
+      dock's to own, so panels already in the view keep their spots and
+      newly added ones land in a default position. To lay a view out a
+      specific way, create it with add_view. Read the current shape
+      with list_views.
       
       Each view has a stable `id` and a display `name`. Address an
       existing view by its `id` (from list_views) in modify_view,
@@ -143,10 +149,16 @@
       
       ## Layout
       
-      Views are tabs; each holds its own arrangement of panels (blocks
-      and extensions). modify_view and add_view take a full layout in
-      JSON spec form -- read the current shape with list_views, edit
-      the structure, and write it back.
+      Views are tabs; each holds an arrangement of panels (blocks and
+      extensions). Both add_view and modify_view take a layout in JSON
+      spec form. add_view creates a view arranged exactly as the layout
+      you pass. modify_view sets which panels an existing view holds:
+      the layout's panels become its members -- those it introduces are
+      added, those it omits are removed -- but the live arrangement is
+      dock's to own, so panels already in the view keep their spots and
+      newly added ones land in a default position. To lay a view out a
+      specific way, create it with add_view. Read the current shape
+      with list_views.
       
       Each view has a stable `id` and a display `name`. Address an
       existing view by its `id` (from list_views) in modify_view,
@@ -254,7 +266,7 @@
       - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view / modify_view; never mutates board state.
       - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
       - `remove_view(id)`: Remove a view by id (see list_views). Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
-      - `modify_view(id, layout)`: Replace a view's layout, addressed by id (see list_views). `layout` is a JSON object in the same shape `list_views` returns -- read the current layout, edit it, and write it back. Blocks referenced in the new layout must exist on the board or be staged for creation in this turn.
+      - `modify_view(id, layout)`: Set which panels a view holds, addressed by id (see list_views). `layout` is a JSON object in the same shape `list_views` returns; its panels become the view's members -- those the layout adds are added, those it omits are removed. Existing panels keep their current arrangement and newly added ones take a default spot (dock owns arrangement); to author a specific arrangement, create the view with add_view. Blocks referenced must exist on the board or be staged for creation this turn.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
       
@@ -267,8 +279,8 @@
       ### Links
       - ab: data -> head$data
       ### Views
-      - Analysis (id: Analysis) (active) <dock_layout> data, head
-      - Overview (id: Overview) <dock_layout> data
+      - Analysis (id: Analysis) (active) <dock_view> data, head
+      - Overview (id: Overview) <dock_view> data
       ### Options
       - board_name (Board options)
       Current values via list_board_options; change with set_board_option.

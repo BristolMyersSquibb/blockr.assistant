@@ -131,7 +131,7 @@ summarise_board <- function(board, max_chars = 4000L) {
   blks <- board_blocks(b)
   lnks <- board_links(b)
   stks <- board_stacks(b)
-  vws  <- board_views(b)
+  vws  <- summary_views(b)
 
   header <- sprintf(
     "%d block(s), %d link(s), %d stack(s), %d view(s).",
@@ -168,13 +168,13 @@ summarise_board <- function(board, max_chars = 4000L) {
   out
 }
 
-board_views <- function(b) {
+summary_views <- function(b) {
 
   if (!inherits(b, "dock_board")) {
-    return(structure(list(), class = "dock_layouts"))
+    return(list())
   }
 
-  board_layouts(b)
+  board_views(b)
 }
 
 summarise_blocks <- function(blks, markers = character()) {
