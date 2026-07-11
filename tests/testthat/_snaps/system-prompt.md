@@ -46,6 +46,10 @@
       - move_panel(view, panel, near, side): reposition a panel already
         in the view next to `near` on the given `side`. Membership is
         unchanged.
+      - focus_panel(view, panel): bring a panel already in the view to
+        the front of its tab group and focus it, switching to the view
+        if it isn't the active one. Use it to surface a specific block
+        or extension -- e.g. one you just added or evaluated.
       
       dock owns the live arrangement, so placement is a hint, not a
       guarantee of exact geometry. `near` must be a panel already in
@@ -183,6 +187,10 @@
       - move_panel(view, panel, near, side): reposition a panel already
         in the view next to `near` on the given `side`. Membership is
         unchanged.
+      - focus_panel(view, panel): bring a panel already in the view to
+        the front of its tab group and focus it, switching to the view
+        if it isn't the active one. Use it to surface a specific block
+        or extension -- e.g. one you just added or evaluated.
       
       dock owns the live arrangement, so placement is a hint, not a
       guarantee of exact geometry. `near` must be a panel already in
@@ -297,6 +305,7 @@
       - `add_panel_to_view(view, panel, near?, side?)`: Add a block or extension to a view as a panel, addressed by view id (see list_views). `panel` is the block or extension id; it must be on the board or staged for creation this turn. Optionally place it with `near` (a panel already in the view) and `side` (which side of `near` -- within tabs it into that group); omit both to let dock pick a default spot. Adding a panel already in the view is an error -- reposition it with move_panel instead.
       - `remove_panel_from_view(view, panel)`: Remove a panel from a view, addressed by view id (see list_views). `panel` is the block or extension id; it must currently be a member of the view. The block or extension stays on the board -- only its panel in this view is dropped. Removing a block from the board drops its panels everywhere on its own; no explicit cleanup needed.
       - `move_panel(view, panel, near, side?)`: Reposition a panel already in a view, addressed by view id (see list_views). Moves `panel` next to `near` (another panel in the same view), on the given `side` (within tabs it into `near`'s group). Both must be current members of the view; membership is unchanged -- only the arrangement moves.
+      - `focus_panel(view, panel)`: Bring a panel already in a view to the front of its tab group and focus it, addressed by view id (see list_views). `panel` must currently be a member of the view. If `view` isn't the active one, the board switches to it so the panel is actually surfaced. Use it to draw attention to a specific block or extension -- e.g. one you just added or whose result you just evaluated. Membership and arrangement are unchanged; only the front tab and active view move.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
       
