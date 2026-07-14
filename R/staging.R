@@ -176,6 +176,20 @@ stage_block_rm <- function(pending, board, id) {
       setdiff(names(new$blocks$add), id)
     ]
 
+    # Cascade: drop any staged links that reference the block we just
+    # un-staged. Otherwise validate_pending() rejects the payload because
+    # links would reference an unknown id, which traps the model in the
+    # remove+add recovery pattern the modify_block error message
+    # recommends.
+    if (length(new$links$add)) {
+      refs_id <- vapply(
+        new$links$add,
+        function(l) identical(l$from, id) || identical(l$to, id),
+        logical(1)
+      )
+      new$links$add <- new$links$add[!refs_id]
+    }
+
   } else {
 
     if (id %in% names(cur$blocks$mod)) {

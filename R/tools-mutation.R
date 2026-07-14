@@ -129,13 +129,17 @@ tool_add_block <- function(board, pending, session) {
       })
     },
     name        = "add_block",
+    annotations = ellmer::tool_annotations(title = "Staging a block"),
     description = paste(
       "Add a new block to the board. `type` is a block id as",
       "reported by list_available_blocks. `args` is a JSON object",
       "(passed as a string) of constructor arguments -- field",
       "names must match the arg names reported by",
-      "list_available_blocks for the chosen type. `id` is optional",
-      "-- if omitted, a unique id is generated."
+      "list_available_blocks for the chosen type. Every block also",
+      "accepts `block_name` (its display label): set it here, in the",
+      "same call -- a follow-up modify_block just to set the name",
+      "wastes a tool call and fails for blocks staged this turn.",
+      "`id` is optional -- if omitted, a unique id is generated."
     ),
     arguments = list(
       type = ellmer::type_string(
@@ -171,6 +175,7 @@ tool_remove_block <- function(board, pending, session) {
       })
     },
     name        = "remove_block",
+    annotations = ellmer::tool_annotations(title = "Removing a block"),
     description = paste(
       "Remove a block from the board. Any links to or from the",
       "block are cleaned up at apply time by core; the model does",
@@ -205,6 +210,7 @@ tool_modify_block <- function(board, pending, session) {
       })
     },
     name        = "modify_block",
+    annotations = ellmer::tool_annotations(title = "Modifying a block"),
     description = paste(
       "Change one or more constructor arguments of an existing",
       "block. `args` is a JSON object (passed as a string) of just",
@@ -248,6 +254,7 @@ tool_add_link <- function(board, pending, session) {
       })
     },
     name        = "add_link",
+    annotations = ellmer::tool_annotations(title = "Linking blocks"),
     description = paste(
       "Add a link that wires the output of block `from` into",
       "argument `input` of block `to`. Both blocks must exist on",
@@ -281,6 +288,7 @@ tool_remove_link <- function(board, pending, session) {
       })
     },
     name        = "remove_link",
+    annotations = ellmer::tool_annotations(title = "Removing a link"),
     description = "Remove a link by its id.",
     arguments = list(
       id = ellmer::type_string("Link id to remove.")
@@ -311,6 +319,7 @@ tool_modify_link <- function(board, pending, session) {
       })
     },
     name        = "modify_link",
+    annotations = ellmer::tool_annotations(title = "Modifying a link"),
     description = paste(
       "Retarget an existing link. Any combination of `from`, `to`,",
       "and `input` may be supplied; only supplied fields are",
@@ -358,6 +367,7 @@ tool_add_stack <- function(board, pending, session) {
       })
     },
     name        = "add_stack",
+    annotations = ellmer::tool_annotations(title = "Creating a stack"),
     description = paste(
       "Group a set of blocks into a stack. `blocks` is a character",
       "vector of block ids; `name` is an optional human-readable",
@@ -394,6 +404,7 @@ tool_remove_stack <- function(board, pending, session) {
       })
     },
     name        = "remove_stack",
+    annotations = ellmer::tool_annotations(title = "Removing a stack"),
     description = paste(
       "Remove a stack. Member blocks are not removed; only the",
       "grouping disappears."
@@ -427,6 +438,7 @@ tool_modify_stack <- function(board, pending, session) {
       })
     },
     name        = "modify_stack",
+    annotations = ellmer::tool_annotations(title = "Modifying a stack"),
     description = paste(
       "Change a stack's member blocks and/or name. Either or both",
       "arguments may be omitted; only supplied fields are changed."

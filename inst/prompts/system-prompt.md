@@ -19,6 +19,12 @@ constructor inputs -- marked with a trailing `*` in the Board
 section above -- plus block_name (always). For other changes use
 remove_block + add_block.
 
+When you create a block, set its display label in the same
+add_block call by including `block_name` in `args` -- this is
+universal and works for every block type. Don't issue a
+follow-up modify_block just to set the name: it wastes a tool
+call and, for blocks staged earlier this same turn, will fail.
+
 <<layout>>
 
 Answer concisely.<<tools>><<board>><<flush_note>>

@@ -217,6 +217,31 @@ test_that("stage_block_rm collapses onto a pending add (drops add)", {
   expect_length(p$blocks$rm, 0L)
 })
 
+test_that("stage_block_rm on a pending add cascades to staged links", {
+
+  # The remove+add recovery pattern the modify_block error recommends:
+  # un-staging a staged-add block must also drop staged links that
+  # reference it, or validate_pending() rejects the payload for
+  # referencing an unknown id and the model is trapped.
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "new", new_head_block())
+  stage_link_add(
+    env$pending, env$board, "l_in",
+    new_link("data", "new", "data")
+  )
+  stage_link_add(
+    env$pending, env$board, "l_other",
+    new_link("data", "spare", "data")
+  )
+
+  stage_block_rm(env$pending, env$board, "new")
+
+  p <- isolate(env$pending())
+  expect_length(p$blocks$add, 0L)
+  # the link referencing the un-staged block is gone, the unrelated one stays
+  expect_named(p$links$add, "l_other")
+})
+
 test_that("stage_block_rm discards a pending mod when staging rm", {
 
   env <- new_pending_env()
