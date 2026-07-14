@@ -20,7 +20,7 @@ test_that("query_data evaluates a single expression against a bound block", {
 
   res <- isolate(call_query("nrow(data)", list(data = iris)))
 
-  expect_match(res, "150", fixed = TRUE)
+  expect_match(res@value, "150", fixed = TRUE)
 })
 
 test_that("query_data auto-prints the last expression value", {
@@ -29,7 +29,7 @@ test_that("query_data auto-prints the last expression value", {
     call_query("length(unique(data$Species))", list(data = iris))
   )
 
-  expect_match(res, "3", fixed = TRUE)
+  expect_match(res@value, "3", fixed = TRUE)
 })
 
 test_that("query_data captures stdout from intermediate print calls", {
@@ -38,23 +38,23 @@ test_that("query_data captures stdout from intermediate print calls", {
     call_query("print('hello'); 42", list(data = iris))
   )
 
-  expect_match(res, "hello", fixed = TRUE)
-  expect_match(res, "42", fixed = TRUE)
+  expect_match(res@value, "hello", fixed = TRUE)
+  expect_match(res@value, "42", fixed = TRUE)
 })
 
 test_that("query_data with no arg returns the failed-envelope on parse error", {
 
   res <- isolate(call_query("nrow(data", list(data = iris)))
 
-  expect_match(res, "^query_data failed:")
+  expect_match(res@value, "^query_data failed:")
 })
 
 test_that("query_data returns the failed-envelope on runtime error", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "^query_data failed:")
-  expect_match(res, "boom", fixed = TRUE)
+  expect_match(res@value, "^query_data failed:")
+  expect_match(res@value, "boom", fixed = TRUE)
 })
 
 test_that("query_data skips blocks whose result errors", {
@@ -77,13 +77,13 @@ test_that("query_data skips blocks whose result errors", {
 
   res <- isolate(tool(code = "sum(ok)"))
 
-  expect_match(res, "skipped blocks with errors: bad", fixed = TRUE)
-  expect_match(res, "6", fixed = TRUE)
+  expect_match(res@value, "skipped blocks with errors: bad", fixed = TRUE)
+  expect_match(res@value, "6", fixed = TRUE)
 })
 
 test_that("query_data truncates output over 200 lines", {
 
   res <- isolate(call_query("seq_len(5000)", list(data = iris)))
 
-  expect_match(res, "output truncated", fixed = TRUE)
+  expect_match(res@value, "output truncated", fixed = TRUE)
 })

@@ -2,7 +2,7 @@ tool_query_data <- function(board, update, session) {
 
   ellmer::tool(
     function(code) {
-      with_tool_errors("query_data", {
+      query_card(with_tool_errors("query_data", {
 
         blks <- isolate(board$blocks)
 
@@ -56,9 +56,10 @@ tool_query_data <- function(board, update, session) {
         }
 
         paste(output, collapse = "\n")
-      })
+      }), code)
     },
     name        = "query_data",
+    annotations = ellmer::tool_annotations(title = "Exploring data"),
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",

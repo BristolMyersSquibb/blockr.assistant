@@ -62,6 +62,7 @@ tool_list_extensions <- function(board, extensions, session) {
       })
     },
     name = "list_extensions",
+    annotations = ellmer::tool_annotations(title = "Listing extensions"),
     description = paste(
       "List dock extensions on the board. One entry per extension:",
       "its id, display name, an optional `description` explaining what",
@@ -98,6 +99,7 @@ tool_modify_extension <- function(board, pending, session) {
       })
     },
     name = "modify_extension",
+    annotations = ellmer::tool_annotations(title = "Modifying an extension"),
     description = paste(
       "Change one or more externally controllable variables of a",
       "dock extension -- for example, rewrite a document",

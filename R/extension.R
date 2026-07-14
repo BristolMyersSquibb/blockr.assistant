@@ -54,6 +54,28 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
   )
 }
 
+# The blockr AI brand mark (same sparkle blockr.ai uses), sized for the
+# chat's assistant avatar -- replaces shinychat's default robot icon.
+# nolint start: quotes_linter.
+asst_sparkle_icon <- function(size = 16) {
+  HTML(sprintf(
+    paste0(
+      '<svg width="%d" height="%d" viewBox="0 0 24 24" fill="none" ',
+      'xmlns="http://www.w3.org/2000/svg">',
+      '<path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18',
+      'L10.5 11.5L4 10L10.5 8.5L12 2Z" fill="currentColor"/>',
+      '<path d="M19 15L19.75 17.25L22 18',
+      'L19.75 18.75L19 21L18.25 18.75L16 18L18.25 17.25L19 15Z" ',
+      'fill="currentColor" opacity="0.7"/>',
+      '<path d="M5 1L5.5 2.5L7 3L5.5 3.5',
+      'L5 5L4.5 3.5L3 3L4.5 2.5L5 1Z" fill="currentColor" opacity="0.5"/>',
+      '</svg>'
+    ),
+    size, size
+  ))
+}
+# nolint end
+
 asst_ext_ui <- function(id, board, ...) {
   tagList(
     asst_ext_styles(),
@@ -131,6 +153,25 @@ asst_ext_styles <- function() {
       }
       .asst-meta-num {
         font-weight: 500;
+      }
+      /* Native shinychat tool cards, restyled to the same compact quiet
+         look as blockr.ai's per-block panel: small type, tight radius,
+         muted ink, no shadow. */
+      .asst-panel .shiny-tool-request .shiny-tool-card,
+      .asst-panel .shiny-tool-result .shiny-tool-card {
+        font-size: 0.72rem;
+        border-radius: 6px;
+        border-color: #ececf0;
+        box-shadow: none;
+        margin-block: 2px;
+        color: var(--bs-secondary-color, #6b7280);
+      }
+      /* sparkle avatar: no chrome, brand violet */
+      .asst-panel .shiny-chat-message .message-icon {
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: #7c3aed;
       }
       "
     )
@@ -277,7 +318,10 @@ asst_ext_srv <- function(system_prompt, messages) {
         })
 
         output$chat_panel <- renderUI({
-          shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
+          shinychat::chat_mod_ui(
+            session$ns(chat_sub_id(mount_idx())),
+            icon_assistant = asst_sparkle_icon()
+          )
         })
 
         # Mount the chat module against the current client.

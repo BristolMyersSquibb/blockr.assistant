@@ -74,6 +74,7 @@ tool_list_board_options <- function(board, session) {
       })
     },
     name        = "list_board_options",
+    annotations = ellmer::tool_annotations(title = "Reading board options"),
     description = paste(
       "List the board's options -- user-level board settings such as",
       "board name, theming, dark mode and table page size. One row",
@@ -119,6 +120,7 @@ tool_set_board_option <- function(board, session) {
       })
     },
     name        = "set_board_option",
+    annotations = ellmer::tool_annotations(title = "Setting a board option"),
     description = paste(
       "Set the value of an existing board option (see",
       "list_board_options for ids and current values). `value` is",

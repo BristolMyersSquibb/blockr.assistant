@@ -168,6 +168,7 @@ tool_list_views <- function(board, session) {
       })
     },
     name = "list_views",
+    annotations = ellmer::tool_annotations(title = "Listing views"),
     description = paste(
       "List all views (tabs) on the board. One entry per view: its",
       "stable `id` (the handle the panel-op, remove_view,",
@@ -214,6 +215,7 @@ tool_validate_layout <- function(board, pending, session) {
       })
     },
     name = "validate_layout",
+    annotations = ellmer::tool_annotations(title = "Validating a layout"),
     description = paste(
       "Parse and panel-id-check a layout JSON without staging.",
       "Returns OK plus the normalized layout on success, or a",
@@ -249,6 +251,7 @@ tool_add_view <- function(board, pending, session) {
       })
     },
     name = "add_view",
+    annotations = ellmer::tool_annotations(title = "Creating a view"),
     description = paste(
       "Add a new view (tab) with the given layout. `name` is its",
       "display label; the board assigns the view a stable id (see",
@@ -296,6 +299,7 @@ tool_remove_view <- function(board, pending, session) {
       })
     },
     name = "remove_view",
+    annotations = ellmer::tool_annotations(title = "Removing a view"),
     description = paste(
       "Remove a view by id (see list_views). Blocks placed only in",
       "that view stay on the board but become unplaced; remove them",
@@ -327,6 +331,7 @@ tool_add_panel_to_view <- function(board, pending, session) {
       })
     },
     name = "add_panel_to_view",
+    annotations = ellmer::tool_annotations(title = "Adding a panel"),
     description = paste(
       "Add a block or extension to a view as a panel, addressed by",
       "view id (see list_views). `panel` is the block or extension id;",
@@ -376,6 +381,7 @@ tool_remove_panel_from_view <- function(board, pending, session) {
       })
     },
     name = "remove_panel_from_view",
+    annotations = ellmer::tool_annotations(title = "Removing a panel"),
     description = paste(
       "Remove a panel from a view, addressed by view id (see",
       "list_views). `panel` is the block or extension id; it must",
@@ -412,6 +418,7 @@ tool_move_panel <- function(board, pending, session) {
       })
     },
     name = "move_panel",
+    annotations = ellmer::tool_annotations(title = "Moving a panel"),
     description = paste(
       "Reposition a panel already in a view, addressed by view id (see",
       "list_views). Moves `panel` next to `near` (another panel in the",
@@ -462,6 +469,7 @@ tool_focus_panel <- function(board, pending, session) {
       })
     },
     name = "focus_panel",
+    annotations = ellmer::tool_annotations(title = "Focusing a panel"),
     description = paste(
       "Bring a panel already in a view to the front of its tab group",
       "and focus it, addressed by view id (see list_views). `panel`",
@@ -509,6 +517,7 @@ tool_set_active_view <- function(board, pending, session) {
       })
     },
     name = "set_active_view",
+    annotations = ellmer::tool_annotations(title = "Switching view"),
     description = paste(
       "Switch the active view (the tab shown by default on next",
       "render), addressed by id (see list_views). The view must",
@@ -548,6 +557,7 @@ tool_rename_view <- function(board, pending, session) {
       })
     },
     name = "rename_view",
+    annotations = ellmer::tool_annotations(title = "Renaming a view"),
     description = paste(
       "Change a view's display label, addressed by id (see",
       "list_views). The view keeps its id, layout and active state",

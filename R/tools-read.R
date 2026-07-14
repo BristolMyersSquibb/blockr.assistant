@@ -24,7 +24,7 @@ with_tool_errors <- function(name, expr) {
     expr,
     error = function(e) {
 
-      msg <- conditionMessage(e)
+      msg <- strip_ansi(conditionMessage(e))
       pat <- sprintf("^%s\\([^)]*\\) failed:", name)
 
       if (grepl(pat, msg)) {
@@ -68,6 +68,7 @@ tool_list_blocks <- function(board, update, session) {
       })
     },
     name        = "list_blocks",
+    annotations = ellmer::tool_annotations(title = "Reading blocks"),
     description = paste(
       "List all blocks on the board. One row per block: id, type",
       "(class name), display name, and source package."
@@ -103,6 +104,7 @@ tool_describe_block <- function(board, update, session) {
       })
     },
     name        = "describe_block",
+    annotations = ellmer::tool_annotations(title = "Inspecting a block"),
     description = paste(
       "Describe a block currently on the board: its class chain,",
       "name, arguments and current values, external-control",
@@ -123,6 +125,7 @@ tool_list_links <- function(board, update, session) {
       })
     },
     name        = "list_links",
+    annotations = ellmer::tool_annotations(title = "Reading links"),
     description = paste(
       "List all links between blocks: id, source block (from),",
       "destination block (to), and the input on the destination",
@@ -169,6 +172,7 @@ tool_list_stacks <- function(board, update, session) {
       })
     },
     name        = "list_stacks",
+    annotations = ellmer::tool_annotations(title = "Reading stacks"),
     description = paste(
       "List all stacks on the board. One row per stack: id, name,",
       "comma-separated member block ids, and a class-specific",
@@ -255,6 +259,7 @@ tool_list_available_blocks <- function(board, update, session) {
       })
     },
     name        = "list_available_blocks",
+    annotations = ellmer::tool_annotations(title = "Browsing the block catalogue"),
     description = paste(
       "List every registered block constructor -- block types the",
       "user can add to the board. One row per type with id, name,",
@@ -313,6 +318,7 @@ tool_get_block_result <- function(board, update, session) {
       })
     },
     name        = "get_block_result",
+    annotations = ellmer::tool_annotations(title = "Reading a block result"),
     description = paste(
       "Return a short text summary of a block's current evaluated",
       "output. Data frames are summarised with skimr-style stats;",
@@ -353,6 +359,7 @@ tool_get_block_conditions <- function(board, update, session) {
       })
     },
     name        = "get_block_conditions",
+    annotations = ellmer::tool_annotations(title = "Checking block errors"),
     description = paste(
       "Return a block's currently captured conditions -- the errors,",
       "warnings and messages raised across its evaluation phases --",
