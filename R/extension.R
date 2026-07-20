@@ -167,10 +167,38 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         max_auto_react <- 3L
 
-        commit_state <- new.env(parent = emptyenv())
-        commit_state$resolve  <- NULL
-        commit_state$baseline <- NULL
-        commit_state$gen      <- 0L
+        # The in-flight commit's state, bundled so only these methods touch it:
+        # perform_commit arms the bridge with the pre-flush baseline and the
+        # promise resolver; the board$last_update observer settles it a turn
+        # later. The generation fences a resolved commit's stale timeout off a
+        # subsequent commit.
+        commit_bridge <- local({
+
+          resolve  <- NULL
+          baseline <- NULL
+          gen      <- 0L
+
+          list(
+            arm = function(conditions, resolver) {
+              baseline <<- conditions
+              resolve  <<- resolver
+              gen      <<- gen + 1L
+              gen
+            },
+            settle = function(msg) {
+              if (is.null(resolve)) {
+                return(FALSE)
+              }
+              res <- resolve
+              resolve <<- NULL
+              res(msg)
+              TRUE
+            },
+            is_pending = function() !is.null(resolve),
+            baseline   = function() baseline,
+            is_current = function(g) identical(g, gen)
+          )
+        })
 
         messages_rec <- reactiveVal(coal(messages, list()))
 
@@ -391,15 +419,9 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         settle_commit <- function(msg) {
 
-          res <- commit_state$resolve
-
-          if (is.null(res)) {
-            return(invisible())
+          if (commit_bridge$settle(msg)) {
+            report$awaiting <- FALSE
           }
-
-          commit_state$resolve <- NULL
-          report$awaiting <- FALSE
-          res(msg)
 
           invisible()
         }
@@ -415,21 +437,17 @@ asst_ext_srv <- function(system_prompt, messages) {
             )
           }
 
-          commit_state$gen <- commit_state$gen + 1L
-          commit_state$baseline <- isolate(board$conditions())
           touched(character())
           report$awaiting <- TRUE
-
-          gen <- commit_state$gen
 
           promises::promise(
             function(resolve, reject) {
 
-              commit_state$resolve <- resolve
+              gen <- commit_bridge$arm(isolate(board$conditions()), resolve)
 
               later::later(
                 function() {
-                  if (identical(gen, commit_state$gen)) {
+                  if (commit_bridge$is_current(gen)) {
                     settle_commit(commit_timeout_note())
                   }
                 },
@@ -519,7 +537,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             # its result is answered in-band via settle_commit; a turn-end
             # backstop flush (staged but never committed) falls through to the
             # deferred auto_react nudge.
-            if (!is.null(commit_state$resolve)) {
+            if (commit_bridge$is_pending()) {
 
               if (isFALSE(outcome$ok)) {
                 settle_commit(
@@ -533,7 +551,7 @@ asst_ext_srv <- function(system_prompt, messages) {
               session$onFlushed(
                 function() {
                   review <- flush_review(
-                    isolate(commit_state$baseline), commit_header()
+                    commit_bridge$baseline(), commit_header()
                   )
                   settle_commit(
                     coal(review, commit_clean_note(), fail_all = FALSE)
