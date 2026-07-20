@@ -8,7 +8,8 @@ added_conditions <- function(baseline, current) {
   ]
 }
 
-format_flush_feedback <- function(outcome, conditions = NULL, results = NULL) {
+format_flush_feedback <- function(outcome, conditions = NULL, results = NULL,
+                                  header = flush_check_header()) {
 
   parts <- character()
 
@@ -17,8 +18,8 @@ format_flush_feedback <- function(outcome, conditions = NULL, results = NULL) {
       parts,
       sprintf(
         paste(
-          "The board update from your last turn was rejected during the %s",
-          "phase and the board was not changed: %s"
+          "The board update was rejected during the %s phase and the board",
+          "was not changed: %s"
         ),
         outcome$phase, outcome$message
       )
@@ -42,16 +43,14 @@ format_flush_feedback <- function(outcome, conditions = NULL, results = NULL) {
     return(NULL)
   }
 
+  paste(c(header, parts), collapse = "\n\n")
+}
+
+flush_check_header <- function() {
   paste(
-    c(
-      paste(
-        "[Automatic board check after applying your changes.] Correct the",
-        "problem if it was unintended, or briefly confirm if the result is",
-        "expected."
-      ),
-      parts
-    ),
-    collapse = "\n\n"
+    "[Automatic board check after applying your changes.] Correct the",
+    "problem if it was unintended, or briefly confirm if the result is",
+    "expected."
   )
 }
 

@@ -167,6 +167,11 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         max_auto_react <- 3L
 
+        commit_state <- new.env(parent = emptyenv())
+        commit_state$resolve  <- NULL
+        commit_state$baseline <- NULL
+        commit_state$gen      <- 0L
+
         messages_rec <- reactiveVal(coal(messages, list()))
 
         client_r   <- reactiveVal(NULL)
@@ -189,6 +194,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, session
           )
           register_board_options_tools(cl, board, session)
+          register_commit_tool(cl, perform_commit)
 
           if (inherits(isolate(board$board), "dock_board")) {
             register_extension_tools(
@@ -373,6 +379,68 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
         )
 
+        flush_review <- function(baseline, header) {
+
+          format_flush_feedback(
+            list(ok = TRUE),
+            added_conditions(baseline, isolate(board$conditions())),
+            collect_touched_results(isolate(touched()), board),
+            header = header
+          )
+        }
+
+        settle_commit <- function(msg) {
+
+          res <- commit_state$resolve
+
+          if (is.null(res)) {
+            return(invisible())
+          }
+
+          commit_state$resolve <- NULL
+          report$awaiting <- FALSE
+          res(msg)
+
+          invisible()
+        }
+
+        perform_commit <- function() {
+
+          if (!has_any_changes(isolate(pending_update()))) {
+            return(
+              paste(
+                "Nothing is staged. Stage changes with the mutation tools,",
+                "then commit."
+              )
+            )
+          }
+
+          commit_state$gen <- commit_state$gen + 1L
+          commit_state$baseline <- isolate(board$conditions())
+          touched(character())
+          report$awaiting <- TRUE
+
+          gen <- commit_state$gen
+
+          promises::promise(
+            function(resolve, reject) {
+
+              commit_state$resolve <- resolve
+
+              later::later(
+                function() {
+                  if (identical(gen, commit_state$gen)) {
+                    settle_commit(commit_timeout_note())
+                  }
+                },
+                delay = commit_timeout_secs()
+              )
+
+              flush_pending(pending_update, update, last_flush_error)
+            }
+          )
+        }
+
         auto_react <- function(msg) {
 
           if (is.null(msg) || isolate(report$count) >= max_auto_react) {
@@ -423,12 +491,16 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_turn_r(),
           {
-            if (has_any_changes(isolate(pending_update()))) {
-              report$awaiting <- TRUE
-            }
-
-            flush_pending(pending_update, update, last_flush_error)
             record_new_turns()
+
+            if (has_any_changes(isolate(pending_update()))) {
+
+              report$awaiting <- TRUE
+              report$baseline <- isolate(board$conditions())
+              touched(character())
+
+              flush_pending(pending_update, update, last_flush_error)
+            }
           },
           ignoreNULL = TRUE
         )
@@ -442,6 +514,37 @@ asst_ext_srv <- function(system_prompt, messages) {
               return()
             }
 
+            # The block re-evaluation an update triggers drains within the next
+            # reactive flush; collect once it has completed. A commit awaiting
+            # its result is answered in-band via settle_commit; a turn-end
+            # backstop flush (staged but never committed) falls through to the
+            # deferred auto_react nudge.
+            if (!is.null(commit_state$resolve)) {
+
+              if (isFALSE(outcome$ok)) {
+                settle_commit(
+                  format_flush_feedback(
+                    outcome, header = commit_reject_header()
+                  )
+                )
+                return()
+              }
+
+              session$onFlushed(
+                function() {
+                  review <- flush_review(
+                    isolate(commit_state$baseline), commit_header()
+                  )
+                  settle_commit(
+                    coal(review, commit_clean_note(), fail_all = FALSE)
+                  )
+                },
+                once = TRUE
+              )
+
+              return()
+            }
+
             report$awaiting <- FALSE
 
             if (isFALSE(outcome$ok)) {
@@ -449,19 +552,10 @@ asst_ext_srv <- function(system_prompt, messages) {
               return()
             }
 
-            # The block re-evaluation this update triggers drains within the
-            # current reactive flush; collect once it has completed.
             session$onFlushed(
               function() {
                 auto_react(
-                  format_flush_feedback(
-                    list(ok = TRUE),
-                    added_conditions(
-                      isolate(report$baseline),
-                      isolate(board$conditions())
-                    ),
-                    collect_touched_results(isolate(touched()), board)
-                  )
+                  flush_review(isolate(report$baseline), backstop_header())
                 )
               },
               once = TRUE

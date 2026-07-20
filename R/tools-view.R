@@ -242,7 +242,7 @@ tool_add_view <- function(board, pending, session) {
         )
 
         sprintf(
-          "Staged add_view(%s)%s -- will apply at turn end.",
+          "Staged add_view(%s)%s -- call commit to apply.",
           name,
           if (isTRUE(active)) " as active" else ""
         )
@@ -291,7 +291,7 @@ tool_remove_view <- function(board, pending, session) {
         stage_view_rm(pending, board, id)
 
         sprintf(
-          "Staged remove_view(%s) -- will apply at turn end.", id
+          "Staged remove_view(%s) -- call commit to apply.", id
         )
       })
     },
@@ -321,7 +321,7 @@ tool_add_panel_to_view <- function(board, pending, session) {
         )
 
         sprintf(
-          "Staged add_panel_to_view(%s, %s)%s -- will apply at turn end.",
+          "Staged add_panel_to_view(%s, %s)%s -- call commit to apply.",
           view, panel, placement_suffix(near, side)
         )
       })
@@ -370,7 +370,7 @@ tool_remove_panel_from_view <- function(board, pending, session) {
         )
 
         sprintf(
-          "Staged remove_panel_from_view(%s, %s) -- will apply at turn end.",
+          "Staged remove_panel_from_view(%s, %s) -- call commit to apply.",
           view, panel
         )
       })
@@ -406,7 +406,7 @@ tool_move_panel <- function(board, pending, session) {
         stage_view_panel_op(pending, board, "move_panel", view, "move", ref)
 
         sprintf(
-          "Staged move_panel(%s, %s)%s -- will apply at turn end.",
+          "Staged move_panel(%s, %s)%s -- call commit to apply.",
           view, panel, placement_suffix(near, side)
         )
       })
@@ -455,7 +455,7 @@ tool_focus_panel <- function(board, pending, session) {
         }
 
         sprintf(
-          "Staged focus_panel(%s, %s)%s -- will apply at turn end.",
+          "Staged focus_panel(%s, %s)%s -- call commit to apply.",
           view, panel,
           if (switched) " and switched to that view" else ""
         )
@@ -504,7 +504,7 @@ tool_set_active_view <- function(board, pending, session) {
         stage_view_active(pending, board, id)
 
         sprintf(
-          "Staged set_active_view(%s) -- will apply at turn end.", id
+          "Staged set_active_view(%s) -- call commit to apply.", id
         )
       })
     },
@@ -542,7 +542,7 @@ tool_rename_view <- function(board, pending, session) {
         stage_view_rename(pending, board, id, name)
 
         sprintf(
-          "Staged rename_view(%s -> %s) -- will apply at turn end.",
+          "Staged rename_view(%s -> %s) -- call commit to apply.",
           id, name
         )
       })

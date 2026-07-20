@@ -57,6 +57,7 @@ test_that("default_system_prompt() golden on a populated board", {
   register_read_tools(client, board, reactiveVal(), NULL)
   register_mutation_tools(client, board, pending, NULL)
   register_view_tools(client, board, pending, NULL)
+  register_commit_tool(client, function() invisible())
 
   flush <- reactiveVal("validator rejected cycle: a -> b -> a")
 
