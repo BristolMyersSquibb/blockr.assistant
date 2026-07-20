@@ -25,6 +25,8 @@ Imports:
     ellmer,
     glue,
     jsonlite,
+    later,
+    promises,
     shiny,
     shinychat
 Suggests:

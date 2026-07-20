@@ -1,5 +1,13 @@
 # blockr.assistant (development version)
 
+* The assistant now applies its staged changes through an explicit
+  `commit` tool that returns the touched blocks' results as its own
+  tool result, in-band. The model can stage a unit of work, commit,
+  read what it built and correct it -- all within one turn -- instead
+  of the review arriving as a synthetic user message on the next turn.
+  Staged-but-uncommitted changes at turn end are still applied as a
+  backstop, with a nudge to commit. Fixes #73.
+
 * `focus_panel(view, panel)` brings a panel already in a view to the
   front of its tab group and focuses it, switching to that view if it
   isn't the active one. It stages blockr.dock's `select` panel-op

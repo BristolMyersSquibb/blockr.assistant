@@ -93,7 +93,7 @@ tool_modify_extension <- function(board, pending, session) {
         stage_extension_mod(pending, board, id, delta)
 
         sprintf(
-          "Staged modify_extension(%s) -- will apply at turn end.", id
+          "Staged modify_extension(%s) -- call commit to apply.", id
         )
       })
     },

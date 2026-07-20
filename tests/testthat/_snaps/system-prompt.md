@@ -18,9 +18,16 @@
       
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing
-      applies mid-turn. All staged calls from your turn flush as one
-      atomic update when your turn ends. Your own tool-call history
-      is the record of what is pending.
+      applies until you commit. Stage a coherent unit of work, then
+      call `commit` to apply all staged changes as one atomic update
+      and read back the touched blocks' results and any new problems.
+      Use that to check each change did what the user asked -- correct
+      it and commit again if not, briefly confirm if so. Commit a
+      coherent unit at a time, not once per staged change. Your
+      tool-call history since your last commit is the record of what
+      is still pending. If you end your turn with uncommitted staged
+      changes they are applied as a backstop, but you will not see
+      their results -- so prefer to commit.
       
       Block, link and stack ids are immutable once committed. If the
       user asks to rename one, explain you can offer remove + add
@@ -43,7 +50,7 @@
       
       To change an existing view, don't re-emit a layout -- edit it in
       place with the atomic panel-op tools, which compose into one
-      update at turn end:
+      update when you commit:
       
       - add_panel_to_view(view, panel, near, side): add a block or
         extension to the view. `near` (a panel already in the view) and
@@ -168,9 +175,16 @@
       
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing
-      applies mid-turn. All staged calls from your turn flush as one
-      atomic update when your turn ends. Your own tool-call history
-      is the record of what is pending.
+      applies until you commit. Stage a coherent unit of work, then
+      call `commit` to apply all staged changes as one atomic update
+      and read back the touched blocks' results and any new problems.
+      Use that to check each change did what the user asked -- correct
+      it and commit again if not, briefly confirm if so. Commit a
+      coherent unit at a time, not once per staged change. Your
+      tool-call history since your last commit is the record of what
+      is still pending. If you end your turn with uncommitted staged
+      changes they are applied as a backstop, but you will not see
+      their results -- so prefer to commit.
       
       Block, link and stack ids are immutable once committed. If the
       user asks to rename one, explain you can offer remove + add
@@ -193,7 +207,7 @@
       
       To change an existing view, don't re-emit a layout -- edit it in
       place with the atomic panel-op tools, which compose into one
-      update at turn end:
+      update when you commit:
       
       - add_panel_to_view(view, panel, near, side): add a block or
         extension to the view. `near` (a panel already in the view) and
@@ -326,6 +340,7 @@
       - `focus_panel(view, panel)`: Bring a panel already in a view to the front of its tab group and focus it, addressed by view id (see list_views). `panel` must currently be a member of the view. If `view` isn't the active one, the board switches to it so the panel is actually surfaced. Use it to draw attention to a specific block or extension -- e.g. one you just added or whose result you just evaluated. Membership and arrangement are unchanged; only the front tab and active view move.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
+      - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. A no-op if nothing is staged.
       
       ## Board
       2 block(s), 1 link(s), 0 stack(s), 2 view(s).

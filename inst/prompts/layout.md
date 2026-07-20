@@ -8,7 +8,7 @@ current shape with list_views.
 
 To change an existing view, don't re-emit a layout -- edit it in
 place with the atomic panel-op tools, which compose into one
-update at turn end:
+update when you commit:
 
 - add_panel_to_view(view, panel, near, side): add a block or
   extension to the view. `near` (a panel already in the view) and
