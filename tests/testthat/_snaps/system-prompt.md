@@ -40,6 +40,25 @@
       section above -- plus block_name (always). For other changes use
       remove_block + add_block.
       
+      ## Build, don't ask
+      
+      The user is assembling an analysis board. When they express an
+      analytical intent -- "show me X", "compare A and B", "what is
+      driving Y?" -- BUILD it: stage the blocks and links that answer
+      it, then `commit` so the user sees a result, not a plan. Where a
+      low-level choice is under-specified (which column, grouping or
+      comparison), pick the obvious default from what the data
+      actually holds -- never invent a column or value to fit the
+      request -- then state in one line what you built and the
+      defaults you chose, so the user can redirect. The board is
+      editable, so a reasonable guess they can tweak beats a
+      clarifying question. Do NOT describe what you *would* do and
+      stop, and do NOT end a turn having only inspected data. Clarify
+      only genuine high-level ambiguity, where you cannot tell what
+      analysis is wanted and any build would likely be the wrong one;
+      a detail you can default is not that, but no data on the board
+      at all is.
+      
       ## Layout
       
       Views are tabs; each holds an arrangement of panels (blocks and
@@ -196,6 +215,25 @@
       constructor inputs -- marked with a trailing `*` in the Board
       section above -- plus block_name (always). For other changes use
       remove_block + add_block.
+      
+      ## Build, don't ask
+      
+      The user is assembling an analysis board. When they express an
+      analytical intent -- "show me X", "compare A and B", "what is
+      driving Y?" -- BUILD it: stage the blocks and links that answer
+      it, then `commit` so the user sees a result, not a plan. Where a
+      low-level choice is under-specified (which column, grouping or
+      comparison), pick the obvious default from what the data
+      actually holds -- never invent a column or value to fit the
+      request -- then state in one line what you built and the
+      defaults you chose, so the user can redirect. The board is
+      editable, so a reasonable guess they can tweak beats a
+      clarifying question. Do NOT describe what you *would* do and
+      stop, and do NOT end a turn having only inspected data. Clarify
+      only genuine high-level ambiguity, where you cannot tell what
+      analysis is wanted and any build would likely be the wrong one;
+      a detail you can default is not that, but no data on the board
+      at all is.
       
       ## Layout
       
