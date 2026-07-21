@@ -60,7 +60,13 @@ turn's flush rejection.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">default_system_prompt</span><span class="op">(</span>board <span class="op">=</span> <span class="cn">NULL</span>, client <span class="op">=</span> <span class="cn">NULL</span>, last_flush <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">...</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">default_system_prompt</span><span class="op">(</span></span>
+<span>  board <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  client <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  last_flush <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  view_data <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  <span class="va">...</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -81,6 +87,14 @@ catalogue.</p></dd>
 <dd><p>Reactive holding the previous turn's flush
 rejection message (character) or <code>NULL</code>. <code>NULL</code> (or a
 <code>NULL</code> value) omits the delta note.</p></dd>
+
+
+<dt id="arg-view-data">view_data<a class="anchor" aria-label="anchor" href="#arg-view-data"></a></dt>
+<dd><p>Reactive holding <code>blockr.dock</code>'s live all-views
+layout (a <code>list(views, grids)</code>), as supplied to the extension
+server, or <code>NULL</code>. Read for the board section's view summary,
+falling back to the committed <code>board</code> when <code>NULL</code> (before every
+view has reported its layout).</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>

@@ -8,7 +8,13 @@ one-line note carrying the previous turn's flush rejection.
 ## Usage
 
 ``` r
-default_system_prompt(board = NULL, client = NULL, last_flush = NULL, ...)
+default_system_prompt(
+  board = NULL,
+  client = NULL,
+  last_flush = NULL,
+  view_data = NULL,
+  ...
+)
 ```
 
 ## Arguments
@@ -28,6 +34,14 @@ default_system_prompt(board = NULL, client = NULL, last_flush = NULL, ...)
   Reactive holding the previous turn's flush rejection message
   (character) or `NULL`. `NULL` (or a `NULL` value) omits the delta
   note.
+
+- view_data:
+
+  Reactive holding `blockr.dock`'s live all-views layout (a
+  `list(views, grids)`), as supplied to the extension server, or `NULL`.
+  Read for the board section's view summary, falling back to the
+  committed `board` when `NULL` (before every view has reported its
+  layout).
 
 - ...:
 
