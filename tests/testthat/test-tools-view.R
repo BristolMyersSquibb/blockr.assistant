@@ -292,6 +292,57 @@ test_that("move_panel rejects a move onto a non-member anchor", {
   expect_match(res, "not a view member")
 })
 
+test_that("resize_panel stages a resize verb with a size hint", {
+
+  env <- new_view_tool_env()
+  rz <- tool_resize_panel(env$board, env$pending, session = NULL)
+
+  res <- rz(view = "v_main", panel = "b", size = 0.4)
+
+  expect_match(res, "Staged resize_panel(v_main, b) to 0.4", fixed = TRUE)
+
+  ref <- isolate(env$pending()$views$mod[["v_main"]]$resize[["block_panel-b"]])
+  expect_true(is_panel_ref(ref))
+  expect_identical(as.character(ref), "block_panel-b")
+  expect_identical(ref$size, 0.4)
+})
+
+test_that("resize_panel rejects an out-of-range size before staging", {
+
+  env <- new_view_tool_env()
+  rz <- tool_resize_panel(env$board, env$pending, session = NULL)
+
+  res <- rz(view = "v_main", panel = "b", size = 1.5)
+
+  expect_match(res, "^resize_panel failed:")
+  expect_match(res, "size must be a ratio in \\(0, 1\\)")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("resize_panel rejects a resize on a non-member panel", {
+
+  env <- new_view_tool_env()
+  rz <- tool_resize_panel(env$board, env$pending, session = NULL)
+
+  res <- rz(view = "v_over", panel = "b", size = 0.4)
+
+  expect_match(res, "resize_panel\\(v_over\\) failed:")
+  expect_match(res, "not view members")
+})
+
+test_that("add_panel_to_view records a size hint on the add", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", size = 0.3)
+
+  expect_match(res, "Staged add_panel_to_view(v_over, b) --", fixed = TRUE)
+
+  ref <- isolate(env$pending()$views$mod[["v_over"]]$add[["block_panel-b"]])
+  expect_identical(ref$size, 0.3)
+})
+
 test_that("focus_panel stages a select on the active view without switching", {
 
   env <- new_view_tool_env()

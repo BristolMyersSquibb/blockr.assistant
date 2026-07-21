@@ -131,7 +131,7 @@ test_that("server registers the read and mutation tools on the client", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 30L)
+      expect_length(tools, 31L)
       expect_setequal(
         names(tools),
         c(
@@ -145,7 +145,7 @@ test_that("server registers the read and mutation tools on the client", {
           "list_views", "validate_layout",
           "add_view", "remove_view",
           "add_panel_to_view", "remove_panel_from_view", "move_panel",
-          "focus_panel", "set_active_view", "rename_view",
+          "resize_panel", "focus_panel", "set_active_view", "rename_view",
           "list_board_options", "set_board_option"
         )
       )
@@ -174,7 +174,7 @@ test_that("a dock board additionally registers the extension tools", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 32L)
+      expect_length(tools, 33L)
       expect_true(
         all(c("list_extensions", "modify_extension") %in% names(tools))
       )
@@ -691,8 +691,8 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
       )
       expect_length(assistant_turns, 1L)
 
-      # Tools re-registered (30 surface-tools, same as initial mount)
-      expect_length(client_r()$get_tools(), 30L)
+      # Tools re-registered (31 surface-tools, same as initial mount)
+      expect_length(client_r()$get_tools(), 31L)
     },
     args = list(
       board = reactiveValues(board = new_board()),

@@ -7,6 +7,7 @@ register_view_tools <- function(client, board, pending, session) {
   client$register_tool(tool_add_panel_to_view(board, pending, session))
   client$register_tool(tool_remove_panel_from_view(board, pending, session))
   client$register_tool(tool_move_panel(board, pending, session))
+  client$register_tool(tool_resize_panel(board, pending, session))
   client$register_tool(tool_focus_panel(board, pending, session))
   client$register_tool(tool_set_active_view(board, pending, session))
   client$register_tool(tool_rename_view(board, pending, session))
@@ -18,7 +19,8 @@ register_view_tools <- function(client, board, pending, session) {
 # typed ref the panel-op tools stage, validating that the panel -- and any
 # `near` anchor -- names a current or staged-this-turn block or extension. dock
 # re-checks membership and anchor validity for the whole batch at commit.
-resolve_panel_op_ref <- function(panel, near, side, board, pending) {
+resolve_panel_op_ref <- function(panel, near, side, board, pending,
+                                 size = NULL) {
 
   sets  <- panel_id_sets(board, pending)
   valid <- c(sets$blocks, sets$exts)
@@ -55,7 +57,16 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending) {
     )
   }
 
-  panel_ref_from_id(panel, sets$blocks, sets$exts, near = near, side = side)
+  if (not_null(size) && !(is_number(size) && size > 0 && size < 1)) {
+    stop(
+      "size must be a ratio in (0, 1)",
+      call. = FALSE
+    )
+  }
+
+  panel_ref_from_id(
+    panel, sets$blocks, sets$exts, near = near, side = side, size = size
+  )
 }
 
 placement_suffix <- function(near, side) {
@@ -311,10 +322,12 @@ tool_remove_view <- function(board, pending, session) {
 tool_add_panel_to_view <- function(board, pending, session) {
 
   ellmer::tool(
-    function(view, panel, near = NULL, side = NULL) {
+    function(view, panel, near = NULL, side = NULL, size = NULL) {
       with_tool_errors("add_panel_to_view", {
 
-        ref <- resolve_panel_op_ref(panel, near, side, board, pending)
+        ref <- resolve_panel_op_ref(
+          panel, near, side, board, pending, size = size
+        )
 
         stage_view_panel_op(
           pending, board, "add_panel_to_view", view, "add", ref
@@ -333,9 +346,11 @@ tool_add_panel_to_view <- function(board, pending, session) {
       "it must be on the board or staged for creation this turn.",
       "Optionally place it with `near` (a panel already in the view)",
       "and `side` (which side of `near` -- within tabs it into that",
-      "group); omit both to let dock pick a default spot. Adding a",
-      "panel already in the view is an error -- reposition it with",
-      "move_panel instead."
+      "group); omit both to let dock pick a default spot. Optionally",
+      "give `size` (a ratio in (0, 1)) to record the panel's target",
+      "size along its split axis for when it lands. Adding a panel",
+      "already in the view is an error -- reposition it with",
+      "move_panel, or resize it with resize_panel, instead."
     ),
     arguments = list(
       view = ellmer::type_string(
@@ -351,6 +366,10 @@ tool_add_panel_to_view <- function(board, pending, session) {
       side = ellmer::type_enum(
         valid_panel_sides(),
         "Optional side of `near` to place the panel on.",
+        required = FALSE
+      ),
+      size = ellmer::type_number(
+        "Optional target size ratio in (0, 1) for the panel's group.",
         required = FALSE
       )
     )
@@ -431,6 +450,50 @@ tool_move_panel <- function(board, pending, session) {
         valid_panel_sides(),
         "Which side of `near` the panel moves to.",
         required = FALSE
+      )
+    )
+  )
+}
+
+tool_resize_panel <- function(board, pending, session) {
+
+  ellmer::tool(
+    function(view, panel, size) {
+      with_tool_errors("resize_panel", {
+
+        ref <- resolve_panel_op_ref(
+          panel, NULL, NULL, board, pending, size = size
+        )
+
+        stage_view_panel_op(
+          pending, board, "resize_panel", view, "resize", ref
+        )
+
+        sprintf(
+          "Staged resize_panel(%s, %s) to %s -- call commit to apply.",
+          view, panel, size
+        )
+      })
+    },
+    name = "resize_panel",
+    description = paste(
+      "Resize a panel already in a view, addressed by view id (see",
+      "list_views). Sets `size` (a ratio in (0, 1)) -- the fraction of",
+      "its splitview the panel's group occupies along the split axis,",
+      "relative to its siblings. `panel` must currently be a member of",
+      "the view; membership and arrangement are otherwise unchanged. To",
+      "size a panel as you add it, pass add_panel_to_view's `size`",
+      "instead."
+    ),
+    arguments = list(
+      view = ellmer::type_string(
+        "Id of the view whose panel resizes (see list_views)."
+      ),
+      panel = ellmer::type_string(
+        "Block or extension id of the panel to resize."
+      ),
+      size = ellmer::type_number(
+        "Target size ratio in (0, 1) for the panel's group."
       )
     )
   )
