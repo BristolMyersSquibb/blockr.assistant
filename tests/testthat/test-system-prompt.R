@@ -56,7 +56,7 @@ test_that("default_system_prompt() golden on a populated board", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
   register_mutation_tools(client, board, pending, NULL)
-  register_view_tools(client, board, pending, NULL)
+  register_view_tools(client, board, pending, NULL, NULL)
   register_commit_tool(client, function() invisible())
 
   flush <- reactiveVal("validator rejected cycle: a -> b -> a")
@@ -126,6 +126,30 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   expect_match(res, "### Views")
   expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
   expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
+})
+
+test_that("summarise_board marks the live active view from view_data", {
+
+  brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris")),
+    views = list(
+      v_main = dock_view("a", name = "Analysis"),
+      v_over = dock_view("a", name = "Overview")
+    )
+  )
+
+  live_views <- board_views(brd)
+  active_view(live_views) <- "v_over"
+  vd <- reactiveVal(list(views = live_views, grids = board_grids(brd)))
+
+  board <- reactiveValues(board = brd)
+
+  res <- summarise_board(board, view_data = vd)
+  expect_match(res, "- Overview (id: v_over) (active)", fixed = TRUE)
+  expect_no_match(res, "(id: v_main) (active)", fixed = TRUE)
+
+  prompt <- default_system_prompt(board = board, view_data = vd)
+  expect_match(prompt, "- Overview (id: v_over) (active)", fixed = TRUE)
 })
 
 test_that("default_system_prompt() surfaces the flush-rejection note", {

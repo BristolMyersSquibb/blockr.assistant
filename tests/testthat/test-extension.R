@@ -187,6 +187,47 @@ test_that("a dock board additionally registers the extension tools", {
   )
 })
 
+test_that("server threads view_data into the prompt and the view tools", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris")),
+    views  = list(
+      v_main = dock_view("a", name = "Analysis"),
+      v_over = dock_view("a", name = "Overview")
+    )
+  )
+
+  live_views <- board_views(brd)
+  active_view(live_views) <- "v_over"
+  vd <- reactiveVal(list(views = live_views, grids = board_grids(brd)))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_match(
+        client_r()$get_system_prompt(),
+        "- Overview (id: v_over) (active)",
+        fixed = TRUE
+      )
+
+      views  <- client_r()$get_tools()$list_views()
+      ids    <- vapply(views, function(x) x$id, character(1L))
+      active <- vapply(views, function(x) x$active, logical(1L))
+      expect_identical(active[ids == "v_over"], TRUE)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal(),
+      view_data = vd
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("registered list_blocks tool reflects the live board contents", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)

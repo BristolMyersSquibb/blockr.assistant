@@ -23,7 +23,7 @@ test_that("list_views returns id, name, active and layout per view", {
 
   env <- new_view_tool_env()
 
-  lv <- tool_list_views(env$board, session = NULL)
+  lv <- tool_list_views(env$board, view_data = NULL, session = NULL)
   out <- lv()
 
   expect_length(out, 2L)
@@ -40,6 +40,51 @@ test_that("list_views returns id, name, active and layout per view", {
 
   main_layout <- out[[which(ids == "v_main")]]$layout
   expect_named(main_layout, c("orientation", "children"))
+})
+
+test_that("list_views reads the live layout from view_data, not the board", {
+
+  committed <- make_view_tool_board()
+
+  live_brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+    views = list(
+      v_main = dock_view(c("a", "b"), name = "Analysis"),
+      v_over = dock_view(c("a", "b"), name = "Overview")
+    )
+  )
+  live_views <- board_views(live_brd)
+  active_view(live_views) <- "v_over"
+  vd <- reactiveVal(list(views = live_views, grids = board_grids(live_brd)))
+
+  env <- new_view_tool_env(committed)
+  lv  <- tool_list_views(env$board, view_data = vd, session = NULL)
+  out <- lv()
+
+  ids    <- vapply(out, function(x) x$id, character(1L))
+  active <- vapply(out, function(x) x$active, logical(1L))
+
+  expect_identical(active[ids == "v_over"], TRUE)
+  expect_identical(active[ids == "v_main"], FALSE)
+
+  over_layout <- out[[which(ids == "v_over")]]$layout
+  expect_setequal(unlist(over_layout$children), c("a", "b"))
+})
+
+test_that("list_views falls back to committed board when view_data is NULL", {
+
+  env <- new_view_tool_env()
+  vd  <- reactiveVal(NULL)
+
+  lv  <- tool_list_views(env$board, view_data = vd, session = NULL)
+  out <- lv()
+
+  ids    <- vapply(out, function(x) x$id, character(1L))
+  active <- vapply(out, function(x) x$active, logical(1L))
+
+  expect_setequal(ids, c("v_main", "v_over"))
+  expect_identical(active[ids == "v_main"], TRUE)
+  expect_identical(active[ids == "v_over"], FALSE)
 })
 
 test_that("validate_layout returns OK and the normalized layout", {
