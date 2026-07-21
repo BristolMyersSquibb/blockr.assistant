@@ -122,7 +122,7 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
 
   res <- default_system_prompt(board = reactiveValues(board = brd))
 
-  expect_match(res, "2 view(s)", fixed = TRUE)
+  expect_match(res, "1 block(s), 0 link(s), 0 stack(s)", fixed = TRUE)
   expect_match(res, "### Views")
   expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
   expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
@@ -273,4 +273,53 @@ test_that("summarise_board falls back to header when over the cap", {
 
   expect_match(res, "1 block(s)", fixed = TRUE)
   expect_match(res, "(too many entities to inline", fixed = TRUE)
+})
+
+board_with_summary_ext <- function(description = NULL, external_ctrl = FALSE) {
+  ext <- new_dock_extension(
+    server = function(id, ...) {
+      moduleServer(id, function(input, output, session) list(state = list()))
+    },
+    ui = function(id) tagList(),
+    name = "Workflow",
+    description = description,
+    class = "workflow_extension",
+    ctor = function(positions = NULL) NULL,
+    external_ctrl = external_ctrl
+  )
+
+  new_dock_board(
+    blocks = c(a = new_dataset_block("iris")),
+    extensions = list(workflow = ext)
+  )
+}
+
+test_that("summarise_board lists a described, controllable extension", {
+
+  board <- reactiveValues(
+    board = board_with_summary_ext(
+      description = "Node positions; move via modify_extension(positions).",
+      external_ctrl = "positions"
+    )
+  )
+
+  res <- summarise_board(board)
+
+  expect_match(res, "### Extensions", fixed = TRUE)
+  expect_match(res, "- Workflow (id: workflow)", fixed = TRUE)
+  expect_match(res, "controllable: positions", fixed = TRUE)
+  expect_match(
+    res,
+    "Node positions; move via modify_extension(positions).",
+    fixed = TRUE
+  )
+})
+
+test_that("summarise_board omits a bare extension (no desc/ctrl)", {
+
+  board <- reactiveValues(
+    board = board_with_summary_ext(description = NULL, external_ctrl = FALSE)
+  )
+
+  expect_no_match(summarise_board(board), "### Extensions", fixed = TRUE)
 })

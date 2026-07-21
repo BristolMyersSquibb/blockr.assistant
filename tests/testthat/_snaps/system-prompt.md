@@ -394,19 +394,19 @@
       - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. A no-op if nothing is staged.
       
       ## Board
-      2 block(s), 1 link(s), 0 stack(s), 2 view(s).
+      2 block(s), 1 link(s), 0 stack(s).
       
       ### Blocks
       - data <dataset_block> dataset*, package
       - head <head_block> n, direction
       ### Links
       - ab: data -> head$data
-      ### Views
-      - Analysis (id: Analysis) (active) <dock_view> data, head
-      - Overview (id: Overview) <dock_view> data
       ### Options
       - board_name (Board options)
       Current values via list_board_options; change with set_board_option.
+      ### Views
+      - Analysis (id: Analysis) (active) <dock_view> data, head
+      - Overview (id: Overview) <dock_view> data
       
       Note: your previous turn's changes were rejected: validator rejected cycle: a -> b -> a. The board did not change. Re-issue corrected calls.
 

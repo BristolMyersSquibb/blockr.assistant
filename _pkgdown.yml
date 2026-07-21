@@ -39,3 +39,4 @@ reference:
       - describe_block
       - describe_stack
       - describe_result
+      - describe_board
