@@ -2,6 +2,11 @@
 
 ## blockr.assistant (development version)
 
+- `resize_panel(view, panel, size)` sets a panel’s group `size` (a ratio
+  in (0, 1)) along its splitview axis, staging blockr.dock’s `resize`
+  panel-op verb. `add_panel_to_view()` gains a matching optional `size`
+  to record a panel’s target size as it is added. Fixes \#69.
+
 - The assistant now applies its staged changes through an explicit
   `commit` tool that returns the touched blocks’ results as its own tool
   result, in-band. The model can stage a unit of work, commit, read what
@@ -26,8 +31,7 @@
   JSON was both awkward for a model to edit and carried geometry that
   dock’s membership-only view validation now rejects. Each call stages
   one verb into the pending update, and a turn’s edits on a view compose
-  into a single atomic update at flush. A `resize_panel` tool awaits a
-  dock `set_size` proxy. Fixes \#64.
+  into a single atomic update at flush. Fixes \#64.
 
 - The view-layout tools track blockr.dock’s restructured layout API, in
   which a view carries panel *membership* and a separate `dock_grid`
