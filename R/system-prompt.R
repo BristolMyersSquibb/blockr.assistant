@@ -133,45 +133,87 @@ format_tool_signature <- function(tool) {
 
 summarise_board <- function(board, view_data = NULL, max_chars = 4000L) {
 
-  b <- isolate(board$board)
-  blks <- board_blocks(b)
-  lnks <- board_links(b)
-  stks <- board_stacks(b)
-  vws  <- summary_views(b, view_data)
-
-  header <- sprintf(
-    "%d block(s), %d link(s), %d stack(s), %d view(s).",
-    length(blks), length(lnks), length(stks), length(vws)
+  lines <- describe_board(
+    isolate(board$board), block_condition_markers(board), view_data
   )
 
-  if (!length(blks) && !length(lnks) && !length(stks) && length(vws) <= 1L) {
-    return(paste(header, "(empty board -- no blocks yet)"))
-  }
-
-  body <- c(
-    header,
-    "",
-    summarise_blocks(blks, block_condition_markers(board)),
-    summarise_links(lnks),
-    summarise_stacks(stks),
-    summarise_views(vws, b),
-    summarise_board_options(board_options(b))
-  )
-
-  out <- paste(body, collapse = "\n")
+  out <- paste(lines, collapse = "\n")
 
   if (nchar(out) > max_chars) {
 
     return(
       paste(
-        header,
-        "(too many entities to inline; call list_blocks,",
-        "list_links, list_stacks and list_views for the full set)"
+        lines[[1L]],
+        "(too many entities to inline; call list_blocks, list_links,",
+        "list_stacks, list_views and list_extensions for the full set)"
       )
     )
   }
 
   out
+}
+
+#' Describe a board for the LLM
+#'
+#' Generic backing the system prompt's board summary. The default
+#' method `describe_board.board` reports the board's blocks, links,
+#' stacks and options; `describe_board.dock_board` adds the view and
+#' extension summaries via `NextMethod()`. Board sub-classes extend
+#' the summary by supplying their own method.
+#'
+#' @param b A `board`.
+#' @param markers Named character vector of per-block condition
+#'   markers (e.g. "1 error"), as produced by
+#'   `block_condition_markers()`.
+#' @param view_data Reactive holding blockr.dock's live all-views
+#'   layout, or `NULL` to read views from the committed board.
+#'   Consulted only by the `dock_board` method.
+#' @param ... Generic consistency.
+#'
+#' @return Character vector of lines, collapsed with
+#'   `paste(..., collapse = "\n")` by `summarise_board()`.
+#'
+#' @export
+describe_board <- function(b, markers, view_data = NULL, ...) {
+  UseMethod("describe_board")
+}
+
+#' @rdname describe_board
+#' @export
+describe_board.board <- function(b, markers, view_data = NULL, ...) {
+
+  blks <- board_blocks(b)
+  lnks <- board_links(b)
+  stks <- board_stacks(b)
+
+  header <- sprintf(
+    "%d block(s), %d link(s), %d stack(s).",
+    length(blks), length(lnks), length(stks)
+  )
+
+  if (!length(blks) && !length(lnks) && !length(stks)) {
+    return(paste(header, "(empty board -- no blocks yet)"))
+  }
+
+  c(
+    header,
+    "",
+    summarise_blocks(blks, markers),
+    summarise_links(lnks),
+    summarise_stacks(stks),
+    summarise_board_options(board_options(b))
+  )
+}
+
+#' @rdname describe_board
+#' @export
+describe_board.dock_board <- function(b, markers, view_data = NULL, ...) {
+
+  c(
+    NextMethod(),
+    summarise_views(summary_views(b, view_data), b),
+    summarise_extensions(b)
+  )
 }
 
 summary_views <- function(b, view_data = NULL) {
@@ -283,4 +325,39 @@ summarise_views <- function(vws, b) {
       )
     })
   )
+}
+
+summarise_extensions <- function(b) {
+
+  exts <- as.list(dock_extensions(b))
+
+  entries <- unlst(map(ext_summary_line, exts, names(exts)))
+
+  if (!length(entries)) {
+    return(character())
+  }
+
+  c("### Extensions", entries)
+}
+
+ext_summary_line <- function(ext, id) {
+
+  vars <- external_ctrl_vars(ext)
+  desc <- extension_description(ext)
+
+  if (!length(vars) && is.null(desc)) {
+    return(NULL)
+  }
+
+  line <- sprintf("- %s (id: %s)", extension_name(ext), id)
+
+  if (length(vars)) {
+    line <- paste0(line, " -- controllable: ", paste(vars, collapse = ", "))
+  }
+
+  if (is.null(desc)) {
+    line
+  } else {
+    c(line, paste0("  ", desc))
+  }
 }

@@ -178,6 +178,27 @@
       automatically drops its panels from every view containing it
       -- no explicit cleanup needed.
       
+      ## Moving a block: panel layout vs. an extension's own space
+      
+      "Move / arrange / position a block" is ambiguous. Resolve it by
+      intent, and check the Board's Extensions before assuming it is a
+      panel move:
+      
+      - An extension's own space. When an extension models where a block
+        sits in a space of its own -- e.g. a workflow diagram's node
+        positions -- a spatial request ("move dataset to the right of
+        head", "put X above Y", "line these up") almost always means
+        *that*, not the panels. Drive it with modify_extension, reading
+        the current values with list_extensions first; the extension's own
+        description (shown with it in the Board section) says how.
+      - Panel layout. Only when the user means the on-screen panels
+        themselves -- tabs, splits, sizes ("show X in a tab next to Y",
+        "split the view", "make this panel bigger") -- use the view/panel
+        tools above.
+      
+      Never reach for the view/panel tools to change where a block sits in
+      an extension's diagram, nor for modify_extension to rearrange panels.
+      
       Answer concisely.
 
 # default_system_prompt() golden on a populated board
@@ -360,6 +381,27 @@
       automatically drops its panels from every view containing it
       -- no explicit cleanup needed.
       
+      ## Moving a block: panel layout vs. an extension's own space
+      
+      "Move / arrange / position a block" is ambiguous. Resolve it by
+      intent, and check the Board's Extensions before assuming it is a
+      panel move:
+      
+      - An extension's own space. When an extension models where a block
+        sits in a space of its own -- e.g. a workflow diagram's node
+        positions -- a spatial request ("move dataset to the right of
+        head", "put X above Y", "line these up") almost always means
+        *that*, not the panels. Drive it with modify_extension, reading
+        the current values with list_extensions first; the extension's own
+        description (shown with it in the Board section) says how.
+      - Panel layout. Only when the user means the on-screen panels
+        themselves -- tabs, splits, sizes ("show X in a tab next to Y",
+        "split the view", "make this panel bigger") -- use the view/panel
+        tools above.
+      
+      Never reach for the view/panel tools to change where a block sits in
+      an extension's diagram, nor for modify_extension to rearrange panels.
+      
       Answer concisely.
       
       ## Tools
@@ -394,19 +436,19 @@
       - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. A no-op if nothing is staged.
       
       ## Board
-      2 block(s), 1 link(s), 0 stack(s), 2 view(s).
+      2 block(s), 1 link(s), 0 stack(s).
       
       ### Blocks
       - data <dataset_block> dataset*, package
       - head <head_block> n, direction
       ### Links
       - ab: data -> head$data
-      ### Views
-      - Analysis (id: Analysis) (active) <dock_view> data, head
-      - Overview (id: Overview) <dock_view> data
       ### Options
       - board_name (Board options)
       Current values via list_board_options; change with set_board_option.
+      ### Views
+      - Analysis (id: Analysis) (active) <dock_view> data, head
+      - Overview (id: Overview) <dock_view> data
       
       Note: your previous turn's changes were rejected: validator rejected cycle: a -> b -> a. The board did not change. Re-issue corrected calls.
 
