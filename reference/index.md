@@ -15,3 +15,5 @@
   : Describe a stack for the LLM
 - [`describe_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_result.md)
   : Describe a block result for the LLM
+- [`describe_board()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_board.md)
+  : Describe a board for the LLM

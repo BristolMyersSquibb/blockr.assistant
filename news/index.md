@@ -2,6 +2,17 @@
 
 ## blockr.assistant (development version)
 
+- The system prompt’s board summary now lists the board’s dock
+  extensions – each one’s name, its externally controllable variables,
+  and the self-description it supplies. The model thus sees an
+  extension’s own guidance on how to drive it directly in the prompt –
+  for instance a workflow diagram’s advice to move a block via its
+  position handle rather than the panel tools – instead of having to
+  call `list_extensions` first.
+  [`describe_board()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_board.md)
+  is a new generic backing the summary, with a `dock_board` method
+  adding the view and extension sections. Fixes \#59.
+
 - The assistant reads the live board layout from blockr.dock’s
   `view_data` reactive rather than the committed board, so `list_views`
   and the system prompt’s view summary reflect UI-driven panel
