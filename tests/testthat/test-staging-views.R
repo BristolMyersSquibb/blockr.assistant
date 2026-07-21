@@ -195,6 +195,40 @@ test_that("removing a panel drops a pending move of it", {
   expect_null(mod$move)
 })
 
+test_that("stage_view_panel_op stages a resize verb with its size hint", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "resize_panel", "Analysis", "resize",
+    blk("b", size = 0.4)
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "resize")
+  expect_identical(as.character(mod$resize[["block_panel-b"]]), "block_panel-b")
+  expect_identical(mod$resize[["block_panel-b"]]$size, 0.4)
+})
+
+test_that("removing a panel drops a pending resize of it", {
+
+  env <- new_views_env()
+
+  stage_view_panel_op(
+    env$pending, env$board, "resize_panel", "Analysis", "resize",
+    blk("b", size = 0.4)
+  )
+  stage_view_panel_op(
+    env$pending, env$board, "remove_panel_from_view", "Analysis", "rm", blk("b")
+  )
+
+  mod <- isolate(env$pending())$views$mod[["Analysis"]]
+
+  expect_named(mod, "rm")
+  expect_null(mod$resize)
+})
+
 test_that("stage_view_panel_op stages a select verb as a single-valued slot", {
 
   env <- new_views_env()

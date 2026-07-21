@@ -10,16 +10,22 @@ To change an existing view, don't re-emit a layout -- edit it in
 place with the atomic panel-op tools, which compose into one
 update when you commit:
 
-- add_panel_to_view(view, panel, near, side): add a block or
+- add_panel_to_view(view, panel, near, side, size): add a block or
   extension to the view. `near` (a panel already in the view) and
   `side` (within / left / right / above / below, relative to
   near) are optional placement hints; omit both for a default
-  spot. `within` tabs the panel into near's group.
+  spot. `within` tabs the panel into near's group. An optional
+  `size` (a ratio in (0, 1)) records the panel's target size along
+  its split axis.
 - remove_panel_from_view(view, panel): drop a panel from the
   view. The block or extension stays on the board.
 - move_panel(view, panel, near, side): reposition a panel already
   in the view next to `near` on the given `side`. Membership is
   unchanged.
+- resize_panel(view, panel, size): set the panel's group `size` (a
+  ratio in (0, 1)) along its split axis, relative to its siblings.
+  The panel must already be in the view; membership and
+  arrangement are unchanged.
 - focus_panel(view, panel): bring a panel already in the view to
   the front of its tab group and focus it, switching to the view
   if it isn't the active one. Use it to surface a specific block

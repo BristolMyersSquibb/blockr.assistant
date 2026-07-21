@@ -442,12 +442,13 @@ stage_view_panel_op <- function(pending, board, op, view, verb, ref) {
   commit_pending(pending, isolate(board$board), new, op, view)
 }
 
-# Fold a verb entry into a view's pending mod. `add` / `move` / `rm` are keyed
-# by panel id (a repeat op updates in place, last hint wins). `select` is a
-# single-valued slot -- dock surfaces one focused panel per view, so a later
-# focus on the same view replaces the earlier one. Removing a panel only added
-# this turn cancels the pending add rather than staging a contradictory remove;
-# a removal also drops any pending move or select of that panel.
+# Fold a verb entry into a view's pending mod. `add` / `move` / `resize` / `rm`
+# are keyed by panel id (a repeat op updates in place, last hint wins).
+# `select` is a single-valued slot -- dock surfaces one focused panel per view,
+# so a later focus on the same view replaces the earlier one. Removing a panel
+# only added this turn cancels the pending add rather than staging a
+# contradictory remove; a removal also drops any pending move, resize or select
+# of that panel.
 merge_panel_op <- function(mod, verb, ref) {
 
   pid <- as.character(ref)
@@ -472,6 +473,11 @@ merge_panel_op <- function(mod, verb, ref) {
     if (pid %in% names(mod$move)) {
       mod$move[[pid]] <- NULL
       if (!length(mod$move)) mod$move <- NULL
+    }
+
+    if (pid %in% names(mod$resize)) {
+      mod$resize[[pid]] <- NULL
+      if (!length(mod$resize)) mod$resize <- NULL
     }
   }
 

@@ -180,12 +180,12 @@ panel_leaf <- function(id) {
 # Block-first, mirroring how dock resolves bare-id sugar: an id known only as an
 # extension becomes `ext()`, everything else `blk()`.
 panel_ref_from_id <- function(id, block_ids, ext_ids, near = NULL,
-                              side = NULL) {
+                              side = NULL, size = NULL) {
 
   if (id %in% ext_ids && !id %in% block_ids) {
-    ext(id, near = near, side = side)
+    ext(id, near = near, side = side, size = size)
   } else {
-    blk(id, near = near, side = side)
+    blk(id, near = near, side = side, size = size)
   }
 }
 

@@ -71,16 +71,22 @@
       place with the atomic panel-op tools, which compose into one
       update when you commit:
       
-      - add_panel_to_view(view, panel, near, side): add a block or
+      - add_panel_to_view(view, panel, near, side, size): add a block or
         extension to the view. `near` (a panel already in the view) and
         `side` (within / left / right / above / below, relative to
         near) are optional placement hints; omit both for a default
-        spot. `within` tabs the panel into near's group.
+        spot. `within` tabs the panel into near's group. An optional
+        `size` (a ratio in (0, 1)) records the panel's target size along
+        its split axis.
       - remove_panel_from_view(view, panel): drop a panel from the
         view. The block or extension stays on the board.
       - move_panel(view, panel, near, side): reposition a panel already
         in the view next to `near` on the given `side`. Membership is
         unchanged.
+      - resize_panel(view, panel, size): set the panel's group `size` (a
+        ratio in (0, 1)) along its split axis, relative to its siblings.
+        The panel must already be in the view; membership and
+        arrangement are unchanged.
       - focus_panel(view, panel): bring a panel already in the view to
         the front of its tab group and focus it, switching to the view
         if it isn't the active one. Use it to surface a specific block
@@ -247,16 +253,22 @@
       place with the atomic panel-op tools, which compose into one
       update when you commit:
       
-      - add_panel_to_view(view, panel, near, side): add a block or
+      - add_panel_to_view(view, panel, near, side, size): add a block or
         extension to the view. `near` (a panel already in the view) and
         `side` (within / left / right / above / below, relative to
         near) are optional placement hints; omit both for a default
-        spot. `within` tabs the panel into near's group.
+        spot. `within` tabs the panel into near's group. An optional
+        `size` (a ratio in (0, 1)) records the panel's target size along
+        its split axis.
       - remove_panel_from_view(view, panel): drop a panel from the
         view. The block or extension stays on the board.
       - move_panel(view, panel, near, side): reposition a panel already
         in the view next to `near` on the given `side`. Membership is
         unchanged.
+      - resize_panel(view, panel, size): set the panel's group `size` (a
+        ratio in (0, 1)) along its split axis, relative to its siblings.
+        The panel must already be in the view; membership and
+        arrangement are unchanged.
       - focus_panel(view, panel): bring a panel already in the view to
         the front of its tab group and focus it, switching to the view
         if it isn't the active one. Use it to surface a specific block
@@ -372,9 +384,10 @@
       - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view; never mutates board state.
       - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
       - `remove_view(id)`: Remove a view by id (see list_views). Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
-      - `add_panel_to_view(view, panel, near?, side?)`: Add a block or extension to a view as a panel, addressed by view id (see list_views). `panel` is the block or extension id; it must be on the board or staged for creation this turn. Optionally place it with `near` (a panel already in the view) and `side` (which side of `near` -- within tabs it into that group); omit both to let dock pick a default spot. Adding a panel already in the view is an error -- reposition it with move_panel instead.
+      - `add_panel_to_view(view, panel, near?, side?, size?)`: Add a block or extension to a view as a panel, addressed by view id (see list_views). `panel` is the block or extension id; it must be on the board or staged for creation this turn. Optionally place it with `near` (a panel already in the view) and `side` (which side of `near` -- within tabs it into that group); omit both to let dock pick a default spot. Optionally give `size` (a ratio in (0, 1)) to record the panel's target size along its split axis for when it lands. Adding a panel already in the view is an error -- reposition it with move_panel, or resize it with resize_panel, instead.
       - `remove_panel_from_view(view, panel)`: Remove a panel from a view, addressed by view id (see list_views). `panel` is the block or extension id; it must currently be a member of the view. The block or extension stays on the board -- only its panel in this view is dropped. Removing a block from the board drops its panels everywhere on its own; no explicit cleanup needed.
       - `move_panel(view, panel, near, side?)`: Reposition a panel already in a view, addressed by view id (see list_views). Moves `panel` next to `near` (another panel in the same view), on the given `side` (within tabs it into `near`'s group). Both must be current members of the view; membership is unchanged -- only the arrangement moves.
+      - `resize_panel(view, panel, size)`: Resize a panel already in a view, addressed by view id (see list_views). Sets `size` (a ratio in (0, 1)) -- the fraction of its splitview the panel's group occupies along the split axis, relative to its siblings. `panel` must currently be a member of the view; membership and arrangement are otherwise unchanged. To size a panel as you add it, pass add_panel_to_view's `size` instead.
       - `focus_panel(view, panel)`: Bring a panel already in a view to the front of its tab group and focus it, addressed by view id (see list_views). `panel` must currently be a member of the view. If `view` isn't the active one, the board switches to it so the panel is actually surfaced. Use it to draw attention to a specific block or extension -- e.g. one you just added or whose result you just evaluated. Membership and arrangement are unchanged; only the front tab and active view move.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
