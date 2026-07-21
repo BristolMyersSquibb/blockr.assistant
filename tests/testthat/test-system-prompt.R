@@ -27,7 +27,6 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_match(res, "Views are tabs")
   expect_match(res, "the board assigns the id", fixed = TRUE)
   expect_match(res, "may appear in more than one view")
-  expect_match(res, "panel layout vs. an extension's own space", fixed = TRUE)
   expect_no_match(res, "## Tools", fixed = TRUE)
   expect_no_match(res, "## Board", fixed = TRUE)
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)

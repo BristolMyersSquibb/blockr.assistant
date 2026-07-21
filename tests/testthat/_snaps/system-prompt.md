@@ -178,27 +178,6 @@
       automatically drops its panels from every view containing it
       -- no explicit cleanup needed.
       
-      ## Moving a block: panel layout vs. an extension's own space
-      
-      "Move / arrange / position a block" is ambiguous. Resolve it by
-      intent, and check the Board's Extensions before assuming it is a
-      panel move:
-      
-      - An extension's own space. When an extension models where a block
-        sits in a space of its own -- e.g. a workflow diagram's node
-        positions -- a spatial request ("move dataset to the right of
-        head", "put X above Y", "line these up") almost always means
-        *that*, not the panels. Drive it with modify_extension, reading
-        the current values with list_extensions first; the extension's own
-        description (shown with it in the Board section) says how.
-      - Panel layout. Only when the user means the on-screen panels
-        themselves -- tabs, splits, sizes ("show X in a tab next to Y",
-        "split the view", "make this panel bigger") -- use the view/panel
-        tools above.
-      
-      Never reach for the view/panel tools to change where a block sits in
-      an extension's diagram, nor for modify_extension to rearrange panels.
-      
       Answer concisely.
 
 # default_system_prompt() golden on a populated board
@@ -380,27 +359,6 @@
       be staged for creation in the same turn). Removing a block
       automatically drops its panels from every view containing it
       -- no explicit cleanup needed.
-      
-      ## Moving a block: panel layout vs. an extension's own space
-      
-      "Move / arrange / position a block" is ambiguous. Resolve it by
-      intent, and check the Board's Extensions before assuming it is a
-      panel move:
-      
-      - An extension's own space. When an extension models where a block
-        sits in a space of its own -- e.g. a workflow diagram's node
-        positions -- a spatial request ("move dataset to the right of
-        head", "put X above Y", "line these up") almost always means
-        *that*, not the panels. Drive it with modify_extension, reading
-        the current values with list_extensions first; the extension's own
-        description (shown with it in the Board section) says how.
-      - Panel layout. Only when the user means the on-screen panels
-        themselves -- tabs, splits, sizes ("show X in a tab next to Y",
-        "split the view", "make this panel bigger") -- use the view/panel
-        tools above.
-      
-      Never reach for the view/panel tools to change where a block sits in
-      an extension's diagram, nor for modify_extension to rearrange panels.
       
       Answer concisely.
       
