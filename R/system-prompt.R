@@ -26,13 +26,19 @@
 #' @param last_flush Reactive holding the previous turn's flush
 #'   rejection message (character) or `NULL`. `NULL` (or a
 #'   `NULL` value) omits the delta note.
+#' @param view_data Reactive holding `blockr.dock`'s live all-views
+#'   layout (a `list(views, grids)`), as supplied to the extension
+#'   server, or `NULL`. Read for the board section's view summary,
+#'   falling back to the committed `board` when `NULL` (before every
+#'   view has reported its layout).
 #' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  last_flush = NULL, ...) {
+                                  last_flush = NULL, view_data = NULL,
+                                  ...) {
 
   tools <- if (!is.null(client)) {
     paste0("\n\n## Tools\n", format_tool_catalogue(client))
@@ -41,7 +47,7 @@ default_system_prompt <- function(board = NULL, client = NULL,
   }
 
   board_summary <- if (!is.null(board)) {
-    paste0("\n\n## Board\n", summarise_board(board))
+    paste0("\n\n## Board\n", summarise_board(board, view_data))
   } else {
     ""
   }
@@ -125,13 +131,13 @@ format_tool_signature <- function(tool) {
   sprintf("%s(%s)", tool@name, paste(parts, collapse = ", "))
 }
 
-summarise_board <- function(board, max_chars = 4000L) {
+summarise_board <- function(board, view_data = NULL, max_chars = 4000L) {
 
   b <- isolate(board$board)
   blks <- board_blocks(b)
   lnks <- board_links(b)
   stks <- board_stacks(b)
-  vws  <- summary_views(b)
+  vws  <- summary_views(b, view_data)
 
   header <- sprintf(
     "%d block(s), %d link(s), %d stack(s), %d view(s).",
@@ -168,7 +174,13 @@ summarise_board <- function(board, max_chars = 4000L) {
   out
 }
 
-summary_views <- function(b) {
+summary_views <- function(b, view_data = NULL) {
+
+  live <- if (is.function(view_data)) isolate(view_data()) else NULL
+
+  if (!is.null(live)) {
+    return(live[["views"]])
+  }
 
   if (!inherits(b, "dock_board")) {
     return(list())

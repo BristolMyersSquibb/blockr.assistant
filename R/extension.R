@@ -139,7 +139,7 @@ asst_ext_styles <- function() {
 
 asst_ext_srv <- function(system_prompt, messages) {
 
-  function(id, board, update, extensions = NULL, ...) {
+  function(id, board, update, view_data = NULL, extensions = NULL, ...) {
 
     moduleServer(
       id,
@@ -219,7 +219,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, session
           )
           register_view_tools(
-            cl, board, pending_update, session
+            cl, board, pending_update, view_data, session
           )
           register_board_options_tools(cl, board, session)
           register_commit_tool(cl, perform_commit)
@@ -338,7 +338,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           if (is.null(cl)) return(invisible())
 
           prompt <- tryCatch(
-            compose(board, cl, last_flush_error),
+            compose(board, cl, last_flush_error, view_data = view_data),
             error = function(e) {
               notify(
                 paste(

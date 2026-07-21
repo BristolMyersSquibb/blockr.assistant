@@ -1,5 +1,12 @@
 # blockr.assistant (development version)
 
+* The assistant reads the live board layout from blockr.dock's
+  `view_data` reactive rather than the committed board, so
+  `list_views` and the system prompt's view summary reflect
+  UI-driven panel rearrangements immediately. Both fall back to
+  the committed board until every view has reported its layout.
+  Fixes #60.
+
 * `resize_panel(view, panel, size)` sets a panel's group `size` (a
   ratio in (0, 1)) along its splitview axis, staging blockr.dock's
   `resize` panel-op verb. `add_panel_to_view()` gains a matching

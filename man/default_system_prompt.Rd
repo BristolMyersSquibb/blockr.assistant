@@ -4,7 +4,13 @@
 \alias{default_system_prompt}
 \title{Default assistant system prompt}
 \usage{
-default_system_prompt(board = NULL, client = NULL, last_flush = NULL, ...)
+default_system_prompt(
+  board = NULL,
+  client = NULL,
+  last_flush = NULL,
+  view_data = NULL,
+  ...
+)
 }
 \arguments{
 \item{board}{Reactive containing the live board, as supplied
@@ -16,6 +22,12 @@ catalogue.}
 \item{last_flush}{Reactive holding the previous turn's flush
 rejection message (character) or \code{NULL}. \code{NULL} (or a
 \code{NULL} value) omits the delta note.}
+
+\item{view_data}{Reactive holding \code{blockr.dock}'s live all-views
+layout (a \code{list(views, grids)}), as supplied to the extension
+server, or \code{NULL}. Read for the board section's view summary,
+falling back to the committed \code{board} when \code{NULL} (before every
+view has reported its layout).}
 
 \item{...}{Forward-compatibility slot for future inputs.}
 }

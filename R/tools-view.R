@@ -1,6 +1,6 @@
-register_view_tools <- function(client, board, pending, session) {
+register_view_tools <- function(client, board, pending, view_data, session) {
 
-  client$register_tool(tool_list_views(board, session))
+  client$register_tool(tool_list_views(board, view_data, session))
   client$register_tool(tool_validate_layout(board, pending, session))
   client$register_tool(tool_add_view(board, pending, session))
   client$register_tool(tool_remove_view(board, pending, session))
@@ -149,22 +149,47 @@ effective_active_view <- function(board, pending) {
   tryCatch(active_view(isolate(board$board)), error = function(e) NULL)
 }
 
-tool_list_views <- function(board, session) {
+# The all-views layout to show the model: dock's live `view_data` (a
+# `dock_views` + `dock_grids` pair) once every view has reported, else the
+# committed board's own views + grids. dock echoes only *settled* arrangements
+# back to the board, so `view_data` is the fresher source for what the user
+# currently sees; the committed board is the fallback while `view_data` is still
+# NULL (before every view reports) or absent (no dock at all).
+resolve_view_layout <- function(board, view_data = NULL) {
+
+  live <- if (is.function(view_data)) isolate(view_data()) else NULL
+
+  if (!is.null(live)) {
+    return(list(views = live[["views"]], grids = live[["grids"]]))
+  }
+
+  brd <- isolate(board$board)
+
+  if (!inherits(brd, "dock_board")) {
+    return(list(views = list(), grids = NULL))
+  }
+
+  list(views = board_views(brd), grids = board_grids(brd))
+}
+
+tool_list_views <- function(board, view_data, session) {
 
   ellmer::tool(
     function() {
       with_tool_errors("list_views", {
 
-        views <- current_views(board)
+        layout <- resolve_view_layout(board, view_data)
+        views  <- layout$views
 
         if (!length(views)) {
           return(list())
         }
 
-        brd    <- isolate(board$board)
-        grids  <- board_grids(brd)
+        grids  <- layout$grids
         labels <- view_names(views)
-        active <- tryCatch(active_view(brd), error = function(e) NA_character_)
+        active <- tryCatch(
+          active_view(views), error = function(e) NA_character_
+        )
 
         lapply(names(views), function(id) {
           list(
@@ -185,8 +210,8 @@ tool_list_views <- function(board, session) {
       "set_active_view and rename_view tools address the view by), its",
       "display `name`, whether it's the currently-active view, and",
       "its `layout` in the JSON spec form documented in the Layout",
-      "section. Reflects UI-driven rearrangements once they have",
-      "synced back to the board."
+      "section. Reads the live layout, so UI-driven rearrangements",
+      "show up here immediately."
     ),
     arguments = list()
   )
