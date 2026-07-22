@@ -6,11 +6,11 @@
 \alias{describe_board.dock_board}
 \title{Describe a board for the LLM}
 \usage{
-describe_board(b, markers, view_data = NULL, ...)
+describe_board(b, markers, ...)
 
-\method{describe_board}{board}(b, markers, view_data = NULL, ...)
+\method{describe_board}{board}(b, markers, ...)
 
-\method{describe_board}{dock_board}(b, markers, view_data = NULL, ...)
+\method{describe_board}{dock_board}(b, markers, ..., view_data = NULL)
 }
 \arguments{
 \item{b}{A \code{board}.}
@@ -19,11 +19,13 @@ describe_board(b, markers, view_data = NULL, ...)
 markers (e.g. "1 error"), as produced by
 \code{block_condition_markers()}.}
 
-\item{view_data}{Reactive holding blockr.dock's live all-views
-layout, or \code{NULL} to read views from the committed board.
-Consulted only by the \code{dock_board} method.}
+\item{...}{Passed to methods.}
 
-\item{...}{Generic consistency.}
+\item{view_data}{Reactive holding blockr.dock's live all-views
+layout, or \code{NULL} to read views from the committed board. Views
+are a \code{dock_board} concept, so this is consumed only by the
+\code{dock_board} method -- where it appears in the signature -- not
+by the base \code{board} method.}
 }
 \value{
 Character vector of lines, collapsed with

@@ -1,5 +1,14 @@
 # blockr.assistant (development version)
 
+* The system-prompt board summary is now bounded by a character
+  budget, so a large board no longer inflates every request. Each
+  section (blocks, links, stacks, options, views, extensions) is
+  trimmed independently to `blockr.assistant_board_section_max_chars`
+  (default 1500), each pointing at its own listing tool -- so a long
+  block list can no longer crowd out a later section such as the
+  extensions -- replacing the previous all-or-nothing fallback that
+  dropped the whole summary at once. Fixes #58.
+
 * The system prompt's board summary now lists the board's dock
   extensions -- each one's name, its externally controllable
   variables, and the self-description it supplies. The model thus
