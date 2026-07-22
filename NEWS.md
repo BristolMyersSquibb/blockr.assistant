@@ -10,7 +10,7 @@
   just wired until it committed, which is when it is most likely to
   want to. A staged link modification that would point at the removed
   block is dropped as well. The tool result now names the links that
-  went with the block. Fixes #NN.
+  went with the block. Fixes #88.
 
 * The system-prompt board summary is now bounded by a character
   budget, so a large board no longer inflates every request. Each
