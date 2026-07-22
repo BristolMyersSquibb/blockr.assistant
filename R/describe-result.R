@@ -28,10 +28,6 @@ describe_result.default <- function(x, ...) {
   btw::btw_this(x, ...)
 }
 
-summary_max_chars <- function() {
-  as.integer(blockr_option("assistant_summary_max_chars", 2000L))
-}
-
 # Bounded, error-guarding wrapper around describe_result(): a method is trusted
 # neither to bound its output nor to catch its own failures, so both happen
 # here -- the single path the get_block_result tool and the post-apply review
@@ -53,27 +49,4 @@ summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
     paste(text, collapse = "\n"), max_chars,
     hint = "use query_data to fetch specific rows or columns"
   )
-}
-
-# Cap `txt` so the returned string -- truncated text plus the marker and any
-# hint -- never exceeds `max_chars`: the marker counts against the budget, it
-# is not added on top. Only the over-long case is touched; text within budget
-# is returned verbatim. The hint is the caller's: a result summary points at
-# query_data, a block or stack summary needs none.
-truncate_chars <- function(txt, max_chars, hint = NULL) {
-
-  if (nchar(txt) <= max_chars) {
-    return(txt)
-  }
-
-  suffix <- if (is.null(hint)) "" else paste0(" -- ", hint)
-  marker <- function(omitted) {
-    sprintf("\n... [+%d chars truncated%s]", omitted, suffix)
-  }
-
-  # Reserve room for the marker sized against the largest possible omitted
-  # count (the whole input), so the reservation always covers the real one.
-  keep <- max(0L, max_chars - nchar(marker(nchar(txt))))
-
-  paste0(substr(txt, 1L, keep), marker(nchar(txt) - keep))
 }
