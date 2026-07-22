@@ -131,26 +131,26 @@ format_tool_signature <- function(tool) {
   sprintf("%s(%s)", tool@name, paste(parts, collapse = ", "))
 }
 
-summarise_board <- function(board, view_data = NULL, max_chars = 4000L) {
+board_section_max_chars <- function() {
+  as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
+}
+
+# Each section bounds itself, so a long block list cannot crowd out a later
+# section (views, extensions) the way tail-truncating the whole summary would.
+# The hint names the trimmed section's own listing tool.
+bounded_section <- function(lines, hint,
+                            max_chars = board_section_max_chars()) {
+  truncate_chars(paste(lines, collapse = "\n"), max_chars, hint)
+}
+
+summarise_board <- function(board, view_data = NULL) {
 
   lines <- describe_board(
-    isolate(board$board), block_condition_markers(board), view_data
+    isolate(board$board), block_condition_markers(board),
+    view_data = view_data
   )
 
-  out <- paste(lines, collapse = "\n")
-
-  if (nchar(out) > max_chars) {
-
-    return(
-      paste(
-        lines[[1L]],
-        "(too many entities to inline; call list_blocks, list_links,",
-        "list_stacks, list_views and list_extensions for the full set)"
-      )
-    )
-  }
-
-  out
+  paste(lines, collapse = "\n")
 }
 
 #' Describe a board for the LLM
@@ -165,22 +165,24 @@ summarise_board <- function(board, view_data = NULL, max_chars = 4000L) {
 #' @param markers Named character vector of per-block condition
 #'   markers (e.g. "1 error"), as produced by
 #'   `block_condition_markers()`.
+#' @param ... Passed to methods.
 #' @param view_data Reactive holding blockr.dock's live all-views
-#'   layout, or `NULL` to read views from the committed board.
-#'   Consulted only by the `dock_board` method.
-#' @param ... Generic consistency.
+#'   layout, or `NULL` to read views from the committed board. Views
+#'   are a `dock_board` concept, so this is consumed only by the
+#'   `dock_board` method -- where it appears in the signature -- not
+#'   by the base `board` method.
 #'
 #' @return Character vector of lines, collapsed with
 #'   `paste(..., collapse = "\n")` by `summarise_board()`.
 #'
 #' @export
-describe_board <- function(b, markers, view_data = NULL, ...) {
+describe_board <- function(b, markers, ...) {
   UseMethod("describe_board")
 }
 
 #' @rdname describe_board
 #' @export
-describe_board.board <- function(b, markers, view_data = NULL, ...) {
+describe_board.board <- function(b, markers, ...) {
 
   blks <- board_blocks(b)
   lnks <- board_links(b)
@@ -207,7 +209,7 @@ describe_board.board <- function(b, markers, view_data = NULL, ...) {
 
 #' @rdname describe_board
 #' @export
-describe_board.dock_board <- function(b, markers, view_data = NULL, ...) {
+describe_board.dock_board <- function(b, markers, ..., view_data = NULL) {
 
   c(
     NextMethod(),
@@ -237,7 +239,7 @@ summarise_blocks <- function(blks, markers = character()) {
     return(character())
   }
 
-  c(
+  lines <- c(
     "### Blocks",
     chr_ply(names(blks), function(id) {
 
@@ -250,6 +252,8 @@ summarise_blocks <- function(blks, markers = character()) {
       }
     })
   )
+
+  bounded_section(lines, "call list_blocks for the full list")
 }
 
 summarise_links <- function(lnks) {
@@ -260,7 +264,7 @@ summarise_links <- function(lnks) {
 
   df <- as.data.frame(lnks)
 
-  c(
+  lines <- c(
     "### Links",
     chr_ply(
       seq_len(nrow(df)),
@@ -272,6 +276,8 @@ summarise_links <- function(lnks) {
       }
     )
   )
+
+  bounded_section(lines, "call list_links for the full list")
 }
 
 summarise_stacks <- function(stks) {
@@ -280,9 +286,9 @@ summarise_stacks <- function(stks) {
     return(character())
   }
 
-  c(
-    "### Stacks",
-    paste0("- ", names(stks), " ", chr_ply(stks, str_value))
+  bounded_section(
+    c("### Stacks", paste0("- ", names(stks), " ", chr_ply(stks, str_value))),
+    "call list_stacks for the full list"
   )
 }
 
@@ -292,7 +298,7 @@ summarise_board_options <- function(opts) {
     return(character())
   }
 
-  c(
+  lines <- c(
     "### Options",
     chr_ply(names(opts), function(id) {
       category <- coal(board_option_category(opts[[id]]), NA_character_)
@@ -304,6 +310,8 @@ summarise_board_options <- function(opts) {
     }),
     "Current values via list_board_options; change with set_board_option."
   )
+
+  bounded_section(lines, "call list_board_options for the full list")
 }
 
 summarise_views <- function(vws, b) {
@@ -315,7 +323,7 @@ summarise_views <- function(vws, b) {
   labels <- view_names(vws)
   active <- tryCatch(active_view(vws), error = function(e) NA_character_)
 
-  c(
+  lines <- c(
     "### Views",
     chr_ply(names(vws), function(id) {
       marker <- if (identical(id, active)) " (active)" else ""
@@ -325,6 +333,8 @@ summarise_views <- function(vws, b) {
       )
     })
   )
+
+  bounded_section(lines, "call list_views for the full list")
 }
 
 summarise_extensions <- function(b) {
@@ -337,7 +347,10 @@ summarise_extensions <- function(b) {
     return(character())
   }
 
-  c("### Extensions", entries)
+  bounded_section(
+    c("### Extensions", entries),
+    "call list_extensions for the full list"
+  )
 }
 
 ext_summary_line <- function(ext, id) {

@@ -264,15 +264,53 @@ test_that("summarise_board flags unhealthy blocks, not healthy ones", {
   expect_no_match(h_line, "error", fixed = TRUE)
 })
 
-test_that("summarise_board falls back to header when over the cap", {
+test_that("summarise_board trims a section without starving later ones", {
 
-  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  withr::local_options(blockr.assistant_board_section_max_chars = 300L)
+
+  ids <- paste0("block_id_", seq_len(40))
+  blks <- setNames(lapply(ids, function(i) new_dataset_block("iris")), ids)
+  brd <- new_dock_board(
+    blocks = blks,
+    views = list(
+      v1 = dock_view(ids[1:2], name = "One"),
+      v2 = dock_view(ids[1:2], name = "Two")
+    )
+  )
   board <- reactiveValues(board = brd)
 
-  res <- summarise_board(board, max_chars = 5L)
+  res <- summarise_board(board)
 
-  expect_match(res, "1 block(s)", fixed = TRUE)
-  expect_match(res, "(too many entities to inline", fixed = TRUE)
+  expect_match(res, "### Blocks", fixed = TRUE)
+  expect_match(res, "call list_blocks for the full list", fixed = TRUE)
+  expect_match(res, "### Views", fixed = TRUE)
+  expect_no_match(res, "call list_views", fixed = TRUE)
+})
+
+test_that("summarise_board leaves a within-budget summary untouched", {
+
+  board <- reactiveValues(
+    board = new_board(blocks = c(d = new_dataset_block("iris")))
+  )
+
+  expect_no_match(summarise_board(board), "truncated", fixed = TRUE)
+})
+
+test_that("summarise_board honours the board_section_max_chars option", {
+
+  withr::local_options(blockr.assistant_board_section_max_chars = 30L)
+
+  ids <- paste0("blk_", seq_len(20))
+  board <- reactiveValues(
+    board = new_board(
+      blocks = setNames(lapply(ids, function(i) new_head_block()), ids)
+    )
+  )
+
+  res <- summarise_board(board)
+
+  expect_match(res, "truncated", fixed = TRUE)
+  expect_match(res, "call list_blocks for the full list", fixed = TRUE)
 })
 
 board_with_summary_ext <- function(description = NULL, external_ctrl = FALSE) {
