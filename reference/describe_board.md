@@ -9,13 +9,13 @@ Board sub-classes extend the summary by supplying their own method.
 ## Usage
 
 ``` r
-describe_board(b, markers, view_data = NULL, ...)
+describe_board(b, markers, ...)
 
 # S3 method for class 'board'
-describe_board(b, markers, view_data = NULL, ...)
+describe_board(b, markers, ...)
 
 # S3 method for class 'dock_board'
-describe_board(b, markers, view_data = NULL, ...)
+describe_board(b, markers, ..., view_data = NULL)
 ```
 
 ## Arguments
@@ -29,15 +29,16 @@ describe_board(b, markers, view_data = NULL, ...)
   Named character vector of per-block condition markers (e.g. "1
   error"), as produced by `block_condition_markers()`.
 
+- ...:
+
+  Passed to methods.
+
 - view_data:
 
   Reactive holding blockr.dock's live all-views layout, or `NULL` to
-  read views from the committed board. Consulted only by the
-  `dock_board` method.
-
-- ...:
-
-  Generic consistency.
+  read views from the committed board. Views are a `dock_board` concept,
+  so this is consumed only by the `dock_board` method – where it appears
+  in the signature – not by the base `board` method.
 
 ## Value
 

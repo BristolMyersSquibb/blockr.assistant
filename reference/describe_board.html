@@ -60,13 +60,13 @@ the summary by supplying their own method.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, view_data <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">...</span><span class="op">)</span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, <span class="va">...</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'board'</span></span>
-<span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, view_data <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">...</span><span class="op">)</span></span>
+<span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, <span class="va">...</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'dock_board'</span></span>
-<span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, view_data <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">...</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">describe_board</span><span class="op">(</span><span class="va">b</span>, <span class="va">markers</span>, <span class="va">...</span>, view_data <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -83,14 +83,16 @@ markers (e.g. "1 error"), as produced by
 <code>block_condition_markers()</code>.</p></dd>
 
 
+<dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
+<dd><p>Passed to methods.</p></dd>
+
+
 <dt id="arg-view-data">view_data<a class="anchor" aria-label="anchor" href="#arg-view-data"></a></dt>
 <dd><p>Reactive holding blockr.dock's live all-views
-layout, or <code>NULL</code> to read views from the committed board.
-Consulted only by the <code>dock_board</code> method.</p></dd>
-
-
-<dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
-<dd><p>Generic consistency.</p></dd>
+layout, or <code>NULL</code> to read views from the committed board. Views
+are a <code>dock_board</code> concept, so this is consumed only by the
+<code>dock_board</code> method – where it appears in the signature – not
+by the base <code>board</code> method.</p></dd>
 
 </dl></div>
     <div class="section level2">
