@@ -1,5 +1,17 @@
 # blockr.assistant (development version)
 
+* `remove_block()` now also drops the links staged for the block in
+  the same turn, not just the ones already on the board. Core's own
+  cleanup in `augment_board_update()` only sees committed links, so
+  staging a block, wiring it up and then removing it again was
+  rejected with "Expecting all links to refer to known block IDs" --
+  and because staging validates before it writes, the removal was a
+  silent no-op. The model therefore could not retract a block it had
+  just wired until it committed, which is when it is most likely to
+  want to. A staged link modification that would point at the removed
+  block is dropped as well. The tool result now names the links that
+  went with the block. Fixes #NN.
+
 * The system-prompt board summary is now bounded by a character
   budget, so a large board no longer inflates every request. Each
   section (blocks, links, stacks, options, views, extensions) is

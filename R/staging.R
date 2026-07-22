@@ -187,7 +187,73 @@ stage_block_rm <- function(pending, board, id) {
     new$blocks$rm <- c(new$blocks$rm, id)
   }
 
-  commit_pending(pending, isolate(board$board), new, "remove_block", id)
+  brd <- isolate(board$board)
+
+  dropped <- staged_links_incident(new$links, id, brd)
+
+  new$links$add <- new$links$add[
+    setdiff(names(new$links$add), dropped)
+  ]
+
+  new$links$mod <- new$links$mod[
+    setdiff(names(new$links$mod), dropped)
+  ]
+
+  commit_pending(pending, brd, new, "remove_block", id)
+
+  invisible(dropped)
+}
+
+# Ids of links staged this turn that touch `id`, in either direction.
+#
+# Core cleans up the links of a removed block in `augment_board_update()`, but
+# only the ones already on the board: a link staged earlier in the same turn
+# is invisible to it. Left in place, such a link refers to a block that will
+# not exist, `validate_pending()` rejects the whole payload, and since
+# `commit_pending()` writes nothing when validation fails, the removal is a
+# silent no-op. The model then cannot retract a block it has just wired until
+# it commits, which is the point at which it is most likely to want to.
+#
+# A staged link modification counts as incident when the link it would produce
+# points at `id`, whether that comes from the delta or from the committed link
+# underneath it. Such a mod also has to go, because the validator re-adds a
+# modified link even when core's cascade has staged it for removal.
+staged_links_incident <- function(lnks, id, board) {
+
+  hits <- character()
+
+  if (length(lnks$add)) {
+
+    add <- as.data.frame(lnks$add)
+
+    hits <- c(hits, names(lnks$add)[add$from == id | add$to == id])
+  }
+
+  if (length(lnks$mod)) {
+
+    committed <- board_links(board)
+
+    is_hit <- function(lid) {
+
+      delta <- lnks$mod[[lid]]
+
+      base <- if (lid %in% names(committed)) {
+        as.data.frame(committed[lid])
+      }
+
+      from <- if (is.null(delta$from)) base$from else delta$from
+      to   <- if (is.null(delta$to))   base$to   else delta$to
+
+      isTRUE(from == id) || isTRUE(to == id)
+    }
+
+    hits <- c(
+      hits,
+      names(lnks$mod)[vapply(names(lnks$mod), is_hit, logical(1L))]
+    )
+  }
+
+  unique(hits)
 }
 
 stage_link_add <- function(pending, board, id, link) {
