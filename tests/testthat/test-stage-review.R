@@ -325,33 +325,6 @@ server_args <- function(conds, ...) {
   )
 }
 
-test_that("a rejected board update is reported back to the model", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 1L, ok = FALSE, phase = "validate", message = "cycle detected"
-      )
-      session$flushReact()
-
-      fb <- report$feedback
-
-      expect_false(is.null(fb))
-      expect_match(fb$msg, "rejected during the validate phase", fixed = TRUE)
-      expect_match(fb$msg, "cycle detected", fixed = TRUE)
-      expect_identical(report$count, 1L)
-    },
-    args = server_args(reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
 test_that("a board update the model did not trigger is ignored", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -366,113 +339,7 @@ test_that("a board update the model did not trigger is ignored", {
       )
       session$flushReact()
 
-      expect_null(report$feedback)
-    },
-    args = server_args(reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
-test_that("a block broken by the applied change is reported after settling", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  conds <- reactiveVal(cnd_frame())
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      report$awaiting <- TRUE
-      conds(cnd_frame(cnd_row("a", "error", "boom")))
-      board$last_update <- list(
-        seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
-      )
-      session$flushReact()
-
-      fb <- report$feedback
-
-      expect_false(is.null(fb))
-      expect_match(fb$msg, "now report problems", fixed = TRUE)
-      expect_match(fb$msg, "boom", fixed = TRUE)
-    },
-    args = server_args(conds),
-    session = with_llm_session()
-  )
-})
-
-test_that("a clean apply triggers no auto-reaction", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
-      )
-      session$flushReact()
-
-      expect_null(report$feedback)
-    },
-    args = server_args(reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
-test_that("auto-reactions are bounded per user turn", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      report$count <- 3L
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 3L, ok = FALSE, phase = "apply", message = "boom"
-      )
-      session$flushReact()
-
-      expect_null(report$feedback)
-    },
-    args = server_args(reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
-test_that("identical feedback in a later turn still re-triggers injection", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 1L, ok = FALSE, phase = "apply", message = "boom"
-      )
-      session$flushReact()
-      first <- report$feedback
-
-      report$count <- 0L
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 2L, ok = FALSE, phase = "apply", message = "boom"
-      )
-      session$flushReact()
-      second <- report$feedback
-
-      expect_identical(first$msg, second$msg)
-      expect_false(identical(first$n, second$n))
+      expect_null(report$nudge)
     },
     args = server_args(reactiveVal(cnd_frame())),
     session = with_llm_session()
@@ -537,66 +404,6 @@ test_that("the update listener ignores updates when not awaiting", {
       expect_identical(touched(), character())
     },
     args = board_with_links_args(brd, reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
-test_that("the review survives a touched block that errors on eval", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      touched(c("a"))
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
-      )
-      session$flushReact()
-
-      fb <- report$feedback
-
-      expect_false(is.null(fb))
-      expect_match(fb$msg, "no result yet", fixed = TRUE)
-    },
-    args = board_with_links_args(
-      new_board(),
-      reactiveVal(cnd_frame()),
-      blocks = list(a = fake_block(error = "kaboom"))
-    ),
-    session = with_llm_session()
-  )
-})
-
-test_that("a clean build still fires a review carrying touched results", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      touched(c("a"))
-      report$awaiting <- TRUE
-      board$last_update <- list(
-        seq = 2L, ok = TRUE, phase = "apply", message = NA_character_
-      )
-      session$flushReact()
-
-      fb <- report$feedback
-
-      expect_false(is.null(fb))
-      expect_match(fb$msg, "Results of the blocks you changed", fixed = TRUE)
-    },
-    args = board_with_links_args(
-      new_board(),
-      reactiveVal(cnd_frame()),
-      blocks = list(a = fake_block(data.frame(x = 1:3)))
-    ),
     session = with_llm_session()
   )
 })

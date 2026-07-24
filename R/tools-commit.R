@@ -23,6 +23,39 @@ tool_commit <- function(perform) {
   )
 }
 
+register_discard_tool <- function(client, pending) {
+
+  client$register_tool(tool_discard(pending))
+
+  invisible(client)
+}
+
+tool_discard <- function(pending) {
+
+  ellmer::tool(
+    function() {
+      with_tool_errors("discard", {
+
+        if (has_any_changes(isolate(pending()))) {
+
+          reset_pending(pending)
+          "Discarded all staged changes; the board is unchanged."
+
+        } else {
+
+          "Nothing is staged to discard."
+        }
+      })
+    },
+    name = "discard",
+    description = paste(
+      "Drop everything you have staged this turn without applying it, leaving",
+      "the board unchanged. Use this to abandon staged changes you no longer",
+      "want. A no-op if nothing is staged."
+    )
+  )
+}
+
 commit_header <- function() {
   paste(
     "[Result of your commit -- the staged changes are now applied.] Check",
@@ -45,12 +78,12 @@ commit_clean_note <- function() {
   )
 }
 
-backstop_header <- function() {
+uncommitted_nudge <- function() {
   paste(
-    "[You ended your turn with staged changes you had not committed; they",
-    "were applied automatically.] Next time call commit yourself so you can",
-    "review before ending your turn. Check the result below and correct it",
-    "if needed."
+    "[You ended your turn with staged changes you never committed. Nothing",
+    "has been applied.] Resolve them now: call commit to apply them and read",
+    "back the results, or discard to drop them. Staged changes are not",
+    "applied to the board, and are dropped if you leave them unresolved."
   )
 }
 

@@ -155,15 +155,14 @@ asst_ext_srv <- function(system_prompt, messages) {
         touched        <- reactiveVal(character())
 
         report <- reactiveValues(
-          baseline  = NULL,
           count     = 0L,
           seq       = 0L,
-          feedback  = NULL,
+          nudge     = NULL,
           awaiting  = FALSE,
           injecting = FALSE
         )
 
-        max_auto_react <- 3L
+        max_nudges <- 3L
 
         # The in-flight commit's state, bundled so only these methods touch it:
         # perform_commit arms the bridge with the pre-flush baseline and the
@@ -192,7 +191,6 @@ asst_ext_srv <- function(system_prompt, messages) {
               res(msg)
               TRUE
             },
-            is_pending = function() !is.null(resolve),
             baseline   = function() baseline,
             is_current = function(g) identical(g, gen)
           )
@@ -221,6 +219,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
           register_board_options_tools(cl, board, session)
           register_commit_tool(cl, perform_commit)
+          register_discard_tool(cl, pending_update)
 
           if (inherits(isolate(board$board), "dock_board")) {
             register_extension_tools(
@@ -456,21 +455,33 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
         }
 
-        auto_react <- function(msg) {
+        nudge_model <- function(msg) {
 
-          if (is.null(msg) || isolate(report$count) >= max_auto_react) {
+          report$seq <- isolate(report$seq) + 1L
+          report$nudge <- list(n = isolate(report$seq), msg = msg)
+
+          invisible()
+        }
+
+        # The model ended a turn with staged changes it never committed.
+        # Nothing has been applied -- prompt it to resolve them explicitly.
+        # A bounded number of prompts, then the staged changes are dropped so
+        # an ignored nudge cannot loop and nothing applies without a commit.
+        nudge_or_discard <- function() {
+
+          if (isolate(report$count) >= max_nudges) {
+            reset_pending(pending_update)
             return(invisible())
           }
 
           report$count <- isolate(report$count) + 1L
-          report$seq <- isolate(report$seq) + 1L
-          report$feedback <- list(n = isolate(report$seq), msg = msg)
+          nudge_model(uncommitted_nudge())
 
           invisible()
         }
 
         observeEvent(
-          report$feedback,
+          report$nudge,
           {
             mod <- isolate(mod_r())
 
@@ -480,28 +491,29 @@ asst_ext_srv <- function(system_prompt, messages) {
 
             report$injecting <- TRUE
             mod$update_user_input(
-              value = report$feedback$msg, submit = TRUE
+              value = report$nudge$msg, submit = TRUE
             )
           },
           ignoreNULL = TRUE
         )
 
-        observeEvent(
-          last_input_r(),
-          {
-            if (isolate(report$injecting)) {
-              report$injecting <- FALSE
-            } else {
-              report$baseline <- isolate(board$conditions())
-              report$count <- 0L
-            }
+        # A fresh user turn resets the staging slate -- but our own injected
+        # nudge arrives as a synthetic user turn too, and must not wipe the
+        # pending it is asking the model to resolve.
+        on_user_input <- function() {
 
+          if (isolate(report$injecting)) {
+            report$injecting <- FALSE
+          } else {
+            report$count <- 0L
             reset_pending(pending_update)
             touched(character())
-            record_new_turns()
-          },
-          ignoreNULL = TRUE
-        )
+          }
+
+          record_new_turns()
+        }
+
+        observeEvent(last_input_r(), on_user_input(), ignoreNULL = TRUE)
 
         observeEvent(
           last_turn_r(),
@@ -509,12 +521,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             record_new_turns()
 
             if (has_any_changes(isolate(pending_update()))) {
-
-              report$awaiting <- TRUE
-              report$baseline <- isolate(board$conditions())
-              touched(character())
-
-              flush_pending(pending_update, update)
+              nudge_or_discard()
             }
           },
           ignoreNULL = TRUE
@@ -529,48 +536,25 @@ asst_ext_srv <- function(system_prompt, messages) {
               return()
             }
 
-            # The block re-evaluation an update triggers drains within the next
-            # reactive flush; collect once it has completed. A commit awaiting
-            # its result is answered in-band via settle_commit; a turn-end
-            # backstop flush (staged but never committed) falls through to the
-            # deferred auto_react nudge.
-            if (commit_bridge$is_pending()) {
-
-              if (isFALSE(outcome$ok)) {
-                settle_commit(
-                  format_flush_feedback(
-                    outcome, header = commit_reject_header()
-                  )
-                )
-                return()
-              }
-
-              session$onFlushed(
-                function() {
-                  review <- flush_review(
-                    commit_bridge$baseline(), commit_header()
-                  )
-                  settle_commit(
-                    coal(review, commit_clean_note(), fail_all = FALSE)
-                  )
-                },
-                once = TRUE
-              )
-
-              return()
-            }
-
-            report$awaiting <- FALSE
-
+            # A commit is in flight -- `awaiting` is set only by perform_commit,
+            # which arms the bridge before dispatching. Answer it in-band: a
+            # rejected update resolves at once; a successful one waits for the
+            # block re-evaluation it triggered to drain on the next flush before
+            # collecting the touched results.
             if (isFALSE(outcome$ok)) {
-              auto_react(format_flush_feedback(outcome))
+              settle_commit(
+                format_flush_feedback(outcome, header = commit_reject_header())
+              )
               return()
             }
 
             session$onFlushed(
               function() {
-                auto_react(
-                  flush_review(isolate(report$baseline), backstop_header())
+                review <- flush_review(
+                  commit_bridge$baseline(), commit_header()
+                )
+                settle_commit(
+                  coal(review, commit_clean_note(), fail_all = FALSE)
                 )
               },
               once = TRUE

@@ -41,6 +41,7 @@ test_that("default_system_prompt() golden on a populated board", {
   register_mutation_tools(client, board, pending, NULL)
   register_view_tools(client, board, pending, NULL, NULL)
   register_commit_tool(client, function() invisible())
+  register_discard_tool(client, pending)
 
   prompt <- default_system_prompt(board = board, client = client)
 

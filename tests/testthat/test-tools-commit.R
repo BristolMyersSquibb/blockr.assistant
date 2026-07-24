@@ -49,12 +49,30 @@ test_that("tool_commit builds a no-argument tool named commit", {
   expect_length(tool@arguments@properties, 0L)
 })
 
+test_that("tool_discard builds a no-argument tool named discard", {
+
+  tool <- tool_discard(reactiveVal(empty_pending()))
+
+  expect_identical(tool@name, "discard")
+  expect_length(tool@arguments@properties, 0L)
+})
+
 test_that("commit result headers carry the right framing", {
 
   expect_match(commit_header(), "now applied", fixed = TRUE)
   expect_match(commit_reject_header(), "was not changed", fixed = TRUE)
   expect_match(commit_clean_note(), "No block results", fixed = TRUE)
   expect_match(commit_timeout_note(), "did not finish evaluating", fixed = TRUE)
+})
+
+test_that("uncommitted_nudge offers commit or discard, not an auto-apply", {
+
+  msg <- uncommitted_nudge()
+
+  expect_match(msg, "never committed", fixed = TRUE)
+  expect_match(msg, "commit", fixed = TRUE)
+  expect_match(msg, "discard", fixed = TRUE)
+  expect_no_match(msg, "applied automatically", fixed = TRUE)
 })
 
 test_that("format_flush_feedback uses the supplied header", {
@@ -85,6 +103,52 @@ test_that("commit is a no-op when nothing is staged", {
 
       expect_false(promises::is.promise(res))
       expect_match(res, "Nothing is staged", fixed = TRUE)
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
+test_that("discard drops staged changes and leaves the board unchanged", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+      expect_true(isolate(has_any_changes(pending_update())))
+
+      res <- tools$discard()
+
+      expect_match(res, "Discarded", fixed = TRUE)
+      expect_false(isolate(has_any_changes(pending_update())))
+      expect_null(isolate(board$last_update))
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
+test_that("discard is a no-op when nothing is staged", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      res <- client_r()$get_tools()$discard()
+
+      expect_match(res, "Nothing is staged to discard", fixed = TRUE)
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()
@@ -181,7 +245,7 @@ test_that("commit reports a rejected update in-band without falling through", {
 
       expect_match(res, "was rejected", fixed = TRUE)
       expect_match(res, "cycle detected", fixed = TRUE)
-      expect_null(isolate(report$feedback))
+      expect_null(isolate(report$nudge))
 
       expect_no_match(
         client_r()$get_system_prompt(), "previous turn", fixed = TRUE
