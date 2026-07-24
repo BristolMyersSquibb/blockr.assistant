@@ -261,16 +261,15 @@ biggest changes since the Phase 4 cut:
 - The `system_prompt` argument of
   [`new_assistant_extension()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/new_assistant_extension.md)
   now accepts a function (called each refresh with
-  `(board, client, last_flush, ...)`) or a string (used verbatim as a
-  static prompt with no refresh). The default is the new exported
-  function `default_system_prompt`, which composes a four-section
-  prompt: an intro / conventions block, an auto-generated tool catalogue
-  from `client$get_tools()`, a compact board summary, and (when
-  applicable) a one-line flush-rejection note. The prompt is refreshed
-  on every materialized board change via an observer on `board$board`,
-  so the model always sees the current state of the board – including
-  the user’s UI edits between turns (and follow-up requests in a
-  multi-tool-call turn).
+  `(board, client, ...)`) or a string (used verbatim as a static prompt
+  with no refresh). The default is the new exported function
+  `default_system_prompt`, which composes a three-section prompt: an
+  intro / conventions block, an auto-generated tool catalogue from
+  `client$get_tools()`, and a compact board summary. The prompt is
+  refreshed on every materialized board change via an observer on
+  `board$board`, so the model always sees the current state of the board
+  – including the user’s UI edits between turns (and follow-up requests
+  in a multi-tool-call turn).
 
 - Two new exported S3 generics, `summarise_block(x, board, id)` and
   `summarise_stack(x)`, drive the per-entity lines in the board summary.
@@ -288,13 +287,6 @@ biggest changes since the Phase 4 cut:
   captured text (truncated at 200 lines). The escape hatch for questions
   the static board summary can’t carry: unique values, group counts,
   ad-hoc filters, cross-block joins.
-
-- `flush_pending()` gains an optional `last_flush_error` reactiveVal
-  argument. On dispatch-time validator rejection it captures the
-  message; on success or no-op it clears. The dynamic prompt reads it
-  via the composer’s `last_flush` arg and emits a one-line “your
-  previous turn’s changes were rejected” note so the model can recover
-  without the user retyping the error.
 
 - Tutorial vignette at the package root
   (`vignette("blockr.assistant")`), surfaced by pkgdown as the

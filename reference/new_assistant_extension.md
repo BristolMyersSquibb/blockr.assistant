@@ -20,9 +20,9 @@ new_assistant_extension(
 
 - system_prompt:
 
-  Either a function (called each refresh with
-  `(board, client, last_flush, ...)` to build the prompt) or a character
-  scalar (used verbatim, no refresh). Defaults to the exported
+  Either a function (called each refresh with `(board, client, ...)` to
+  build the prompt) or a character scalar (used verbatim, no refresh).
+  Defaults to the exported
   [default_system_prompt](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
   function.
 
@@ -47,13 +47,11 @@ A `dock_extension` object additionally inheriting from
 
 The `system_prompt` argument controls the prompt the model sees:
 
-- A **function** is called on every refresh with
-  `(board, client, last_flush, ...)` and must return a character scalar.
-  The default
+- A **function** is called on every refresh with `(board, client, ...)`
+  and must return a character scalar. The default
   [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
-  composes a four-section prompt (intro / tool catalogue / board summary
-  / optional flush-rejection note); a caller can pass any function of
-  the same shape.
+  composes a three-section prompt (intro / tool catalogue / board
+  summary); a caller can pass any function of the same shape.
 
 - A **character scalar** is used verbatim as a static prompt – no
   refresh, no auto-appended catalogue or board summary. The deal is

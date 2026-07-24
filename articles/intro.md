@@ -110,20 +110,20 @@ handling.
   )
   ```
 
-- a **function** – called each refresh with
-  `(board, client, last_flush, ...)`, returning the prompt string. The
-  default `default_system_prompt` composes the four-section default. To
-  extend it, wrap and call through. Custom functions should accept `...`
-  for forward-compatibility with future phases adding inputs.
+- a **function** – called each refresh with `(board, client, ...)`,
+  returning the prompt string. The default `default_system_prompt`
+  composes the three-section default. To extend it, wrap and call
+  through. Custom functions should accept `...` for
+  forward-compatibility with future phases adding inputs.
 
 ``` r
 
-my_prompt <- function(board, client, last_flush, ...) {
+my_prompt <- function(board, client, ...) {
   paste(
     "ADDITIONAL RULE: prefer modify_block over remove + add",
     "when possible.",
     "",
-    default_system_prompt(board, client, last_flush, ...),
+    default_system_prompt(board, client, ...),
     sep = "\n"
   )
 }

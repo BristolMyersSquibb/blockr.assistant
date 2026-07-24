@@ -73,8 +73,8 @@ sees the current shape of the board.</p>
 
 <dl><dt id="arg-system-prompt">system_prompt<a class="anchor" aria-label="anchor" href="#arg-system-prompt"></a></dt>
 <dd><p>Either a function (called each refresh with
-<code>(board, client, last_flush, ...)</code> to build the prompt) or a
-character scalar (used verbatim, no refresh). Defaults to the
+<code>(board, client, ...)</code> to build the prompt) or a character
+scalar (used verbatim, no refresh). Defaults to the
 exported <a href="default_system_prompt.html">default_system_prompt</a> function.</p></dd>
 
 
@@ -96,11 +96,10 @@ server start. <code>NULL</code> starts with an empty conversation.</p></dd>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>The <code>system_prompt</code> argument controls the prompt the model sees:</p><ul><li><p>A <strong>function</strong> is called on every refresh with
-<code>(board, client, last_flush, ...)</code> and must return a character
-scalar. The default <code><a href="default_system_prompt.html">default_system_prompt()</a></code> composes a
-four-section prompt (intro / tool catalogue / board summary /
-optional flush-rejection note); a caller can pass any function
-of the same shape.</p></li>
+<code>(board, client, ...)</code> and must return a character scalar. The
+default <code><a href="default_system_prompt.html">default_system_prompt()</a></code> composes a three-section
+prompt (intro / tool catalogue / board summary); a caller can
+pass any function of the same shape.</p></li>
 <li><p>A <strong>character scalar</strong> is used verbatim as a static prompt – no
 refresh, no auto-appended catalogue or board summary. The deal
 is "give up dynamic context, gain full prompt control".</p></li>

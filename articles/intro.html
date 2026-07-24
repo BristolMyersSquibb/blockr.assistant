@@ -180,19 +180,19 @@ refresh, no auto-appended board context. You take full control:</p>
 <span><span class="op">)</span></span></code></pre></div>
 </li>
 <li><p>a <strong>function</strong> – called each refresh with
-<code>(board, client, last_flush, ...)</code>, returning the prompt
-string. The default <code>default_system_prompt</code> composes the
-four-section default. To extend it, wrap and call through. Custom
-functions should accept <code>...</code> for forward-compatibility with
-future phases adding inputs.</p></li>
+<code>(board, client, ...)</code>, returning the prompt string. The
+default <code>default_system_prompt</code> composes the three-section
+default. To extend it, wrap and call through. Custom functions should
+accept <code>...</code> for forward-compatibility with future phases
+adding inputs.</p></li>
 </ul>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">my_prompt</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">board</span>, <span class="va">client</span>, <span class="va">last_flush</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<code class="sourceCode R"><span><span class="va">my_prompt</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">board</span>, <span class="va">client</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>    <span class="st">"ADDITIONAL RULE: prefer modify_block over remove + add"</span>,</span>
 <span>    <span class="st">"when possible."</span>,</span>
 <span>    <span class="st">""</span>,</span>
-<span>    <span class="fu"><a href="../reference/default_system_prompt.html">default_system_prompt</a></span><span class="op">(</span><span class="va">board</span>, <span class="va">client</span>, <span class="va">last_flush</span>, <span class="va">...</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="../reference/default_system_prompt.html">default_system_prompt</a></span><span class="op">(</span><span class="va">board</span>, <span class="va">client</span>, <span class="va">...</span><span class="op">)</span>,</span>
 <span>    sep <span class="op">=</span> <span class="st">"\n"</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span>

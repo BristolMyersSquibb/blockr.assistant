@@ -1,20 +1,13 @@
 # Default assistant system prompt
 
-Builds the four-section system prompt the assistant ships by default: an
-intro / conventions block, an auto-generated tool catalogue from
-`client$get_tools()`, a compact board summary, and (when applicable) a
-one-line note carrying the previous turn's flush rejection.
+Builds the three-section system prompt the assistant ships by default:
+an intro / conventions block, an auto-generated tool catalogue from
+`client$get_tools()`, and a compact board summary.
 
 ## Usage
 
 ``` r
-default_system_prompt(
-  board = NULL,
-  client = NULL,
-  last_flush = NULL,
-  view_data = NULL,
-  ...
-)
+default_system_prompt(board = NULL, client = NULL, view_data = NULL, ...)
 ```
 
 ## Arguments
@@ -28,12 +21,6 @@ default_system_prompt(
 
   An [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html).
   `NULL` omits the tool catalogue.
-
-- last_flush:
-
-  Reactive holding the previous turn's flush rejection message
-  (character) or `NULL`. `NULL` (or a `NULL` value) omits the delta
-  note.
 
 - view_data:
 
@@ -60,6 +47,6 @@ without mounting a board.
 
 This is the default value of `new_assistant_extension`'s `system_prompt`
 argument. Custom functions passed in its place receive
-`(board, client, last_flush, ...)`; the `...` is forward-compatibility
-headroom for future phases adding inputs (accept `...` in custom
-functions so the call site can grow without breaking you).
+`(board, client, ...)`; the `...` is forward-compatibility headroom for
+future phases adding inputs (accept `...` in custom functions so the
+call site can grow without breaking you).
