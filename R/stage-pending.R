@@ -187,7 +187,68 @@ stage_block_rm <- function(pending, board, id) {
     new$blocks$rm <- c(new$blocks$rm, id)
   }
 
-  commit_pending(pending, isolate(board$board), new, "remove_block", id)
+  brd <- isolate(board$board)
+
+  dropped <- staged_links_incident(new$links, id, brd)
+
+  new$links$add <- new$links$add[setdiff(names(new$links$add), dropped)]
+  new$links$mod <- new$links$mod[setdiff(names(new$links$mod), dropped)]
+
+  new$stacks <- drop_staged_stack_member(new$stacks, id, brd)
+
+  commit_pending(pending, brd, new, "remove_block", id)
+
+  invisible(dropped)
+}
+
+# Core's augment_board_update() cascade only cleans links and stacks that are
+# already on the board, and keys off blocks$rm -- so a reference wired up this
+# same turn, or one wired to a staged-add block now being retracted, survives
+# to point at a block that will not exist. validate_pending() then rejects the
+# whole payload, and since commit_pending() writes nothing on failure, the
+# removal is a silent no-op. We prune those staged references here, reusing
+# core's update_link and update_stack to resolve a pending mod to the link or
+# stack it produces.
+staged_links_incident <- function(lnks, id, board) {
+
+  incident <- function(x) x$from %in% id | x$to %in% id
+
+  merged <- as_links(
+    Map(update_link, board_links(board)[names(lnks$mod)], lnks$mod)
+  )
+
+  unique(
+    c(names(lnks$add)[incident(lnks$add)], names(lnks$mod)[incident(merged)])
+  )
+}
+
+drop_staged_stack_member <- function(stks, id, board) {
+
+  without_id <- function(s) {
+
+    if (id %in% stack_blocks(s)) {
+      stack_blocks(s) <- setdiff(stack_blocks(s), id)
+    }
+
+    s
+  }
+
+  if (length(stks$add)) {
+    stks$add <- as_stacks(
+      set_names(lapply(stks$add, without_id), names(stks$add))
+    )
+  }
+
+  for (sid in names(stks$mod)) {
+
+    eff <- update_stack(board_stacks(board)[[sid]], stks$mod[[sid]])
+
+    if (id %in% stack_blocks(eff)) {
+      stks$mod[[sid]]$blocks <- setdiff(stack_blocks(eff), id)
+    }
+  }
+
+  stks
 }
 
 stage_link_add <- function(pending, board, id, link) {

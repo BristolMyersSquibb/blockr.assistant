@@ -252,6 +252,122 @@ test_that("stage_block_rm rejects an unknown id via the validator", {
   )
 })
 
+test_that("stage_block_rm drops a link staged into the removed block", {
+
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "new", new_head_block())
+  stage_link_add(
+    env$pending, env$board, "new_lnk",
+    new_link("data", "new", "data")
+  )
+
+  expect_equal(stage_block_rm(env$pending, env$board, "new"), "new_lnk")
+
+  p <- isolate(env$pending())
+  expect_length(p$blocks$add, 0L)
+  expect_length(p$links$add, 0L)
+})
+
+test_that("stage_block_rm drops a staged link into a committed block", {
+
+  env <- new_pending_env()
+  stage_link_add(
+    env$pending, env$board, "new_lnk",
+    new_link("head", "spare", "data")
+  )
+
+  expect_equal(stage_block_rm(env$pending, env$board, "spare"), "new_lnk")
+
+  p <- isolate(env$pending())
+  expect_length(p$links$add, 0L)
+  expect_equal(p$blocks$rm, "spare")
+})
+
+test_that("stage_block_rm drops a staged link mod pointing at the block", {
+
+  env <- new_pending_env()
+  stage_link_mod(env$pending, env$board, "lnk1", list(to = "spare"))
+
+  expect_equal(stage_block_rm(env$pending, env$board, "spare"), "lnk1")
+
+  p <- isolate(env$pending())
+  expect_length(p$links$mod, 0L)
+  expect_equal(p$blocks$rm, "spare")
+})
+
+test_that("stage_block_rm leaves unrelated staged links alone", {
+
+  env <- new_pending_env()
+  stage_link_add(
+    env$pending, env$board, "keep",
+    new_link("data", "spare", "data")
+  )
+
+  expect_length(stage_block_rm(env$pending, env$board, "head"), 0L)
+
+  p <- isolate(env$pending())
+  expect_named(p$links$add, "keep")
+  expect_equal(p$blocks$rm, "head")
+})
+
+test_that("stage_block_rm drops the removed block from a staged stack add", {
+
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "new", new_head_block())
+  stage_stack_add(
+    env$pending, env$board, "st1",
+    new_stack(c("new", "spare"), name = "X")
+  )
+
+  stage_block_rm(env$pending, env$board, "new")
+
+  p <- isolate(env$pending())
+  expect_equal(stack_blocks(p$stacks$add[["st1"]]), "spare")
+  expect_length(p$blocks$add, 0L)
+})
+
+test_that("stage_block_rm drops a committed block from a staged stack add", {
+
+  env <- new_pending_env()
+  stage_stack_add(env$pending, env$board, "st2", new_stack("spare", name = "Y"))
+
+  stage_block_rm(env$pending, env$board, "spare")
+
+  p <- isolate(env$pending())
+  expect_length(stack_blocks(p$stacks$add[["st2"]]), 0L)
+  expect_equal(p$blocks$rm, "spare")
+})
+
+test_that("stage_block_rm drops the removed block from a staged stack mod", {
+
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "new", new_head_block())
+  stage_stack_mod(
+    env$pending, env$board, "pipe",
+    list(blocks = c("data", "head", "new"))
+  )
+
+  stage_block_rm(env$pending, env$board, "new")
+
+  p <- isolate(env$pending())
+  expect_equal(p$stacks$mod[["pipe"]]$blocks, c("data", "head"))
+  expect_length(p$blocks$add, 0L)
+})
+
+test_that("stage_block_rm leaves an unrelated staged stack alone", {
+
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "extra", new_head_block())
+  stage_stack_add(
+    env$pending, env$board, "keep", new_stack("spare", name = "K")
+  )
+
+  stage_block_rm(env$pending, env$board, "extra")
+
+  p <- isolate(env$pending())
+  expect_equal(stack_blocks(p$stacks$add[["keep"]]), "spare")
+})
+
 test_that("stage_link_add stages, rejects duplicates, and collapses", {
 
   env <- new_pending_env()
