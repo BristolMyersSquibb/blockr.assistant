@@ -12,8 +12,8 @@ new_assistant_extension(
 }
 \arguments{
 \item{system_prompt}{Either a function (called each refresh with
-\verb{(board, client, last_flush, ...)} to build the prompt) or a
-character scalar (used verbatim, no refresh). Defaults to the
+\verb{(board, client, ...)} to build the prompt) or a character
+scalar (used verbatim, no refresh). Defaults to the
 exported \link{default_system_prompt} function.}
 
 \item{messages}{Optional list of recorded turns (as produced by
@@ -37,11 +37,10 @@ sees the current shape of the board.
 The \code{system_prompt} argument controls the prompt the model sees:
 \itemize{
 \item A \strong{function} is called on every refresh with
-\verb{(board, client, last_flush, ...)} and must return a character
-scalar. The default \code{\link[=default_system_prompt]{default_system_prompt()}} composes a
-four-section prompt (intro / tool catalogue / board summary /
-optional flush-rejection note); a caller can pass any function
-of the same shape.
+\verb{(board, client, ...)} and must return a character scalar. The
+default \code{\link[=default_system_prompt]{default_system_prompt()}} composes a three-section
+prompt (intro / tool catalogue / board summary); a caller can
+pass any function of the same shape.
 \item A \strong{character scalar} is used verbatim as a static prompt -- no
 refresh, no auto-appended catalogue or board summary. The deal
 is "give up dynamic context, gain full prompt control".

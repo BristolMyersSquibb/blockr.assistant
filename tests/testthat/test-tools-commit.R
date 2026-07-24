@@ -182,6 +182,10 @@ test_that("commit reports a rejected update in-band without falling through", {
       expect_match(res, "was rejected", fixed = TRUE)
       expect_match(res, "cycle detected", fixed = TRUE)
       expect_null(isolate(report$feedback))
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "previous turn", fixed = TRUE
+      )
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()

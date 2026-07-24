@@ -42,13 +42,7 @@ test_that("default_system_prompt() golden on a populated board", {
   register_view_tools(client, board, pending, NULL, NULL)
   register_commit_tool(client, function() invisible())
 
-  flush <- reactiveVal("validator rejected cycle: a -> b -> a")
-
-  prompt <- default_system_prompt(
-    board = board,
-    client = client,
-    last_flush = flush
-  )
+  prompt <- default_system_prompt(board = board, client = client)
 
   expect_snapshot(cat(prompt))
 })
@@ -109,26 +103,6 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   expect_match(res, "### Views")
   expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
   expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
-})
-
-test_that("default_system_prompt() surfaces the flush-rejection note", {
-
-  flush <- reactiveVal("validator rejected cycle")
-  res <- default_system_prompt(last_flush = flush)
-
-  expect_match(
-    res,
-    "Note: your previous turn's changes were rejected: validator",
-    fixed = TRUE
-  )
-})
-
-test_that("default_system_prompt() no note when last_flush is NULL", {
-
-  flush <- reactiveVal(NULL)
-  res <- default_system_prompt(last_flush = flush)
-
-  expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
 })
 
 test_that("format_tool_catalogue marks optional args with `?`", {

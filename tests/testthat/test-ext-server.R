@@ -580,7 +580,7 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
 
   # Function that succeeds once (initial mount), then throws.
   call_count <- 0L
-  flaky_prompt <- function(board, client, last_flush, ...) {
+  flaky_prompt <- function(board, client, ...) {
     call_count <<- call_count + 1L
     if (call_count == 1L) {
       "FIRST"
@@ -609,51 +609,6 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
     args = list(
       board = reactiveValues(board = new_board()),
       update = reactiveVal()
-    ),
-    session = with_llm_session()
-  )
-})
-
-test_that("flush rejection populates last_flush_error and the delta note", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  rejecting_update <- recording_update(
-    function(payload) stop("validator rejected this payload")
-  )
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      stage_block_add(
-        pending_update, board, "new", new_head_block()
-      )
-
-      expect_warning(
-        flush_pending(pending_update, update, last_flush_error),
-        "validator rejected this payload"
-      )
-      session$flushReact()
-
-      expect_identical(
-        isolate(last_flush_error()),
-        "validator rejected this payload"
-      )
-
-      prompt <- client_r()$get_system_prompt()
-      expect_match(
-        prompt,
-        "Note: your previous turn's changes were rejected",
-        fixed = TRUE
-      )
-    },
-    args = list(
-      board = reactiveValues(
-        board = new_board(blocks = c(d = new_dataset_block("iris")))
-      ),
-      update = rejecting_update
     ),
     session = with_llm_session()
   )
@@ -858,43 +813,5 @@ test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
       update = reactiveVal()
     ),
     session = sess
-  )
-})
-
-test_that("a successful follow-up flush clears the delta note", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  succeeding_update <- recording_update()
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      last_flush_error("prior rejection")
-      session$flushReact()
-      expect_match(
-        client_r()$get_system_prompt(),
-        "Note: your previous turn's", fixed = TRUE
-      )
-
-      # No staged changes -> no-op flush -> error clears
-      flush_pending(pending_update, update, last_flush_error)
-      session$flushReact()
-
-      expect_null(isolate(last_flush_error()))
-      expect_no_match(
-        client_r()$get_system_prompt(),
-        "Note: your previous turn's", fixed = TRUE
-      )
-    },
-    args = list(
-      board = reactiveValues(
-        board = new_board(blocks = c(d = new_dataset_block("iris")))
-      ),
-      update = succeeding_update
-    ),
-    session = with_llm_session()
   )
 })
