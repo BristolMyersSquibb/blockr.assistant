@@ -2,6 +2,21 @@
 
 ## blockr.assistant (development version)
 
+- `remove_block()` now also cleans up the links and stacks staged for
+  the block in the same turn, not just the ones already on the board.
+  Core’s own cleanup in
+  [`augment_board_update()`](https://bristolmyerssquibb.github.io/blockr.core/reference/board_update.html)
+  only sees committed links and stacks, so staging a block, wiring it up
+  or slotting it into a stack and then removing it again was rejected
+  (“Expecting all links to refer to known block IDs”, or “Unknown block
+  … is assigned to stack …”) – and because staging validates before it
+  writes, the removal was a silent no-op. The model therefore could not
+  retract a block it had just wired until it committed, which is when it
+  is most likely to want to. Staged link modifications and staged stack
+  memberships that point at the removed block are cleaned up as well,
+  and the tool result names the links that went with the block. Fixes
+  \#88.
+
 - The system-prompt board summary is now bounded by a character budget,
   so a large board no longer inflates every request. Each section
   (blocks, links, stacks, options, views, extensions) is trimmed
