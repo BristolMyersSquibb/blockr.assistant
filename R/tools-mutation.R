@@ -119,18 +119,27 @@ tool_remove_block <- function(board, pending, session) {
     function(id) {
       with_tool_errors("remove_block", {
 
-        stage_block_rm(pending, board, id)
+        dropped <- stage_block_rm(pending, board, id)
 
-        sprintf(
-          "Staged remove_block(%s) -- call commit to apply.", id
+        paste0(
+          sprintf("Staged remove_block(%s)", id),
+          if (length(dropped)) {
+            sprintf(
+              " together with the link%s you staged for it (%s)",
+              if (length(dropped) > 1L) "s" else "",
+              toString(dropped)
+            )
+          },
+          " -- call commit to apply."
         )
       })
     },
     name        = "remove_block",
     description = paste(
-      "Remove a block from the board. Any links to or from the",
-      "block are cleaned up at apply time by core; the model does",
-      "not need to remove them explicitly."
+      "Remove a block from the board. Any links to or from the block, and",
+      "any stack it sits in, are cleaned up for you -- both the ones already",
+      "on the board and the ones you staged this turn; the model does not",
+      "need to remove them explicitly."
     ),
     arguments = list(
       id = ellmer::type_string("Block id to remove.")
