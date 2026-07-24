@@ -1,10 +1,9 @@
 #' Default assistant system prompt
 #'
-#' Builds the four-section system prompt the assistant ships by
+#' Builds the three-section system prompt the assistant ships by
 #' default: an intro / conventions block, an auto-generated tool
-#' catalogue from `client$get_tools()`, a compact board summary,
-#' and (when applicable) a one-line note carrying the previous
-#' turn's flush rejection.
+#' catalogue from `client$get_tools()`, and a compact board
+#' summary.
 #'
 #' Each argument is optional; the corresponding section is
 #' omitted when its input is `NULL`, so `default_system_prompt()`
@@ -14,8 +13,8 @@
 #'
 #' This is the default value of `new_assistant_extension`'s
 #' `system_prompt` argument. Custom functions passed in its
-#' place receive `(board, client, last_flush, ...)`; the `...`
-#' is forward-compatibility headroom for future phases adding
+#' place receive `(board, client, ...)`; the `...` is
+#' forward-compatibility headroom for future phases adding
 #' inputs (accept `...` in custom functions so the call site can
 #' grow without breaking you).
 #'
@@ -23,9 +22,6 @@
 #'   to the extension server. `NULL` omits the board section.
 #' @param client An `ellmer::Chat`. `NULL` omits the tool
 #'   catalogue.
-#' @param last_flush Reactive holding the previous turn's flush
-#'   rejection message (character) or `NULL`. `NULL` (or a
-#'   `NULL` value) omits the delta note.
 #' @param view_data Reactive holding `blockr.dock`'s live all-views
 #'   layout (a `list(views, grids)`), as supplied to the extension
 #'   server, or `NULL`. Read for the board section's view summary,
@@ -37,8 +33,7 @@
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  last_flush = NULL, view_data = NULL,
-                                  ...) {
+                                  view_data = NULL, ...) {
 
   tools <- if (!is.null(client)) {
     paste0("\n\n## Tools\n", format_tool_catalogue(client))
@@ -52,28 +47,10 @@ default_system_prompt <- function(board = NULL, client = NULL,
     ""
   }
 
-  err <- if (!is.null(last_flush)) isolate(last_flush()) else NULL
-
-  flush_note <- if (!is.null(err)) {
-    paste0(
-      "\n\n",
-      sprintf(
-        paste(
-          "Note: your previous turn's changes were rejected: %s.",
-          "The board did not change. Re-issue corrected calls."
-        ),
-        err
-      )
-    )
-  } else {
-    ""
-  }
-
   slots <- list(
     layout = read_prompt("layout"),
     tools = tools,
-    board = board_summary,
-    flush_note = flush_note
+    board = board_summary
   )
 
   as.character(

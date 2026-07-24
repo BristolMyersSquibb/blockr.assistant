@@ -9,11 +9,10 @@
 #' The `system_prompt` argument controls the prompt the model sees:
 #'
 #' * A **function** is called on every refresh with
-#'   `(board, client, last_flush, ...)` and must return a character
-#'   scalar. The default [default_system_prompt()] composes a
-#'   four-section prompt (intro / tool catalogue / board summary /
-#'   optional flush-rejection note); a caller can pass any function
-#'   of the same shape.
+#'   `(board, client, ...)` and must return a character scalar. The
+#'   default [default_system_prompt()] composes a three-section
+#'   prompt (intro / tool catalogue / board summary); a caller can
+#'   pass any function of the same shape.
 #' * A **character scalar** is used verbatim as a static prompt -- no
 #'   refresh, no auto-appended catalogue or board summary. The deal
 #'   is "give up dynamic context, gain full prompt control".
@@ -25,8 +24,8 @@
 #' default (functions don't serialise robustly across sessions).
 #'
 #' @param system_prompt Either a function (called each refresh with
-#'   `(board, client, last_flush, ...)` to build the prompt) or a
-#'   character scalar (used verbatim, no refresh). Defaults to the
+#'   `(board, client, ...)` to build the prompt) or a character
+#'   scalar (used verbatim, no refresh). Defaults to the
 #'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
@@ -152,9 +151,8 @@ asst_ext_srv <- function(system_prompt, messages) {
           function(...) system_prompt
         }
 
-        pending_update   <- reactiveVal(empty_pending())
-        last_flush_error <- reactiveVal(NULL)
-        touched          <- reactiveVal(character())
+        pending_update <- reactiveVal(empty_pending())
+        touched        <- reactiveVal(character())
 
         report <- reactiveValues(
           baseline  = NULL,
@@ -338,7 +336,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           if (is.null(cl)) return(invisible())
 
           prompt <- tryCatch(
-            compose(board, cl, last_flush_error, view_data = view_data),
+            compose(board, cl, view_data = view_data),
             error = function(e) {
               notify(
                 paste(
@@ -379,7 +377,6 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         observe({
           board$board
-          last_flush_error()
           client_r()
           refresh_prompt()
         })
@@ -454,7 +451,7 @@ asst_ext_srv <- function(system_prompt, messages) {
                 delay = commit_timeout_secs()
               )
 
-              flush_pending(pending_update, update, last_flush_error)
+              flush_pending(pending_update, update)
             }
           )
         }
@@ -517,7 +514,7 @@ asst_ext_srv <- function(system_prompt, messages) {
               report$baseline <- isolate(board$conditions())
               touched(character())
 
-              flush_pending(pending_update, update, last_flush_error)
+              flush_pending(pending_update, update)
             }
           },
           ignoreNULL = TRUE

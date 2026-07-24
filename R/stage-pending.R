@@ -638,34 +638,18 @@ stage_extension_mod <- function(pending, board, id, delta) {
   )
 }
 
-flush_pending <- function(pending, update, last_flush_error = NULL) {
+flush_pending <- function(pending, update) {
 
   payload <- isolate(pending())
 
   if (!has_any_changes(payload)) {
-
     reset_pending(pending)
-
-    if (!is.null(last_flush_error)) {
-      last_flush_error(NULL)
-    }
-
     return(invisible(FALSE))
   }
 
   tryCatch(
-    {
-      update(payload)
-      if (!is.null(last_flush_error)) {
-        last_flush_error(NULL)
-      }
-    },
+    update(payload),
     error = function(e) {
-
-      if (!is.null(last_flush_error)) {
-        last_flush_error(conditionMessage(e))
-      }
-
       warning(
         "flush_pending: dispatch rejected payload: ",
         conditionMessage(e),

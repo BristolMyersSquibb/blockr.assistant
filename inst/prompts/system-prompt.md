@@ -56,4 +56,4 @@ at all is.
 
 <<layout>>
 
-Answer concisely.<<tools>><<board>><<flush_note>>
+Answer concisely.<<tools>><<board>>

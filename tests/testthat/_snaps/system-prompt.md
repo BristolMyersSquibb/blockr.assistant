@@ -407,6 +407,4 @@
       ### Views
       - Analysis (id: Analysis) (active) <dock_view> data, head
       - Overview (id: Overview) <dock_view> data
-      
-      Note: your previous turn's changes were rejected: validator rejected cycle: a -> b -> a. The board did not change. Re-issue corrected calls.
 
