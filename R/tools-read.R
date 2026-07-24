@@ -18,24 +18,6 @@ register_read_tools <- function(client, board, update, session) {
   invisible(client)
 }
 
-with_tool_errors <- function(name, expr) {
-
-  tryCatch(
-    expr,
-    error = function(e) {
-
-      msg <- conditionMessage(e)
-      pat <- sprintf("^%s\\([^)]*\\) failed:", name)
-
-      if (grepl(pat, msg)) {
-        msg
-      } else {
-        sprintf("%s failed: %s", name, msg)
-      }
-    }
-  )
-}
-
 tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
@@ -364,6 +346,88 @@ tool_get_block_conditions <- function(board, update, session) {
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
+    )
+  )
+}
+
+tool_query_data <- function(board, update, session) {
+
+  ellmer::tool(
+    function(code) {
+      with_tool_errors("query_data", {
+
+        blks <- isolate(board$blocks)
+
+        data <- list()
+        skipped <- character()
+
+        for (id in names(blks)) {
+
+          res <- tryCatch(
+            isolate(blks[[id]]$server$result()),
+            error = function(e) e
+          )
+
+          if (inherits(res, "error")) {
+            skipped <- c(skipped, id)
+          } else {
+            data[[id]] <- res
+          }
+        }
+
+        env <- eval_env(data)
+        parsed <- parse(text = code)
+
+        output <- capture.output({
+          val <- NULL
+          for (e in parsed) {
+            val <- eval(e, envir = env)
+          }
+          if (!is.null(val)) {
+            print(val)
+          }
+        })
+
+        if (length(output) > 200L) {
+          hidden <- length(output) - 200L
+          output <- c(
+            output[seq_len(200L)],
+            sprintf("(output truncated; %d lines hidden)", hidden)
+          )
+        }
+
+        if (length(skipped)) {
+          output <- c(
+            sprintf(
+              "(skipped blocks with errors: %s)",
+              paste(skipped, collapse = ", ")
+            ),
+            "",
+            output
+          )
+        }
+
+        paste(output, collapse = "\n")
+      })
+    },
+    name        = "query_data",
+    description = paste(
+      "Evaluate R code against the board's block results. Every",
+      "committed block's evaluated result is bound in scope by its",
+      "block id (e.g. for a block with id `data` write `head(data)`).",
+      "Returns captured stdout plus the auto-printed value of the",
+      "last expression -- the same shape an R REPL would produce.",
+      "Use this for questions the Board section doesn't carry:",
+      "unique values, group counts, ad-hoc filters, joins across",
+      "blocks. Read-only; the board is not modified."
+    ),
+    arguments = list(
+      code = ellmer::type_string(
+        paste(
+          "R code to evaluate. Multiple statements allowed; the",
+          "last expression's value is auto-printed."
+        )
+      )
     )
   )
 }
