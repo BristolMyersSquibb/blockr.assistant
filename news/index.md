@@ -77,8 +77,8 @@
   (complete worked configurations keyed by argument name), and its
   `arguments` column now maps each argument to its description and
   machine-readable JSON-Schema `type` descriptor
-  ([`arg_string()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_block_arg.html),
-  [`arg_enum()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_block_arg.html),
+  ([`arg_string()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_arg_spec.html),
+  [`arg_enum()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_arg_spec.html),
   …) rather than a bare description string – so an argument’s allowed
   values and shape reach the model, not just prose. All of it is read
   through core’s new
