@@ -2,6 +2,22 @@
 
 ## blockr.assistant (development version)
 
+- The read tools now follow a lean-listing / per-item-detail split: a
+  listing carries only the fields you pick an item on, and bloat-prone
+  detail moves to a companion drill-down tool. `list_block_types`
+  (renamed from `list_available_blocks`) keeps id, name, package,
+  category, a one-line description and the input slots; its `guidance`,
+  per-argument specs and worked `examples` move to a new
+  `describe_block_type(id)`. `list_stacks` drops its `description`
+  column for a new `describe_stack(id)`, and `list_extensions` drops the
+  controllable variables’ current `values` for a new
+  `describe_extension(id)` – keeping a document extension’s full text
+  out of every listing row. The block and extension descriptions that
+  stay in the listings are trimmed to
+  `blockr.assistant_description_max_chars` (default 1000), each pointing
+  at its drill-down tool for the full text. Lean listings are inherently
+  bounded, so no row cap or JSON truncation is needed. Fixes \#85.
+
 - Staged changes are no longer auto-applied at the end of a turn. When
   the model ends a turn with uncommitted staged changes, it is now
   prompted to resolve them explicitly – `commit` to apply them (with the

@@ -143,7 +143,7 @@ customise the detailed descriptions the model can request on demand:
 | Generic | Used by | When you’d override |
 |----|----|----|
 | `describe_block(x, board, id)` | `describe_block` tool | full description on user demand |
-| `describe_stack(x)` | `list_stacks` tool description column | ditto for stacks |
+| `describe_stack(x)` | `describe_stack` tool | ditto for stacks |
 
 The default methods report the class, name, arguments, external control
 and incoming links; override them when your class carries extra state
