@@ -94,7 +94,7 @@ test_that("tool_list_links returns the board's link data.frame", {
   expect_equal(res$to, "head")
 })
 
-test_that("tool_list_stacks surfaces a class-dispatched description", {
+test_that("tool_list_stacks returns lean id/name/blocks rows", {
 
   brd <- make_iris_board()
   board <- reactiveValues(board = brd)
@@ -102,12 +102,33 @@ test_that("tool_list_stacks surfaces a class-dispatched description", {
   res <- call_tool(tool_list_stacks(board, NULL, NULL))
 
   expect_s3_class(res, "data.frame")
-  expect_named(res, c("id", "name", "blocks", "description"))
+  expect_named(res, c("id", "name", "blocks"))
   expect_equal(nrow(res), 1L)
-  expect_match(res$description, "Pipeline", fixed = TRUE)
+  expect_identical(res$blocks, "data, head")
 })
 
-test_that("tool_list_stacks override is honoured in the description column", {
+test_that("tool_describe_stack surfaces a class-dispatched description", {
+
+  brd <- make_iris_board()
+  board <- reactiveValues(board = brd)
+
+  res <- call_tool(tool_describe_stack(board, NULL, NULL), id = "pipeline")
+
+  expect_type(res, "character")
+  expect_match(res, "Pipeline", fixed = TRUE)
+})
+
+test_that("tool_describe_stack returns a recovery hint for unknown id", {
+
+  brd <- make_iris_board()
+  board <- reactiveValues(board = brd)
+
+  res <- call_tool(tool_describe_stack(board, NULL, NULL), id = "bogus")
+
+  expect_match(res, "No stack with id bogus", fixed = TRUE)
+})
+
+test_that("tool_describe_stack honours a class override", {
 
   brd <- new_board(
     blocks = c(data = new_dataset_block("iris")),
@@ -133,28 +154,49 @@ test_that("tool_list_stacks override is honoured in the description column", {
 
   board <- reactiveValues(board = brd)
 
-  res <- call_tool(tool_list_stacks(board, NULL, NULL))
+  res <- call_tool(tool_describe_stack(board, NULL, NULL), id = "custom")
 
-  expect_identical(res$description, "OVERRIDE")
+  expect_identical(res, "OVERRIDE")
 })
 
-test_that("tool_list_available_blocks returns registry metadata rows", {
+test_that("tool_list_block_types returns lean selection rows", {
 
   board <- reactiveValues(board = new_board())
 
-  res <- call_tool(tool_list_available_blocks(board, NULL, NULL))
+  res <- call_tool(tool_list_block_types(board, NULL, NULL))
 
   expect_s3_class(res, "data.frame")
-  expect_true(
-    all(
-      c("id", "name", "package", "category", "description", "guidance",
-        "arguments", "examples", "inputs") %in% names(res)
-    )
+  expect_named(
+    res, c("id", "name", "package", "category", "description", "inputs")
   )
+  expect_false(any(c("guidance", "arguments", "examples") %in% names(res)))
   expect_gt(nrow(res), 0L)
 })
 
-test_that("tool_list_available_blocks surfaces construction metadata", {
+test_that("tool_list_block_types caps a long description", {
+
+  long <- strrep("x", description_max_chars() + 500L)
+
+  register_block(
+    ctor        = new_head_block,
+    name        = "Fixture Long",
+    description = long,
+    uid         = "fixture_long_desc",
+    overwrite   = TRUE
+  )
+  withr::defer(unregister_blocks("fixture_long_desc"))
+
+  board <- reactiveValues(board = new_board())
+
+  res  <- call_tool(tool_list_block_types(board, NULL, NULL))
+  desc <- res$description[res$id == "fixture_long_desc"]
+
+  expect_lt(nchar(desc), nchar(long))
+  expect_match(desc, "chars truncated", fixed = TRUE)
+  expect_match(desc, "describe_block_type", fixed = TRUE)
+})
+
+test_that("tool_describe_block_type surfaces construction metadata", {
 
   register_block(
     ctor        = new_head_block,
@@ -174,24 +216,34 @@ test_that("tool_list_available_blocks surfaces construction metadata", {
 
   board <- reactiveValues(board = new_board())
 
-  res <- call_tool(tool_list_available_blocks(board, NULL, NULL))
-  row <- res[res$id == "fixture_meta_block", ]
+  res <- call_tool(
+    tool_describe_block_type(board, NULL, NULL), id = "fixture_meta_block"
+  )
 
-  expect_identical(row$guidance, "Pick n to match the question.")
-  expect_identical(row$examples[[1L]], list(list(n = 3L)))
+  expect_identical(res$guidance, "Pick n to match the question.")
+  expect_identical(res$examples, list(list(n = 3L)))
 
-  args <- row$arguments[[1L]]
+  args <- res$arguments
   expect_identical(args$n$description, "Rows to keep")
   expect_identical(args$n$type$type, "integer")
   expect_identical(args$direction$type$type, "string")
   expect_true(all(c("head", "tail") %in% args$direction$type$enum))
 })
 
-test_that("tool_list_available_blocks surfaces block input slots", {
+test_that("tool_describe_block_type returns a recovery hint for unknown id", {
 
   board <- reactiveValues(board = new_board())
 
-  res <- call_tool(tool_list_available_blocks(board, NULL, NULL))
+  res <- call_tool(tool_describe_block_type(board, NULL, NULL), id = "bogus")
+
+  expect_match(res, "No registered block type 'bogus'", fixed = TRUE)
+})
+
+test_that("tool_list_block_types surfaces block input slots", {
+
+  board <- reactiveValues(board = new_board())
+
+  res <- call_tool(tool_list_block_types(board, NULL, NULL))
 
   expect_true("inputs" %in% names(res))
   expect_identical(res$inputs[res$id == "head_block"], "data")
@@ -295,7 +347,7 @@ test_that("register_read_tools wires every read tool onto a chat client", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
 
-  expect_equal(length(client$get_tools()) - before, 8L)
+  expect_equal(length(client$get_tools()) - before, 10L)
 })
 
 make_board <- function(results = list()) {

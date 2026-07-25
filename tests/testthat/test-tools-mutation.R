@@ -186,7 +186,7 @@ test_that("add_block surfaces unknown block type with discoverable hint", {
 
   expect_match(res, "^add_block failed:")
   expect_match(res, "unknown block type")
-  expect_match(res, "list_available_blocks")
+  expect_match(res, "list_block_types")
 })
 
 test_that("add_block generates an id when omitted", {

@@ -2,6 +2,7 @@ register_extension_tools <- function(client, board, pending, extensions,
                                      session) {
 
   client$register_tool(tool_list_extensions(board, extensions, session))
+  client$register_tool(tool_describe_extension(board, extensions, session))
   client$register_tool(tool_modify_extension(board, pending, session))
 
   invisible(client)
@@ -42,20 +43,21 @@ tool_list_extensions <- function(board, extensions, session) {
 
         lapply(names(exts), function(id) {
 
-          vars <- external_ctrl_vars(exts[[id]])
+          desc <- extension_description(exts[[id]])
 
-          values <- set_names(
-            lapply(vars, ext_current_value, extensions, id),
-            vars
-          )
+          if (!is.null(desc)) {
+            desc <- truncate_chars(
+              desc, description_max_chars(),
+              "call describe_extension for the full description"
+            )
+          }
 
           compact(
             list(
               id           = id,
               name         = extension_name(exts[[id]]),
-              description  = extension_description(exts[[id]]),
-              controllable = vars,
-              values       = compact(values)
+              description  = desc,
+              controllable = external_ctrl_vars(exts[[id]])
             )
           )
         })
@@ -63,15 +65,73 @@ tool_list_extensions <- function(board, extensions, session) {
     },
     name = "list_extensions",
     description = paste(
-      "List dock extensions on the board. One entry per extension:",
+      "List dock extensions on the board. One lean entry per extension:",
       "its id, display name, an optional `description` explaining what",
       "the extension is and how to drive it (present only when the",
-      "extension supplies one), the variables that are externally",
-      "controllable via modify_extension, and their current values.",
-      "An empty `controllable` list means the extension exposes no",
-      "modifiable variables. Dock boards only."
+      "extension supplies one), and the variables that are externally",
+      "controllable via modify_extension. An empty `controllable` list",
+      "means the extension exposes no modifiable variables. Call",
+      "describe_extension(id) for an extension's current variable",
+      "values. Dock boards only."
     ),
     arguments = list()
+  )
+}
+
+tool_describe_extension <- function(board, extensions, session) {
+
+  ellmer::tool(
+    function(id) {
+      with_tool_errors("describe_extension", {
+
+        brd <- isolate(board$board)
+
+        if (!inherits(brd, "dock_board")) {
+          return("This board is not a dock board -- it has no extensions.")
+        }
+
+        exts <- as.list(dock_extensions(brd))
+
+        if (!id %in% names(exts)) {
+          return(
+            sprintf(
+              "No extension with id %s. Call list_extensions first.", id
+            )
+          )
+        }
+
+        ext  <- exts[[id]]
+        vars <- external_ctrl_vars(ext)
+
+        values <- set_names(
+          lapply(vars, ext_current_value, extensions, id),
+          vars
+        )
+
+        compact(
+          list(
+            id           = id,
+            name         = extension_name(ext),
+            description  = extension_description(ext),
+            controllable = vars,
+            values       = compact(values)
+          )
+        )
+      })
+    },
+    name = "describe_extension",
+    description = paste(
+      "Report a dock extension's current detail: its full description",
+      "and the current values of its externally controllable variables",
+      "(e.g. a document extension's text). The per-extension drill-down",
+      "companion to list_extensions, which carries only id, name and the",
+      "variable names. Dock boards only."
+    ),
+    arguments = list(
+      id = ellmer::type_string(
+        "Extension id, as returned by list_extensions."
+      )
+    )
   )
 }
 
