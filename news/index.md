@@ -2,6 +2,17 @@
 
 ## blockr.assistant (development version)
 
+- Staged changes are no longer auto-applied at the end of a turn. When
+  the model ends a turn with uncommitted staged changes, it is now
+  prompted to resolve them explicitly – `commit` to apply them (with the
+  in-band review) or the new `discard` tool to drop them – rather than
+  the board being changed behind the model’s back and the review
+  arriving on the next turn. Every apply now flows through the single
+  `commit` path, so staging genuinely means nothing is applied until a
+  commit. The prompt is bounded; unresolved staged changes are dropped
+  after a few reminders. This retires the turn-end backstop and its
+  out-of-band review injection. Fixes \#91.
+
 - `remove_block()` now also cleans up the links and stacks staged for
   the block in the same turn, not just the ones already on the board.
   Core’s own cleanup in
@@ -52,9 +63,7 @@
   `commit` tool that returns the touched blocks’ results as its own tool
   result, in-band. The model can stage a unit of work, commit, read what
   it built and correct it – all within one turn – instead of the review
-  arriving as a synthetic user message on the next turn.
-  Staged-but-uncommitted changes at turn end are still applied as a
-  backstop, with a nudge to commit. Fixes \#73.
+  arriving as a synthetic user message on the next turn. Fixes \#73.
 
 - `focus_panel(view, panel)` brings a panel already in a view to the
   front of its tab group and focuses it, switching to that view if it
