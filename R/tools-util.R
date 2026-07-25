@@ -59,3 +59,16 @@ parse_args_json <- function(s, tool) {
 compact <- function(x) {
   x[!vapply(x, is.null, logical(1L))]
 }
+
+nullify <- function(x) {
+
+  if (length(x) == 0L) {
+    return(NULL)
+  }
+
+  if (is.atomic(x) && length(x) == 1L && is.na(x)) {
+    return(NULL)
+  }
+
+  x
+}

@@ -4,8 +4,12 @@ register_read_tools <- function(client, board, update, session) {
   client$register_tool(tool_describe_block(board, update, session))
   client$register_tool(tool_list_links(board, update, session))
   client$register_tool(tool_list_stacks(board, update, session))
+  client$register_tool(tool_describe_stack(board, update, session))
   client$register_tool(
-    tool_list_available_blocks(board, update, session)
+    tool_list_block_types(board, update, session)
+  )
+  client$register_tool(
+    tool_describe_block_type(board, update, session)
   )
   client$register_tool(
     tool_get_block_result(board, update, session)
@@ -125,40 +129,67 @@ tool_list_stacks <- function(board, update, session) {
         if (!length(stks)) {
           return(
             data.frame(
-              id          = character(),
-              name        = character(),
-              blocks      = character(),
-              description = character()
+              id     = character(),
+              name   = character(),
+              blocks = character()
             )
           )
         }
 
         data.frame(
-          id          = names(stks),
-          name        = chr_ply(stks, function(s) {
-            coal(stack_name(s), NA_character_)
-          }),
-          blocks      = chr_ply(stks, function(s) {
+          id     = names(stks),
+          name   = chr_ply(
+            stks, function(s) coal(stack_name(s), NA_character_)
+          ),
+          blocks = chr_ply(stks, function(s) {
             paste(stack_blocks(s), collapse = ", ")
           }),
-          description = chr_ply(stks, function(s) {
-            truncate_chars(
-              paste(describe_stack(s), collapse = "\n"), summary_max_chars()
-            )
-          }),
-          row.names   = NULL
+          row.names = NULL
         )
       })
     },
     name        = "list_stacks",
     description = paste(
-      "List all stacks on the board. One row per stack: id, name,",
-      "comma-separated member block ids, and a class-specific",
-      "description (data.frames are summarised; non-base stack",
-      "classes can surface extra attributes via the describe_stack",
-      "S3 generic)."
+      "List all stacks on the board. One row per stack: id, name, and",
+      "comma-separated member block ids. Call describe_stack for a",
+      "stack's class-specific description -- non-base stack classes can",
+      "surface extra attributes (e.g. a colour) via the describe_stack",
+      "S3 generic."
     ),
     arguments   = list()
+  )
+}
+
+tool_describe_stack <- function(board, update, session) {
+
+  ellmer::tool(
+    function(id) {
+      with_tool_errors("describe_stack", {
+
+        stks <- board_stacks(isolate(board$board))
+
+        if (!id %in% names(stks)) {
+          return(
+            sprintf("No stack with id %s. Call list_stacks first.", id)
+          )
+        }
+
+        truncate_chars(
+          paste(describe_stack(stks[[id]]), collapse = "\n"),
+          summary_max_chars()
+        )
+      })
+    },
+    name        = "describe_stack",
+    description = paste(
+      "Describe a stack on the board: its name, member block ids, and",
+      "any class-specific attributes a non-base stack surfaces via the",
+      "describe_stack S3 generic. The per-stack drill-down companion to",
+      "list_stacks."
+    ),
+    arguments   = list(
+      id = ellmer::type_string("Stack id, as returned by list_stacks.")
+    )
   )
 }
 
@@ -175,11 +206,28 @@ arg_specs <- function(args) {
   set_names(lapply(args, arg_spec), names(args))
 }
 
-tool_list_available_blocks <- function(board, update, session) {
+type_inputs <- function(id) {
+
+  blk <- tryCatch(create_block(id), error = function(e) NULL)
+
+  if (is.null(blk)) {
+    return(NA_character_)
+  }
+
+  if (is.na(block_arity(blk))) {
+    return("...")
+  }
+
+  ins <- block_inputs(blk)
+
+  if (length(ins)) paste(ins, collapse = ", ") else NA_character_
+}
+
+tool_list_block_types <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_available_blocks", {
+      with_tool_errors("list_block_types", {
 
         uids <- list_blocks()
 
@@ -191,9 +239,6 @@ tool_list_available_blocks <- function(board, update, session) {
               package     = character(),
               category    = character(),
               description = character(),
-              guidance    = character(),
-              arguments   = I(list()),
-              examples    = I(list()),
               inputs      = character()
             )
           )
@@ -201,63 +246,93 @@ tool_list_available_blocks <- function(board, update, session) {
 
         meta <- block_metadata(uids)
 
-        inputs <- chr_ply(
-          uids,
-          function(id) {
-
-            blk <- tryCatch(create_block(id), error = function(e) NULL)
-
-            if (is.null(blk)) {
-              return(NA_character_)
-            }
-
-            if (is.na(block_arity(blk))) {
-              return("...")
-            }
-
-            ins <- block_inputs(blk)
-
-            if (length(ins)) paste(ins, collapse = ", ") else NA_character_
-          },
-          use_names = FALSE
-        )
-
         data.frame(
           id          = uids,
           name        = meta$name,
           package     = meta$package,
           category    = meta$category,
-          description = meta$description,
-          guidance    = meta$guidance,
-          arguments   = I(lapply(meta$arguments, arg_specs)),
-          examples    = I(meta$examples),
-          inputs      = inputs,
+          description = chr_ply(
+            meta$description, truncate_chars, description_max_chars(),
+            "call describe_block_type for the full description",
+            use_names = FALSE
+          ),
+          inputs      = chr_ply(uids, type_inputs, use_names = FALSE),
           row.names   = NULL
         )
       })
     },
-    name        = "list_available_blocks",
+    name        = "list_block_types",
     description = paste(
-      "List every registered block constructor -- block types the",
-      "user can add to the board. One row per type with id, name,",
-      "package, category, description, a `guidance` column (model-facing",
-      "construction notes, NA when none), an `arguments` list-column",
-      "mapping each argument name to its description and, when the block",
-      "declares one, a JSON-Schema `type` descriptor (e.g. an enum's",
-      "allowed values), an `examples` list-column of complete worked",
-      "configurations keyed by argument name (empty when none), and an",
-      "`inputs` column listing the block's input-slot names. Consult",
-      "`guidance`, `examples` and the argument `type`s before",
-      "configuring a block. Use the `inputs` names verbatim",
-      "as the `input=` value in add_link (most blocks take \"data\"; some",
-      "take several, e.g. \"data, by\") -- never invent a slot name.",
-      "An empty `inputs` (NA) is a source block that takes no incoming",
-      "links. An `inputs` of \"...\" is a variadic block (e.g. rbind,",
-      "glue) that accepts any number of links: give each link its own",
-      "distinct `input` name, or pass \"\" to auto-number them -- never",
-      "pass \"...\" itself."
+      "List every registered block constructor -- the block types the",
+      "user can add to the board. One lean row per type, carrying just",
+      "the fields you pick a type on: id, name, package, category, a",
+      "one-line description, and an `inputs` column listing the block's",
+      "input-slot names. Call describe_block_type(id) for a chosen",
+      "type's construction detail -- its guidance, per-argument",
+      "descriptions and types, and worked examples -- before",
+      "configuring it. Use the `inputs` names verbatim as the `input=`",
+      "value in add_link (most blocks take \"data\"; some take several,",
+      "e.g. \"data, by\") -- never invent a slot name. An empty `inputs`",
+      "(NA) is a source block that takes no incoming links. An `inputs`",
+      "of \"...\" is a variadic block (e.g. rbind, glue) that accepts any",
+      "number of links: give each link its own distinct `input` name,",
+      "or pass \"\" to auto-number them -- never pass \"...\" itself."
     ),
     arguments   = list()
+  )
+}
+
+tool_describe_block_type <- function(board, update, session) {
+
+  ellmer::tool(
+    function(id) {
+      with_tool_errors("describe_block_type", {
+
+        if (!id %in% list_blocks()) {
+          return(
+            sprintf(
+              paste(
+                "No registered block type '%s'.",
+                "Call list_block_types first."
+              ),
+              id
+            )
+          )
+        }
+
+        meta <- block_metadata(id)
+
+        compact(
+          list(
+            id          = id,
+            name        = meta$name,
+            package     = meta$package,
+            category    = meta$category,
+            description = meta$description,
+            guidance    = nullify(meta$guidance),
+            inputs      = nullify(type_inputs(id)),
+            arguments   = nullify(arg_specs(meta$arguments[[1L]])),
+            examples    = nullify(meta$examples[[1L]])
+          )
+        )
+      })
+    },
+    name        = "describe_block_type",
+    description = paste(
+      "Report the full construction detail for one registered block",
+      "type: its description, model-facing `guidance`, an `arguments`",
+      "map (each argument's description and, when the block declares",
+      "one, a JSON-Schema `type` descriptor such as an enum's allowed",
+      "values), and `examples` -- complete worked configurations keyed",
+      "by argument name. The per-type drill-down companion to",
+      "list_block_types: pick a type from that lean list, then",
+      "call this before configuring it with add_block."
+    ),
+    arguments   = list(
+      id = ellmer::type_string(
+        "Block type id, as returned by list_block_types."
+      )
+    )
   )
 }
 

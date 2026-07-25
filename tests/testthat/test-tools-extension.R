@@ -46,7 +46,7 @@ fake_peers <- function(content = "# live") {
   peers
 }
 
-test_that("list_extensions reports id, name, controllable vars, live values", {
+test_that("list_extensions reports lean id, name, controllable vars", {
 
   env <- new_ext_tool_env()
   le  <- tool_list_extensions(env$board, fake_peers("# live"), session = NULL)
@@ -59,9 +59,8 @@ test_that("list_extensions reports id, name, controllable vars, live values", {
   expect_identical(entry$id, "doc_extension")
   expect_identical(entry$name, "Document")
   expect_false("description" %in% names(entry))
+  expect_false("values" %in% names(entry))
   expect_setequal(entry$controllable, c("content", "title"))
-  expect_named(entry$values, "content")
-  expect_identical(entry$values$content, "# live")
 })
 
 test_that("list_extensions surfaces an extension description when present", {
@@ -86,7 +85,6 @@ test_that("list_extensions lists controllable vars without a live peer env", {
 
   expect_length(out, 1L)
   expect_setequal(out[[1L]]$controllable, c("content", "title"))
-  expect_length(out[[1L]]$values, 0L)
 })
 
 test_that("list_extensions returns an empty list on a non-dock board", {
@@ -98,6 +96,53 @@ test_that("list_extensions returns an empty list on a non-dock board", {
   le <- tool_list_extensions(board, extensions = NULL, session = NULL)
 
   expect_length(le(), 0L)
+})
+
+test_that("describe_extension reports live values for a controllable var", {
+
+  env <- new_ext_tool_env()
+  de  <- tool_describe_extension(
+    env$board, fake_peers("# live"), session = NULL
+  )
+
+  out <- de(id = "doc_extension")
+
+  expect_identical(out$id, "doc_extension")
+  expect_identical(out$name, "Document")
+  expect_setequal(out$controllable, c("content", "title"))
+  expect_named(out$values, "content")
+  expect_identical(out$values$content, "# live")
+})
+
+test_that("describe_extension surfaces the extension description", {
+
+  env <- new_ext_tool_env(
+    make_ext_tool_board(description = "Embed block results via blockr://<id>.")
+  )
+  de <- tool_describe_extension(env$board, extensions = NULL, session = NULL)
+
+  expect_identical(
+    de(id = "doc_extension")$description,
+    "Embed block results via blockr://<id>."
+  )
+})
+
+test_that("describe_extension returns a recovery hint for unknown id", {
+
+  env <- new_ext_tool_env()
+  de  <- tool_describe_extension(env$board, extensions = NULL, session = NULL)
+
+  expect_match(de(id = "ghost"), "No extension with id ghost", fixed = TRUE)
+})
+
+test_that("describe_extension reports a non-dock board", {
+
+  board <- reactiveValues(
+    board = new_board(blocks = c(a = new_dataset_block("iris")))
+  )
+  de <- tool_describe_extension(board, extensions = NULL, session = NULL)
+
+  expect_match(de(id = "whatever"), "not a dock board", fixed = TRUE)
 })
 
 test_that("modify_extension stages a controllable delta", {

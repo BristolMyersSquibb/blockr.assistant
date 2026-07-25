@@ -44,7 +44,7 @@ tool_add_block <- function(board, pending, session) {
           stop(
             sprintf(
               paste(
-                "unknown block type '%s'. Call list_available_blocks",
+                "unknown block type '%s'. Call list_block_types",
                 "to see registered types."
               ),
               type
@@ -64,7 +64,7 @@ tool_add_block <- function(board, pending, session) {
               paste(
                 "add_block('%s') got unrecognized argument(s): %s.",
                 "Configurable arguments are: %s. Use exactly these names",
-                "(mirror the example from list_available_blocks); if a listed",
+                "(mirror the example from describe_block_type); if a listed",
                 "argument is itself an object, nest its fields under that",
                 "argument name rather than passing them at the top level."
               ),
@@ -87,20 +87,20 @@ tool_add_block <- function(board, pending, session) {
     name        = "add_block",
     description = paste(
       "Add a new block to the board. `type` is a block id as",
-      "reported by list_available_blocks. `args` is a JSON object",
+      "reported by list_block_types. `args` is a JSON object",
       "(passed as a string) of constructor arguments -- field",
       "names must match the arg names reported by",
-      "list_available_blocks for the chosen type. `id` is optional",
+      "describe_block_type for the chosen type. `id` is optional",
       "-- if omitted, a unique id is generated."
     ),
     arguments = list(
       type = ellmer::type_string(
-        "Block type id, from list_available_blocks."
+        "Block type id, from list_block_types."
       ),
       args = ellmer::type_string(
         paste(
           "JSON object of constructor arguments, e.g. '{\"n\": 10}'.",
-          "Field names match list_available_blocks; follow the worked",
+          "Field names match describe_block_type; follow the worked",
           "example and guidance it reports for the chosen type. Pass",
           "'{}' if the block has no required args."
         )

@@ -28,3 +28,7 @@ summary_max_chars <- function() {
 board_section_max_chars <- function() {
   as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
 }
+
+description_max_chars <- function() {
+  as.integer(blockr_option("assistant_description_max_chars", 1000L))
+}
