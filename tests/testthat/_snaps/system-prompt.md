@@ -25,9 +25,14 @@
       it and commit again if not, briefly confirm if so. Commit a
       coherent unit at a time, not once per staged change. Your
       tool-call history since your last commit is the record of what
-      is still pending. If you end your turn with uncommitted staged
-      changes they are applied as a backstop, but you will not see
-      their results -- so prefer to commit.
+      is still pending. Nothing applies until you commit, so never
+      end a turn with staged changes unresolved. Any turn in which you
+      stage something must end by calling `commit` to apply it (and
+      read back the results) or `discard` to drop it -- these are your
+      two ways to close out a turn's staged work, and one of them is
+      required whenever anything is staged. If you do end a turn with
+      changes still staged, you are prompted to resolve them, and they
+      are dropped if you leave them unresolved.
       
       Block, link and stack ids are immutable once committed. If the
       user asks to rename one, explain you can offer remove + add
@@ -207,9 +212,14 @@
       it and commit again if not, briefly confirm if so. Commit a
       coherent unit at a time, not once per staged change. Your
       tool-call history since your last commit is the record of what
-      is still pending. If you end your turn with uncommitted staged
-      changes they are applied as a backstop, but you will not see
-      their results -- so prefer to commit.
+      is still pending. Nothing applies until you commit, so never
+      end a turn with staged changes unresolved. Any turn in which you
+      stage something must end by calling `commit` to apply it (and
+      read back the results) or `discard` to drop it -- these are your
+      two ways to close out a turn's staged work, and one of them is
+      required whenever anything is staged. If you do end a turn with
+      changes still staged, you are prompted to resolve them, and they
+      are dropped if you leave them unresolved.
       
       Block, link and stack ids are immutable once committed. If the
       user asks to rename one, explain you can offer remove + add
@@ -391,7 +401,8 @@
       - `focus_panel(view, panel)`: Bring a panel already in a view to the front of its tab group and focus it, addressed by view id (see list_views). `panel` must currently be a member of the view. If `view` isn't the active one, the board switches to it so the panel is actually surfaced. Use it to draw attention to a specific block or extension -- e.g. one you just added or whose result you just evaluated. Membership and arrangement are unchanged; only the front tab and active view move.
       - `set_active_view(id)`: Switch the active view (the tab shown by default on next render), addressed by id (see list_views). The view must exist on the board, or be a view staged for creation this turn (pass the name given to add_view).
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
-      - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. A no-op if nothing is staged.
+      - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. Always resolve a turn's staged changes before ending the turn: commit them here, or discard to drop them. A no-op if nothing is staged.
+      - `discard()`: Drop everything you have staged this turn without applying it, leaving the board unchanged. Use this to abandon staged changes you no longer want. A no-op if nothing is staged.
       
       ## Board
       2 block(s), 1 link(s), 0 stack(s).

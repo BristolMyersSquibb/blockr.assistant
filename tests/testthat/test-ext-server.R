@@ -131,7 +131,7 @@ test_that("server registers the read and mutation tools on the client", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 31L)
+      expect_length(tools, 32L)
       expect_setequal(
         names(tools),
         c(
@@ -141,7 +141,7 @@ test_that("server registers the read and mutation tools on the client", {
           "add_block", "remove_block", "modify_block",
           "add_link", "remove_link", "modify_link",
           "add_stack", "remove_stack", "modify_stack",
-          "commit",
+          "commit", "discard",
           "list_views", "validate_layout",
           "add_view", "remove_view",
           "add_panel_to_view", "remove_panel_from_view", "move_panel",
@@ -174,7 +174,7 @@ test_that("a dock board additionally registers the extension tools", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 33L)
+      expect_length(tools, 34L)
       expect_true(
         all(c("list_extensions", "modify_extension") %in% names(tools))
       )
@@ -687,8 +687,8 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
       )
       expect_length(assistant_turns, 1L)
 
-      # Tools re-registered (31 surface-tools, same as initial mount)
-      expect_length(client_r()$get_tools(), 31L)
+      # Tools re-registered (32 surface-tools, same as initial mount)
+      expect_length(client_r()$get_tools(), 32L)
     },
     args = list(
       board = reactiveValues(board = new_board()),
@@ -813,5 +813,133 @@ test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
       update = reactiveVal()
     ),
     session = sess
+  )
+})
+
+test_that("uncommitted changes at turn end nudge the model, nothing applies", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  calls <- 0L
+  fake_update <- recording_update(function(payload) calls <<- calls + 1L)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "h", new_head_block())
+      nudge_or_discard()
+
+      expect_identical(calls, 0L)
+      expect_true(isolate(has_any_changes(pending_update())))
+      expect_identical(isolate(report$count), 1L)
+
+      nudge <- isolate(report$nudge)
+      expect_false(is.null(nudge))
+      expect_match(nudge$msg, "commit", fixed = TRUE)
+      expect_match(nudge$msg, "discard", fixed = TRUE)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = fake_update
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("an unresolved nudge is bounded, then discards the staged changes", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  calls <- 0L
+  fake_update <- recording_update(function(payload) calls <<- calls + 1L)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "h", new_head_block())
+      report$count <- max_nudges
+      before <- isolate(report$nudge)
+
+      nudge_or_discard()
+
+      expect_false(isolate(has_any_changes(pending_update())))
+      expect_identical(isolate(report$nudge), before)
+      expect_identical(calls, 0L)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = fake_update
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("an injected turn keeps the pending; a real user turn resets it", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "h", new_head_block())
+      report$count <- 2L
+      report$injecting <- TRUE
+
+      on_user_input()
+
+      expect_false(isolate(report$injecting))
+      expect_true(isolate(has_any_changes(pending_update())))
+      expect_identical(isolate(report$count), 2L)
+
+      on_user_input()
+
+      expect_false(isolate(has_any_changes(pending_update())))
+      expect_identical(isolate(report$count), 0L)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a repeated nudge re-fires the injection with a fresh sequence id", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "h", new_head_block())
+
+      nudge_or_discard()
+      first <- isolate(report$nudge)
+
+      nudge_or_discard()
+      second <- isolate(report$nudge)
+
+      expect_identical(first$msg, second$msg)
+      expect_false(identical(first$n, second$n))
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
   )
 })
