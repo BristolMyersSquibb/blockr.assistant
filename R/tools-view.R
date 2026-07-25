@@ -64,7 +64,7 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
     )
   }
 
-  panel_ref_from_id(
+  as_panel_ref(
     panel, sets$blocks, sets$exts, near = near, side = side, size = size
   )
 }
@@ -718,20 +718,7 @@ resolve_layout_node <- function(node, block_ids, ext_ids) {
 }
 
 resolve_panel_id <- function(id, block_ids, ext_ids) {
-
-  if (is.null(id)) {
-    return(NULL)
-  }
-
-  if (grepl("^(block_panel-|ext_panel-)", id)) {
-    return(id)
-  }
-
-  if (id %in% ext_ids) {
-    as.character(as_ext_panel_id(id))
-  } else {
-    as.character(as_block_panel_id(id))
-  }
+  if (is.null(id)) NULL else as.character(as_panel_ref(id, block_ids, ext_ids))
 }
 
 as_grid_sizes <- function(sizes) {
@@ -823,20 +810,6 @@ flat_grid <- function(members) {
 
 panel_leaf <- function(id) {
   list(panels = id, active = id)
-}
-
-# A block or extension id (bare, as the model names it) becomes the typed panel
-# ref the `views$mod` panel-op grammar takes, carrying any placement hint.
-# Block-first, mirroring how dock resolves bare-id sugar: an id known only as an
-# extension becomes `ext()`, everything else `blk()`.
-panel_ref_from_id <- function(id, block_ids, ext_ids, near = NULL,
-                              side = NULL, size = NULL) {
-
-  if (id %in% ext_ids && !id %in% block_ids) {
-    ext(id, near = near, side = side, size = size)
-  } else {
-    blk(id, near = near, side = side, size = size)
-  }
 }
 
 valid_panel_sides <- function() {
