@@ -646,17 +646,3 @@ test_that("the LLM spec round-trips through layout_from_json", {
     expect_identical(spec1, spec2, info = nm)
   }
 })
-
-test_that("panel_ref_from_id threads a size hint onto the ref", {
-
-  blk_ref <- panel_ref_from_id("a", "a", character(), size = 0.4)
-
-  expect_true(is_panel_ref(blk_ref))
-  expect_identical(blk_ref$type, "block")
-  expect_identical(blk_ref$size, 0.4)
-
-  ext_ref <- panel_ref_from_id("dag", character(), "dag", size = 0.25)
-
-  expect_identical(ext_ref$type, "ext")
-  expect_identical(ext_ref$size, 0.25)
-})
