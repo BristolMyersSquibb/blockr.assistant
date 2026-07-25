@@ -17,8 +17,9 @@ tool_commit <- function(perform) {
       "read-act-observe step: stage a coherent unit of work with the",
       "mutation tools, then commit to see what it produced and correct it",
       "if needed. Call it as a separate step after staging, once per",
-      "coherent unit -- not after every single change. A no-op if nothing",
-      "is staged."
+      "coherent unit -- not after every single change. Always resolve a",
+      "turn's staged changes before ending the turn: commit them here, or",
+      "discard to drop them. A no-op if nothing is staged."
     )
   )
 }

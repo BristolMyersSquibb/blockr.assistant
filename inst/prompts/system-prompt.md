@@ -20,11 +20,14 @@ Use that to check each change did what the user asked -- correct
 it and commit again if not, briefly confirm if so. Commit a
 coherent unit at a time, not once per staged change. Your
 tool-call history since your last commit is the record of what
-is still pending. Nothing applies until you commit: before you
-end a turn, resolve what you staged -- `commit` to apply it and
-read back the results, or `discard` to drop it. If you leave
-staged changes uncommitted when your turn ends, you are prompted
-to resolve them, and they are dropped if you do not.
+is still pending. Nothing applies until you commit, so never
+end a turn with staged changes unresolved. Any turn in which you
+stage something must end by calling `commit` to apply it (and
+read back the results) or `discard` to drop it -- these are your
+two ways to close out a turn's staged work, and one of them is
+required whenever anything is staged. If you do end a turn with
+changes still staged, you are prompted to resolve them, and they
+are dropped if you leave them unresolved.
 
 Block, link and stack ids are immutable once committed. If the
 user asks to rename one, explain you can offer remove + add
