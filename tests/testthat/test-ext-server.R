@@ -50,7 +50,7 @@ test_that("format_token_telemetry handles missing / NA / real tokens", {
   expect_match(html, ">84<")
 })
 
-test_that("function-arg system_prompt is omitted from state", {
+test_that("function-arg system_prompt leaves state empty", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -59,8 +59,7 @@ test_that("function-arg system_prompt is omitted from state", {
     {
       session$flushReact()
 
-      expect_named(session$returned$state, "messages")
-      expect_length(session$returned$state$messages(), 0L)
+      expect_length(session$returned$state, 0L)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -70,7 +69,7 @@ test_that("function-arg system_prompt is omitted from state", {
   )
 })
 
-test_that("server seeds the chat from a saved messages argument", {
+test_that("the conversation stays out of state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -87,7 +86,49 @@ test_that("server seeds the chat from a saved messages argument", {
     {
       session$flushReact()
 
-      expect_length(session$returned$state$messages(), 2L)
+      expect_length(client_r()$get_turns(), 2L)
+      expect_false("messages" %in% names(session$returned$state))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("deser drops a legacy messages payload", {
+
+  ser <- blockr.core::blockr_ser(
+    new_assistant_extension(),
+    data = list(
+      messages = lapply(
+        list(ellmer::Turn("user", "hi"), ellmer::Turn("assistant", "hello")),
+        ellmer::contents_record
+      )
+    )
+  )
+
+  json <- jsonlite::fromJSON(
+    jsonlite::toJSON(ser, null = "null"),
+    simplifyDataFrame = FALSE,
+    simplifyMatrix = FALSE
+  )
+
+  ext <- blockr.core::blockr_deser(json)
+
+  expect_s3_class(ext, "assistant_extension")
+
+  # Left in place, the legacy records reach contents_replay() in a board
+  # server observer and abort the whole board on mount.
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    blockr.dock::extension_server(ext),
+    {
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 0L)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

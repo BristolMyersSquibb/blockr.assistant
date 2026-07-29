@@ -1,5 +1,19 @@
 # blockr.assistant (development version)
 
+* The chat history is no longer written to board state. A board saved
+  after any assistant turn could not be reopened: the recorded turns
+  do not survive the board's JSON round trip (`jsonlite` reads
+  `version` back as an integer and the `NA` `cost` / `duration` props
+  as the strings `"NA"`, both of which
+  `ellmer::contents_replay()` rejects), and the replay runs in a board
+  server observer -- so the failure took down the whole board, not
+  just the chat panel. A conversation is session state, not board
+  state, and it also bulked up the saved file with each turn's raw
+  provider response. Boards saved by earlier versions now open again:
+  `blockr_deser()` drops the legacy `messages` payload. The
+  `messages` constructor argument stays, for seeding a conversation
+  programmatically within a session. Fixes #97.
+
 * The read tools now follow a lean-listing / per-item-detail split: a
   listing carries only the fields you pick an item on, and bloat-prone
   detail moves to a companion drill-down tool. `list_block_types`

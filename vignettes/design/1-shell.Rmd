@@ -211,6 +211,16 @@ decision from ser/des.
 
 ## Wire format for `messages`
 
+**Superseded.** The conversation is no longer part of the extension's
+`state`, so none of this reaches a saved board. The lossless claim
+below did not hold across the *board's* JSON round trip: `jsonlite`
+reads `"version": 1` back as an integer, which
+`ellmer::contents_replay()` rejects, and the `NA` `cost` / `duration`
+props below are written as the strings `"NA"`, which fail S7 property
+validation. Since the replay runs in a board-server observer, a board
+saved after any chat turn aborted the whole board on restore. A chat
+is session state; the board file describes the analysis.
+
 We use `ellmer::contents_record()` / `ellmer::contents_replay()` as the
 round-trip pair. Output is plain JSON — no opaque blobs — and the
 round-trip is lossless across all turn shapes (text, tool calls,

@@ -18,9 +18,11 @@ exported \link{default_system_prompt} function.}
 
 \item{messages}{Optional list of recorded turns (as produced by
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
-server start. \code{NULL} starts with an empty conversation.}
+server start. \code{NULL} starts with an empty conversation. Only
+in-session records replay reliably; the argument is not written
+to (nor read back from) board state.}
 
-\item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
+\item{...}{Forwarded to \code{\link[blockr.dock:extension]{blockr.dock::new_dock_extension()}}.}
 }
 \value{
 A \code{dock_extension} object additionally inheriting from
@@ -47,10 +49,20 @@ is "give up dynamic context, gain full prompt control".
 }
 
 The \code{state} shape mirrors the constructor: \code{system_prompt} (when
-the caller passed a string) and \code{messages} round-trip through
-\code{blockr.dock}'s ser/des. Function-valued \code{system_prompt} is
-omitted from \code{state} so restore falls back to the constructor
-default (functions don't serialise robustly across sessions).
+the caller passed a string) round-trips through \code{blockr.dock}'s
+ser/des. Function-valued \code{system_prompt} is omitted from \code{state} so
+restore falls back to the constructor default (functions don't
+serialise robustly across sessions).
+
+The conversation itself is \strong{not} part of \code{state}: a chat is
+session scoped, while a saved board is a description of the
+analysis. Recorded turns also do not survive the JSON round trip
+(\code{ellmer::contents_replay()} rejects an integer \code{version} and the
+\code{NA} \code{cost} / \code{duration} props come back as strings), so a board
+saved with a recorded conversation used to abort on restore --
+taking the whole board down with it, since the replay happens in a
+board-server observer. Payloads written by those earlier versions
+are dropped on deserialisation.
 }
 \examples{
 ext <- new_assistant_extension()

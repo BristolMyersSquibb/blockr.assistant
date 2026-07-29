@@ -46,10 +46,12 @@ Explicitly out of scope (for now):
 
 - Building our own LLM provider abstractions — `ellmer` handles that.
 - Application-level persistence wiring. The extension's constructor
-  and `state` shape make system prompt and chat history round-trip
-  through `blockr.dock`'s standard ser/des (see Phase 1), but the
-  integration that triggers cross-session save/restore (e.g. via
-  `blockr.session`) is out of the initial roadmap.
+  and `state` shape make the system prompt round-trip through
+  `blockr.dock`'s standard ser/des (see Phase 1), but the integration
+  that triggers cross-session save/restore (e.g. via `blockr.session`)
+  is out of the initial roadmap. The chat history was originally part
+  of that state and no longer is -- see the superseded wire-format
+  section in Phase 1.
 - Mutation safeguards (undo, dry-run, snapshot-before-mutation) — the
   initial implementation applies tool calls directly to the board.
   Snapshotting will likely be revisited once `blockr.session` exposes

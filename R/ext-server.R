@@ -18,10 +18,20 @@
 #'   is "give up dynamic context, gain full prompt control".
 #'
 #' The `state` shape mirrors the constructor: `system_prompt` (when
-#' the caller passed a string) and `messages` round-trip through
-#' `blockr.dock`'s ser/des. Function-valued `system_prompt` is
-#' omitted from `state` so restore falls back to the constructor
-#' default (functions don't serialise robustly across sessions).
+#' the caller passed a string) round-trips through `blockr.dock`'s
+#' ser/des. Function-valued `system_prompt` is omitted from `state` so
+#' restore falls back to the constructor default (functions don't
+#' serialise robustly across sessions).
+#'
+#' The conversation itself is **not** part of `state`: a chat is
+#' session scoped, while a saved board is a description of the
+#' analysis. Recorded turns also do not survive the JSON round trip
+#' (`ellmer::contents_replay()` rejects an integer `version` and the
+#' `NA` `cost` / `duration` props come back as strings), so a board
+#' saved with a recorded conversation used to abort on restore --
+#' taking the whole board down with it, since the replay happens in a
+#' board-server observer. Payloads written by those earlier versions
+#' are dropped on deserialisation.
 #'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
@@ -29,7 +39,9 @@
 #'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
-#'   server start. `NULL` starts with an empty conversation.
+#'   server start. `NULL` starts with an empty conversation. Only
+#'   in-session records replay reliably; the argument is not written
+#'   to (nor read back from) board state.
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -196,8 +208,6 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
         })
 
-        messages_rec <- reactiveVal(coal(messages, list()))
-
         client_r   <- reactiveVal(NULL)
         mod_r      <- reactiveVal(NULL)
         mount_idx  <- reactiveVal(0L)
@@ -353,27 +363,6 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
         }
 
-        record_new_turns <- function() {
-
-          cl <- isolate(client_r())
-          if (is.null(cl)) return(invisible())
-
-          recorded <- messages_rec()
-          turns <- cl$get_turns()
-
-          if (length(turns) > length(recorded)) {
-            new_idx <- seq.int(length(recorded) + 1L, length(turns))
-            messages_rec(
-              c(
-                recorded,
-                lapply(turns[new_idx], ellmer::contents_record)
-              )
-            )
-          } else if (length(turns) < length(recorded)) {
-            messages_rec(lapply(turns, ellmer::contents_record))
-          }
-        }
-
         observe({
           board$board
           client_r()
@@ -509,8 +498,6 @@ asst_ext_srv <- function(system_prompt, messages) {
             reset_pending(pending_update)
             touched(character())
           }
-
-          record_new_turns()
         }
 
         observeEvent(last_input_r(), on_user_input(), ignoreNULL = TRUE)
@@ -518,8 +505,6 @@ asst_ext_srv <- function(system_prompt, messages) {
         observeEvent(
           last_turn_r(),
           {
-            record_new_turns()
-
             if (has_any_changes(isolate(pending_update()))) {
               nudge_or_discard()
             }
@@ -567,7 +552,10 @@ asst_ext_srv <- function(system_prompt, messages) {
           format_token_telemetry(last_turn_r())
         )
 
-        state_payload <- list(messages = messages_rec)
+        # The conversation is deliberately absent: it is session state, not
+        # board state, and a recorded turn does not survive the board's JSON
+        # round trip (see the constructor docs).
+        state_payload <- list()
 
         if (is.character(system_prompt)) {
           state_payload$system_prompt <- system_prompt
