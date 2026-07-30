@@ -332,6 +332,43 @@ asst_ext_srv <- function(system_prompt, messages) {
         # needed (and earlier attempts targeted the wrong DOM id
         # because the chat container lives under shinychat's own
         # NS("chat")).
+        #
+        # history = FALSE is LOAD-BEARING, and not a preference.
+        #
+        # shinychat #266 added multi-conversation history, and
+        # chat_mod_server() turns it on by DEFAULT -- so we opted into a
+        # persistent conversation store simply by upgrading. Its
+        # FileConversationStore writes each turn through
+        # ellmer::contents_record(), which stamps `version` as a DOUBLE 1,
+        # and reads it back with jsonlite::fromJSON(), which yields an
+        # INTEGER 1. ellmer's check_recorded() tests
+        # `identical(recorded$version, 1)` -- type-strict -- so the replay
+        # aborts with "Unsupported version 1.", naming the value that is in
+        # fact correct. It is the type that differs, which is why the
+        # message reads as nonsense.
+        #
+        # The abort lands in a restore observer, so the session dies. Worse,
+        # the store is deliberately redeploy-safe
+        # ($CONNECT_CONTENT_DATA_DIR/shinychat-conversations): the FIRST
+        # chat writes a record that every LATER session reads and dies on,
+        # and redeploying does not clear it. One connection per process
+        # buys nothing -- each fresh process re-reads the same file and
+        # fails identically, which makes a disk problem look like a
+        # process-level one.
+        #
+        # isFALSE(history) is what gates chat_enable_history() in
+        # chat_server(), and chat_enable_history() is the ONLY caller of the
+        # failing set_turns_recorded(). So this both stops new records being
+        # written and makes any already-poisoned ones inert.
+        #
+        # Disabling rather than substituting a store is deliberate. The
+        # conversation is SESSION state, not something to persist -- the
+        # same call this branch exists to make. An in-memory store would
+        # also be pointless here: it is per process, so with one connection
+        # per process every drawer would open empty.
+        #
+        # Revisit only once check_recorded() compares numerically, or the
+        # store parses with a type-preserving reader (reported upstream).
         observe({
 
           idx <- mount_idx()
@@ -339,7 +376,9 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
-          mod_r(shinychat::chat_mod_server(chat_sub_id(idx), cl))
+          mod_r(
+            shinychat::chat_mod_server(chat_sub_id(idx), cl, history = FALSE)
+          )
         })
 
         refresh_prompt <- function() {
