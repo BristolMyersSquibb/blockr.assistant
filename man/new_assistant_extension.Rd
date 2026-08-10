@@ -22,7 +22,7 @@ server start. \code{NULL} starts with an empty conversation. Only
 in-session records replay reliably; the argument is not written
 to (nor read back from) board state.}
 
-\item{...}{Forwarded to \code{\link[blockr.dock:extension]{blockr.dock::new_dock_extension()}}.}
+\item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
 }
 \value{
 A \code{dock_extension} object additionally inheriting from
