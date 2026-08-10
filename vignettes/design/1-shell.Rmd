@@ -211,6 +211,26 @@ decision from ser/des.
 
 ## Wire format for `messages`
 
+**Corrected.** The "no opaque blobs" shape below was written into
+`state` verbatim, and it does *not* survive the board's own JSON round
+trip. `jsonlite` reads `"version": 1` back as an integer, which the
+type-strict check in `ellmer::contents_replay()` rejects, and typed
+props come back mistyped — `tokens` as a list, and the `"NA"` strings
+seen below failing S7 validation. Because the replay runs in a
+board-server observer, a board saved after any chat turn aborted the
+whole board on restore.
+
+The record/replay pair is still what turns a `Turn` into data, but the
+result is now stored as a single opaque `jsonlite::serializeJSON()`
+string, which preserves R's types exactly and so round-trips through
+the board file unchanged. The saved window is bounded by the
+`blockr.chat_save_turns` option, read at save time, the raw provider
+response in `json` is stripped, and truncation is trimmed to whole
+exchanges so a window never opens on a tool result whose request fell
+outside it. The
+structure below is therefore still the payload — it is simply no
+longer the thing written to disk.
+
 We use `ellmer::contents_record()` / `ellmer::contents_replay()` as the
 round-trip pair. Output is plain JSON — no opaque blobs — and the
 round-trip is lossless across all turn shapes (text, tool calls,
