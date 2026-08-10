@@ -24,6 +24,14 @@ compaction_keep_turns <- function() {
 # The provider's own accounting of the last request, plus what it wrote back:
 # together, the floor for what the next request will carry. Turns restored from
 # a saved board keep their counts, so this reads a reopened conversation too.
+#
+# Every slot counts. ellmer packs c(input, output, cached_input), and for
+# Anthropic -- whose `cache` argument defaults to "5m", so this is the ordinary
+# case, not a corner -- the conversation prefix migrates into `cached_input` as
+# the cache warms, leaving `input` holding little more than the newest turn.
+# Summing only input and output therefore reads a small, near-flat number that
+# never crosses the bound, which would leave the long session this exists to
+# bound entirely unbounded.
 context_tokens <- function(turns) {
 
   for (turn in rev(turns)) {
@@ -34,8 +42,8 @@ context_tokens <- function(turns) {
 
     toks <- turn@tokens
 
-    if (length(toks) >= 2L && !all(is.na(toks[1:2]))) {
-      return(sum(toks[1:2], na.rm = TRUE))
+    if (length(toks) && !all(is.na(toks))) {
+      return(sum(toks, na.rm = TRUE))
     }
   }
 

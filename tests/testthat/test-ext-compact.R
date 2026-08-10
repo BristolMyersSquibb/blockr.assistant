@@ -52,6 +52,19 @@ test_that("context_tokens reads the last accounted assistant turn", {
   )
 })
 
+test_that("context_tokens counts the cached prefix", {
+
+  # What a warm Anthropic cache looks like: the conversation has migrated into
+  # cache_read, leaving `input` holding only the newest turn. Counting input
+  # and output alone reads 170 here and never trips a bound, so a long session
+  # goes unbounded -- the exact failure this is meant to prevent.
+  warm <- ellmer::Turn("assistant", "reply")
+  warm@tokens <- c(120, 50, 40000)
+
+  expect_identical(context_tokens(list(warm)), 40170)
+  expect_true(over_context_bound(list(warm), 30000))
+})
+
 test_that("over_context_bound only fires on a real count", {
 
   turns <- list(ellmer::Turn("user", "a"), tokened_turn("b", 400, 50))
