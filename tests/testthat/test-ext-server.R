@@ -55,7 +55,11 @@ test_that("function-arg system_prompt is omitted from state", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(
+      system_prompt = default_system_prompt,
+      messages = NULL,
+      save_turns = 50L
+    ),
     {
       session$flushReact()
 
@@ -83,7 +87,11 @@ test_that("the conversation is written to state", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    asst_ext_srv(
+      system_prompt = default_system_prompt,
+      messages = seed,
+      save_turns = 50L
+    ),
     {
       session$flushReact()
 
@@ -102,7 +110,7 @@ test_that("the conversation is written to state", {
   )
 })
 
-test_that("a zero budget writes no conversation to state", {
+test_that("save_turns = 0 writes no conversation to state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -112,7 +120,11 @@ test_that("a zero budget writes no conversation to state", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    asst_ext_srv(
+      system_prompt = default_system_prompt,
+      messages = seed,
+      save_turns = 0L
+    ),
     {
       session$flushReact()
 
@@ -123,7 +135,51 @@ test_that("a zero budget writes no conversation to state", {
       board = reactiveValues(board = blockr.core::new_board()),
       update = reactiveVal()
     ),
-    session = with_llm_session(chat_history_kb = 0L)
+    session = with_llm_session()
+  )
+})
+
+test_that("save_turns keeps only the most recent turns", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  seed <- lapply(
+    list(
+      ellmer::Turn("user", "question 1"),
+      ellmer::Turn("assistant", "answer 1"),
+      ellmer::Turn("user", "question 2"),
+      ellmer::Turn("assistant", "answer 2"),
+      ellmer::Turn("user", "question 3"),
+      ellmer::Turn("assistant", "answer 3")
+    ),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(
+      system_prompt = default_system_prompt,
+      messages = seed,
+      save_turns = 2L
+    ),
+    {
+      session$flushReact()
+
+      kept <- lapply(
+        deserialize_chat_history(session$returned$state$history()),
+        ellmer::contents_replay
+      )
+
+      expect_length(kept, 2L)
+      expect_identical(
+        lapply(kept, ellmer::contents_text),
+        list("question 3", "answer 3")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
   )
 })
 
@@ -138,7 +194,7 @@ test_that("a saved conversation survives the board round trip", {
 
   ser <- blockr.core::blockr_ser(
     new_assistant_extension(),
-    data = list(history = serialize_chat_history(turns, 64L * 1024L))
+    data = list(history = serialize_chat_history(turns, 50L))
   )
 
   ext <- blockr.core::blockr_deser(

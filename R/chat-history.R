@@ -1,50 +1,16 @@
-new_chat_history_option <- function(value = blockr_option("chat_history_kb",
-                                                          64L),
-                                    category = "Board options", ...) {
+validate_save_turns <- function(x) {
 
-  new_board_option(
-    id = "chat_history_kb",
-    default = value,
-    ui = function(id) {
-      numericInput(
-        NS(id, "chat_history_kb"),
-        "Chat history saved with board (KB)",
-        value,
-        min = 0L,
-        step = 8L
-      )
-    },
-    server = function(..., session) {
-      observeEvent(
-        get_board_option_or_null("chat_history_kb", session),
-        {
-          updateNumericInput(
-            session,
-            "chat_history_kb",
-            value = get_board_option_value("chat_history_kb", session)
-          )
-        }
-      )
-    },
-    transform = function(x) as.integer(x),
-    category = category,
-    ...
-  )
-}
+  ok <- is.numeric(x) && is_scalar(x) && !is.na(x) && x >= 0 &&
+    (is.infinite(x) || isTRUE(x == trunc(x)))
 
-#' @export
-validate_board_option.chat_history_kb_option <- function(x) {
-
-  val <- board_option_value(NextMethod())
-
-  if (!is_count(val, allow_zero = TRUE)) {
+  if (!ok) {
     blockr_abort(
-      "Expecting `chat_history_kb` to be a non-negative count.",
-      class = "chat_history_kb_option_invalid"
+      "Expecting `save_turns` to be `0`, a positive whole number or `Inf`.",
+      class = "invalid_save_turns"
     )
   }
 
-  invisible(x)
+  x
 }
 
 client_turns <- function(client) {
@@ -56,14 +22,14 @@ client_turns <- function(client) {
   client$get_turns()
 }
 
-serialize_chat_history <- function(turns, max_bytes) {
+serialize_chat_history <- function(turns, save_turns) {
 
-  if (!length(turns) || max_bytes <= 0) {
+  if (!length(turns) || save_turns <= 0) {
     return(NULL)
   }
 
   recs <- drop_unpaired_tool_turns(
-    fit_history_budget(lapply(turns, record_without_response), max_bytes)
+    last_turns(lapply(turns, record_without_response), save_turns)
   )
 
   if (!length(recs)) {
@@ -97,13 +63,13 @@ record_without_response <- function(turn) {
   rec
 }
 
-fit_history_budget <- function(recs, max_bytes) {
+last_turns <- function(recs, save_turns) {
 
-  while (length(recs) && history_bytes(recs) > max_bytes) {
-    recs <- recs[-1L]
+  if (is.infinite(save_turns) || length(recs) <= save_turns) {
+    return(recs)
   }
 
-  recs
+  recs[seq.int(length(recs) - save_turns + 1L, length(recs))]
 }
 
 # A window cut out of the middle of a conversation can open on a tool result
@@ -125,8 +91,4 @@ drop_unpaired_tool_turns <- function(recs) {
 
 has_content <- function(rec, class) {
   any(chr_xtr(rec[["props"]][["contents"]], "class") == class)
-}
-
-history_bytes <- function(recs) {
-  nchar(jsonlite::serializeJSON(recs), type = "bytes")
 }

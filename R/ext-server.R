@@ -23,14 +23,11 @@
 #' restore falls back to the constructor default (functions don't
 #' serialise robustly across sessions).
 #'
-#' The conversation is saved alongside it, bounded by the
-#' `chat_history_kb` board option (default 64 KB, roughly 50 turns).
-#' Set it to `0` to save none -- worth considering where boards are
-#' shared, since the file then carries whatever was typed into the
-#' chat, and because every restored turn is re-sent with each
-#' subsequent request. The default can be set deployment-wide through
-#' the `blockr.chat_history_kb` option or the `BLOCKR_CHAT_HISTORY_KB`
-#' environment variable.
+#' The conversation is saved alongside it and restored into the chat
+#' when the board is reopened, bounded by `save_turns`. That bound is
+#' deliberately *not* part of `state`: it describes the deployment, not
+#' the board, so a board saved where conversations are kept does not
+#' carry that permission into one where they are not.
 #'
 #' Turns are stored as an opaque [jsonlite::serializeJSON()] blob.
 #' Recorded turns written into `state` directly do not survive the
@@ -51,6 +48,13 @@
 #'   [ellmer::contents_record()]) to seed the conversation with on
 #'   server start. `NULL` starts with an empty conversation. This is
 #'   also how a restored board seeds the chat it was saved with.
+#' @param save_turns Number of the most recent turns saved with the
+#'   board: `0` for none, a positive whole number, or `Inf` for all.
+#'   Defaults to 50, settable deployment-wide through the
+#'   `blockr.chat_save_turns` option or the `BLOCKR_CHAT_SAVE_TURNS`
+#'   environment variable. Worth setting to `0` where boards are
+#'   shared, since the file otherwise carries whatever was typed into
+#'   the chat.
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -63,16 +67,20 @@
 #' @export
 new_assistant_extension <- function(system_prompt = default_system_prompt,
                                     messages = NULL,
+                                    save_turns = blockr_option(
+                                      "chat_save_turns", 50L
+                                    ),
                                     ...) {
   new_dock_extension(
-    server = asst_ext_srv(system_prompt, messages),
+    server = asst_ext_srv(
+      system_prompt,
+      messages,
+      validate_save_turns(save_turns)
+    ),
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
-    options = new_board_options(
-      new_llm_model_option(),
-      new_chat_history_option()
-    ),
+    options = new_board_options(new_llm_model_option()),
     ...
   )
 }
@@ -160,7 +168,7 @@ asst_ext_styles <- function() {
   )
 }
 
-asst_ext_srv <- function(system_prompt, messages) {
+asst_ext_srv <- function(system_prompt, messages, save_turns = 0L) {
 
   function(id, board, update, view_data = NULL, extensions = NULL, ...) {
 
@@ -582,10 +590,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         state_payload <- list(
           history = function() {
             isolate(
-              serialize_chat_history(
-                client_turns(client_r()),
-                1024 * get_board_option_value("chat_history_kb", session)
-              )
+              serialize_chat_history(client_turns(client_r()), save_turns)
             )
           }
         )

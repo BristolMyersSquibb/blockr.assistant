@@ -224,8 +224,8 @@ The record/replay pair is still what turns a `Turn` into data, but the
 result is now stored as a single opaque `jsonlite::serializeJSON()`
 string, which preserves R's types exactly and so round-trips through
 the board file unchanged. The saved window is bounded by the
-`chat_history_kb` board option, the raw provider response in `json` is
-stripped, and truncation is trimmed to whole exchanges so a window
+`save_turns` constructor argument, the raw provider response in `json`
+is stripped, and truncation is trimmed to whole exchanges so a window
 never opens on a tool result whose request fell outside it. The
 structure below is therefore still the payload — it is simply no
 longer the thing written to disk.

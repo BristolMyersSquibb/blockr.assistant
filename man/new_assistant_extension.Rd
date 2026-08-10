@@ -7,6 +7,7 @@
 new_assistant_extension(
   system_prompt = default_system_prompt,
   messages = NULL,
+  save_turns = blockr_option("chat_save_turns", 50L),
   ...
 )
 }
@@ -20,6 +21,14 @@ exported \link{default_system_prompt} function.}
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
 server start. \code{NULL} starts with an empty conversation. This is
 also how a restored board seeds the chat it was saved with.}
+
+\item{save_turns}{Number of the most recent turns saved with the
+board: \code{0} for none, a positive whole number, or \code{Inf} for all.
+Defaults to 50, settable deployment-wide through the
+\code{blockr.chat_save_turns} option or the \code{BLOCKR_CHAT_SAVE_TURNS}
+environment variable. Worth setting to \code{0} where boards are
+shared, since the file otherwise carries whatever was typed into
+the chat.}
 
 \item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
 }
@@ -53,14 +62,11 @@ ser/des. Function-valued \code{system_prompt} is omitted from \code{state} so
 restore falls back to the constructor default (functions don't
 serialise robustly across sessions).
 
-The conversation is saved alongside it, bounded by the
-\code{chat_history_kb} board option (default 64 KB, roughly 50 turns).
-Set it to \code{0} to save none -- worth considering where boards are
-shared, since the file then carries whatever was typed into the
-chat, and because every restored turn is re-sent with each
-subsequent request. The default can be set deployment-wide through
-the \code{blockr.chat_history_kb} option or the \code{BLOCKR_CHAT_HISTORY_KB}
-environment variable.
+The conversation is saved alongside it and restored into the chat
+when the board is reopened, bounded by \code{save_turns}. That bound is
+deliberately \emph{not} part of \code{state}: it describes the deployment, not
+the board, so a board saved where conversations are kept does not
+carry that permission into one where they are not.
 
 Turns are stored as an opaque \code{\link[jsonlite:serializeJSON]{jsonlite::serializeJSON()}} blob.
 Recorded turns written into \code{state} directly do not survive the
