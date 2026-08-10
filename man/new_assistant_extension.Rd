@@ -7,7 +7,6 @@
 new_assistant_extension(
   system_prompt = default_system_prompt,
   messages = NULL,
-  save_turns = blockr_option("chat_save_turns", 50L),
   ...
 )
 }
@@ -21,14 +20,6 @@ exported \link{default_system_prompt} function.}
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
 server start. \code{NULL} starts with an empty conversation. This is
 also how a restored board seeds the chat it was saved with.}
-
-\item{save_turns}{Number of the most recent turns saved with the
-board: \code{0} for none, a positive whole number, or \code{Inf} for all.
-Defaults to 50, settable deployment-wide through the
-\code{blockr.chat_save_turns} option or the \code{BLOCKR_CHAT_SAVE_TURNS}
-environment variable. Worth setting to \code{0} where boards are
-shared, since the file otherwise carries whatever was typed into
-the chat.}
 
 \item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
 }
@@ -63,10 +54,15 @@ restore falls back to the constructor default (functions don't
 serialise robustly across sessions).
 
 The conversation is saved alongside it and restored into the chat
-when the board is reopened, bounded by \code{save_turns}. That bound is
-deliberately \emph{not} part of \code{state}: it describes the deployment, not
-the board, so a board saved where conversations are kept does not
-carry that permission into one where they are not.
+when the board is reopened. How many of the most recent turns are
+written is read at save time from the \code{blockr.chat_save_turns}
+option (or the \code{BLOCKR_CHAT_SAVE_TURNS} environment variable),
+which takes \code{0} for none, a positive whole number, or \code{Inf} for
+all, and defaults to 50. Setting it to \code{0} is worth considering
+where boards are shared, since the file otherwise carries whatever
+was typed into the chat. It describes the deployment rather than
+the board, so it is neither a constructor argument nor part of
+\code{state} -- restore reads whatever the file holds.
 
 Turns are stored as an opaque \code{\link[jsonlite:serializeJSON]{jsonlite::serializeJSON()}} blob.
 Recorded turns written into \code{state} directly do not survive the

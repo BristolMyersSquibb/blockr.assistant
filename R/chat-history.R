@@ -1,3 +1,7 @@
+chat_save_turns <- function() {
+  validate_save_turns(blockr_option("chat_save_turns", 50L))
+}
+
 validate_save_turns <- function(x) {
 
   ok <- is.numeric(x) && is_scalar(x) && !is.na(x) && x >= 0 &&
@@ -5,7 +9,8 @@ validate_save_turns <- function(x) {
 
   if (!ok) {
     blockr_abort(
-      "Expecting `save_turns` to be `0`, a positive whole number or `Inf`.",
+      "Expecting `chat_save_turns` to be `0`, a positive whole number or ",
+      "`Inf`.",
       class = "invalid_save_turns"
     )
   }

@@ -136,7 +136,7 @@ test_that("an unreadable blob restores as no conversation", {
   expect_null(deserialize_chat_history(character()))
 })
 
-test_that("save_turns accepts 0, a positive whole number and Inf", {
+test_that("chat_save_turns accepts 0, a positive whole number and Inf", {
 
   expect_identical(validate_save_turns(0L), 0L)
   expect_identical(validate_save_turns(50L), 50L)
@@ -145,4 +145,15 @@ test_that("save_turns accepts 0, a positive whole number and Inf", {
   for (bad in list(-1L, 2.5, NA_integer_, "50", NULL, c(1L, 2L))) {
     expect_error(validate_save_turns(bad), class = "invalid_save_turns")
   }
+})
+
+test_that("chat_save_turns reads the option, defaulting to 50", {
+
+  expect_identical(chat_save_turns(), 50L)
+
+  withr::local_options(blockr.chat_save_turns = 0L)
+  expect_identical(chat_save_turns(), 0L)
+
+  withr::local_options(blockr.chat_save_turns = "nope")
+  expect_error(chat_save_turns(), class = "invalid_save_turns")
 })

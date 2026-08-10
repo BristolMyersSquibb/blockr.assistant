@@ -55,11 +55,7 @@ test_that("function-arg system_prompt is omitted from state", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(
-      system_prompt = default_system_prompt,
-      messages = NULL,
-      save_turns = 50L
-    ),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
     {
       session$flushReact()
 
@@ -87,11 +83,7 @@ test_that("the conversation is written to state", {
   )
 
   testServer(
-    asst_ext_srv(
-      system_prompt = default_system_prompt,
-      messages = seed,
-      save_turns = 50L
-    ),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
     {
       session$flushReact()
 
@@ -110,9 +102,12 @@ test_that("the conversation is written to state", {
   )
 })
 
-test_that("save_turns = 0 writes no conversation to state", {
+test_that("chat_save_turns = 0 writes no conversation to state", {
 
-  withr::local_options(blockr.chat_function = fake_chat_function)
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_save_turns = 0L
+  )
 
   seed <- lapply(
     list(ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")),
@@ -120,11 +115,7 @@ test_that("save_turns = 0 writes no conversation to state", {
   )
 
   testServer(
-    asst_ext_srv(
-      system_prompt = default_system_prompt,
-      messages = seed,
-      save_turns = 0L
-    ),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
     {
       session$flushReact()
 
@@ -139,9 +130,12 @@ test_that("save_turns = 0 writes no conversation to state", {
   )
 })
 
-test_that("save_turns keeps only the most recent turns", {
+test_that("chat_save_turns keeps only the most recent turns", {
 
-  withr::local_options(blockr.chat_function = fake_chat_function)
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_save_turns = 2L
+  )
 
   seed <- lapply(
     list(
@@ -156,11 +150,7 @@ test_that("save_turns keeps only the most recent turns", {
   )
 
   testServer(
-    asst_ext_srv(
-      system_prompt = default_system_prompt,
-      messages = seed,
-      save_turns = 2L
-    ),
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
     {
       session$flushReact()
 

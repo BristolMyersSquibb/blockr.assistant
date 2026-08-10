@@ -12,16 +12,15 @@
 
 * The conversation is now saved with the board as an opaque
   `jsonlite::serializeJSON()` blob, which round-trips losslessly, and
-  is restored into the chat when the board is reopened. How much is
-  kept is set by the new `save_turns` argument to
-  `new_assistant_extension()`: the number of most recent turns to
-  save, `0` for none or `Inf` for all, defaulting to 50 and settable
-  deployment-wide through the `blockr.chat_save_turns` option or the
-  `BLOCKR_CHAT_SAVE_TURNS` environment variable. It is deliberately
-  not part of board state, so a board saved where conversations are
-  kept does not carry that permission into a deployment where they are
-  not -- worth setting to `0` where boards are shared, since the file
-  otherwise carries whatever was typed into the chat. Each turn's raw
+  is restored into the chat when the board is reopened. How many of
+  the most recent turns are written is read at save time from the new
+  `blockr.chat_save_turns` option (or the `BLOCKR_CHAT_SAVE_TURNS`
+  environment variable), which takes `0` for none, a positive whole
+  number, or `Inf` for all, and defaults to 50. It describes the
+  deployment rather than the board, so it is neither a constructor
+  argument nor part of board state -- worth setting to `0` where
+  boards are shared, since the file otherwise carries whatever was
+  typed into the chat. Each turn's raw
   provider response is stripped before saving, and the saved window is
   trimmed to whole exchanges so it never opens or closes on half of a
   tool call.
