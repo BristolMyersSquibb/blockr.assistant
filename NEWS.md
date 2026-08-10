@@ -1,5 +1,29 @@
 # blockr.assistant (development version)
 
+* Nothing bounded the live conversation, only what was written to the
+  board, so a long session grew more expensive with every message and
+  eventually exceeded the provider's context window -- and since that
+  limit is reached by accumulation, every later message was over it
+  too, leaving the chat dead until the extension was remounted. The
+  conversation is now compacted: once an exchange exceeds the new
+  `blockr.chat_compact_tokens` option (or `BLOCKR_CHAT_COMPACT_TOKENS`,
+  default 50000, `Inf` to switch it off), the older turns are replaced
+  by a summary the model writes of them and the recent turns are kept
+  verbatim. The threshold counts what the provider billed for the last
+  exchange rather than turns, that being what a context window is
+  spent in. A restored board is checked on mount too, so reopening a
+  long conversation no longer lands already over the limit. Fixes #101.
+
+* The chat transcript comes back with the conversation. It was left
+  empty by anything that remounted the chat panel -- reopening a saved
+  board, or switching provider -- because `shinychat` builds the
+  transcript by appending turns to the DOM as they arrive, and the
+  replay that would rebuild it from the client is reached only when its
+  `history` argument is on, which it is not. The model remembered a
+  conversation the user could no longer see. The extension now replays
+  the client's turns itself on every mount, which is also what lets
+  compaction drop turns without stranding them on screen.
+
 * A board saved after any assistant turn could not be reopened. The
   recorded turns were written into board state as a nested structure,
   which does not survive the board's JSON round trip: `jsonlite` reads

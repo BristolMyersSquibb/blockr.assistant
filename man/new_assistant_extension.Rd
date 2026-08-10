@@ -74,6 +74,28 @@ rather than just the chat panel. Payloads written in that earlier
 shape are dropped on deserialisation. The raw provider response is
 stripped before saving, and the saved window is trimmed to whole
 exchanges so it never opens or closes on half of a tool call.
+
+The live conversation is bounded separately, since saving bounds
+only the file: every turn is re-sent on every request, so an
+unbounded session costs more as it goes and eventually exceeds the
+provider's context window -- and because that limit is reached by
+accumulation, every later message is over it too, leaving the chat
+dead until the extension is remounted. Once an exchange exceeds
+\code{blockr.chat_compact_tokens} (or \code{BLOCKR_CHAT_COMPACT_TOKENS}), the
+older part of the conversation is replaced by a summary the model
+writes of it, and the recent turns are kept verbatim. The threshold
+counts what the provider itself billed for the last exchange rather
+than turns, that being what the context window is actually spent in;
+it defaults to 50000 and takes \code{Inf} to switch compaction off. A
+restored board is checked on mount as well, so reopening a long
+conversation cannot land already over the limit.
+
+Compaction rewrites the browser transcript to match, which is what
+keeps the two honest. \code{shinychat} appends each turn to the DOM as it
+arrives and never reads the client back, so turns dropped from the
+client would otherwise stay on screen unremembered. The same replay
+fills in a transcript that a restore or a provider swap leaves
+empty; tool traffic carries no text and is not replayed.
 }
 \examples{
 ext <- new_assistant_extension()

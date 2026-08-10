@@ -45,6 +45,28 @@
 #' stripped before saving, and the saved window is trimmed to whole
 #' exchanges so it never opens or closes on half of a tool call.
 #'
+#' The live conversation is bounded separately, since saving bounds
+#' only the file: every turn is re-sent on every request, so an
+#' unbounded session costs more as it goes and eventually exceeds the
+#' provider's context window -- and because that limit is reached by
+#' accumulation, every later message is over it too, leaving the chat
+#' dead until the extension is remounted. Once an exchange exceeds
+#' `blockr.chat_compact_tokens` (or `BLOCKR_CHAT_COMPACT_TOKENS`), the
+#' older part of the conversation is replaced by a summary the model
+#' writes of it, and the recent turns are kept verbatim. The threshold
+#' counts what the provider itself billed for the last exchange rather
+#' than turns, that being what the context window is actually spent in;
+#' it defaults to 50000 and takes `Inf` to switch compaction off. A
+#' restored board is checked on mount as well, so reopening a long
+#' conversation cannot land already over the limit.
+#'
+#' Compaction rewrites the browser transcript to match, which is what
+#' keeps the two honest. `shinychat` appends each turn to the DOM as it
+#' arrives and never reads the client back, so turns dropped from the
+#' client would otherwise stay on screen unremembered. The same replay
+#' fills in a transcript that a restore or a provider swap leaves
+#' empty; tool traffic carries no text and is not replayed.
+#'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
 #'   scalar (used verbatim, no refresh). Defaults to the
@@ -332,14 +354,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
         })
 
-        # Mount the chat module against the current client.
-        # shinychat::chat_mod_server() calls chat_restore() internally,
-        # which fires client_set_ui() on the next reactive flush --
-        # that hook already replays every prior turn into the
-        # freshly-rendered UI via chat_append(). No manual replay
-        # needed (and earlier attempts targeted the wrong DOM id
-        # because the chat container lives under shinychat's own
-        # NS("chat")).
+        # Mount the chat module against the current client. Every mount
+        # renders a fresh, empty container -- chat_sub_id() changes with
+        # mount_idx, and shinychat's own replay hook is out of reach here:
+        # client_set_ui() is called only from chat_restore(), which
+        # chat_server() reaches only when `history` is not FALSE. So the
+        # transcript is ours to populate, via replay_transcript() below.
         #
         # history = FALSE is load-bearing. It defaults to TRUE, which opts
         # into shinychat's on-disk conversation store -- and that store
@@ -365,6 +385,113 @@ asst_ext_srv <- function(system_prompt, messages) {
             shinychat::chat_mod_server(chat_sub_id(idx), cl, history = FALSE)
           )
         })
+
+        # The client carries the conversation across a mount; the browser does
+        # not. Restoring a saved board and swapping provider both land here
+        # with turns the user never sees, so each fresh mount replays what the
+        # client holds, then checks whether what it holds is already too big.
+        observe({
+
+          mod <- mod_r()
+
+          req(mod)
+
+          replay_transcript(mod, isolate(client_turns(client_r())))
+          maybe_compact()
+        })
+
+        compacting <- local({
+
+          running <- FALSE
+
+          list(
+            begin = function() {
+              if (running) {
+                return(FALSE)
+              }
+              running <<- TRUE
+              TRUE
+            },
+            end = function() {
+              running <<- FALSE
+              invisible()
+            }
+          )
+        })
+
+        # Summarising is itself a request, so it happens off the live client on
+        # a clone. Turns that arrive while it is in flight are carried over
+        # rather than clobbered, and a stream that starts in the meantime defers
+        # the swap: the bound is still exceeded next turn, so this runs again.
+        apply_compaction <- function(cl, mod, summary, kept, seen) {
+
+          if (identical(isolate(mod$status()), "streaming")) {
+            return(invisible())
+          }
+
+          current <- cl$get_turns()
+
+          arrived <- if (length(current) > seen) {
+            current[seq.int(seen + 1L, length(current))]
+          } else {
+            list()
+          }
+
+          turns <- c(compacted_turns(summary, kept), arrived)
+
+          cl$set_turns(turns)
+          replay_transcript(mod, turns)
+
+          invisible()
+        }
+
+        maybe_compact <- function() {
+
+          cl  <- isolate(client_r())
+          mod <- isolate(mod_r())
+
+          if (is.null(cl) || is.null(mod)) {
+            return(invisible())
+          }
+
+          turns <- cl$get_turns()
+
+          if (!over_context_bound(turns, chat_compact_tokens())) {
+            return(invisible())
+          }
+
+          split <- compaction_split(turns, compaction_keep_turns())
+
+          if (is.null(split) || !compacting$begin()) {
+            return(invisible())
+          }
+
+          seen <- length(turns)
+
+          promises::finally(
+            promises::catch(
+              promises::then(
+                summarise_turns(cl, split$summarise),
+                function(summary) {
+                  apply_compaction(cl, mod, summary, split$keep, seen)
+                }
+              ),
+              function(e) {
+                notify(
+                  paste(
+                    "Could not compact the conversation:",
+                    conditionMessage(e)
+                  ),
+                  type = "warning",
+                  session = session
+                )
+              }
+            ),
+            compacting$end
+          )
+
+          invisible()
+        }
 
         refresh_prompt <- function() {
 
@@ -534,6 +661,8 @@ asst_ext_srv <- function(system_prompt, messages) {
           {
             if (has_any_changes(isolate(pending_update()))) {
               nudge_or_discard()
+            } else {
+              maybe_compact()
             }
           },
           ignoreNULL = TRUE
@@ -604,6 +733,29 @@ asst_ext_srv <- function(system_prompt, messages) {
 
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
+}
+
+# `keep` leaves the client alone -- the turns are set by the caller, which is
+# the point: this is what stops the transcript and the model's memory drifting
+# apart. Tool traffic carries no text and is not replayed.
+replay_transcript <- function(mod, turns) {
+
+  mod$clear(client_history = "keep")
+
+  for (turn in turns) {
+
+    if (!turn@role %in% c("user", "assistant")) {
+      next
+    }
+
+    txt <- turn_text(turn)
+
+    if (nzchar(txt)) {
+      mod$append(txt, role = turn@role)
+    }
+  }
+
+  invisible()
 }
 
 turn_text <- function(turn) {
