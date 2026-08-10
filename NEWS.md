@@ -1,18 +1,28 @@
 # blockr.assistant (development version)
 
-* The chat history is no longer written to board state. A board saved
-  after any assistant turn could not be reopened: the recorded turns
-  do not survive the board's JSON round trip (`jsonlite` reads
-  `version` back as an integer and the `NA` `cost` / `duration` props
-  as the strings `"NA"`, both of which
-  `ellmer::contents_replay()` rejects), and the replay runs in a board
-  server observer -- so the failure took down the whole board, not
-  just the chat panel. A conversation is session state, not board
-  state, and it also bulked up the saved file with each turn's raw
-  provider response. Boards saved by earlier versions now open again:
-  `blockr_deser()` drops the legacy `messages` payload. The
-  `messages` constructor argument stays, for seeding a conversation
-  programmatically within a session. Fixes #97.
+* A board saved after any assistant turn could not be reopened. The
+  recorded turns were written into board state as a nested structure,
+  which does not survive the board's JSON round trip: `jsonlite` reads
+  `version` back as an integer and typed props such as `tokens` as
+  lists, both of which `ellmer::contents_replay()` rejects. Because the
+  replay runs in a board server observer, the failure took down the
+  whole board rather than just the chat panel. Boards saved in that
+  shape now open again -- `blockr_deser()` drops the legacy payload,
+  which is mistyped beyond what is worth repairing. Fixes #97.
+
+* The conversation is now saved with the board as an opaque
+  `jsonlite::serializeJSON()` blob, which round-trips losslessly, and
+  is restored into the chat when the board is reopened. How much is
+  kept is set by the new `chat_history_kb` board option (default 64
+  KB, roughly 50 turns; `0` saves none), which can be defaulted
+  deployment-wide via the `blockr.chat_history_kb` option or the
+  `BLOCKR_CHAT_HISTORY_KB` environment variable. Two things are worth
+  weighing when setting it: a saved board carries whatever was typed
+  into the chat wherever that file is shared, and every restored turn
+  is re-sent with each subsequent request. Each turn's raw provider
+  response is stripped before saving, and the saved window is trimmed
+  to whole exchanges so it never opens or closes on half of a tool
+  call.
 
 * The read tools now follow a lean-listing / per-item-detail split: a
   listing carries only the fields you pick an item on, and bloat-prone

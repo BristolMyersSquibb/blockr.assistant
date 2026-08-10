@@ -50,7 +50,7 @@ test_that("format_token_telemetry handles missing / NA / real tokens", {
   expect_match(html, ">84<")
 })
 
-test_that("function-arg system_prompt leaves state empty", {
+test_that("function-arg system_prompt is omitted from state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -59,7 +59,8 @@ test_that("function-arg system_prompt leaves state empty", {
     {
       session$flushReact()
 
-      expect_length(session$returned$state, 0L)
+      expect_named(session$returned$state, "history")
+      expect_null(session$returned$state$history())
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -69,7 +70,7 @@ test_that("function-arg system_prompt leaves state empty", {
   )
 })
 
-test_that("the conversation stays out of state", {
+test_that("the conversation is written to state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -87,7 +88,79 @@ test_that("the conversation stays out of state", {
       session$flushReact()
 
       expect_length(client_r()$get_turns(), 2L)
-      expect_false("messages" %in% names(session$returned$state))
+
+      blob <- session$returned$state$history()
+
+      expect_type(blob, "character")
+      expect_length(deserialize_chat_history(blob), 2L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a zero budget writes no conversation to state", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  seed <- lapply(
+    list(ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    {
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 2L)
+      expect_null(session$returned$state$history())
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session(chat_history_kb = 0L)
+  )
+})
+
+test_that("a saved conversation survives the board round trip", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  turns <- list(
+    ellmer::Turn("user", "load iris"),
+    ellmer::Turn("assistant", "loaded it")
+  )
+
+  ser <- blockr.core::blockr_ser(
+    new_assistant_extension(),
+    data = list(history = serialize_chat_history(turns, 64L * 1024L))
+  )
+
+  ext <- blockr.core::blockr_deser(
+    jsonlite::fromJSON(
+      jsonlite::toJSON(ser, auto_unbox = TRUE, null = "null"),
+      simplifyDataFrame = FALSE,
+      simplifyMatrix = FALSE
+    )
+  )
+
+  testServer(
+    blockr.dock::extension_server(ext),
+    {
+      session$flushReact()
+
+      restored <- client_r()$get_turns()
+
+      expect_length(restored, 2L)
+      expect_identical(
+        lapply(restored, ellmer::contents_text),
+        lapply(turns, ellmer::contents_text)
+      )
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

@@ -23,15 +23,25 @@
 #' restore falls back to the constructor default (functions don't
 #' serialise robustly across sessions).
 #'
-#' The conversation itself is **not** part of `state`: a chat is
-#' session scoped, while a saved board is a description of the
-#' analysis. Recorded turns also do not survive the JSON round trip
-#' (`ellmer::contents_replay()` rejects an integer `version` and the
-#' `NA` `cost` / `duration` props come back as strings), so a board
-#' saved with a recorded conversation used to abort on restore --
-#' taking the whole board down with it, since the replay happens in a
-#' board-server observer. Payloads written by those earlier versions
-#' are dropped on deserialisation.
+#' The conversation is saved alongside it, bounded by the
+#' `chat_history_kb` board option (default 64 KB, roughly 50 turns).
+#' Set it to `0` to save none -- worth considering where boards are
+#' shared, since the file then carries whatever was typed into the
+#' chat, and because every restored turn is re-sent with each
+#' subsequent request. The default can be set deployment-wide through
+#' the `blockr.chat_history_kb` option or the `BLOCKR_CHAT_HISTORY_KB`
+#' environment variable.
+#'
+#' Turns are stored as an opaque [jsonlite::serializeJSON()] blob.
+#' Recorded turns written into `state` directly do not survive the
+#' board's JSON round trip -- `ellmer::contents_replay()` rejects the
+#' integer `version` that comes back, and typed props such as `tokens`
+#' return as lists -- and since the replay happens in a board-server
+#' observer, such a board took the whole session down on restore
+#' rather than just the chat panel. Payloads written in that earlier
+#' shape are dropped on deserialisation. The raw provider response is
+#' stripped before saving, and the saved window is trimmed to whole
+#' exchanges so it never opens or closes on half of a tool call.
 #'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
@@ -39,9 +49,8 @@
 #'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
-#'   server start. `NULL` starts with an empty conversation. Only
-#'   in-session records replay reliably; the argument is not written
-#'   to (nor read back from) board state.
+#'   server start. `NULL` starts with an empty conversation. This is
+#'   also how a restored board seeds the chat it was saved with.
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -60,7 +69,10 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
-    options = new_board_options(new_llm_model_option()),
+    options = new_board_options(
+      new_llm_model_option(),
+      new_chat_history_option()
+    ),
     ...
   )
 }
@@ -565,10 +577,18 @@ asst_ext_srv <- function(system_prompt, messages) {
           format_token_telemetry(last_turn_r())
         )
 
-        # The conversation is deliberately absent: it is session state, not
-        # board state, and a recorded turn does not survive the board's JSON
-        # round trip (see the constructor docs).
-        state_payload <- list()
+        # Resolved by the board's serializer at save time, so the budget and
+        # the turns are both read as they stand then.
+        state_payload <- list(
+          history = function() {
+            isolate(
+              serialize_chat_history(
+                client_turns(client_r()),
+                1024 * get_board_option_value("chat_history_kb", session)
+              )
+            )
+          }
+        )
 
         if (is.character(system_prompt)) {
           state_payload$system_prompt <- system_prompt

@@ -1,13 +1,21 @@
-# Boards saved before the conversation was dropped from extension state carry
-# a `messages` payload of recorded turns. Replaying those is what takes the
-# board down, and they are unrecoverable in any case, so they are discarded
-# rather than migrated.
-
 #' @export
 blockr_deser.assistant_extension <- function(x, data, ...) {
 
-  if (is.list(data[["payload"]]) && "messages" %in% names(data[["payload"]])) {
-    data[["payload"]][["messages"]] <- NULL
+  payload <- data[["payload"]]
+
+  if (is.list(payload)) {
+
+    # Boards saved before the conversation moved into a `history` blob carry
+    # recorded turns here. Replaying those is what takes the board down, and
+    # they are mistyped beyond what is worth repairing, so they are discarded.
+    payload[["messages"]] <- NULL
+
+    if (!is.null(payload[["history"]])) {
+      payload[["messages"]] <- deserialize_chat_history(payload[["history"]])
+      payload[["history"]] <- NULL
+    }
+
+    data[["payload"]] <- payload
   }
 
   NextMethod()

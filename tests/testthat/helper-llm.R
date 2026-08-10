@@ -6,12 +6,15 @@ fake_chat_function <- function(system_prompt = NULL, params = NULL) {
   )
 }
 
-with_llm_session <- function() {
+with_llm_session <- function(chat_history_kb = 64L) {
+
   sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+
+  for (opt in list(new_llm_model_option(),
+                   new_chat_history_option(chat_history_kb))) {
+    blockr.core:::board_option_to_userdata(opt, session = sess)
+  }
+
   sess
 }
 
