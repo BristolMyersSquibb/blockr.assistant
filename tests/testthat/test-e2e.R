@@ -79,3 +79,88 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     info = "the token-telemetry slot should be in the DOM"
   )
 })
+
+test_that("a user-invocable skill reaches the browser's command palette", {
+
+  skip_on_cran()
+  skip_if_not_installed("shinytest2")
+  skip_if_not_installed("chromote")
+
+  app_dir <- withr::local_tempdir()
+
+  write_skill(
+    file.path(app_dir, "skills"), "exposure-check",
+    c(
+      "name: exposure-check",
+      "description: Check a dataset before analysing it.",
+      "user-invocable: true"
+    )
+  )
+
+  writeLines(
+    c(
+      "library(blockr.core)",
+      "library(blockr.dock)",
+      "library(blockr.assistant)",
+      "",
+      "fake_chat <- function(system_prompt = NULL, params = NULL) {",
+      "  ellmer::chat_openai(",
+      "    model = 'gpt-4.1-nano',",
+      "    credentials = function() {",
+      "      list(Authorization = 'Bearer test')",
+      "    },",
+      "    echo = 'none'",
+      "  )",
+      "}",
+      "options(",
+      "  blockr.chat_function = fake_chat,",
+      "  blockr.assistant_skills = normalizePath('skills')",
+      ")",
+      "",
+      "board <- new_dock_board(",
+      "  blocks = c(data = new_dataset_block('iris')),",
+      "  extensions = list(assistant = new_assistant_extension()),",
+      "  views = list(Main = list(blk('data'), ext('assistant')))",
+      ")",
+      "",
+      "serve(board)"
+    ),
+    file.path(app_dir, "app.R")
+  )
+
+  chromote_obj <- chromote::default_chromote_object()
+  chromote_obj$default_timeout <- 30
+
+  app <- shinytest2::AppDriver$new(
+    app_dir,
+    name = "skills",
+    seed = 42,
+    load_timeout = 30 * 1000
+  )
+  withr::defer(app$stop())
+
+  app$wait_for_js(
+    "document.querySelector('shiny-chat-container') !== null",
+    timeout = 15 * 1000
+  )
+
+  # The commands are advertised to the chat element in a one-shot message, so
+  # this asserts the whole seam: the scan, the registration, and its timing
+  # against the flush that carries the element's UI.
+  chrome <- app$get_chromote_session()
+  chrome$Runtime$evaluate(
+    "document.querySelector('.tiptap.ProseMirror').focus()"
+  )
+  chrome$Input$insertText(text = "/exp")
+
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-slash-palette') !== null",
+    timeout = 10 * 1000
+  )
+
+  palette <- app$get_js(
+    "document.querySelector('.shiny-chat-slash-palette').innerText"
+  )
+
+  expect_match(palette, "exposure-check", fixed = TRUE)
+})

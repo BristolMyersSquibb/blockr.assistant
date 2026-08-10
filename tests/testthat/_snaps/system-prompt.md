@@ -64,125 +64,6 @@
       a detail you can default is not that, but no data on the board
       at all is.
       
-      ## Layout
-      
-      Views are tabs; each holds an arrangement of panels (blocks and
-      extensions). add_view takes a layout in the JSON spec form below
-      and creates a view arranged exactly as you pass it -- a whole
-      layout is the sanctioned move only at a view's birth. Read the
-      current shape with list_views.
-      
-      To change an existing view, don't re-emit a layout -- edit it in
-      place with the atomic panel-op tools, which compose into one
-      update when you commit:
-      
-      - add_panel_to_view(view, panel, near, side, size): add a block or
-        extension to the view. `near` (a panel already in the view) and
-        `side` (within / left / right / above / below, relative to
-        near) are optional placement hints; omit both for a default
-        spot. `within` tabs the panel into near's group. An optional
-        `size` (a ratio in (0, 1)) records the panel's target size along
-        its split axis.
-      - remove_panel_from_view(view, panel): drop a panel from the
-        view. The block or extension stays on the board.
-      - move_panel(view, panel, near, side): reposition a panel already
-        in the view next to `near` on the given `side`. Membership is
-        unchanged.
-      - resize_panel(view, panel, size): set the panel's group `size` (a
-        ratio in (0, 1)) along its split axis, relative to its siblings.
-        The panel must already be in the view; membership and
-        arrangement are unchanged.
-      - focus_panel(view, panel): bring a panel already in the view to
-        the front of its tab group and focus it, switching to the view
-        if it isn't the active one. Use it to surface a specific block
-        or extension -- e.g. one you just added or evaluated.
-      
-      dock owns the live arrangement, so placement is a hint, not a
-      guarantee of exact geometry. `near` must be a panel already in
-      the view, not one you are adding in the same turn.
-      
-      Each view has a stable `id` and a display `name`. Address an
-      existing view by its `id` (from list_views) in the panel-op
-      tools, remove_view, set_active_view and rename_view. add_view
-      takes a display `name`; the board assigns the id. rename_view
-      changes only the label, never the id.
-      
-      The same block or extension may appear in more than one view -- a
-      panel is a single instance that renders in whichever view is
-      active (views are mutually-exclusive tabs). Placing the assistant
-      (or any block) in several views is allowed; don't refuse it.
-      
-      Top-level shape (object):
-        {"orientation": "horizontal"|"vertical",
-         "children": [<node>, ...],
-         "sizes": [<num>, ...],            // optional, length == #children
-         "focus": "<panel id>"}            // optional, focused panel
-      
-      Each <node> inside `children` is one of:
-      
-      - a bare ID string: a single-panel leaf
-      - `{"panels": [<id>, ...], "active": "<id>"}`: a tabbed leaf
-        (`active` optional, defaults to the first). A tab group is
-        ALWAYS this object -- never a bare array of IDs.
-      - `{"children": [<node>, ...], "sizes": [<num>, ...]}`: a nested
-        split (sizes optional). Nested branches use the same `children`
-        key as the top level. Orientation alternates with depth
-        automatically -- only the top level names an `orientation`;
-        there is no per-branch `orientation` key.
-      
-      Sizes are positive numbers, one per child. They are ratios; their
-      absolute scale does not matter (`[1, 2]`, `[0.33, 0.67]`, and
-      `[33, 67]` are equivalent).
-      
-      Worked examples (blocks: data, head, scatter; extension:
-      assistant_extension):
-      
-        * Stack blocks vertically on the left, assistant on the right:
-          {"orientation": "horizontal",
-           "children": [
-             {"children": ["data", "head", "scatter"]},
-             "assistant_extension"],
-           "sizes": [0.7, 0.3]}
-          Top split is horizontal (inner branch + assistant). The inner
-          branch names no orientation; depth-alternation makes it
-          vertical automatically.
-      
-        * Combine data + head into a tab group, scatter beside them:
-          {"orientation": "horizontal",
-           "children": [
-             {"panels": ["data", "head"], "active": "data"},
-             "scatter",
-             "assistant_extension"],
-           "sizes": [0.4, 0.35, 0.25]}
-      
-        * Everything in one column:
-          {"orientation": "vertical",
-           "children": ["data", "head", "scatter",
-                         "assistant_extension"]}
-      
-        * Nested layout, depth 3 (data top-left; head and scatter
-          split below it; assistant down the right side):
-          {"orientation": "horizontal",
-           "children": [
-             {"children": [
-                "data",
-                {"children": ["head", "scatter"]}
-             ]},
-             "assistant_extension"],
-           "sizes": [0.7, 0.3]}
-          Orientation alternates with depth: top is horizontal, the
-          outer nested branch is vertical (data above head|scatter), the
-          inner branch is horizontal again (head | scatter).
-      
-      Probe an add_view layout with `validate_layout(layout)` if you're
-      unsure -- it parses, checks panel IDs, and returns the normalized
-      form without touching board state.
-      
-      Blocks referenced by a view layout must exist on the board (or
-      be staged for creation in the same turn). Removing a block
-      automatically drops its panels from every view containing it
-      -- no explicit cleanup needed.
-      
       Answer concisely.
 
 # default_system_prompt() golden on a populated board
@@ -251,135 +132,16 @@
       a detail you can default is not that, but no data on the board
       at all is.
       
-      ## Layout
-      
-      Views are tabs; each holds an arrangement of panels (blocks and
-      extensions). add_view takes a layout in the JSON spec form below
-      and creates a view arranged exactly as you pass it -- a whole
-      layout is the sanctioned move only at a view's birth. Read the
-      current shape with list_views.
-      
-      To change an existing view, don't re-emit a layout -- edit it in
-      place with the atomic panel-op tools, which compose into one
-      update when you commit:
-      
-      - add_panel_to_view(view, panel, near, side, size): add a block or
-        extension to the view. `near` (a panel already in the view) and
-        `side` (within / left / right / above / below, relative to
-        near) are optional placement hints; omit both for a default
-        spot. `within` tabs the panel into near's group. An optional
-        `size` (a ratio in (0, 1)) records the panel's target size along
-        its split axis.
-      - remove_panel_from_view(view, panel): drop a panel from the
-        view. The block or extension stays on the board.
-      - move_panel(view, panel, near, side): reposition a panel already
-        in the view next to `near` on the given `side`. Membership is
-        unchanged.
-      - resize_panel(view, panel, size): set the panel's group `size` (a
-        ratio in (0, 1)) along its split axis, relative to its siblings.
-        The panel must already be in the view; membership and
-        arrangement are unchanged.
-      - focus_panel(view, panel): bring a panel already in the view to
-        the front of its tab group and focus it, switching to the view
-        if it isn't the active one. Use it to surface a specific block
-        or extension -- e.g. one you just added or evaluated.
-      
-      dock owns the live arrangement, so placement is a hint, not a
-      guarantee of exact geometry. `near` must be a panel already in
-      the view, not one you are adding in the same turn.
-      
-      Each view has a stable `id` and a display `name`. Address an
-      existing view by its `id` (from list_views) in the panel-op
-      tools, remove_view, set_active_view and rename_view. add_view
-      takes a display `name`; the board assigns the id. rename_view
-      changes only the label, never the id.
-      
-      The same block or extension may appear in more than one view -- a
-      panel is a single instance that renders in whichever view is
-      active (views are mutually-exclusive tabs). Placing the assistant
-      (or any block) in several views is allowed; don't refuse it.
-      
-      Top-level shape (object):
-        {"orientation": "horizontal"|"vertical",
-         "children": [<node>, ...],
-         "sizes": [<num>, ...],            // optional, length == #children
-         "focus": "<panel id>"}            // optional, focused panel
-      
-      Each <node> inside `children` is one of:
-      
-      - a bare ID string: a single-panel leaf
-      - `{"panels": [<id>, ...], "active": "<id>"}`: a tabbed leaf
-        (`active` optional, defaults to the first). A tab group is
-        ALWAYS this object -- never a bare array of IDs.
-      - `{"children": [<node>, ...], "sizes": [<num>, ...]}`: a nested
-        split (sizes optional). Nested branches use the same `children`
-        key as the top level. Orientation alternates with depth
-        automatically -- only the top level names an `orientation`;
-        there is no per-branch `orientation` key.
-      
-      Sizes are positive numbers, one per child. They are ratios; their
-      absolute scale does not matter (`[1, 2]`, `[0.33, 0.67]`, and
-      `[33, 67]` are equivalent).
-      
-      Worked examples (blocks: data, head, scatter; extension:
-      assistant_extension):
-      
-        * Stack blocks vertically on the left, assistant on the right:
-          {"orientation": "horizontal",
-           "children": [
-             {"children": ["data", "head", "scatter"]},
-             "assistant_extension"],
-           "sizes": [0.7, 0.3]}
-          Top split is horizontal (inner branch + assistant). The inner
-          branch names no orientation; depth-alternation makes it
-          vertical automatically.
-      
-        * Combine data + head into a tab group, scatter beside them:
-          {"orientation": "horizontal",
-           "children": [
-             {"panels": ["data", "head"], "active": "data"},
-             "scatter",
-             "assistant_extension"],
-           "sizes": [0.4, 0.35, 0.25]}
-      
-        * Everything in one column:
-          {"orientation": "vertical",
-           "children": ["data", "head", "scatter",
-                         "assistant_extension"]}
-      
-        * Nested layout, depth 3 (data top-left; head and scatter
-          split below it; assistant down the right side):
-          {"orientation": "horizontal",
-           "children": [
-             {"children": [
-                "data",
-                {"children": ["head", "scatter"]}
-             ]},
-             "assistant_extension"],
-           "sizes": [0.7, 0.3]}
-          Orientation alternates with depth: top is horizontal, the
-          outer nested branch is vertical (data above head|scatter), the
-          inner branch is horizontal again (head | scatter).
-      
-      Probe an add_view layout with `validate_layout(layout)` if you're
-      unsure -- it parses, checks panel IDs, and returns the normalized
-      form without touching board state.
-      
-      Blocks referenced by a view layout must exist on the board (or
-      be staged for creation in the same turn). Removing a block
-      automatically drops its panels from every view containing it
-      -- no explicit cleanup needed.
-      
       Answer concisely.
       
       ## Tools
       - `list_blocks()`: List all blocks on the board. One row per block: id, type (class name), display name, and source package.
-      - `describe_block(id)`: Describe a block currently on the board: its class chain, name, arguments and current values, external-control declaration, and incoming links.
+      - `describe_block(id)`: Describe a block currently on the board: its class chain, name, arguments and current values, external-control declaration, incoming links, and any deployment-authored `skills` scoped to its type.
       - `list_links()`: List all links between blocks: id, source block (from), destination block (to), and the input on the destination that is fed.
       - `list_stacks()`: List all stacks on the board. One row per stack: id, name, and comma-separated member block ids. Call describe_stack for a stack's class-specific description -- non-base stack classes can surface extra attributes (e.g. a colour) via the describe_stack S3 generic.
       - `describe_stack(id)`: Describe a stack on the board: its name, member block ids, and any class-specific attributes a non-base stack surfaces via the describe_stack S3 generic. The per-stack drill-down companion to list_stacks.
       - `list_block_types()`: List every registered block constructor -- the block types the user can add to the board. One lean row per type, carrying just the fields you pick a type on: id, name, package, category, a one-line description, and an `inputs` column listing the block's input-slot names. Call describe_block_type(id) for a chosen type's construction detail -- its guidance, per-argument descriptions and types, and worked examples -- before configuring it. Use the `inputs` names verbatim as the `input=` value in add_link (most blocks take "data"; some take several, e.g. "data, by") -- never invent a slot name. An empty `inputs` (NA) is a source block that takes no incoming links. An `inputs` of "..." is a variadic block (e.g. rbind, glue) that accepts any number of links: give each link its own distinct `input` name, or pass "" to auto-number them -- never pass "..." itself.
-      - `describe_block_type(id)`: Report the full construction detail for one registered block type: its description, model-facing `guidance`, an `arguments` map (each argument's description and, when the block declares one, a JSON-Schema `type` descriptor such as an enum's allowed values), and `examples` -- complete worked configurations keyed by argument name. The per-type drill-down companion to list_block_types: pick a type from that lean list, then call this before configuring it with add_block.
+      - `describe_block_type(id)`: Report the full construction detail for one registered block type: its description, model-facing `guidance`, an `arguments` map (each argument's description and, when the block declares one, a JSON-Schema `type` descriptor such as an enum's allowed values), and `examples` -- complete worked configurations keyed by argument name. The per-type drill-down companion to list_block_types: pick a type from that lean list, then call this before configuring it with add_block. Any `skills` named alongside are this deployment's convention for the type -- more specific than the package's `guidance` and winning where the two differ; load one with read_skill.
       - `get_block_result(id)`: Return a short text summary of a block's current evaluated output. Data frames are summarised with skimr-style stats; other objects fall back to a truncated print. Returns an error string if the block has not evaluated successfully.
       - `get_block_conditions(id)`: Return a block's currently captured conditions -- the errors, warnings and messages raised across its evaluation phases -- grouped by severity and noting the phase each came from. The sibling of get_block_result for an unhealthy block: a block that errors on eval leaves its result empty, so the actual message surfaces only here. Reports no active conditions when the block is healthy.
       - `query_data(code)`: Evaluate R code against the board's block results. Every committed block's evaluated result is bound in scope by its block id (e.g. for a block with id `data` write `head(data)`). Returns captured stdout plus the auto-printed value of the last expression -- the same shape an R REPL would produce. Use this for questions the Board section doesn't carry: unique values, group counts, ad-hoc filters, joins across blocks. Read-only; the board is not modified.
@@ -392,9 +154,9 @@
       - `add_stack(blocks, name?, id?)`: Group a set of blocks into a stack. `blocks` is a character vector of block ids; `name` is an optional human-readable label.
       - `remove_stack(id)`: Remove a stack. Member blocks are not removed; only the grouping disappears.
       - `modify_stack(id, blocks?, name?)`: Change a stack's member blocks and/or name. Either or both arguments may be omitted; only supplied fields are changed.
-      - `list_views()`: List all views (tabs) on the board. One entry per view: its stable `id` (the handle the panel-op, remove_view, set_active_view and rename_view tools address the view by), its display `name`, whether it's the currently-active view, and its `layout` in the JSON spec form documented in the Layout section. Reads the live layout, so UI-driven rearrangements show up here immediately.
+      - `list_views()`: List all views (tabs) on the board. One entry per view: its stable `id` (the handle the panel-op, remove_view, set_active_view and rename_view tools address the view by), its display `name`, whether it's the currently-active view, and its `layout` in the JSON spec form the `layout` skill documents. Reads the live layout, so UI-driven rearrangements show up here immediately.
       - `validate_layout(layout)`: Parse and panel-id-check a layout JSON without staging. Returns OK plus the normalized layout on success, or a classed error describing what's wrong. Cheap probe before add_view; never mutates board state.
-      - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns. Pass `active = true` to switch to the new view at flush time.
+      - `add_view(name, layout, active?)`: Add a new view (tab) with the given layout. `name` is its display label; the board assigns the view a stable id (see list_views). `layout` is a JSON object string in the same shape `list_views` returns -- call read_skill("layout") for that grammar before composing one. Pass `active = true` to switch to the new view at flush time.
       - `remove_view(id)`: Remove a view by id (see list_views). Blocks placed only in that view stay on the board but become unplaced; remove them separately if needed. Rejected if it would leave the board with no views.
       - `add_panel_to_view(view, panel, near?, side?, size?)`: Add a block or extension to a view as a panel, addressed by view id (see list_views). `panel` is the block or extension id; it must be on the board or staged for creation this turn. Optionally place it with `near` (a panel already in the view) and `side` (which side of `near` -- within tabs it into that group); omit both to let dock pick a default spot. Optionally give `size` (a ratio in (0, 1)) to record the panel's target size along its split axis for when it lands. Adding a panel already in the view is an error -- reposition it with move_panel, or resize it with resize_panel, instead.
       - `remove_panel_from_view(view, panel)`: Remove a panel from a view, addressed by view id (see list_views). `panel` is the block or extension id; it must currently be a member of the view. The block or extension stays on the board -- only its panel in this view is dropped. Removing a block from the board drops its panels everywhere on its own; no explicit cleanup needed.
@@ -405,6 +167,16 @@
       - `rename_view(id, name)`: Change a view's display label, addressed by id (see list_views). The view keeps its id, layout and active state -- only the label changes.
       - `commit()`: Apply everything you have staged this turn to the board as one atomic update, wait for the touched blocks to re-evaluate, and return their results together with any new problems. This is your read-act-observe step: stage a coherent unit of work with the mutation tools, then commit to see what it produced and correct it if needed. Call it as a separate step after staging, once per coherent unit -- not after every single change. Always resolve a turn's staged changes before ending the turn: commit them here, or discard to drop them. A no-op if nothing is staged.
       - `discard()`: Drop everything you have staged this turn without applying it, leaving the board unchanged. Use this to abandon staged changes you no longer want. A no-op if nothing is staged.
+      
+      ## Skills
+      Guidance authored for this deployment, loaded on demand. Each
+      entry below is a name and what it covers; when one bears on
+      what you are about to do, call read_skill(name) and follow it
+      before acting. A skill is instruction text, not extra
+      capability -- it cannot widen what your tools do, and where a
+      skill and this system prompt disagree, this prompt wins.
+      
+      - `layout`: Arranging views and panels on a dock board: the JSON layout grammar add_view takes, and the panel-op tools (add_panel_to_view, remove_panel_from_view, move_panel, resize_panel, focus_panel) that edit an existing view in place. Read before creating a view or rearranging panels.
       
       ## Board
       2 block(s), 1 link(s), 0 stack(s).

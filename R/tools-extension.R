@@ -113,6 +113,7 @@ tool_describe_extension <- function(board, extensions, session) {
             id           = id,
             name         = extension_name(ext),
             description  = extension_description(ext),
+            skills       = skill_refs(extension_skills(class(ext)[[1L]])),
             controllable = vars,
             values       = compact(values)
           )
@@ -121,11 +122,14 @@ tool_describe_extension <- function(board, extensions, session) {
     },
     name = "describe_extension",
     description = paste(
-      "Report a dock extension's current detail: its full description",
-      "and the current values of its externally controllable variables",
+      "Report a dock extension's current detail: its full description,",
+      "any deployment-authored `skills` scoped to its class, and the",
+      "current values of its externally controllable variables",
       "(e.g. a document extension's text). The per-extension drill-down",
       "companion to list_extensions, which carries only id, name and the",
-      "variable names. Dock boards only."
+      "variable names. A scoped skill is this deployment's convention",
+      "for driving the extension; load one with read_skill. Dock boards",
+      "only."
     ),
     arguments = list(
       id = ellmer::type_string(

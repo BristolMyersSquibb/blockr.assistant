@@ -29,7 +29,8 @@ fake_chat_mod <- function(status = "idle") {
     transcript = function() log,
     last_turn = shiny::reactiveVal(NULL),
     last_input = shiny::reactiveVal(NULL),
-    update_user_input = function(...) invisible()
+    update_user_input = function(...) invisible(),
+    slash_command = function(name, description, handler) invisible()
   )
 }
 
@@ -78,4 +79,35 @@ priced_turns <- function(n, input, output) {
   turns[[n]]@tokens <- c(input, output, NA)
 
   lapply(turns, ellmer::contents_record)
+}
+
+# The chat module advertises its slash commands to the browser through a
+# custom message; MockShinySession drops those, so tests that care swap in a
+# recorder and read the last advertisement back out.
+recording_session <- function() {
+
+  sent <- list()
+  sess <- with_llm_session()
+
+  sess$sendCustomMessage <- function(type, message) {
+    sent[[length(sent) + 1L]] <<- message
+    invisible()
+  }
+
+  list(session = sess, slash_commands = function() last_slash_commands(sent))
+}
+
+last_slash_commands <- function(messages) {
+
+  actions <- Filter(is_slash_command_action, messages)
+
+  if (!length(actions)) {
+    return(list())
+  }
+
+  actions[[length(actions)]]$action$commands
+}
+
+is_slash_command_action <- function(message) {
+  identical(message$action$type, "update_slash_commands")
 }

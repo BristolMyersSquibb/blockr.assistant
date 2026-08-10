@@ -6,13 +6,39 @@ test_that("default_system_prompt() with no args returns intro only", {
   expect_length(res, 1L)
   expect_match(res, "You are an assistant embedded next to a blockr")
   expect_match(res, "ids are immutable once committed")
-  expect_match(res, "## Layout", fixed = TRUE)
-  expect_match(res, "Views are tabs")
-  expect_match(res, "the board assigns the id", fixed = TRUE)
-  expect_match(res, "may appear in more than one view")
   expect_no_match(res, "## Tools", fixed = TRUE)
+  expect_no_match(res, "## Skills", fixed = TRUE)
   expect_no_match(res, "## Board", fixed = TRUE)
   expect_no_match(res, "Note: your previous turn's", fixed = TRUE)
+})
+
+test_that("default_system_prompt() lists the global skills it is given", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "house-style", c("name: house-style", "description: House style.")
+  )
+  write_skill(
+    root, "for-head",
+    c("name: for-head", "description: Scoped.", "blocks:", "  - head_block")
+  )
+
+  res <- default_system_prompt(skills = skill_catalogue())
+
+  expect_match(res, "## Skills", fixed = TRUE)
+  expect_match(res, "- `house-style`: House style.", fixed = TRUE)
+  expect_match(res, "- `layout`:", fixed = TRUE)
+  expect_no_match(res, "for-head", fixed = TRUE)
+})
+
+test_that("default_system_prompt() omits the section without a catalogue", {
+
+  local_skills_dir()
+
+  expect_no_match(
+    default_system_prompt(skills = list()), "## Skills", fixed = TRUE
+  )
 })
 
 test_that("default_system_prompt() static document matches the golden", {
@@ -43,7 +69,9 @@ test_that("default_system_prompt() golden on a populated board", {
   register_commit_tool(client, function() invisible())
   register_discard_tool(client, pending)
 
-  prompt <- default_system_prompt(board = board, client = client)
+  prompt <- default_system_prompt(
+    board = board, client = client, skills = skill_catalogue()
+  )
 
   expect_snapshot(cat(prompt))
 })

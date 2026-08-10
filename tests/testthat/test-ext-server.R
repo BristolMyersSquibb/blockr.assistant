@@ -320,7 +320,7 @@ test_that("server registers the read and mutation tools on the client", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 34L)
+      expect_length(tools, 35L)
       expect_setequal(
         names(tools),
         c(
@@ -337,7 +337,8 @@ test_that("server registers the read and mutation tools on the client", {
           "add_view", "remove_view",
           "add_panel_to_view", "remove_panel_from_view", "move_panel",
           "resize_panel", "focus_panel", "set_active_view", "rename_view",
-          "list_board_options", "set_board_option"
+          "list_board_options", "set_board_option",
+          "read_skill"
         )
       )
     },
@@ -365,7 +366,7 @@ test_that("a dock board additionally registers the extension tools", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 37L)
+      expect_length(tools, 38L)
       expect_true(
         all(
           c("list_extensions", "describe_extension", "modify_extension") %in%
@@ -882,7 +883,7 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
       expect_length(assistant_turns, 1L)
 
       # Tools re-registered (34 surface-tools, same as initial mount)
-      expect_length(client_r()$get_tools(), 34L)
+      expect_length(client_r()$get_tools(), 35L)
     },
     args = list(
       board = reactiveValues(board = new_board()),
@@ -1292,5 +1293,64 @@ test_that("compaction defers while a stream is in flight", {
       update = reactiveVal()
     ),
     session = with_llm_session()
+  )
+})
+
+test_that("user-invocable skills reach shinychat as slash commands", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "drill",
+    c("name: drill", "description: A drill.", "user-invocable: true")
+  )
+  write_skill(
+    root, "model-only", c("name: model-only", "description: Not a command.")
+  )
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  rec <- recording_session()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      # One flush mounts the chat and registers the commands from the
+      # flushed hook; the advertisement goes out on the next.
+      session$flushReact()
+
+      commands <- rec$slash_commands()
+
+      expect_setequal(chr_xtr(commands, "name"), c("layout", "drill"))
+      expect_true("A drill." %in% chr_xtr(commands, "description"))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = rec$session
+  )
+})
+
+test_that("a mistyped skills directory takes the mount down", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_skills = file.path(tempdir(), "no-such-skills-dir")
+  )
+
+  expect_error(
+    testServer(
+      asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+      session$flushReact(),
+      args = list(
+        board = reactiveValues(board = blockr.core::new_board()),
+        update = reactiveVal()
+      ),
+      session = with_llm_session()
+    ),
+    class = "missing_skills_dir"
   )
 })

@@ -79,20 +79,25 @@ tool_describe_block <- function(board, update, session) {
           )
         }
 
-        truncate_chars(
+        summary <- truncate_chars(
           paste(
             describe_block(blks[[id]], board = brd, id = id),
             collapse = "\n"
           ),
           summary_max_chars()
         )
+
+        skills <- block_skills(registry_id_from_block(blks[[id]]))
+
+        paste(c(summary, skill_lines(skills)), collapse = "\n")
       })
     },
     name        = "describe_block",
     description = paste(
       "Describe a block currently on the board: its class chain,",
       "name, arguments and current values, external-control",
-      "declaration, and incoming links."
+      "declaration, incoming links, and any deployment-authored",
+      "`skills` scoped to its type."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
@@ -310,6 +315,7 @@ tool_describe_block_type <- function(board, update, session) {
             category    = meta$category,
             description = meta$description,
             guidance    = nullify(meta$guidance),
+            skills      = skill_refs(block_skills(id)),
             inputs      = nullify(type_inputs(id)),
             arguments   = nullify(arg_specs(meta$arguments[[1L]])),
             examples    = nullify(meta$examples[[1L]])
@@ -326,7 +332,10 @@ tool_describe_block_type <- function(board, update, session) {
       "values), and `examples` -- complete worked configurations keyed",
       "by argument name. The per-type drill-down companion to",
       "list_block_types: pick a type from that lean list, then",
-      "call this before configuring it with add_block."
+      "call this before configuring it with add_block. Any `skills`",
+      "named alongside are this deployment's convention for the type --",
+      "more specific than the package's `guidance` and winning where",
+      "the two differ; load one with read_skill."
     ),
     arguments   = list(
       id = ellmer::type_string(

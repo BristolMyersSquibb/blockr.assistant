@@ -190,3 +190,37 @@ test_that("modify_extension rejects an unknown extension id", {
 
   expect_match(res, "modify_extension\\(ghost\\) failed:")
 })
+
+test_that("describe_extension names the skills scoped to its class", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "doc-style",
+    c("name: doc-style", "description: Write in the house voice.",
+      "extensions:", "  - doc_extension")
+  )
+  write_skill(root, "global", c("name: global", "description: Everywhere."))
+
+  env <- new_ext_tool_env()
+  de  <- tool_describe_extension(env$board, NULL, session = NULL)
+
+  res <- de(id = "doc_extension")
+
+  expect_identical(
+    res$skills,
+    list(list(name = "doc-style", description = "Write in the house voice."))
+  )
+})
+
+test_that("describe_extension omits skills when none are scoped to it", {
+
+  local_skills_dir()
+
+  env <- new_ext_tool_env()
+  res <- tool_describe_extension(env$board, NULL, session = NULL)(
+    id = "doc_extension"
+  )
+
+  expect_false("skills" %in% names(res))
+})
