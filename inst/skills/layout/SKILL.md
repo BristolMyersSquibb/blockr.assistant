@@ -1,4 +1,15 @@
-## Layout
+---
+name: layout
+description: >-
+  Arranging views and panels on a dock board: the JSON layout grammar
+  add_view takes, and the panel-op tools (add_panel_to_view,
+  remove_panel_from_view, move_panel, resize_panel, focus_panel) that
+  edit an existing view in place. Read before creating a view or
+  rearranging panels.
+user-invocable: true
+---
+
+# Layout
 
 Views are tabs; each holds an arrangement of panels (blocks and
 extensions). add_view takes a layout in the JSON spec form below

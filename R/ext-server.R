@@ -10,12 +10,14 @@
 #'
 #' * A **function** is called on every refresh with
 #'   `(board, client, ...)` and must return a character scalar. The
-#'   default [default_system_prompt()] composes a three-section
-#'   prompt (intro / tool catalogue / board summary); a caller can
-#'   pass any function of the same shape.
+#'   default [default_system_prompt()] composes a four-section
+#'   prompt (intro / tool catalogue / skill catalogue / board
+#'   summary); a caller can pass any function of the same shape.
 #' * A **character scalar** is used verbatim as a static prompt -- no
 #'   refresh, no auto-appended catalogue or board summary. The deal
 #'   is "give up dynamic context, gain full prompt control".
+#'   Block- and extension-scoped skills are unaffected: those ride in
+#'   tool return values rather than the prompt.
 #'
 #' The `state` shape mirrors the constructor: `system_prompt` (when
 #' the caller passed a string) round-trips through `blockr.dock`'s
@@ -174,6 +176,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           function(...) system_prompt
         }
 
+        # Resolve the skill catalogue here rather than lazily inside the
+        # client build: a mistyped skills directory should take the mount
+        # down loudly, not degrade into an assistant that quietly answers
+        # without the site's conventions.
+        skill_catalogue()
+
         pending_update <- reactiveVal(empty_pending())
         touched        <- reactiveVal(character())
 
@@ -239,6 +247,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl, board, pending_update, view_data, session
           )
           register_board_options_tools(cl, board, session)
+          register_skill_tools(cl)
           register_commit_tool(cl, perform_commit)
           register_discard_tool(cl, pending_update)
 
@@ -361,9 +370,20 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
-          mod_r(
-            shinychat::chat_mod_server(chat_sub_id(idx), cl, history = FALSE)
+          mod <- shinychat::chat_mod_server(
+            chat_sub_id(idx), cl, history = FALSE
           )
+
+          # Advertising the slash commands is a one-shot push to the chat
+          # element, so it has to wait for the flush that carries that
+          # element's UI: registering in-line here sends it a flush early,
+          # and the browser drops what it cannot yet address.
+          session$onFlushed(
+            function() register_skill_commands(mod, run_skill_command),
+            once = TRUE
+          )
+
+          mod_r(mod)
         })
 
         refresh_prompt <- function() {
@@ -372,7 +392,9 @@ asst_ext_srv <- function(system_prompt, messages) {
           if (is.null(cl)) return(invisible())
 
           prompt <- tryCatch(
-            compose(board, cl, view_data = view_data),
+            compose(
+              board, cl, view_data = view_data, skills = skill_catalogue()
+            ),
             error = function(e) {
               notify(
                 paste(
@@ -398,6 +420,11 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
+
+        # The turn to report telemetry for. A typed message settles through
+        # shinychat's own stream task and shows up on last_turn_r(); a slash
+        # command streams outside it and reports its turn here directly.
+        shown_turn <- reactiveVal(NULL)
 
         # Capture the blocks the model touched this turn off core's `update`
         # reactiveVal. By the time a default-priority observer sees it,
@@ -527,15 +554,52 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
         }
 
+        on_model_turn <- function(turn) {
+
+          shown_turn(turn)
+
+          if (has_any_changes(isolate(pending_update()))) {
+            nudge_or_discard()
+          }
+
+          invisible()
+        }
+
+        # A slash command never reaches shinychat's `_user_input`, so the
+        # bookkeeping its observers do for a typed message -- resetting the
+        # staging slate, the uncommitted-changes backstop, the token
+        # telemetry -- is driven from here instead. The stream starts a tick
+        # late on purpose: shinychat sends `remove_loading` the moment this
+        # handler returns, and that finalises whatever message is streaming,
+        # so a stream opened in-line is closed off again while still empty.
+        run_skill_command <- function(skill, content) {
+
+          mod <- isolate(mod_r())
+          cl  <- isolate(client_r())
+
+          content@text <- skill_command_prompt(skill, content@user_text)
+
+          on_user_input()
+
+          later::later(
+            function() {
+              promises::then(
+                mod$append(cl$stream_async(content, stream = "content")),
+                function(...) {
+                  withReactiveDomain(session, on_model_turn(cl$last_turn()))
+                }
+              )
+            }
+          )
+
+          invisible()
+        }
+
         observeEvent(last_input_r(), on_user_input(), ignoreNULL = TRUE)
 
         observeEvent(
           last_turn_r(),
-          {
-            if (has_any_changes(isolate(pending_update()))) {
-              nudge_or_discard()
-            }
-          },
+          on_model_turn(last_turn_r()),
           ignoreNULL = TRUE
         )
 
@@ -576,7 +640,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         output$tokens <- renderUI(
-          format_token_telemetry(last_turn_r())
+          format_token_telemetry(shown_turn())
         )
 
         # Resolved by the board's serializer at save time, so the budget and

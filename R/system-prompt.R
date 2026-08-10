@@ -1,9 +1,10 @@
 #' Default assistant system prompt
 #'
-#' Builds the three-section system prompt the assistant ships by
+#' Builds the four-section system prompt the assistant ships by
 #' default: an intro / conventions block, an auto-generated tool
-#' catalogue from `client$get_tools()`, and a compact board
-#' summary.
+#' catalogue from `client$get_tools()`, a one-line-per-skill
+#' catalogue of the deployment's globally-scoped skills, and a
+#' compact board summary.
 #'
 #' Each argument is optional; the corresponding section is
 #' omitted when its input is `NULL`, so `default_system_prompt()`
@@ -27,16 +28,30 @@
 #'   server, or `NULL`. Read for the board section's view summary,
 #'   falling back to the committed `board` when `NULL` (before every
 #'   view has reported its layout).
+#' @param skills The available skills, as supplied to the extension
+#'   server. `NULL` omits the skill catalogue. Only globally-scoped
+#'   skills are listed here; block- and extension-scoped ones surface
+#'   through the tools that describe their target.
 #' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  view_data = NULL, ...) {
+                                  view_data = NULL, skills = NULL, ...) {
 
   tools <- if (!is.null(client)) {
     paste0("\n\n## Tools\n", format_tool_catalogue(client))
+  } else {
+    ""
+  }
+
+  catalogue <- if (!is.null(skills)) {
+    format_skill_catalogue(global_skills(skills))
+  }
+
+  skill_section <- if (!is.null(catalogue)) {
+    paste0("\n\n## Skills\n", catalogue)
   } else {
     ""
   }
@@ -48,8 +63,8 @@ default_system_prompt <- function(board = NULL, client = NULL,
   }
 
   slots <- list(
-    layout = read_prompt("layout"),
     tools = tools,
+    skills = skill_section,
     board = board_summary
   )
 

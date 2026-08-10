@@ -39,12 +39,14 @@ The \code{system_prompt} argument controls the prompt the model sees:
 \itemize{
 \item A \strong{function} is called on every refresh with
 \verb{(board, client, ...)} and must return a character scalar. The
-default \code{\link[=default_system_prompt]{default_system_prompt()}} composes a three-section
-prompt (intro / tool catalogue / board summary); a caller can
-pass any function of the same shape.
+default \code{\link[=default_system_prompt]{default_system_prompt()}} composes a four-section
+prompt (intro / tool catalogue / skill catalogue / board
+summary); a caller can pass any function of the same shape.
 \item A \strong{character scalar} is used verbatim as a static prompt -- no
 refresh, no auto-appended catalogue or board summary. The deal
 is "give up dynamic context, gain full prompt control".
+Block- and extension-scoped skills are unaffected: those ride in
+tool return values rather than the prompt.
 }
 
 The \code{state} shape mirrors the constructor: \code{system_prompt} (when

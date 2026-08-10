@@ -4,7 +4,13 @@
 \alias{default_system_prompt}
 \title{Default assistant system prompt}
 \usage{
-default_system_prompt(board = NULL, client = NULL, view_data = NULL, ...)
+default_system_prompt(
+  board = NULL,
+  client = NULL,
+  view_data = NULL,
+  skills = NULL,
+  ...
+)
 }
 \arguments{
 \item{board}{Reactive containing the live board, as supplied
@@ -19,16 +25,22 @@ server, or \code{NULL}. Read for the board section's view summary,
 falling back to the committed \code{board} when \code{NULL} (before every
 view has reported its layout).}
 
+\item{skills}{The available skills, as supplied to the extension
+server. \code{NULL} omits the skill catalogue. Only globally-scoped
+skills are listed here; block- and extension-scoped ones surface
+through the tools that describe their target.}
+
 \item{...}{Forward-compatibility slot for future inputs.}
 }
 \value{
 A character scalar.
 }
 \description{
-Builds the three-section system prompt the assistant ships by
+Builds the four-section system prompt the assistant ships by
 default: an intro / conventions block, an auto-generated tool
-catalogue from \code{client$get_tools()}, and a compact board
-summary.
+catalogue from \code{client$get_tools()}, a one-line-per-skill
+catalogue of the deployment's globally-scoped skills, and a
+compact board summary.
 }
 \details{
 Each argument is optional; the corresponding section is

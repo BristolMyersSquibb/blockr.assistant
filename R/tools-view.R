@@ -209,8 +209,8 @@ tool_list_views <- function(board, view_data, session) {
       "stable `id` (the handle the panel-op, remove_view,",
       "set_active_view and rename_view tools address the view by), its",
       "display `name`, whether it's the currently-active view, and",
-      "its `layout` in the JSON spec form documented in the Layout",
-      "section. Reads the live layout, so UI-driven rearrangements",
+      "its `layout` in the JSON spec form the `layout` skill",
+      "documents. Reads the live layout, so UI-driven rearrangements",
       "show up here immediately."
     ),
     arguments = list()
@@ -289,15 +289,16 @@ tool_add_view <- function(board, pending, session) {
       "Add a new view (tab) with the given layout. `name` is its",
       "display label; the board assigns the view a stable id (see",
       "list_views). `layout` is a JSON object string in the same",
-      "shape `list_views` returns. Pass `active = true` to switch",
-      "to the new view at flush time."
+      "shape `list_views` returns -- call read_skill(\"layout\") for",
+      "that grammar before composing one. Pass `active = true` to",
+      "switch to the new view at flush time."
     ),
     arguments = list(
       name   = ellmer::type_string("Display label for the new view."),
       layout = ellmer::type_string(
         paste(
           "JSON object describing the view's layout, in the shape",
-          "`list_views` returns. See the Layout section for the full",
+          "`list_views` returns. The `layout` skill carries the full",
           "spec and worked examples."
         )
       ),

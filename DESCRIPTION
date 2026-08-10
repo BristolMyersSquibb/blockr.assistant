@@ -28,7 +28,8 @@ Imports:
     later,
     promises,
     shiny,
-    shinychat
+    shinychat,
+    yaml
 Suggests:
     chromote,
     knitr,

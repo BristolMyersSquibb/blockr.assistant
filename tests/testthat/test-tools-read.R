@@ -439,3 +439,66 @@ test_that("query_data truncates output over 200 lines", {
 
   expect_match(res, "output truncated", fixed = TRUE)
 })
+
+test_that("tool_describe_block names the skills scoped to its type", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "head-rules",
+    c("name: head-rules", "description: Keep n small.", "blocks:",
+      "  - head_block")
+  )
+
+  board <- reactiveValues(board = make_iris_board())
+  tool  <- tool_describe_block(board, NULL, NULL)
+
+  res <- call_tool(tool, id = "head")
+
+  expect_match(res, "Skills for this block type", fixed = TRUE)
+  expect_match(res, "head-rules: Keep n small.", fixed = TRUE)
+
+  expect_no_match(
+    call_tool(tool, id = "data"), "head-rules", fixed = TRUE
+  )
+})
+
+test_that("tool_describe_block_type names the skills scoped to it", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "head-rules",
+    c("name: head-rules", "description: Keep n small.", "blocks:",
+      "  - head_block")
+  )
+
+  board <- reactiveValues(board = new_board())
+  tool  <- tool_describe_block_type(board, NULL, NULL)
+
+  expect_identical(
+    call_tool(tool, id = "head_block")$skills,
+    list(list(name = "head-rules", description = "Keep n small."))
+  )
+  expect_null(call_tool(tool, id = "dataset_block")$skills)
+})
+
+test_that("an unscoped skill stays out of the per-block responses", {
+
+  root <- local_skills_dir()
+
+  write_skill(root, "global", c("name: global", "description: Everywhere."))
+
+  board <- reactiveValues(board = make_iris_board())
+
+  expect_no_match(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head"),
+    "global",
+    fixed = TRUE
+  )
+  expect_null(
+    call_tool(
+      tool_describe_block_type(board, NULL, NULL), id = "head_block"
+    )$skills
+  )
+})
