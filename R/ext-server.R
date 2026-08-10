@@ -20,10 +20,32 @@
 #'   tool return values rather than the prompt.
 #'
 #' The `state` shape mirrors the constructor: `system_prompt` (when
-#' the caller passed a string) and `messages` round-trip through
-#' `blockr.dock`'s ser/des. Function-valued `system_prompt` is
-#' omitted from `state` so restore falls back to the constructor
-#' default (functions don't serialise robustly across sessions).
+#' the caller passed a string) round-trips through `blockr.dock`'s
+#' ser/des. Function-valued `system_prompt` is omitted from `state` so
+#' restore falls back to the constructor default (functions don't
+#' serialise robustly across sessions).
+#'
+#' The conversation is saved alongside it and restored into the chat
+#' when the board is reopened. How many of the most recent turns are
+#' written is read at save time from the `blockr.chat_save_turns`
+#' option (or the `BLOCKR_CHAT_SAVE_TURNS` environment variable),
+#' which takes `0` for none, a positive whole number, or `Inf` for
+#' all, and defaults to 50. Setting it to `0` is worth considering
+#' where boards are shared, since the file otherwise carries whatever
+#' was typed into the chat. It describes the deployment rather than
+#' the board, so it is neither a constructor argument nor part of
+#' `state` -- restore reads whatever the file holds.
+#'
+#' Turns are stored as an opaque [jsonlite::serializeJSON()] blob.
+#' Recorded turns written into `state` directly do not survive the
+#' board's JSON round trip -- `ellmer::contents_replay()` rejects the
+#' integer `version` that comes back, and typed props such as `tokens`
+#' return as lists -- and since the replay happens in a board-server
+#' observer, such a board took the whole session down on restore
+#' rather than just the chat panel. Payloads written in that earlier
+#' shape are dropped on deserialisation. The raw provider response is
+#' stripped before saving, and the saved window is trimmed to whole
+#' exchanges so it never opens or closes on half of a tool call.
 #'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
@@ -31,7 +53,8 @@
 #'   exported [default_system_prompt] function.
 #' @param messages Optional list of recorded turns (as produced by
 #'   [ellmer::contents_record()]) to seed the conversation with on
-#'   server start. `NULL` starts with an empty conversation.
+#'   server start. `NULL` starts with an empty conversation. This is
+#'   also how a restored board seeds the chat it was saved with.
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -204,8 +227,6 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
         })
 
-        messages_rec <- reactiveVal(coal(messages, list()))
-
         client_r   <- reactiveVal(NULL)
         mod_r      <- reactiveVal(NULL)
         mount_idx  <- reactiveVal(0L)
@@ -328,6 +349,20 @@ asst_ext_srv <- function(system_prompt, messages) {
         # needed (and earlier attempts targeted the wrong DOM id
         # because the chat container lives under shinychat's own
         # NS("chat")).
+        #
+        # history = FALSE is load-bearing. It defaults to TRUE, which opts
+        # into shinychat's on-disk conversation store -- and that store
+        # persists turns through the same ellmer record/replay pair that is
+        # not JSON-safe: `version` is written as a double and read back as
+        # an integer, which the type-strict `identical()` in
+        # ellmer:::check_recorded() rejects as "Unsupported version 1.",
+        # naming the value when it is the type that differs. The replay
+        # aborts inside a restore observer, so the session dies. The store
+        # is scoped per user (or per browser, unauthenticated) and survives
+        # redeploys, so one poisoned record keeps killing that user's
+        # sessions with nothing in the UI to clear it. Revisit once that
+        # comparison is numeric upstream, and once the store's behaviour on
+        # Connect is better understood.
         observe({
 
           idx <- mount_idx()
@@ -335,7 +370,9 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
-          mod <- shinychat::chat_mod_server(chat_sub_id(idx), cl)
+          mod <- shinychat::chat_mod_server(
+            chat_sub_id(idx), cl, history = FALSE
+          )
 
           # Advertising the slash commands is a one-shot push to the chat
           # element, so it has to wait for the flush that carries that
@@ -372,27 +409,6 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           if (!is.null(prompt)) {
             cl$set_system_prompt(prompt)
-          }
-        }
-
-        record_new_turns <- function() {
-
-          cl <- isolate(client_r())
-          if (is.null(cl)) return(invisible())
-
-          recorded <- isolate(messages_rec())
-          turns <- cl$get_turns()
-
-          if (length(turns) > length(recorded)) {
-            new_idx <- seq.int(length(recorded) + 1L, length(turns))
-            messages_rec(
-              c(
-                recorded,
-                lapply(turns[new_idx], ellmer::contents_record)
-              )
-            )
-          } else if (length(turns) < length(recorded)) {
-            messages_rec(lapply(turns, ellmer::contents_record))
           }
         }
 
@@ -536,14 +552,11 @@ asst_ext_srv <- function(system_prompt, messages) {
             reset_pending(pending_update)
             touched(character())
           }
-
-          record_new_turns()
         }
 
         on_model_turn <- function(turn) {
 
           shown_turn(turn)
-          record_new_turns()
 
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
@@ -554,11 +567,11 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         # A slash command never reaches shinychat's `_user_input`, so the
         # bookkeeping its observers do for a typed message -- resetting the
-        # staging slate, recording turns, the uncommitted-changes backstop --
-        # is driven from here instead. The stream starts a tick late on
-        # purpose: shinychat sends `remove_loading` the moment this handler
-        # returns, and that finalises whatever message is streaming, so a
-        # stream opened in-line is closed off again while still empty.
+        # staging slate, the uncommitted-changes backstop, the token
+        # telemetry -- is driven from here instead. The stream starts a tick
+        # late on purpose: shinychat sends `remove_loading` the moment this
+        # handler returns, and that finalises whatever message is streaming,
+        # so a stream opened in-line is closed off again while still empty.
         run_skill_command <- function(skill, content) {
 
           mod <- isolate(mod_r())
@@ -630,7 +643,18 @@ asst_ext_srv <- function(system_prompt, messages) {
           format_token_telemetry(shown_turn())
         )
 
-        state_payload <- list(messages = messages_rec)
+        # Resolved by the board's serializer at save time, so the budget and
+        # the turns are both read as they stand then.
+        state_payload <- list(
+          history = function() {
+            isolate(
+              serialize_chat_history(
+                client_turns(client_r()),
+                chat_save_turns()
+              )
+            )
+          }
+        )
 
         if (is.character(system_prompt)) {
           state_payload$system_prompt <- system_prompt

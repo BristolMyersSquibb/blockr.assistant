@@ -27,6 +27,31 @@
   which is most of them, since `blockr.dock` auto-places panels for
   newly added blocks -- no longer pay for it.
 
+* A board saved after any assistant turn could not be reopened. The
+  recorded turns were written into board state as a nested structure,
+  which does not survive the board's JSON round trip: `jsonlite` reads
+  `version` back as an integer and typed props such as `tokens` as
+  lists, both of which `ellmer::contents_replay()` rejects. Because the
+  replay runs in a board server observer, the failure took down the
+  whole board rather than just the chat panel. Boards saved in that
+  shape now open again -- `blockr_deser()` drops the legacy payload,
+  which is mistyped beyond what is worth repairing. Fixes #97.
+
+* The conversation is now saved with the board as an opaque
+  `jsonlite::serializeJSON()` blob, which round-trips losslessly, and
+  is restored into the chat when the board is reopened. How many of
+  the most recent turns are written is read at save time from the new
+  `blockr.chat_save_turns` option (or the `BLOCKR_CHAT_SAVE_TURNS`
+  environment variable), which takes `0` for none, a positive whole
+  number, or `Inf` for all, and defaults to 50. It describes the
+  deployment rather than the board, so it is neither a constructor
+  argument nor part of board state -- worth setting to `0` where
+  boards are shared, since the file otherwise carries whatever was
+  typed into the chat. Each turn's raw
+  provider response is stripped before saving, and the saved window is
+  trimmed to whole exchanges so it never opens or closes on half of a
+  tool call.
+
 * The read tools now follow a lean-listing / per-item-detail split: a
   listing carries only the fields you pick an item on, and bloat-prone
   detail moves to a companion drill-down tool. `list_block_types`

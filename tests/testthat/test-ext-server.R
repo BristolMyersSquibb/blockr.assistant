@@ -50,17 +50,26 @@ test_that("format_token_telemetry handles missing / NA / real tokens", {
   expect_match(html, ">84<")
 })
 
-test_that("function-arg system_prompt is omitted from state", {
+test_that("the chat module is mounted with history disabled", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
+  history_arg <- NULL
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) {
+      history_arg <<- history
+      NULL
+    },
+    .package = "shinychat"
+  )
+
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(default_system_prompt, NULL),
     {
       session$flushReact()
 
-      expect_named(session$returned$state, "messages")
-      expect_length(session$returned$state$messages(), 0L)
+      expect_false(history_arg)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -70,7 +79,27 @@ test_that("function-arg system_prompt is omitted from state", {
   )
 })
 
-test_that("server seeds the chat from a saved messages argument", {
+test_that("function-arg system_prompt is omitted from state", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_named(session$returned$state, "history")
+      expect_null(session$returned$state$history())
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("the conversation is written to state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -87,7 +116,167 @@ test_that("server seeds the chat from a saved messages argument", {
     {
       session$flushReact()
 
-      expect_length(session$returned$state$messages(), 2L)
+      expect_length(client_r()$get_turns(), 2L)
+
+      blob <- session$returned$state$history()
+
+      expect_type(blob, "character")
+      expect_length(deserialize_chat_history(blob), 2L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("chat_save_turns = 0 writes no conversation to state", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_save_turns = 0L
+  )
+
+  seed <- lapply(
+    list(ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    {
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 2L)
+      expect_null(session$returned$state$history())
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("chat_save_turns keeps only the most recent turns", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_save_turns = 2L
+  )
+
+  seed <- lapply(
+    list(
+      ellmer::Turn("user", "question 1"),
+      ellmer::Turn("assistant", "answer 1"),
+      ellmer::Turn("user", "question 2"),
+      ellmer::Turn("assistant", "answer 2"),
+      ellmer::Turn("user", "question 3"),
+      ellmer::Turn("assistant", "answer 3")
+    ),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    {
+      session$flushReact()
+
+      kept <- lapply(
+        deserialize_chat_history(session$returned$state$history()),
+        ellmer::contents_replay
+      )
+
+      expect_length(kept, 2L)
+      expect_identical(
+        lapply(kept, ellmer::contents_text),
+        list("question 3", "answer 3")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a saved conversation survives the board round trip", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  turns <- list(
+    ellmer::Turn("user", "load iris"),
+    ellmer::Turn("assistant", "loaded it")
+  )
+
+  ser <- blockr.core::blockr_ser(
+    new_assistant_extension(),
+    data = list(history = serialize_chat_history(turns, 50L))
+  )
+
+  ext <- blockr.core::blockr_deser(
+    jsonlite::fromJSON(
+      jsonlite::toJSON(ser, auto_unbox = TRUE, null = "null"),
+      simplifyDataFrame = FALSE,
+      simplifyMatrix = FALSE
+    )
+  )
+
+  testServer(
+    blockr.dock::extension_server(ext),
+    {
+      session$flushReact()
+
+      restored <- client_r()$get_turns()
+
+      expect_length(restored, 2L)
+      expect_identical(
+        lapply(restored, ellmer::contents_text),
+        lapply(turns, ellmer::contents_text)
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("deser drops a legacy messages payload", {
+
+  ser <- blockr.core::blockr_ser(
+    new_assistant_extension(),
+    data = list(
+      messages = lapply(
+        list(ellmer::Turn("user", "hi"), ellmer::Turn("assistant", "hello")),
+        ellmer::contents_record
+      )
+    )
+  )
+
+  json <- jsonlite::fromJSON(
+    jsonlite::toJSON(ser, null = "null"),
+    simplifyDataFrame = FALSE,
+    simplifyMatrix = FALSE
+  )
+
+  ext <- blockr.core::blockr_deser(json)
+
+  expect_s3_class(ext, "assistant_extension")
+
+  # Left in place, the legacy records reach contents_replay() in a board
+  # server observer and abort the whole board on mount.
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    blockr.dock::extension_server(ext),
+    {
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 0L)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

@@ -18,7 +18,8 @@ exported \link{default_system_prompt} function.}
 
 \item{messages}{Optional list of recorded turns (as produced by
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
-server start. \code{NULL} starts with an empty conversation.}
+server start. \code{NULL} starts with an empty conversation. This is
+also how a restored board seeds the chat it was saved with.}
 
 \item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
 }
@@ -49,10 +50,32 @@ tool return values rather than the prompt.
 }
 
 The \code{state} shape mirrors the constructor: \code{system_prompt} (when
-the caller passed a string) and \code{messages} round-trip through
-\code{blockr.dock}'s ser/des. Function-valued \code{system_prompt} is
-omitted from \code{state} so restore falls back to the constructor
-default (functions don't serialise robustly across sessions).
+the caller passed a string) round-trips through \code{blockr.dock}'s
+ser/des. Function-valued \code{system_prompt} is omitted from \code{state} so
+restore falls back to the constructor default (functions don't
+serialise robustly across sessions).
+
+The conversation is saved alongside it and restored into the chat
+when the board is reopened. How many of the most recent turns are
+written is read at save time from the \code{blockr.chat_save_turns}
+option (or the \code{BLOCKR_CHAT_SAVE_TURNS} environment variable),
+which takes \code{0} for none, a positive whole number, or \code{Inf} for
+all, and defaults to 50. Setting it to \code{0} is worth considering
+where boards are shared, since the file otherwise carries whatever
+was typed into the chat. It describes the deployment rather than
+the board, so it is neither a constructor argument nor part of
+\code{state} -- restore reads whatever the file holds.
+
+Turns are stored as an opaque \code{\link[jsonlite:serializeJSON]{jsonlite::serializeJSON()}} blob.
+Recorded turns written into \code{state} directly do not survive the
+board's JSON round trip -- \code{ellmer::contents_replay()} rejects the
+integer \code{version} that comes back, and typed props such as \code{tokens}
+return as lists -- and since the replay happens in a board-server
+observer, such a board took the whole session down on restore
+rather than just the chat panel. Payloads written in that earlier
+shape are dropped on deserialisation. The raw provider response is
+stripped before saving, and the saved window is trimmed to whole
+exchanges so it never opens or closes on half of a tool call.
 }
 \examples{
 ext <- new_assistant_extension()
