@@ -1,13 +1,20 @@
 # Default assistant system prompt
 
-Builds the three-section system prompt the assistant ships by default:
-an intro / conventions block, an auto-generated tool catalogue from
-`client$get_tools()`, and a compact board summary.
+Builds the four-section system prompt the assistant ships by default: an
+intro / conventions block, an auto-generated tool catalogue from
+`client$get_tools()`, a one-line-per-skill catalogue of the deployment's
+globally-scoped skills, and a compact board summary.
 
 ## Usage
 
 ``` r
-default_system_prompt(board = NULL, client = NULL, view_data = NULL, ...)
+default_system_prompt(
+  board = NULL,
+  client = NULL,
+  view_data = NULL,
+  skills = NULL,
+  ...
+)
 ```
 
 ## Arguments
@@ -29,6 +36,13 @@ default_system_prompt(board = NULL, client = NULL, view_data = NULL, ...)
   Read for the board section's view summary, falling back to the
   committed `board` when `NULL` (before every view has reported its
   layout).
+
+- skills:
+
+  The available skills, as supplied to the extension server. `NULL`
+  omits the skill catalogue. Only globally-scoped skills are listed
+  here; block- and extension-scoped ones surface through the tools that
+  describe their target.
 
 - ...:
 

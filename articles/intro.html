@@ -181,7 +181,7 @@ refresh, no auto-appended board context. You take full control:</p>
 </li>
 <li><p>a <strong>function</strong> – called each refresh with
 <code>(board, client, ...)</code>, returning the prompt string. The
-default <code>default_system_prompt</code> composes the three-section
+default <code>default_system_prompt</code> composes the four-section
 default. To extend it, wrap and call through. Custom functions should
 accept <code>...</code> for forward-compatibility with future phases
 adding inputs.</p></li>
@@ -200,6 +200,113 @@ adding inputs.</p></li>
 <span><span class="fu"><a href="../reference/new_assistant_extension.html">new_assistant_extension</a></span><span class="op">(</span>system_prompt <span class="op">=</span> <span class="va">my_prompt</span><span class="op">)</span></span></code></pre></div>
 <p>You can call <code><a href="../reference/default_system_prompt.html">default_system_prompt()</a></code> with no arguments
 at the REPL to inspect just the intro block.</p>
+</div>
+<div class="section level2">
+<h2 id="teach-it-your-conventions-with-skills">Teach it your conventions with skills<a class="anchor" aria-label="anchor" href="#teach-it-your-conventions-with-skills"></a>
+</h2>
+<p>A block type’s <code>guidance</code> is the package author’s view of
+how to configure it. A <strong>skill</strong> is the deployment’s view –
+that a particular flexible block is, here, preferably used a certain
+way. Skills are markdown files on disk, so a domain expert who does not
+write R can contribute one, and they cost nothing per turn until the
+model reads them.</p>
+<p>A skill is a directory whose name is the skill name;
+<code>SKILL.md</code> is the entry point and sibling files are optional
+bundled resources the model pulls only when it needs them.</p>
+<pre><code><span><span class="va">skills</span><span class="op">/</span></span>
+<span>  <span class="va">adam</span><span class="op">-</span><span class="va">exposure</span><span class="op">/</span></span>
+<span>    <span class="va">SKILL.md</span></span>
+<span>    <span class="va">column</span><span class="op">-</span><span class="va">conventions.md</span></span></code></pre>
+<p><code>SKILL.md</code> is YAML frontmatter plus a markdown body:</p>
+<pre><code>---
+name: adam-exposure
+description: &gt;-
+  How exposure tables are built here. Read before configuring a
+  block over ADEX.
+blocks:
+  - dplyr_filter_block
+requires:
+  - blockr.dplyr (&gt;= 0.2.0)
+---
+
+Always filter to `SAFFL == "Y"` before summarising; see
+`column-conventions.md` for the column glossary.</code></pre>
+<p>Only <code>name</code> (which must match the directory and hold
+nothing but lowercase letters, digits and hyphens) and
+<code>description</code> are required. Everything else is optional:</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr class="header">
+<th>Field</th>
+<th>Behaviour</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>requires</code></td>
+<td>R dependency specs; unmet means the skill does not exist for the
+session</td>
+</tr>
+<tr class="even">
+<td><code>blocks</code></td>
+<td>block type ids this skill is scoped to</td>
+</tr>
+<tr class="odd">
+<td><code>extensions</code></td>
+<td>extension classes this skill is scoped to</td>
+</tr>
+<tr class="even">
+<td><code>user-invocable</code></td>
+<td>also registers a <code>/name</code> slash command</td>
+</tr>
+<tr class="odd">
+<td><code>disable-model-invocation</code></td>
+<td>hide it from the model entirely: no catalogue entry anywhere, and
+<code>read_skill</code> refuses it</td>
+</tr>
+</tbody>
+</table>
+<p>Unknown fields are ignored, so a skill authored for another agent
+drops in unchanged. <code>allowed-tools</code> is the exception: it is
+warned about and not honoured, because every mutation here already
+funnels through staging and an explicit commit.</p>
+<p><code>description</code> is the only always-on model-facing text, so
+keep it to what the model needs in order to decide whether to read the
+skill. One description is truncated at
+<code>blockr.assistant_skill_description_max_chars</code> (default
+1024); the always-on cost is all of them together, so the assistant also
+logs a warning once the global catalogue passes
+<code>blockr.assistant_skill_catalogue_max_chars</code> (default 4000).
+Scoping a skill to the blocks or extensions it bears on takes it off
+that budget entirely.</p>
+<p><strong>Where they surface.</strong> A skill scoped to neither blocks
+nor extensions is global: it appears in the <code>## Skills</code>
+section of the default system prompt. A block-scoped skill appears in
+<code>describe_block_type()</code> and <code><a href="../reference/describe_block.html">describe_block()</a></code>,
+next to the block’s <code>guidance</code> and taking precedence over it;
+an extension-scoped one appears in <code>describe_extension()</code>.
+Either way the model loads the body with the <code>read_skill</code>
+tool once it decides the skill is relevant, and a
+<code>user-invocable</code> skill can also be run by name from the chat
+input – <code>/adam-exposure summarise by treatment arm</code>.</p>
+<p><strong>Where they come from.</strong> The package ships one skill
+(<code>layout</code>, the view and panel grammar). Point the assistant
+at your own directory with an option or the matching environment
+variable:</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">blockr.core</span><span class="fu">::</span><span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/blockr_option.html" class="external-link">blockr_option</a></span><span class="op">(</span><span class="st">"assistant_skills"</span>, <span class="st">"/srv/blockr/skills"</span><span class="op">)</span></span></code></pre></div>
+<p>A deployment skill shadows a built-in of the same name. A directory
+that does not exist is an error at mount rather than a silently inert
+configuration. Edits are picked up without restarting the app.</p>
+<p><strong>Skills are instructions, not capabilities.</strong> A skill
+carries system-prompt weight: writing one is editing the assistant’s
+behaviour, not adding documentation. It cannot widen the tool surface,
+and the invariants that matter are enforced in code – nothing applies to
+the board without a commit, whatever any skill says. Authorship is
+operator-only by construction: the directory comes from a server-side
+option, never from board state, and no tool writes a skill.</p>
 </div>
 <div class="section level2">
 <h2 id="extend-per-block-class">Extend per block class<a class="anchor" aria-label="anchor" href="#extend-per-block-class"></a>
@@ -247,7 +354,7 @@ packages would implement). A <code>dock_stack</code>’s colour reaches
 the summary exactly that way.</p>
 <p>A worked example overriding the detailed description for a bespoke
 block class:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">describe_block.fancy_block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    <span class="kw"><a href="https://rdrr.io/r/base/UseMethod.html" class="external-link">NextMethod</a></span><span class="op">(</span><span class="op">)</span>,</span>

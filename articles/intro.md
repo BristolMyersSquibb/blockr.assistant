@@ -112,7 +112,7 @@ handling.
 
 - a **function** – called each refresh with `(board, client, ...)`,
   returning the prompt string. The default `default_system_prompt`
-  composes the three-section default. To extend it, wrap and call
+  composes the four-section default. To extend it, wrap and call
   through. Custom functions should accept `...` for
   forward-compatibility with future phases adding inputs.
 
@@ -134,6 +134,98 @@ new_assistant_extension(system_prompt = my_prompt)
 You can call
 [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
 with no arguments at the REPL to inspect just the intro block.
+
+## Teach it your conventions with skills
+
+A block type’s `guidance` is the package author’s view of how to
+configure it. A **skill** is the deployment’s view – that a particular
+flexible block is, here, preferably used a certain way. Skills are
+markdown files on disk, so a domain expert who does not write R can
+contribute one, and they cost nothing per turn until the model reads
+them.
+
+A skill is a directory whose name is the skill name; `SKILL.md` is the
+entry point and sibling files are optional bundled resources the model
+pulls only when it needs them.
+
+    skills/
+      adam-exposure/
+        SKILL.md
+        column-conventions.md
+
+`SKILL.md` is YAML frontmatter plus a markdown body:
+
+    ---
+    name: adam-exposure
+    description: >-
+      How exposure tables are built here. Read before configuring a
+      block over ADEX.
+    blocks:
+      - dplyr_filter_block
+    requires:
+      - blockr.dplyr (>= 0.2.0)
+    ---
+
+    Always filter to `SAFFL == "Y"` before summarising; see
+    `column-conventions.md` for the column glossary.
+
+Only `name` (which must match the directory and hold nothing but
+lowercase letters, digits and hyphens) and `description` are required.
+Everything else is optional:
+
+| Field | Behaviour |
+|----|----|
+| `requires` | R dependency specs; unmet means the skill does not exist for the session |
+| `blocks` | block type ids this skill is scoped to |
+| `extensions` | extension classes this skill is scoped to |
+| `user-invocable` | also registers a `/name` slash command |
+| `disable-model-invocation` | hide it from the model entirely: no catalogue entry anywhere, and `read_skill` refuses it |
+
+Unknown fields are ignored, so a skill authored for another agent drops
+in unchanged. `allowed-tools` is the exception: it is warned about and
+not honoured, because every mutation here already funnels through
+staging and an explicit commit.
+
+`description` is the only always-on model-facing text, so keep it to
+what the model needs in order to decide whether to read the skill. One
+description is truncated at
+`blockr.assistant_skill_description_max_chars` (default 1024); the
+always-on cost is all of them together, so the assistant also logs a
+warning once the global catalogue passes
+`blockr.assistant_skill_catalogue_max_chars` (default 4000). Scoping a
+skill to the blocks or extensions it bears on takes it off that budget
+entirely.
+
+**Where they surface.** A skill scoped to neither blocks nor extensions
+is global: it appears in the `## Skills` section of the default system
+prompt. A block-scoped skill appears in `describe_block_type()` and
+[`describe_block()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_block.md),
+next to the block’s `guidance` and taking precedence over it; an
+extension-scoped one appears in `describe_extension()`. Either way the
+model loads the body with the `read_skill` tool once it decides the
+skill is relevant, and a `user-invocable` skill can also be run by name
+from the chat input – `/adam-exposure summarise by treatment arm`.
+
+**Where they come from.** The package ships one skill (`layout`, the
+view and panel grammar). Point the assistant at your own directory with
+an option or the matching environment variable:
+
+``` r
+
+blockr.core::blockr_option("assistant_skills", "/srv/blockr/skills")
+```
+
+A deployment skill shadows a built-in of the same name. A directory that
+does not exist is an error at mount rather than a silently inert
+configuration. Edits are picked up without restarting the app.
+
+**Skills are instructions, not capabilities.** A skill carries
+system-prompt weight: writing one is editing the assistant’s behaviour,
+not adding documentation. It cannot widen the tool surface, and the
+invariants that matter are enforced in code – nothing applies to the
+board without a commit, whatever any skill says. Authorship is
+operator-only by construction: the directory comes from a server-side
+option, never from board state, and no tool writes a skill.
 
 ## Extend per block class
 

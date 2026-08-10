@@ -2,6 +2,34 @@
 
 ## blockr.assistant (development version)
 
+- Task-specific instruction is now file-based. A **skill** is a
+  directory holding a `SKILL.md` of YAML frontmatter plus a markdown
+  body, discovered from `blockr.assistant_skills` (an option or the
+  matching environment variable) alongside the package’s own
+  `inst/skills`. Only each skill’s one-line `description` is always on;
+  the body is loaded on demand through a new `read_skill(name, file)`
+  tool, so a deployment can teach the assistant its conventions without
+  paying for them on every turn – and without writing R. A skill scoped
+  to neither `blocks` nor `extensions` is listed in a new `## Skills`
+  section of the default system prompt; a block-scoped one surfaces in
+  `describe_block_type()` and
+  [`describe_block()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_block.md)
+  next to the block’s `guidance` and takes precedence over it, and an
+  extension-scoped one in `describe_extension()`. `requires` gates a
+  skill on installed packages, using R’s own dependency spelling: an
+  unmet requirement makes the skill absent from every catalogue and
+  refused by `read_skill`. A `user-invocable` skill also registers a
+  `/name` slash command that runs it against the rest of the typed line.
+  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
+  gains a `skills` argument. Fixes \#99.
+
+- The layout grammar is no longer spliced into every prompt. The ~5 KB
+  `inst/prompts/layout.md` fragment becomes the built-in `layout` skill,
+  read on demand and invocable as `/layout`; `add_view` and `list_views`
+  point at it. Turns that never touch the view tools – which is most of
+  them, since `blockr.dock` auto-places panels for newly added blocks –
+  no longer pay for it.
+
 - A board saved after any assistant turn could not be reopened. The
   recorded turns were written into board state as a nested structure,
   which does not survive the board’s JSON round trip: `jsonlite` reads

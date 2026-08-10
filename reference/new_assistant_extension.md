@@ -51,12 +51,15 @@ The `system_prompt` argument controls the prompt the model sees:
 - A **function** is called on every refresh with `(board, client, ...)`
   and must return a character scalar. The default
   [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
-  composes a three-section prompt (intro / tool catalogue / board
-  summary); a caller can pass any function of the same shape.
+  composes a four-section prompt (intro / tool catalogue / skill
+  catalogue / board summary); a caller can pass any function of the same
+  shape.
 
 - A **character scalar** is used verbatim as a static prompt – no
   refresh, no auto-appended catalogue or board summary. The deal is
-  "give up dynamic context, gain full prompt control".
+  "give up dynamic context, gain full prompt control". Block- and
+  extension-scoped skills are unaffected: those ride in tool return
+  values rather than the prompt.
 
 The `state` shape mirrors the constructor: `system_prompt` (when the
 caller passed a string) round-trips through `blockr.dock`'s ser/des.

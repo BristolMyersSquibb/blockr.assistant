@@ -98,12 +98,14 @@ also how a restored board seeds the chat it was saved with.</p></dd>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>The <code>system_prompt</code> argument controls the prompt the model sees:</p><ul><li><p>A <strong>function</strong> is called on every refresh with
 <code>(board, client, ...)</code> and must return a character scalar. The
-default <code><a href="default_system_prompt.html">default_system_prompt()</a></code> composes a three-section
-prompt (intro / tool catalogue / board summary); a caller can
-pass any function of the same shape.</p></li>
+default <code><a href="default_system_prompt.html">default_system_prompt()</a></code> composes a four-section
+prompt (intro / tool catalogue / skill catalogue / board
+summary); a caller can pass any function of the same shape.</p></li>
 <li><p>A <strong>character scalar</strong> is used verbatim as a static prompt – no
 refresh, no auto-appended catalogue or board summary. The deal
-is "give up dynamic context, gain full prompt control".</p></li>
+is "give up dynamic context, gain full prompt control".
+Block- and extension-scoped skills are unaffected: those ride in
+tool return values rather than the prompt.</p></li>
 </ul><p>The <code>state</code> shape mirrors the constructor: <code>system_prompt</code> (when
 the caller passed a string) round-trips through <code>blockr.dock</code>'s
 ser/des. Function-valued <code>system_prompt</code> is omitted from <code>state</code> so
