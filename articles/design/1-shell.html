@@ -296,6 +296,25 @@ ser/des.</p>
 <div class="section level2">
 <h2 id="wire-format-for-messages">Wire format for <code>messages</code><a class="anchor" aria-label="anchor" href="#wire-format-for-messages"></a>
 </h2>
+<p><strong>Corrected.</strong> The “no opaque blobs” shape below was
+written into <code>state</code> verbatim, and it does <em>not</em>
+survive the board’s own JSON round trip. <code>jsonlite</code> reads
+<code>"version": 1</code> back as an integer, which the type-strict
+check in <code><a href="https://ellmer.tidyverse.org/reference/contents_record.html" class="external-link">ellmer::contents_replay()</a></code> rejects, and typed props
+come back mistyped — <code>tokens</code> as a list, and the
+<code>"NA"</code> strings seen below failing S7 validation. Because the
+replay runs in a board-server observer, a board saved after any chat
+turn aborted the whole board on restore.</p>
+<p>The record/replay pair is still what turns a <code>Turn</code> into
+data, but the result is now stored as a single opaque
+<code><a href="https://jeroen.r-universe.dev/jsonlite/reference/serializeJSON.html" class="external-link">jsonlite::serializeJSON()</a></code> string, which preserves R’s types
+exactly and so round-trips through the board file unchanged. The saved
+window is bounded by the <code>blockr.chat_save_turns</code> option,
+read at save time, the raw provider response in <code>json</code> is
+stripped, and truncation is trimmed to whole exchanges so a window never
+opens on a tool result whose request fell outside it. The structure
+below is therefore still the payload — it is simply no longer the thing
+written to disk.</p>
 <p>We use <code><a href="https://ellmer.tidyverse.org/reference/contents_record.html" class="external-link">ellmer::contents_record()</a></code> /
 <code><a href="https://ellmer.tidyverse.org/reference/contents_record.html" class="external-link">ellmer::contents_replay()</a></code> as the round-trip pair. Output is
 plain JSON — no opaque blobs — and the round-trip is lossless across all
