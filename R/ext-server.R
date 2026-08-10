@@ -348,9 +348,12 @@ asst_ext_srv <- function(system_prompt, messages) {
         # an integer, which the type-strict `identical()` in
         # ellmer:::check_recorded() rejects as "Unsupported version 1.",
         # naming the value when it is the type that differs. The replay
-        # aborts inside a restore observer, so the session dies, and the
-        # store survives redeploys -- one poisoned record kills every later
-        # session. Revisit once that comparison is numeric upstream.
+        # aborts inside a restore observer, so the session dies. The store
+        # is scoped per user (or per browser, unauthenticated) and survives
+        # redeploys, so one poisoned record keeps killing that user's
+        # sessions with nothing in the UI to clear it. Revisit once that
+        # comparison is numeric upstream, and once the store's behaviour on
+        # Connect is better understood.
         observe({
 
           idx <- mount_idx()
