@@ -36,3 +36,7 @@ description_max_chars <- function() {
 skill_description_max_chars <- function() {
   as.integer(blockr_option("assistant_skill_description_max_chars", 1024L))
 }
+
+skill_catalogue_max_chars <- function() {
+  as.integer(blockr_option("assistant_skill_catalogue_max_chars", 4000L))
+}

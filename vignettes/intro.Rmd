@@ -195,7 +195,7 @@ required. Everything else is optional:
 | `blocks` | block type ids this skill is scoped to |
 | `extensions` | extension classes this skill is scoped to |
 | `user-invocable` | also registers a `/name` slash command |
-| `disable-model-invocation` | keep it out of the model-facing catalogue |
+| `disable-model-invocation` | hide it from the model entirely: no catalogue entry anywhere, and `read_skill` refuses it |
 
 Unknown fields are ignored, so a skill authored for another agent
 drops in unchanged. `allowed-tools` is the exception: it is warned
@@ -204,8 +204,13 @@ through staging and an explicit commit.
 
 `description` is the only always-on model-facing text, so keep it
 to what the model needs in order to decide whether to read the
-skill. It is truncated at
-`blockr.assistant_skill_description_max_chars` (default 1024).
+skill. One description is truncated at
+`blockr.assistant_skill_description_max_chars` (default 1024); the
+always-on cost is all of them together, so the assistant also logs a
+warning once the global catalogue passes
+`blockr.assistant_skill_catalogue_max_chars` (default 4000). Scoping a
+skill to the blocks or extensions it bears on takes it off that budget
+entirely.
 
 **Where they surface.** A skill scoped to neither blocks nor
 extensions is global: it appears in the `## Skills` section of the

@@ -78,7 +78,29 @@ scan_skills <- function(dirs) {
 
   log_debug("Loaded {sum(keep)} of {length(skills)} skill(s).")
 
+  warn_catalogue_budget(skills[keep])
+
   skills[keep]
+}
+
+# The per-skill cap bounds one description; what nobody sees coming is N of
+# them. A site accumulates skills over months and every turn gets longer, so
+# say so here -- once per rescan, not once per prompt.
+warn_catalogue_budget <- function(skills) {
+
+  budget <- skill_catalogue_max_chars()
+  size <- sum(nchar(chr_ply(global_skills(skills), skill_entry)))
+
+  if (size > budget) {
+    log_warn(
+      "The always-on skill catalogue is {size} characters, over the ",
+      "{budget} character budget: trim the descriptions of the ",
+      "{length(global_skills(skills))} global skills, or scope some of ",
+      "them to the blocks or extensions they bear on."
+    )
+  }
+
+  invisible()
 }
 
 parse_skill <- function(dir) {

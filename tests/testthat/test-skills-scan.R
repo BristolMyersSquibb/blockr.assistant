@@ -313,3 +313,49 @@ test_that("frontmatter delimiters inside the body are left alone", {
     "Above.\n\n---\n\nBelow."
   )
 })
+
+test_that("an always-on catalogue over budget is warned about", {
+
+  root <- local_skills_dir()
+
+  # The package's own layout skill is global too, so budget from what the
+  # catalogue already costs rather than from a bare number.
+  withr::local_options(
+    blockr.assistant_skill_catalogue_max_chars = catalogue_chars() + 100L
+  )
+
+  for (nme in c("alpha", "beta", "gamma")) {
+    write_skill(
+      root, nme,
+      c(sprintf("name: %s", nme), paste("description:", strrep("word ", 30L)))
+    )
+  }
+
+  logs <- capture_logs(skill_catalogue())
+
+  expect_match(logs, "always-on skill catalogue is")
+  expect_match(logs, "trim the descriptions of the 4 global skills")
+})
+
+test_that("scoped skills do not count against the always-on budget", {
+
+  root <- local_skills_dir()
+
+  withr::local_options(
+    blockr.assistant_skill_catalogue_max_chars = catalogue_chars() + 100L
+  )
+
+  for (nme in c("alpha", "beta", "gamma")) {
+    write_skill(
+      root, nme,
+      c(
+        sprintf("name: %s", nme),
+        paste("description:", strrep("word ", 30L)),
+        "blocks:",
+        "  - head_block"
+      )
+    )
+  }
+
+  expect_no_match(capture_logs(skill_catalogue()), "over the")
+})

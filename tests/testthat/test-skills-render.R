@@ -32,6 +32,38 @@ test_that("only unscoped, model-invocable skills are global", {
   expect_false(any(c("for-blocks", "for-exts", "hidden") %in% global))
 })
 
+test_that("a scoped skill disabling model invocation is not advertised", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "block-playbook",
+    c(
+      "name: block-playbook",
+      "description: Slash command for head blocks.",
+      "blocks:",
+      "  - head_block",
+      "user-invocable: true",
+      "disable-model-invocation: true"
+    )
+  )
+  write_skill(
+    root, "ext-playbook",
+    c(
+      "name: ext-playbook",
+      "description: Slash command for the assistant.",
+      "extensions:",
+      "  - assistant_extension",
+      "user-invocable: true",
+      "disable-model-invocation: true"
+    )
+  )
+
+  expect_length(block_skills("head_block"), 0L)
+  expect_length(extension_skills("assistant_extension"), 0L)
+  expect_true("block-playbook" %in% names(skill_catalogue()))
+})
+
 test_that("scoped skills route to their target and nothing else", {
 
   root <- local_skills_dir()

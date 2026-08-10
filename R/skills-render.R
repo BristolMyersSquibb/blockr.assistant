@@ -3,8 +3,12 @@ global_skills <- function(skills) {
 }
 
 is_global_skill <- function(skill) {
-  isTRUE(skill$model_invocable) &&
+  is_model_invocable(skill) &&
     !length(skill$blocks) && !length(skill$extensions)
+}
+
+is_model_invocable <- function(skill) {
+  isTRUE(skill$model_invocable)
 }
 
 block_skills <- function(uid) {
@@ -21,7 +25,10 @@ scoped_skills <- function(field, key) {
     return(list())
   }
 
-  Filter(function(skill) key %in% skill[[field]], skill_catalogue())
+  Filter(
+    function(skill) is_model_invocable(skill) && key %in% skill[[field]],
+    skill_catalogue()
+  )
 }
 
 skill_blurb <- function(skill) {

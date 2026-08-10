@@ -64,6 +64,35 @@ test_that("read_skill refuses a skill whose requirements are unmet", {
   expect_no_match(res, "Secret instructions", fixed = TRUE)
 })
 
+test_that("read_skill refuses a skill that disables model invocation", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "playbook",
+    c(
+      "name: playbook",
+      "description: Run by name only.",
+      "user-invocable: true",
+      "disable-model-invocation: true"
+    ),
+    body = "Secret instructions."
+  )
+
+  res <- tool_read_skill()("playbook")
+
+  expect_match(res, "No skill named 'playbook'", fixed = TRUE)
+  expect_no_match(res, "Secret instructions", fixed = TRUE)
+
+  # The slash handler reads the body directly, so refusing the tool does not
+  # cut off the invocation path the author asked for.
+  expect_match(
+    skill_command_prompt(skill_catalogue()[["playbook"]], ""),
+    "Secret instructions",
+    fixed = TRUE
+  )
+})
+
 test_that("read_skill reports an unknown name", {
 
   local_skills_dir()

@@ -341,10 +341,6 @@ asst_ext_srv <- function(system_prompt, messages) {
           # element, so it has to wait for the flush that carries that
           # element's UI: registering in-line here sends it a flush early,
           # and the browser drops what it cannot yet address.
-          # Advertising the slash commands is a one-shot push to the chat
-          # element, so it has to wait for the flush that carries that
-          # element's UI: registering in-line here sends it a flush early,
-          # and the browser drops what it cannot yet address.
           session$onFlushed(
             function() register_skill_commands(mod, run_skill_command),
             once = TRUE

@@ -49,3 +49,7 @@ local_skills_dir <- function(.local_envir = parent.frame()) {
 
   root
 }
+
+catalogue_chars <- function() {
+  sum(nchar(chr_ply(global_skills(skill_catalogue()), skill_entry)))
+}

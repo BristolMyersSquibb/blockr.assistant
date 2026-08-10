@@ -15,7 +15,7 @@ tool_read_skill <- function() {
 
         skill <- skill_catalogue()[[name]]
 
-        if (is.null(skill)) {
+        if (is.null(skill) || !is_model_invocable(skill)) {
           return(
             sprintf(
               paste(
