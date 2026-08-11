@@ -164,3 +164,124 @@ test_that("a user-invocable skill reaches the browser's command palette", {
 
   expect_match(palette, "exposure-check", fixed = TRUE)
 })
+
+test_that("a rejected turn surfaces the error and releases the chat", {
+
+  skip_on_cran()
+  skip_if_not_installed("shinytest2")
+  skip_if_not_installed("chromote")
+
+  app_dir <- withr::local_tempdir()
+
+  writeLines(
+    c(
+      "library(blockr.core)",
+      "library(blockr.dock)",
+      "library(blockr.assistant)",
+      "",
+      # Nothing listens on port 1, so the provider refuses the turn before
+      # it streams anything -- the shape a quota or context-length
+      # rejection arrives in.
+      "dead_chat <- function(system_prompt = NULL, params = NULL) {",
+      "  ellmer::chat_openai(",
+      "    model = 'gpt-4.1-nano',",
+      "    base_url = 'http://127.0.0.1:1/v1',",
+      "    credentials = function() {",
+      "      list(Authorization = 'Bearer test')",
+      "    },",
+      "    echo = 'none'",
+      "  )",
+      "}",
+      "options(blockr.chat_function = dead_chat)",
+      "",
+      "board <- new_dock_board(",
+      "  blocks = c(data = new_dataset_block('iris')),",
+      "  extensions = list(assistant = new_assistant_extension()),",
+      "  views = list(Main = list(blk('data'), ext('assistant')))",
+      ")",
+      "",
+      "serve(board)"
+    ),
+    file.path(app_dir, "app.R")
+  )
+
+  chromote_obj <- chromote::default_chromote_object()
+  chromote_obj$default_timeout <- 30
+
+  app <- shinytest2::AppDriver$new(
+    app_dir,
+    name = "stream-failure",
+    seed = 42,
+    load_timeout = 30 * 1000
+  )
+  withr::defer(app$stop())
+
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-btn-send') !== null",
+    timeout = 15 * 1000
+  )
+
+  chrome <- app$get_chromote_session()
+  chrome$Runtime$evaluate(
+    "document.querySelector('.tiptap.ProseMirror').focus()"
+  )
+  chrome$Input$insertText(text = "load the iris data")
+
+  app$wait_for_js(
+    "!document.querySelector('.shiny-chat-btn-send').disabled",
+    timeout = 10 * 1000
+  )
+  app$run_js("document.querySelector('.shiny-chat-btn-send').click()")
+
+  app$wait_for_js(
+    paste0(
+      "document.querySelector('.shiny-chat-message ",
+      ".shiny-chat-message-content')?.innerText.trim().length > 0"
+    ),
+    timeout = 30 * 1000
+  )
+
+  reply <- app$get_js(
+    paste0(
+      "document.querySelector('.shiny-chat-message ",
+      ".shiny-chat-message-content').innerText"
+    )
+  )
+
+  expect_match(reply, "could not complete this turn", fixed = TRUE)
+
+  # The spinner and the locked composer are the same client-side state: a
+  # turn that never finishes leaves both up for good.
+  expect_false(
+    app$get_js(
+      "document.querySelector('.shiny-chat-input')
+         .classList.contains('disabled')"
+    )
+  )
+
+  # A slash command streams outside shinychat's task, so the same rejection
+  # arrives at our own `append()` call as a plain error instead of a task
+  # status. Fired through the input the browser would set, to keep the
+  # command palette's keyboard handling out of it.
+  app$run_js(
+    "const id = document.querySelector('shiny-chat-container').id;
+     Shiny.setInputValue(
+       id + '_slash_command',
+       {command: 'layout', userText: ''},
+       {priority: 'event'}
+     );"
+  )
+
+  app$wait_for_js(
+    "document.querySelectorAll('.shiny-chat-message')[1]
+       ?.innerText.trim().length > 0",
+    timeout = 30 * 1000
+  )
+
+  replies <- app$get_js(
+    "Array.from(document.querySelectorAll('.shiny-chat-message'))
+       .map(m => m.innerText)"
+  )
+
+  expect_match(replies[[2]], "could not complete this turn", fixed = TRUE)
+})

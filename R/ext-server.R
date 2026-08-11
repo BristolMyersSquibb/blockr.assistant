@@ -386,6 +386,26 @@ asst_ext_srv <- function(system_prompt, messages) {
           mod_r(mod)
         })
 
+        # shinychat runs the turn inside a `shiny::ExtendedTask` whose result
+        # nothing ever reads. A stream that fails before its first `await` --
+        # which is where a provider rejects a request outright, on an
+        # exhausted quota or an over-long context -- is captured there and
+        # dropped, leaving the browser on the loading bubble it raised when
+        # the message was sent. The module return does not expose the failure
+        # either (`status()` reports both "success" and "error" as "idle"), so
+        # read it off the task and close the dangling message with the error.
+        observe({
+
+          mod  <- req(mod_r())
+          task <- req(stream_task(mod))
+
+          req(identical(task$status(), "error"))
+
+          mod$append(
+            stream_failure_note(tryCatch(task$result(), error = identity))
+          )
+        })
+
         refresh_prompt <- function() {
 
           cl <- client_r()
@@ -583,11 +603,14 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           later::later(
             function() {
-              promises::then(
-                mod$append(cl$stream_async(content, stream = "content")),
-                function(...) {
-                  withReactiveDomain(session, on_model_turn(cl$last_turn()))
-                }
+              tryCatch(
+                promises::then(
+                  mod$append(cl$stream_async(content, stream = "content")),
+                  function(...) {
+                    withReactiveDomain(session, on_model_turn(cl$last_turn()))
+                  }
+                ),
+                error = function(e) mod$append(stream_failure_note(e))
               )
             }
           )
@@ -668,6 +691,27 @@ asst_ext_srv <- function(system_prompt, messages) {
 
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
+}
+
+stream_task <- function(mod) {
+  get0("append_stream_task", environment(mod$append), inherits = FALSE)
+}
+
+stream_failure_note <- function(err) {
+
+  if (isTRUE(getOption("shiny.sanitize.errors"))) {
+    return(
+      paste(
+        "**The assistant could not complete this turn.** Please try again",
+        "or contact the app author."
+      )
+    )
+  }
+
+  sprintf(
+    "**The assistant could not complete this turn:**\n\n```\n%s\n```",
+    conditionMessage(err)
+  )
 }
 
 turn_text <- function(turn) {
