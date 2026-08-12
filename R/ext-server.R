@@ -386,10 +386,10 @@ asst_ext_srv <- function(system_prompt, messages) {
           mod_r(mod)
         })
 
-        # shinychat runs the turn inside a `shiny::ExtendedTask` whose result
-        # nothing ever reads. A stream that fails before its first `await` --
-        # which is where a provider rejects a request outright, on an
-        # exhausted quota or an over-long context -- is captured there and
+        # The chat module runs the turn inside a `shiny::ExtendedTask` whose
+        # result nothing ever reads. A stream that fails before its first
+        # `await` -- which is where a provider rejects a request outright, on
+        # an exhausted quota or an over-long context -- is captured there and
         # dropped, leaving the browser on the loading bubble it raised when
         # the message was sent. The module return does not expose the failure
         # either (`status()` reports both "success" and "error" as "idle"), so
