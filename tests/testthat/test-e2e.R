@@ -164,3 +164,99 @@ test_that("a user-invocable skill reaches the browser's command palette", {
 
   expect_match(palette, "exposure-check", fixed = TRUE)
 })
+
+test_that("a rejected turn surfaces the error and releases the chat", {
+
+  skip_on_cran()
+  skip_if_not_installed("shinytest2")
+  skip_if_not_installed("chromote")
+
+  chromote_obj <- chromote::default_chromote_object()
+  chromote_obj$default_timeout <- 30
+
+  # Nothing listens on port 1, so the provider refuses the turn before it
+  # streams anything -- the shape a quota or context-length rejection
+  # arrives in. Injected as an option rather than baked into a fixture app,
+  # so the shipped example carries no deliberately broken provider.
+  app <- shinytest2::AppDriver$new(
+    system.file("examples", "empty-board", package = "blockr.assistant"),
+    name = "stream-failure",
+    seed = 42,
+    load_timeout = 30 * 1000,
+    options = list(blockr.chat_function = dead_chat_function)
+  )
+  withr::defer(app$stop())
+
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-btn-send') !== null",
+    timeout = 15 * 1000
+  )
+
+  chrome <- app$get_chromote_session()
+  chrome$Runtime$evaluate(
+    "document.querySelector('.tiptap.ProseMirror').focus()"
+  )
+  chrome$Input$insertText(text = "load the iris data")
+
+  app$wait_for_js(
+    "!document.querySelector('.shiny-chat-btn-send').disabled",
+    timeout = 10 * 1000
+  )
+  app$run_js("document.querySelector('.shiny-chat-btn-send').click()")
+
+  app$wait_for_js(
+    paste0(
+      "document.querySelector('.shiny-chat-message ",
+      ".shiny-chat-message-content')?.innerText.trim().length > 0"
+    ),
+    timeout = 30 * 1000
+  )
+
+  reply <- app$get_js(
+    paste0(
+      "document.querySelector('.shiny-chat-message ",
+      ".shiny-chat-message-content').innerText"
+    )
+  )
+
+  # Should this ever fail with shinychat's own wording ("An error
+  # occurred:") in the first bubble, posit-dev/shinychat#304 has landed and
+  # is rendering the error before we do -- leaving the user with the same
+  # message twice. Delete our workaround; do not repair this assertion.
+  expect_match(reply, "could not complete this turn", fixed = TRUE)
+
+  # The spinner and the locked composer are the same client-side state: a
+  # turn that never finishes leaves both up for good.
+  expect_false(
+    app$get_js(
+      "document.querySelector('.shiny-chat-input')
+         .classList.contains('disabled')"
+    )
+  )
+
+  # A slash command streams outside shinychat's task, so the same rejection
+  # arrives at our own `append()` call as a plain error instead of a task
+  # status. Fired through the input the browser would set, to keep the
+  # command palette's keyboard handling out of it.
+  app$run_js(
+    "const id = document.querySelector('shiny-chat-container').id;
+     Shiny.setInputValue(
+       id + '_slash_command',
+       {command: 'layout', userText: ''},
+       {priority: 'event'}
+     );"
+  )
+
+  app$wait_for_js(
+    "document.querySelectorAll('.shiny-chat-message')[1]
+       ?.innerText.trim().length > 0",
+    timeout = 30 * 1000
+  )
+
+  replies <- app$get_js(
+    "Array.from(document.querySelectorAll('.shiny-chat-message'))
+       .map(m => m.innerText)"
+  )
+
+  expect_match(replies[[2]], "could not complete this turn", fixed = TRUE)
+})

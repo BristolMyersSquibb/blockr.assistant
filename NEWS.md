@@ -1,5 +1,19 @@
 # blockr.assistant (development version)
 
+* A turn the provider rejects outright -- an exhausted quota, an
+  over-long context, a dropped connection -- now reports the error in
+  the chat instead of leaving a spinner that never resolves and a
+  composer that stays locked. Such a stream fails before it yields
+  anything, which is ahead of the first `await` in `shinychat`'s
+  streaming coroutine, so the error escapes the promise chain that
+  renders mid-stream failures: on a typed message it lands in the
+  `ExtendedTask` whose result nothing reads, and on a slash command it
+  is thrown straight out of the deferred append. Both are now caught.
+  This is a stopgap pending posit-dev/shinychat#304, which is where the
+  dropped rejection belongs; once that lands it reports the failure
+  itself and our copy should be retired rather than kept alongside.
+  Fixes #102.
+
 * Task-specific instruction is now file-based. A **skill** is a
   directory holding a `SKILL.md` of YAML frontmatter plus a markdown
   body, discovered from `blockr.assistant_skills` (an option or the
