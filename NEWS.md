@@ -9,6 +9,9 @@
   renders mid-stream failures: on a typed message it lands in the
   `ExtendedTask` whose result nothing reads, and on a slash command it
   is thrown straight out of the deferred append. Both are now caught.
+  This is a stopgap pending posit-dev/shinychat#304, which is where the
+  dropped rejection belongs; once that lands it reports the failure
+  itself and our copy should be retired rather than kept alongside.
   Fixes #102.
 
 * Task-specific instruction is now file-based. A **skill** is a

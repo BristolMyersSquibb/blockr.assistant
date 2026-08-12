@@ -219,6 +219,10 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     )
   )
 
+  # Should this ever fail with shinychat's own wording ("An error
+  # occurred:") in the first bubble, the upstream fix has landed and is
+  # rendering the error before we do -- leaving the user with the same
+  # message twice. Delete our workaround; do not repair this assertion.
   expect_match(reply, "could not complete this turn", fixed = TRUE)
 
   # The spinner and the locked composer are the same client-side state: a

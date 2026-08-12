@@ -1217,6 +1217,11 @@ test_that("stream_failure_note reports the error, or hides it on request", {
 
 test_that("the mounted chat module hands back its stream task", {
 
+  # A canary on shinychat's internals: the error surfacing reads the task out
+  # of a closure the package promises nothing about. Failing here means the
+  # lookup went stale, and the app has silently stopped reporting failed
+  # turns -- so re-point it, or drop the workaround if upstream now reports
+  # them itself.
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
