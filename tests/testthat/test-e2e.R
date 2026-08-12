@@ -171,48 +171,19 @@ test_that("a rejected turn surfaces the error and releases the chat", {
   skip_if_not_installed("shinytest2")
   skip_if_not_installed("chromote")
 
-  app_dir <- withr::local_tempdir()
-
-  writeLines(
-    c(
-      "library(blockr.core)",
-      "library(blockr.dock)",
-      "library(blockr.assistant)",
-      "",
-      # Nothing listens on port 1, so the provider refuses the turn before
-      # it streams anything -- the shape a quota or context-length
-      # rejection arrives in.
-      "dead_chat <- function(system_prompt = NULL, params = NULL) {",
-      "  ellmer::chat_openai(",
-      "    model = 'gpt-4.1-nano',",
-      "    base_url = 'http://127.0.0.1:1/v1',",
-      "    credentials = function() {",
-      "      list(Authorization = 'Bearer test')",
-      "    },",
-      "    echo = 'none'",
-      "  )",
-      "}",
-      "options(blockr.chat_function = dead_chat)",
-      "",
-      "board <- new_dock_board(",
-      "  blocks = c(data = new_dataset_block('iris')),",
-      "  extensions = list(assistant = new_assistant_extension()),",
-      "  views = list(Main = list(blk('data'), ext('assistant')))",
-      ")",
-      "",
-      "serve(board)"
-    ),
-    file.path(app_dir, "app.R")
-  )
-
   chromote_obj <- chromote::default_chromote_object()
   chromote_obj$default_timeout <- 30
 
+  # Nothing listens on port 1, so the provider refuses the turn before it
+  # streams anything -- the shape a quota or context-length rejection
+  # arrives in. Injected as an option rather than baked into a fixture app,
+  # so the shipped example carries no deliberately broken provider.
   app <- shinytest2::AppDriver$new(
-    app_dir,
+    system.file("examples", "empty-board", package = "blockr.assistant"),
     name = "stream-failure",
     seed = 42,
-    load_timeout = 30 * 1000
+    load_timeout = 30 * 1000,
+    options = list(blockr.chat_function = dead_chat_function)
   )
   withr::defer(app$stop())
 
