@@ -52,15 +52,26 @@
 #' unbounded session costs more as it goes and eventually exceeds the
 #' provider's context window -- and because that limit is reached by
 #' accumulation, every later message is over it too, leaving the chat
-#' dead until the extension is remounted. Once an exchange exceeds
-#' `blockr.chat_compact_tokens` (or `BLOCKR_CHAT_COMPACT_TOKENS`), the
-#' older part of the conversation is replaced by a summary the model
-#' writes of it, and the recent turns are kept verbatim. The threshold
-#' counts what the provider itself billed for the last exchange rather
-#' than turns, that being what the context window is actually spent in;
-#' it defaults to 50000 and takes `Inf` to switch compaction off. A
-#' restored board is checked on mount as well, so reopening a long
-#' conversation cannot land already over the limit.
+#' dead until the extension is remounted. Once an exchange exceeds the
+#' threshold, the older part of the conversation is replaced by a
+#' summary the model writes of it, and the recent turns are kept
+#' verbatim. The threshold counts what the provider itself billed for
+#' the last exchange rather than turns, that being what the context
+#' window is actually spent in. A restored board is checked on mount as
+#' well, so reopening a long conversation cannot land already over the
+#' limit.
+#'
+#' That threshold is a **board option**, `chat_compact_tokens`, so a
+#' user can retune it during a session -- the trade is recall against
+#' how soon the chat starts summarising, and the right answer moves
+#' with the model, which is itself swappable at runtime. `Inf` switches
+#' compaction off. The deployment sets where it starts, through the
+#' `blockr.chat_compact_tokens` option or the
+#' `BLOCKR_CHAT_COMPACT_TOKENS` environment variable, defaulting to
+#' 50000. Contrast [`chat_save_turns`][new_assistant_extension], which
+#' stays a deployment setting because it governs whether conversations
+#' may land in a shared file at all -- not a decision to hand to the
+#' person whose conversation it is.
 #'
 #' Compaction rewrites the browser transcript to match, which is what
 #' keeps the two honest. `shinychat` appends each turn to the DOM as it
@@ -95,7 +106,9 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
-    options = new_board_options(new_llm_model_option()),
+    options = new_board_options(
+      new_llm_model_option(), new_chat_compact_option()
+    ),
     ...
   )
 }
@@ -476,7 +489,12 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           turns <- cl$get_turns()
 
-          if (!over_context_bound(turns, chat_compact_tokens())) {
+          # Isolated because the threshold is read at the moment a turn ends,
+          # not depended on: the mount observer calls this, and a dependency
+          # would replay the whole transcript every time the user retunes it.
+          bound <- isolate(chat_compact_tokens(session))
+
+          if (!over_context_bound(turns, bound)) {
             return(invisible())
           }
 

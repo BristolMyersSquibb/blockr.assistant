@@ -35,11 +35,13 @@ fake_chat_mod <- function(status = "idle") {
 }
 
 with_llm_session <- function() {
+
   sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+
+  for (opt in list(new_llm_model_option(), new_chat_compact_option())) {
+    blockr.core:::board_option_to_userdata(opt, session = sess)
+  }
+
   sess
 }
 

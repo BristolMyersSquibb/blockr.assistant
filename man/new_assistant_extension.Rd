@@ -82,15 +82,26 @@ only the file: every turn is re-sent on every request, so an
 unbounded session costs more as it goes and eventually exceeds the
 provider's context window -- and because that limit is reached by
 accumulation, every later message is over it too, leaving the chat
-dead until the extension is remounted. Once an exchange exceeds
-\code{blockr.chat_compact_tokens} (or \code{BLOCKR_CHAT_COMPACT_TOKENS}), the
-older part of the conversation is replaced by a summary the model
-writes of it, and the recent turns are kept verbatim. The threshold
-counts what the provider itself billed for the last exchange rather
-than turns, that being what the context window is actually spent in;
-it defaults to 50000 and takes \code{Inf} to switch compaction off. A
-restored board is checked on mount as well, so reopening a long
-conversation cannot land already over the limit.
+dead until the extension is remounted. Once an exchange exceeds the
+threshold, the older part of the conversation is replaced by a
+summary the model writes of it, and the recent turns are kept
+verbatim. The threshold counts what the provider itself billed for
+the last exchange rather than turns, that being what the context
+window is actually spent in. A restored board is checked on mount as
+well, so reopening a long conversation cannot land already over the
+limit.
+
+That threshold is a \strong{board option}, \code{chat_compact_tokens}, so a
+user can retune it during a session -- the trade is recall against
+how soon the chat starts summarising, and the right answer moves
+with the model, which is itself swappable at runtime. \code{Inf} switches
+compaction off. The deployment sets where it starts, through the
+\code{blockr.chat_compact_tokens} option or the
+\code{BLOCKR_CHAT_COMPACT_TOKENS} environment variable, defaulting to
+50000. Contrast \code{\link[=new_assistant_extension]{chat_save_turns}}, which
+stays a deployment setting because it governs whether conversations
+may land in a shared file at all -- not a decision to hand to the
+person whose conversation it is.
 
 Compaction rewrites the browser transcript to match, which is what
 keeps the two honest. \code{shinychat} appends each turn to the DOM as it

@@ -13,8 +13,52 @@ test_that("chat_compact_tokens validates", {
     class = "invalid_compact_tokens"
   )
 
+  # The deployment option now seeds the board option's default rather than
+  # being read directly, so a session reads it back through the board.
   withr::local_options(blockr.chat_compact_tokens = 123L)
-  expect_identical(chat_compact_tokens(), 123L)
+
+  expect_equal(
+    shiny::isolate(chat_compact_tokens(with_llm_session())), 123
+  )
+})
+
+test_that("the compaction threshold is a board option", {
+
+  withr::local_options(blockr.chat_compact_tokens = 50000L)
+
+  opt <- new_chat_compact_option()
+
+  expect_true(blockr.core::is_board_option(opt))
+  expect_identical(blockr.core::board_option_id(opt), "chat_compact_tokens")
+
+  # The select round-trips through character, so Inf has to survive as a value
+  # and not arrive back as NA.
+  expect_identical(
+    blockr.core::board_option_transform(opt)("Inf"), Inf
+  )
+  expect_identical(
+    blockr.core::board_option_transform(opt)("25000"), 25000
+  )
+
+  expect_error(
+    new_chat_compact_option(value = 0), class = "invalid_compact_tokens"
+  )
+})
+
+test_that("compact_token_choices keeps Never and folds in a custom value", {
+
+  expect_true(is.infinite(compact_token_choices(50000L)[["Never"]]))
+  expect_false(anyDuplicated(compact_token_choices(50000L)) > 0L)
+
+  # A deployment threshold outside the preset list stays selectable.
+  expect_true(75000 %in% compact_token_choices(75000))
+  expect_true("75,000 tokens" %in% names(compact_token_choices(75000)))
+
+  # Inf as the deployment default must not yield two "Never" entries.
+  choices <- compact_token_choices(Inf)
+
+  expect_length(choices, 5L)
+  expect_identical(sum(is.infinite(choices)), 1L)
 })
 
 tokened_turn <- function(text, input, output) {

@@ -5,14 +5,23 @@
   eventually exceeded the provider's context window -- and since that
   limit is reached by accumulation, every later message was over it
   too, leaving the chat dead until the extension was remounted. The
-  conversation is now compacted: once an exchange exceeds the new
-  `blockr.chat_compact_tokens` option (or `BLOCKR_CHAT_COMPACT_TOKENS`,
-  default 50000, `Inf` to switch it off), the older turns are replaced
-  by a summary the model writes of them and the recent turns are kept
-  verbatim. The threshold counts what the provider billed for the last
-  exchange rather than turns, that being what a context window is
-  spent in. A restored board is checked on mount too, so reopening a
-  long conversation no longer lands already over the limit. Fixes #101.
+  conversation is now compacted: once an exchange exceeds the
+  threshold, the older turns are replaced by a summary the model writes
+  of them and the recent turns are kept verbatim. The threshold counts
+  what the provider billed for the last exchange rather than turns,
+  that being what a context window is spent in. A restored board is
+  checked on mount too, so reopening a long conversation no longer
+  lands already over the limit. Fixes #101.
+
+* The compaction threshold is a board option, `chat_compact_tokens`, so
+  it can be retuned during a session rather than fixed at deploy time:
+  it trades recall against how soon the chat starts summarising, and
+  the right value moves with the model, which is itself a board option.
+  `Inf` switches compaction off. The deployment sets the starting point
+  through the new `blockr.chat_compact_tokens` option (or
+  `BLOCKR_CHAT_COMPACT_TOKENS`), default 50000. This is deliberately
+  unlike `blockr.chat_save_turns`, which stays deployment-only because
+  it governs whether conversations may be written to a shared file.
 
 * The chat transcript comes back with the conversation. It was left
   empty by anything that remounted the chat panel -- reopening a saved

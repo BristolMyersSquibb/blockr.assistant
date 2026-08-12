@@ -1,5 +1,62 @@
-chat_compact_tokens <- function() {
-  validate_compact_tokens(blockr_option("chat_compact_tokens", 50000L))
+chat_compact_tokens <- function(session) {
+  validate_compact_tokens(
+    get_board_option_value("chat_compact_tokens", session)
+  )
+}
+
+# A board option rather than a deployment one, because where the threshold
+# belongs depends on whose decision it is. `chat_save_turns` governs whether a
+# conversation may land in a shared file, which is the deployment's call and
+# not the user's to relax. This governs how much history the model keeps within
+# one session, which is the user's own trade of recall against how soon the
+# chat starts summarising -- and since the model can be swapped at runtime, the
+# right value can change mid-session. The deployment still sets where it
+# starts, through `blockr.chat_compact_tokens`.
+new_chat_compact_option <- function(value = blockr_option("chat_compact_tokens",
+                                                          50000L),
+                                    category = "Assistant options",
+                                    ...) {
+
+  validate_compact_tokens(value)
+
+  new_board_option(
+    id = "chat_compact_tokens",
+    default = value,
+    ui = function(id) {
+      selectInput(
+        NS(id, "chat_compact_tokens"),
+        "Compact conversation above",
+        compact_token_choices(value),
+        selected = value
+      )
+    },
+    server = function(..., session) {
+      observeEvent(
+        get_board_option_or_null("chat_compact_tokens", session),
+        updateSelectInput(
+          session,
+          "chat_compact_tokens",
+          selected = get_board_option_value("chat_compact_tokens", session)
+        )
+      )
+    },
+    transform = function(x) as.numeric(x),
+    category = category,
+    ...
+  )
+}
+
+# The deployment's own value is folded in, so a threshold set outside this list
+# stays selectable rather than silently snapping to a neighbour.
+compact_token_choices <- function(value) {
+
+  vals <- sort(unique(c(25000, 50000, 100000, 200000, value)))
+  vals <- vals[is.finite(vals)]
+
+  set_names(
+    c(vals, Inf),
+    c(paste(format(vals, big.mark = ",", trim = TRUE), "tokens"), "Never")
+  )
 }
 
 validate_compact_tokens <- function(x) {

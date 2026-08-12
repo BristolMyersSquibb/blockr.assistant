@@ -829,11 +829,7 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -920,11 +916,7 @@ test_that("llm_model swap drops an empty assistant placeholder", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -976,11 +968,7 @@ test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
