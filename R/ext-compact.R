@@ -63,8 +63,10 @@ validate_compact_tokens <- function(x) {
 
   if (!is_whole_bound(x, 1)) {
     blockr_abort(
-      "Expecting `chat_compact_tokens` to be a positive whole number or ",
-      "`Inf`.",
+      "Expecting `chat_compact_tokens` to be a positive whole number, or ",
+      "`Inf` to switch compaction off. It is the size a request may reach ",
+      "before the conversation is compacted, so `0` is not a way to disable ",
+      "it.",
       class = "invalid_compact_tokens"
     )
   }

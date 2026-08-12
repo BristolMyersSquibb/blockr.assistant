@@ -3,7 +3,13 @@ test_that("chat_compact_tokens validates", {
   expect_identical(validate_compact_tokens(1000L), 1000L)
   expect_identical(validate_compact_tokens(Inf), Inf)
 
-  expect_error(validate_compact_tokens(0), class = "invalid_compact_tokens")
+  # `Inf` disables compaction, not `0` -- the value is the size a request may
+  # reach, so `0` would read as "always compact". The error says so.
+  expect_error(
+    validate_compact_tokens(0),
+    "switch compaction off",
+    class = "invalid_compact_tokens"
+  )
   expect_error(validate_compact_tokens(-1), class = "invalid_compact_tokens")
   expect_error(validate_compact_tokens(1.5), class = "invalid_compact_tokens")
   expect_error(validate_compact_tokens(NA), class = "invalid_compact_tokens")
