@@ -395,10 +395,11 @@ asst_ext_srv <- function(system_prompt, messages) {
         # either (`status()` reports both "success" and "error" as "idle"), so
         # read it off the task and close the dangling message with the error.
         #
-        # A stopgap: once shinychat renders these itself, it will render one
-        # and this will render a second. Retire the whole workaround then --
-        # this observer, `stream_task()`, `stream_failure_note()` and the
-        # tests that pin them -- rather than trying to tell the two apart.
+        # A stopgap, tracked upstream as posit-dev/shinychat#304: once that
+        # lands shinychat renders these itself, so it will render one message
+        # and this a second. Retire the whole workaround then -- this
+        # observer, `stream_task()`, `stream_failure_note()` and the tests
+        # that pin them -- rather than trying to tell the two apart.
         observe({
 
           mod  <- req(mod_r())

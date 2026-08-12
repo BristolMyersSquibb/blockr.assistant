@@ -1220,8 +1220,8 @@ test_that("the mounted chat module hands back its stream task", {
   # A canary on shinychat's internals: the error surfacing reads the task out
   # of a closure the package promises nothing about. Failing here means the
   # lookup went stale, and the app has silently stopped reporting failed
-  # turns -- so re-point it, or drop the workaround if upstream now reports
-  # them itself.
+  # turns -- so re-point it, or drop the workaround once upstream reports
+  # them itself, which posit-dev/shinychat#304 tracks.
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
