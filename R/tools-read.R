@@ -37,7 +37,8 @@ tool_list_blocks <- function(board, update, session) {
               id      = character(),
               type    = character(),
               name    = character(),
-              package = character()
+              package = character(),
+              status  = character()
             )
           )
         }
@@ -49,6 +50,7 @@ tool_list_blocks <- function(board, update, session) {
           type    = chr_ply(blks, function(x) class(x)[[1L]]),
           name    = meta$name,
           package = meta$package,
+          status  = chr_ply(names(blks), eval_status, board),
           row.names = NULL
         )
       })
@@ -56,7 +58,13 @@ tool_list_blocks <- function(board, update, session) {
     name        = "list_blocks",
     description = paste(
       "List all blocks on the board. One row per block: id, type",
-      "(class name), display name, and source package."
+      "(class name), display name, source package, and eval status.",
+      "A `ready` block has a current result; `dormant` and `stale`",
+      "blocks are off screen and hold no readable result (`stale`",
+      "additionally means an upstream changed since the block last",
+      "ran); `waiting`, `unset` and `failed` blocks have not produced",
+      "one. Call describe_block for what a status means for that",
+      "block."
     ),
     arguments   = list()
   )
@@ -89,14 +97,22 @@ tool_describe_block <- function(board, update, session) {
 
         skills <- block_skills(registry_id_from_block(blks[[id]]))
 
-        paste(c(summary, skill_lines(skills)), collapse = "\n")
+        paste(
+          c(
+            summary,
+            eval_status_line(eval_status(id, board)),
+            skill_lines(skills)
+          ),
+          collapse = "\n"
+        )
       })
     },
     name        = "describe_block",
     description = paste(
       "Describe a block currently on the board: its class chain,",
       "name, arguments and current values, external-control",
-      "declaration, incoming links, and any deployment-authored",
+      "declaration, incoming links, eval status (whether it holds a",
+      "current result, and if not why), and any deployment-authored",
       "`skills` scoped to its type."
     ),
     arguments   = list(
@@ -361,29 +377,18 @@ tool_get_block_result <- function(board, update, session) {
           )
         }
 
-        res <- tryCatch(
-          isolate(blks[[id]]$server$result()),
-          error = function(e) e
-        )
-
-        if (inherits(res, "error")) {
-          return(
-            sprintf(
-              "Block %s has not evaluated successfully: %s",
-              id, conditionMessage(res)
-            )
-          )
-        }
-
-        paste(summarise_result(res), collapse = "\n")
+        block_result_summary(id, board)
       })
     },
     name        = "get_block_result",
     description = paste(
       "Return a short text summary of a block's current evaluated",
       "output. Data frames are summarised with skimr-style stats;",
-      "other objects fall back to a truncated print. Returns an",
-      "error string if the block has not evaluated successfully."
+      "other objects fall back to a truncated print. A block that",
+      "holds no readable result reports its eval status and what",
+      "that status means instead -- an off-screen (`dormant` or",
+      "`stale`) block is not a broken block and does not need",
+      "reconfiguring."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
@@ -447,13 +452,20 @@ tool_query_data <- function(board, update, session) {
 
         for (id in names(blks)) {
 
+          status <- eval_status(id, board)
+
+          if (has_no_result(status)) {
+            skipped <- c(skipped, set_names(status, id))
+            next
+          }
+
           res <- tryCatch(
             isolate(blks[[id]]$server$result()),
             error = function(e) e
           )
 
           if (inherits(res, "error")) {
-            skipped <- c(skipped, id)
+            skipped <- c(skipped, set_names(status, id))
           } else {
             data[[id]] <- res
           }
@@ -481,14 +493,7 @@ tool_query_data <- function(board, update, session) {
         }
 
         if (length(skipped)) {
-          output <- c(
-            sprintf(
-              "(skipped blocks with errors: %s)",
-              paste(skipped, collapse = ", ")
-            ),
-            "",
-            output
-          )
+          output <- c(skipped_block_lines(skipped), "", output)
         }
 
         paste(output, collapse = "\n")
@@ -501,6 +506,9 @@ tool_query_data <- function(board, update, session) {
       "block id (e.g. for a block with id `data` write `head(data)`).",
       "Returns captured stdout plus the auto-printed value of the",
       "last expression -- the same shape an R REPL would produce.",
+      "A block holding no readable result is not bound; those are",
+      "listed with their eval status above the output, so a name",
+      "that is missing from scope is explained rather than silent.",
       "Use this for questions the Board section doesn't carry:",
       "unique values, group counts, ad-hoc filters, joins across",
       "blocks. Read-only; the board is not modified."

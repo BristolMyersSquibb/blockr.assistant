@@ -163,7 +163,22 @@ test_that("collect_touched_results notes a block with no result", {
 
   out <- collect_touched_results("a", board)
 
-  expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+  expect_true(
+    any(grepl("has not evaluated successfully: boom", out, fixed = TRUE))
+  )
+})
+
+test_that("collect_touched_results reports a stale block as stale", {
+
+  board <- list(
+    blocks = list(a = fake_block(error = "")),
+    eval   = list(a = function() "stale")
+  )
+
+  out <- collect_touched_results("a", board)
+
+  expect_true(any(grepl("(`stale`)", out, fixed = TRUE)))
+  expect_true(any(grepl("out of date", out, fixed = TRUE)))
 })
 
 board_with_links <- function(brd, blocks) {
@@ -214,7 +229,7 @@ test_that("collect_touched_results pulls in a touched block's neighbours", {
   out <- collect_touched_results("mid", board)
 
   expect_true(any(grepl("- mid:", out, fixed = TRUE)))
-  expect_true(any(grepl("no result yet", out, fixed = TRUE)))
+  expect_true(any(grepl("object 'VISITN' not found", out, fixed = TRUE)))
   expect_true(any(grepl("- up:", out, fixed = TRUE)))
   expect_true(any(grepl("VISITNUM", out, fixed = TRUE)))
   expect_true(any(grepl("- sink:", out, fixed = TRUE)))

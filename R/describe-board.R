@@ -1,7 +1,7 @@
 summarise_board <- function(board, view_data = NULL) {
 
   lines <- describe_board(
-    isolate(board$board), block_condition_markers(board),
+    isolate(board$board), block_markers(board),
     view_data = view_data
   )
 
@@ -17,9 +17,9 @@ summarise_board <- function(board, view_data = NULL) {
 #' the summary by supplying their own method.
 #'
 #' @param b A `board`.
-#' @param markers Named character vector of per-block condition
-#'   markers (e.g. "1 error"), as produced by
-#'   `block_condition_markers()`.
+#' @param markers Named character vector of per-block markers
+#'   carrying the block's eval status and captured conditions, such
+#'   as `[stale] [1 error]`, as produced by `block_markers()`.
 #' @param ... Passed to methods.
 #' @param view_data Reactive holding blockr.dock's live all-views
 #'   layout, or `NULL` to read views from the committed board. Views
