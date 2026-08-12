@@ -1233,3 +1233,15 @@ test_that("the mounted chat module hands back its stream task", {
     session = with_llm_session()
   )
 })
+
+test_that("stream_task degrades to NULL when shinychat's internals move", {
+
+  # The lookup reaches into a closure shinychat makes no promises about, so
+  # every way it can go missing must land on NULL rather than an error: an
+  # observer that throws takes the session with it, which is worse than the
+  # unreported failure this works around.
+  expect_null(stream_task(list(append = function(...) NULL)))
+  expect_null(stream_task(list(append = "not a closure")))
+  expect_null(stream_task(list(append = sum)))
+  expect_null(stream_task(list(other = 1)))
+})

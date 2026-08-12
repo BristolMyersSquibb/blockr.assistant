@@ -694,7 +694,18 @@ chat_sub_id <- function(idx) {
 }
 
 stream_task <- function(mod) {
-  get0("append_stream_task", environment(mod$append), inherits = FALSE)
+
+  # Not a closure once shinychat moves `append` onto an object, and
+  # `environment()` is then NULL -- which `get0()` rejects outright. Reaching
+  # into another package's frame has to degrade to "no error reporting", not
+  # take the session down from inside an observer.
+  env <- environment(mod$append)
+
+  if (!is.environment(env)) {
+    return(NULL)
+  }
+
+  get0("append_stream_task", env, inherits = FALSE)
 }
 
 stream_failure_note <- function(err) {
