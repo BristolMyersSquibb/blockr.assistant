@@ -157,6 +157,34 @@ test_that("no_result_message says so when there is no reason to give", {
   )
 })
 
+test_that("deferred_conditions_caveat fires only where a block defers", {
+
+  expect_match(deferred_conditions_caveat("d", "dormant"), "last evaluation")
+  expect_match(deferred_conditions_caveat("d", "stale"), "last evaluation")
+
+  expect_null(deferred_conditions_caveat("d", "ready"))
+  expect_null(deferred_conditions_caveat("d", "failed"))
+  expect_null(deferred_conditions_caveat("d", "waiting"))
+  expect_null(deferred_conditions_caveat("d", NA_character_))
+})
+
+test_that("deferred_conditions_caveat names what an empty report means", {
+
+  res <- deferred_conditions_caveat("d", "stale")
+
+  expect_match(res, "unknown rather than as an all-clear", fixed = TRUE)
+  expect_match(res, "upstream has produced a new result since", fixed = TRUE)
+})
+
+test_that("deferred_conditions_caveat blames the edit for a dormant block", {
+
+  expect_match(
+    deferred_conditions_caveat("d", "dormant"),
+    "any edit made to it since is not reflected",
+    fixed = TRUE
+  )
+})
+
 test_that("skipped_block_lines groups skipped blocks by status", {
 
   res <- skipped_block_lines(

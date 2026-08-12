@@ -391,6 +391,45 @@ test_that("tool_get_block_conditions groups captured conditions by severity", {
   expect_match(res, "- [data] NAs introduced", fixed = TRUE)
 })
 
+test_that("tool_get_block_conditions warns that a stale report is a snapshot", {
+
+  board <- reactiveValues(
+    blocks = list(
+      d = list(server = list(conditions = reactiveVal(cnd_frame())))
+    ),
+    eval = reactiveValues(d = reactive("stale"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_match(res, "as of its last evaluation", fixed = TRUE)
+  expect_match(res, "not an all-clear|unknown rather than as an all-clear")
+  expect_match(res, "no active conditions", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions leaves a live block's report alone", {
+
+  board <- reactiveValues(
+    blocks = list(
+      d = list(
+        server = list(
+          conditions = reactiveVal(cnd_frame(cnd_row("d", "error", "boom")))
+        )
+      )
+    ),
+    eval = reactiveValues(d = reactive("failed"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_no_match(res, "last evaluation", fixed = TRUE)
+  expect_match(res, "boom", fixed = TRUE)
+})
+
 test_that("tool_get_block_conditions reports a healthy block", {
 
   board <- reactiveValues(

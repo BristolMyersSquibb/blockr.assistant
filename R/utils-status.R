@@ -8,8 +8,8 @@ eval_status <- function(id, board) {
 eval_status_notes <- function() {
   c(
     dormant = paste(
-      "off screen and not currently evaluated -- normal for a block the user",
-      "is not looking at, and not a problem to fix"
+      "off screen, so the board is not evaluating it -- holding no result is",
+      "the deferral, not a failure, and not something to reconfigure over"
     ),
     stale = paste(
       "off screen and not currently evaluated, and an upstream block has",
@@ -27,6 +27,13 @@ eval_status_notes <- function() {
 
 has_no_result <- function(status) {
   status %in% names(eval_status_notes())
+}
+
+# Core's not-needed partition: the two statuses under which a block does not
+# re-evaluate at all. Everything it reports -- result, conditions -- is then a
+# snapshot from its last evaluation rather than a live reading.
+eval_deferred <- function(status) {
+  status %in% c("dormant", "stale")
 }
 
 eval_status_note <- function(status) {
@@ -85,6 +92,32 @@ no_result_message <- function(id, status, err = NULL) {
   } else {
     sprintf("Block %s has not evaluated and reports no reason.", id)
   }
+}
+
+deferred_conditions_caveat <- function(id, status) {
+
+  if (!eval_deferred(status)) {
+    return(NULL)
+  }
+
+  drift <- if (identical(status, "stale")) {
+    paste(
+      "an upstream has produced a new result since, so they may not reflect",
+      "the inputs it would run against now"
+    )
+  } else {
+    "any edit made to it since is not reflected in them"
+  }
+
+  sprintf(
+    paste(
+      "These are block %s's conditions as of its last evaluation. It is",
+      "`%s` -- off screen and not re-evaluating -- and %s. Read an empty",
+      "report as unknown rather than as an all-clear: a problem introduced",
+      "since will not surface until the block evaluates again."
+    ),
+    id, status, drift
+  )
 }
 
 skipped_block_lines <- function(status) {

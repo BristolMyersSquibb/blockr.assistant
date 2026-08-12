@@ -420,7 +420,13 @@ tool_get_block_conditions <- function(board, update, session) {
           )
         }
 
-        format_conditions(isolate(conditions()), id)
+        paste(
+          c(
+            deferred_conditions_caveat(id, eval_status(id, board)),
+            format_conditions(isolate(conditions()), id)
+          ),
+          collapse = "\n\n"
+        )
       })
     },
     name        = "get_block_conditions",
@@ -431,7 +437,10 @@ tool_get_block_conditions <- function(board, update, session) {
       "sibling of get_block_result for an unhealthy block: a block that",
       "errors on eval leaves its result empty, so the actual message",
       "surfaces only here. Reports no active conditions when the block",
-      "is healthy."
+      "is healthy -- except for an off-screen (`dormant` or `stale`)",
+      "block, which is not re-evaluating, so its conditions are a",
+      "snapshot from its last run and an empty report means unknown,",
+      "not healthy. The response says so when that is the case."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
