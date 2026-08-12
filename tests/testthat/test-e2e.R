@@ -139,14 +139,21 @@ test_that("a user-invocable skill reaches the browser's command palette", {
   )
   withr::defer(app$stop())
 
+  # The container reaches the DOM a beat before either thing the keystroke
+  # needs: the composer, which React mounts once the custom element upgrades,
+  # and the commands, advertised to that element in a one-shot message a flush
+  # later. Typing into that window cannot be recovered by waiting longer -- the
+  # text lands nowhere without a composer, and nothing reopens the palette when
+  # a late advertisement arrives. The `aria-haspopup` attribute shinychat sets
+  # on the composer is there exactly while it holds a command, so this one wait
+  # closes both windows, and asserts the whole seam -- the scan, the
+  # registration, and its timing against the flush carrying the element's UI --
+  # before a key is pressed.
   app$wait_for_js(
-    "document.querySelector('shiny-chat-container') !== null",
-    timeout = 15 * 1000
+    "document.querySelector('.ProseMirror[aria-haspopup=listbox]') !== null",
+    timeout = 20 * 1000
   )
 
-  # The commands are advertised to the chat element in a one-shot message, so
-  # this asserts the whole seam: the scan, the registration, and its timing
-  # against the flush that carries the element's UI.
   chrome <- app$get_chromote_session()
   chrome$Runtime$evaluate(
     "document.querySelector('.tiptap.ProseMirror').focus()"
