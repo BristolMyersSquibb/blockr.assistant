@@ -34,17 +34,30 @@ test_that("with_tool_errors traps errors into a formatted string", {
   expect_match(res, "trap failed: boom", fixed = TRUE)
 })
 
-test_that("tool_list_blocks returns id/type/name/package rows", {
+test_that("tool_list_blocks returns id/type/name/package/status rows", {
 
   brd <- make_iris_board()
   board <- reactiveValues(board = brd)
 
   tool <- tool_list_blocks(board, NULL, NULL)
-  res <- call_tool(tool)
+  res <- isolate(call_tool(tool))
 
   expect_s3_class(res, "data.frame")
-  expect_named(res, c("id", "type", "name", "package"))
+  expect_named(res, c("id", "type", "name", "package", "status"))
   expect_setequal(res$id, c("data", "head"))
+})
+
+test_that("tool_list_blocks reports each block's eval status", {
+
+  board <- reactiveValues(
+    board = make_iris_board(),
+    eval  = reactiveValues(data = reactive("ready"), head = reactive("stale"))
+  )
+
+  res <- isolate(call_tool(tool_list_blocks(board, NULL, NULL)))
+
+  expect_identical(res$status[res$id == "data"], "ready")
+  expect_identical(res$status[res$id == "head"], "stale")
 })
 
 test_that("tool_list_blocks handles an empty board", {
@@ -54,7 +67,7 @@ test_that("tool_list_blocks handles an empty board", {
   res <- call_tool(tool_list_blocks(board, NULL, NULL))
 
   expect_s3_class(res, "data.frame")
-  expect_named(res, c("id", "type", "name", "package"))
+  expect_named(res, c("id", "type", "name", "package", "status"))
   expect_equal(nrow(res), 0L)
 })
 
@@ -68,6 +81,32 @@ test_that("tool_describe_block describes a board block", {
   expect_type(res, "character")
   expect_length(res, 1L)
   expect_match(res, "Incoming links", fixed = TRUE)
+})
+
+test_that("tool_describe_block reports the block's eval status", {
+
+  board <- reactiveValues(
+    board = make_iris_board(),
+    eval  = reactiveValues(head = reactive("stale"))
+  )
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "Eval status: stale -- ", fixed = TRUE)
+  expect_match(res, "out of date", fixed = TRUE)
+})
+
+test_that("tool_describe_block omits the status line without one", {
+
+  board <- reactiveValues(board = make_iris_board())
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_no_match(res, "Eval status", fixed = TRUE)
 })
 
 test_that("tool_describe_block returns a recovery hint for unknown id", {
@@ -279,6 +318,38 @@ test_that("tool_get_block_result summarises a successful result", {
   expect_length(res, 1L)
 })
 
+test_that("tool_get_block_result explains a dormant block", {
+
+  board <- reactiveValues(
+    blocks = list(head = list(server = list(result = reactive(req(FALSE))))),
+    eval   = reactiveValues(head = reactive("dormant"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_result(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(
+    res, "Block head has no result to read (`dormant`)", fixed = TRUE
+  )
+  expect_no_match(res, "has not evaluated successfully", fixed = TRUE)
+})
+
+test_that("tool_get_block_result flags a stale block's result", {
+
+  board <- reactiveValues(
+    blocks = list(head = list(server = list(result = reactive(req(FALSE))))),
+    eval   = reactiveValues(head = reactive("stale"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_result(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "(`stale`)", fixed = TRUE)
+  expect_match(res, "out of date", fixed = TRUE)
+})
+
 test_that("tool_get_block_conditions returns recovery hint for unknown id", {
 
   board <- reactiveValues(blocks = list())
@@ -318,6 +389,45 @@ test_that("tool_get_block_conditions groups captured conditions by severity", {
   expect_match(res, "Error (1):", fixed = TRUE)
   expect_match(res, "- [eval] could not find foo", fixed = TRUE)
   expect_match(res, "- [data] NAs introduced", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions warns that a stale report is a snapshot", {
+
+  board <- reactiveValues(
+    blocks = list(
+      d = list(server = list(conditions = reactiveVal(cnd_frame())))
+    ),
+    eval = reactiveValues(d = reactive("stale"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_match(res, "as of its last evaluation", fixed = TRUE)
+  expect_match(res, "not an all-clear|unknown rather than as an all-clear")
+  expect_match(res, "no active conditions", fixed = TRUE)
+})
+
+test_that("tool_get_block_conditions leaves a live block's report alone", {
+
+  board <- reactiveValues(
+    blocks = list(
+      d = list(
+        server = list(
+          conditions = reactiveVal(cnd_frame(cnd_row("d", "error", "boom")))
+        )
+      )
+    ),
+    eval = reactiveValues(d = reactive("failed"))
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_conditions(board, NULL, NULL), id = "d")
+  )
+
+  expect_no_match(res, "last evaluation", fixed = TRUE)
+  expect_match(res, "boom", fixed = TRUE)
 })
 
 test_that("tool_get_block_conditions reports a healthy block", {
@@ -411,9 +521,6 @@ test_that("query_data returns the failed-envelope on runtime error", {
 
 test_that("query_data skips blocks whose result errors", {
 
-  bad_results <- list(
-    ok  = 1:3
-  )
   brd <- reactiveValues(
     board = new_board(),
     blocks = list(
@@ -429,7 +536,30 @@ test_that("query_data skips blocks whose result errors", {
 
   res <- isolate(tool(code = "sum(ok)"))
 
-  expect_match(res, "skipped blocks with errors: bad", fixed = TRUE)
+  expect_match(res, "Skipped blocks -- no result to bind:", fixed = TRUE)
+  expect_match(res, "- bad: no result available", fixed = TRUE)
+  expect_match(res, "6", fixed = TRUE)
+})
+
+test_that("query_data names the eval status of each skipped block", {
+
+  brd <- reactiveValues(
+    board = new_board(),
+    blocks = list(
+      ok   = list(server = list(result = reactive(1:3))),
+      off  = list(server = list(result = reactive(req(FALSE)))),
+      old  = list(server = list(result = reactive(req(FALSE))))
+    ),
+    eval = reactiveValues(
+      ok = reactive("ready"), off = reactive("dormant"), old = reactive("stale")
+    )
+  )
+
+  res <- isolate(tool_query_data(brd, NULL, NULL)(code = "sum(ok)"))
+
+  expect_match(res, "- off (`dormant`):", fixed = TRUE)
+  expect_match(res, "- old (`stale`):", fixed = TRUE)
+  expect_match(res, "out of date", fixed = TRUE)
   expect_match(res, "6", fixed = TRUE)
 })
 

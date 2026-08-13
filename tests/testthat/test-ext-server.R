@@ -1342,3 +1342,56 @@ test_that("a mistyped skills directory takes the mount down", {
     class = "missing_skills_dir"
   )
 })
+
+test_that("stream_failure_note reports the error, or hides it on request", {
+
+  err <- simpleError("Rate limit reached for gpt-4.1-nano")
+
+  note <- stream_failure_note(err)
+
+  expect_match(note, "could not complete this turn", fixed = TRUE)
+  expect_match(note, "Rate limit reached", fixed = TRUE)
+
+  withr::local_options(shiny.sanitize.errors = TRUE)
+
+  hidden <- stream_failure_note(err)
+
+  expect_match(hidden, "could not complete this turn", fixed = TRUE)
+  expect_false(grepl("Rate limit reached", hidden, fixed = TRUE))
+})
+
+test_that("the mounted chat module hands back its stream task", {
+
+  # A canary on shinychat's internals: the error surfacing reads the task out
+  # of a closure the package promises nothing about. Failing here means the
+  # lookup went stale, and the app has silently stopped reporting failed
+  # turns -- so re-point it, or drop the workaround once upstream reports
+  # them itself, which posit-dev/shinychat#304 tracks.
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_s3_class(stream_task(mod_r()), "ExtendedTask")
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("stream_task degrades to NULL when shinychat's internals move", {
+
+  # The lookup reaches into a closure shinychat makes no promises about, so
+  # every way it can go missing must land on NULL rather than an error: an
+  # observer that throws takes the session with it, which is worse than the
+  # unreported failure this works around.
+  expect_null(stream_task(list(append = function(...) NULL)))
+  expect_null(stream_task(list(append = "not a closure")))
+  expect_null(stream_task(list(append = sum)))
+  expect_null(stream_task(list(other = 1)))
+})

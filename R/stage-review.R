@@ -138,25 +138,7 @@ collect_touched_results <- function(touched, board,
 
   shown <- ids[seq_len(min(cap, length(ids)))]
 
-  lines <- chr_ply(
-    shown,
-    function(id) {
-
-      res <- tryCatch(
-        isolate(blks[[id]]$server$result()),
-        error = function(e) e
-      )
-
-      body <- if (inherits(res, "error")) {
-        "(no result yet -- see conditions below)"
-      } else {
-        paste(summarise_result(res), collapse = "\n")
-      }
-
-      sprintf("- %s:\n%s", id, body)
-    },
-    use_names = FALSE
-  )
+  lines <- chr_ply(shown, review_result_line, board, use_names = FALSE)
 
   if (length(ids) > length(shown)) {
     lines <- c(
@@ -172,6 +154,10 @@ collect_touched_results <- function(touched, board,
   }
 
   c("Results of the blocks you changed and the blocks linked to them:", lines)
+}
+
+review_result_line <- function(id, board) {
+  sprintf("- %s:\n%s", id, block_result_summary(id, board))
 }
 
 neighbor_blocks <- function(ids, board) {

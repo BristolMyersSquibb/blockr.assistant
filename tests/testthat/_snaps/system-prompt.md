@@ -16,6 +16,25 @@
       (read-only R over any block's result). Do not build on a
       guess when you can look.
       
+      A block in the Board section carries an eval-status marker
+      whenever it holds no current result: `waiting` (a data input is
+      missing), `unset` (a required argument is not set), `failed`
+      (evaluation raised -- get_block_conditions has the error),
+      `dormant` (off screen, so not evaluated) or `stale` (dormant,
+      and an upstream produced a new result since it last ran, so its
+      last result is out of date). An unmarked block is evaluated and
+      current. A dormant or stale block is not re-evaluating at all,
+      which cuts both ways. It has no result for get_block_result or
+      query_data to read, and that is the board deferring work the
+      user cannot see rather than a fault -- never reconfigure a block
+      merely because you cannot read its result. But it is no evidence
+      of health either: everything such a block reports, its
+      conditions included, is a snapshot from its last evaluation, so
+      a break your own change just introduced downstream will not
+      surface there. When you change a block, say so plainly if a
+      dormant or stale block downstream might be affected rather than
+      reporting the change as verified.
+      
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing
       applies until you commit. Stage a coherent unit of work, then
@@ -84,6 +103,25 @@
       (read-only R over any block's result). Do not build on a
       guess when you can look.
       
+      A block in the Board section carries an eval-status marker
+      whenever it holds no current result: `waiting` (a data input is
+      missing), `unset` (a required argument is not set), `failed`
+      (evaluation raised -- get_block_conditions has the error),
+      `dormant` (off screen, so not evaluated) or `stale` (dormant,
+      and an upstream produced a new result since it last ran, so its
+      last result is out of date). An unmarked block is evaluated and
+      current. A dormant or stale block is not re-evaluating at all,
+      which cuts both ways. It has no result for get_block_result or
+      query_data to read, and that is the board deferring work the
+      user cannot see rather than a fault -- never reconfigure a block
+      merely because you cannot read its result. But it is no evidence
+      of health either: everything such a block reports, its
+      conditions included, is a snapshot from its last evaluation, so
+      a break your own change just introduced downstream will not
+      surface there. When you change a block, say so plainly if a
+      dormant or stale block downstream might be affected rather than
+      reporting the change as verified.
+      
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing
       applies until you commit. Stage a coherent unit of work, then
@@ -135,16 +173,16 @@
       Answer concisely.
       
       ## Tools
-      - `list_blocks()`: List all blocks on the board. One row per block: id, type (class name), display name, and source package.
-      - `describe_block(id)`: Describe a block currently on the board: its class chain, name, arguments and current values, external-control declaration, incoming links, and any deployment-authored `skills` scoped to its type.
+      - `list_blocks()`: List all blocks on the board. One row per block: id, type (class name), display name, source package, and eval status. A `ready` block has a current result; `dormant` and `stale` blocks are off screen and hold no readable result (`stale` additionally means an upstream changed since the block last ran); `waiting`, `unset` and `failed` blocks have not produced one. Call describe_block for what a status means for that block.
+      - `describe_block(id)`: Describe a block currently on the board: its class chain, name, arguments and current values, external-control declaration, incoming links, eval status (whether it holds a current result, and if not why), and any deployment-authored `skills` scoped to its type.
       - `list_links()`: List all links between blocks: id, source block (from), destination block (to), and the input on the destination that is fed.
       - `list_stacks()`: List all stacks on the board. One row per stack: id, name, and comma-separated member block ids. Call describe_stack for a stack's class-specific description -- non-base stack classes can surface extra attributes (e.g. a colour) via the describe_stack S3 generic.
       - `describe_stack(id)`: Describe a stack on the board: its name, member block ids, and any class-specific attributes a non-base stack surfaces via the describe_stack S3 generic. The per-stack drill-down companion to list_stacks.
       - `list_block_types()`: List every registered block constructor -- the block types the user can add to the board. One lean row per type, carrying just the fields you pick a type on: id, name, package, category, a one-line description, and an `inputs` column listing the block's input-slot names. Call describe_block_type(id) for a chosen type's construction detail -- its guidance, per-argument descriptions and types, and worked examples -- before configuring it. Use the `inputs` names verbatim as the `input=` value in add_link (most blocks take "data"; some take several, e.g. "data, by") -- never invent a slot name. An empty `inputs` (NA) is a source block that takes no incoming links. An `inputs` of "..." is a variadic block (e.g. rbind, glue) that accepts any number of links: give each link its own distinct `input` name, or pass "" to auto-number them -- never pass "..." itself.
       - `describe_block_type(id)`: Report the full construction detail for one registered block type: its description, model-facing `guidance`, an `arguments` map (each argument's description and, when the block declares one, a JSON-Schema `type` descriptor such as an enum's allowed values), and `examples` -- complete worked configurations keyed by argument name. The per-type drill-down companion to list_block_types: pick a type from that lean list, then call this before configuring it with add_block. Any `skills` named alongside are this deployment's convention for the type -- more specific than the package's `guidance` and winning where the two differ; load one with read_skill.
-      - `get_block_result(id)`: Return a short text summary of a block's current evaluated output. Data frames are summarised with skimr-style stats; other objects fall back to a truncated print. Returns an error string if the block has not evaluated successfully.
-      - `get_block_conditions(id)`: Return a block's currently captured conditions -- the errors, warnings and messages raised across its evaluation phases -- grouped by severity and noting the phase each came from. The sibling of get_block_result for an unhealthy block: a block that errors on eval leaves its result empty, so the actual message surfaces only here. Reports no active conditions when the block is healthy.
-      - `query_data(code)`: Evaluate R code against the board's block results. Every committed block's evaluated result is bound in scope by its block id (e.g. for a block with id `data` write `head(data)`). Returns captured stdout plus the auto-printed value of the last expression -- the same shape an R REPL would produce. Use this for questions the Board section doesn't carry: unique values, group counts, ad-hoc filters, joins across blocks. Read-only; the board is not modified.
+      - `get_block_result(id)`: Return a short text summary of a block's current evaluated output. Data frames are summarised with skimr-style stats; other objects fall back to a truncated print. A block that holds no readable result reports its eval status and what that status means instead -- an off-screen (`dormant` or `stale`) block is not a broken block and does not need reconfiguring.
+      - `get_block_conditions(id)`: Return a block's currently captured conditions -- the errors, warnings and messages raised across its evaluation phases -- grouped by severity and noting the phase each came from. The sibling of get_block_result for an unhealthy block: a block that errors on eval leaves its result empty, so the actual message surfaces only here. Reports no active conditions when the block is healthy -- except for an off-screen (`dormant` or `stale`) block, which is not re-evaluating, so its conditions are a snapshot from its last run and an empty report means unknown, not healthy. The response says so when that is the case.
+      - `query_data(code)`: Evaluate R code against the board's block results. Every committed block's evaluated result is bound in scope by its block id (e.g. for a block with id `data` write `head(data)`). Returns captured stdout plus the auto-printed value of the last expression -- the same shape an R REPL would produce. A block holding no readable result is not bound; those are listed with their eval status above the output, so a name that is missing from scope is explained rather than silent. Use this for questions the Board section doesn't carry: unique values, group counts, ad-hoc filters, joins across blocks. Read-only; the board is not modified.
       - `add_block(type, args, id?)`: Add a new block to the board. `type` is a block id as reported by list_block_types. `args` is a JSON object (passed as a string) of constructor arguments -- field names must match the arg names reported by describe_block_type for the chosen type. `id` is optional -- if omitted, a unique id is generated.
       - `remove_block(id)`: Remove a block from the board. Any links to or from the block, and any stack it sits in, are cleaned up for you -- both the ones already on the board and the ones you staged this turn; the model does not need to remove them explicitly.
       - `modify_block(id, args)`: Change one or more constructor arguments of an existing block. `args` is a JSON object (passed as a string) of just the keys being changed; unmentioned keys keep their current values. Modifiable keys are a block's externally-controllable inputs -- marked `*` in the Board summary, detailed by describe_block -- plus `block_name`, always; non-controllable keys are rejected at stage time, in which case use remove_block + add_block.

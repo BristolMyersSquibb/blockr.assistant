@@ -113,3 +113,14 @@ last_slash_commands <- function(messages) {
 is_slash_command_action <- function(message) {
   identical(message$action$type, "update_slash_commands")
 }
+
+# Points at a port nothing listens on, so the first request is refused and
+# the turn is rejected before it streams anything.
+dead_chat_function <- function(system_prompt = NULL, params = NULL) {
+  ellmer::chat_openai(
+    model = "gpt-4.1-nano",
+    base_url = "http://127.0.0.1:1/v1",
+    credentials = function() list(Authorization = "Bearer test"),
+    echo = "none"
+  )
+}
