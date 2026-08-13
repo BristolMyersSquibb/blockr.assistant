@@ -50,3 +50,28 @@ summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
     hint = "use query_data to fetch specific rows or columns"
   )
 }
+
+# The eval status is consulted BEFORE the result: a block holding none answers
+# with a `NULL` result or a shiny.silent.error carrying no message, neither of
+# which distinguishes "nothing evaluated" from a block that legitimately
+# evaluated to NULL. Reading a dormant block's result() also re-enters its
+# gated pipeline for nothing.
+block_result_summary <- function(id, board) {
+
+  status <- eval_status(id, board)
+
+  if (has_no_result(status)) {
+    return(no_result_message(id, status))
+  }
+
+  res <- tryCatch(
+    isolate(board$blocks[[id]]$server$result()),
+    error = function(e) e
+  )
+
+  if (inherits(res, "error")) {
+    return(no_result_message(id, status, res))
+  }
+
+  paste(summarise_result(res), collapse = "\n")
+}

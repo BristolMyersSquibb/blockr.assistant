@@ -1,5 +1,37 @@
 # blockr.assistant (development version)
 
+* Block eval status now reaches the model. Each block line in the Board
+  summary carries a marker while the block holds no current result
+  (`[dormant]`, `[stale]`, `[waiting]`, `[unset]`, `[failed]`),
+  `list_blocks` gained a `status` column, and `describe_block` names the
+  status and what it means. The three sites that read a result --
+  `get_block_result`, `query_data` and the post-commit review -- report the
+  status in place of a generic failure. They had no way to tell a never
+  configured block from an off-screen one: a dormant block's `result()`
+  re-enters its gated pipeline and raises a `shiny.silent.error` whose
+  message is the empty string, so `get_block_result` rendered "has not
+  evaluated successfully: " with nothing after the colon, `query_data`
+  dropped the block into an unexplained skip list, and the review printed
+  "(no result yet -- see conditions below)" against a block with no
+  conditions to see. The distinction matters most for blockr.core's sixth
+  eval status, `stale` -- a dormant block an upstream has since invalidated
+  -- where the model was told a healthy block had failed and would go on to
+  reconfigure it, or would reason about columns from a description its
+  upstream no longer matches. Reading a result still never forces
+  evaluation, so an off-screen block stays off-screen. Fixes #107.
+
+* The `get_block_conditions` tool now says when its report is a snapshot. An
+  off-screen block does not re-evaluate, so its captured conditions date from
+  its last run -- and an empty report rendered as "no active conditions (no
+  errors, warnings, or messages)", an affirmative all-clear, for a block that
+  had simply not re-run since the model broke it. Both routes into that state
+  are real: an upstream change marks the block `stale`, while an edit to the
+  off-screen block itself leaves it `dormant`, since staleness tracks upstream
+  results rather than a block's own expression. A `dormant` or `stale` block's
+  conditions now carry the caveat and name which of the two applies, so an
+  empty report reads as unknown. Nothing here makes such a block evaluate;
+  until it does, its conditions cannot be brought up to date.
+
 * A turn the provider rejects outright -- an exhausted quota, an
   over-long context, a dropped connection -- now reports the error in
   the chat instead of leaving a spinner that never resolves and a

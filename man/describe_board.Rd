@@ -15,9 +15,9 @@ describe_board(b, markers, ...)
 \arguments{
 \item{b}{A \code{board}.}
 
-\item{markers}{Named character vector of per-block condition
-markers (e.g. "1 error"), as produced by
-\code{block_condition_markers()}.}
+\item{markers}{Named character vector of per-block markers
+carrying the block's eval status and captured conditions, such
+as \verb{[stale] [1 error]}, as produced by \code{block_markers()}.}
 
 \item{...}{Passed to methods.}
 

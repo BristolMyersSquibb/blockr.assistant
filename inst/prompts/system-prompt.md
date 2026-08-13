@@ -11,6 +11,25 @@ that looks empty or `NULL` -- investigate it with `query_data`
 (read-only R over any block's result). Do not build on a
 guess when you can look.
 
+A block in the Board section carries an eval-status marker
+whenever it holds no current result: `waiting` (a data input is
+missing), `unset` (a required argument is not set), `failed`
+(evaluation raised -- get_block_conditions has the error),
+`dormant` (off screen, so not evaluated) or `stale` (dormant,
+and an upstream produced a new result since it last ran, so its
+last result is out of date). An unmarked block is evaluated and
+current. A dormant or stale block is not re-evaluating at all,
+which cuts both ways. It has no result for get_block_result or
+query_data to read, and that is the board deferring work the
+user cannot see rather than a fault -- never reconfigure a block
+merely because you cannot read its result. But it is no evidence
+of health either: everything such a block reports, its
+conditions included, is a snapshot from its last evaluation, so
+a break your own change just introduced downstream will not
+surface there. When you change a block, say so plainly if a
+dormant or stale block downstream might be affected rather than
+reporting the change as verified.
+
 Inspection tools always read the committed board, not your
 staged changes. Mutation tools *stage* a change; nothing
 applies until you commit. Stage a coherent unit of work, then

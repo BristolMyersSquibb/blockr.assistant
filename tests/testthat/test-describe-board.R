@@ -48,6 +48,25 @@ test_that("summarise_board on a populated board emits per-entity lines", {
   expect_match(res, "l: d -> h$data", fixed = TRUE)
 })
 
+test_that("summarise_board marks a block that holds no current result", {
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris"), h = new_head_block()),
+    links  = c(l = new_link("d", "h", "data"))
+  )
+  board <- reactiveValues(
+    board      = brd,
+    blocks     = list(d = list(), h = list()),
+    conditions = reactiveVal(cnd_frame()),
+    eval       = reactiveValues(d = reactive("ready"), h = reactive("stale"))
+  )
+
+  res <- isolate(summarise_board(board))
+
+  expect_match(res, "- h <head_block> n, direction [stale]", fixed = TRUE)
+  expect_no_match(res, "- d <dataset_block> dataset*, package [", fixed = TRUE)
+})
+
 test_that("summarise_board lists the board's options with categories", {
 
   brd <- new_board(
