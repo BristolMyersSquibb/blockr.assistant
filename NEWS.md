@@ -11,7 +11,12 @@
   are materialized on demand instead: `describe_block_type` registers
   `add_<type>` and `describe_block` registers `modify_<type>` for the
   block's own type, both of which the model already calls before
-  configuring. The two kinds are held in separately capped, separately
+  configuring. Schemas are built through `ellmer`'s own type constructors
+  rather than handed over as raw JSON schema, so each provider receives
+  the dialect it states tool schemas in -- Gemini rejects outright the
+  `additionalProperties` that OpenAI's strict mode requires, and a raw
+  schema would have sent one spelling to all of them. The two kinds are
+  held in separately capped, separately
   evicted pools sized by the `blockr.assistant_block_tool_pool` option
   (default 20 each), least recently used first. Since a pool is also
   bounded by how many types qualify, that default tops out at 37 typed

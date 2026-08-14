@@ -24,35 +24,58 @@ modifiable_args <- function(type) {
   )
 }
 
-# A registry type descriptor is a plain JSON-Schema-subset list, so it round
-# trips through JSON into ellmer's type system. Every argument is marked
-# optional: an omitted one falls back to the constructor's default, which is
-# what passing a subset of keys to add_block already does, and no package
-# declares a top-level `required` either way.
-as_tool_type <- function(x) {
+# A registry type descriptor is mapped onto ellmer's own type constructors
+# rather than handed over as raw JSON schema. Each provider states its tool
+# schemas in a different dialect, and ellmer reconciles them only for the types
+# it builds itself -- Gemini rejects the `additionalProperties` that OpenAI's
+# strict mode requires, and `type_from_schema()` passes both straight through
+# unchanged. Going through the constructors buys that reconciliation for every
+# provider ellmer supports.
+#
+# Every argument is optional: an omitted one falls back to the constructor's
+# default, which is what passing a subset of keys to add_block already does,
+# and no package declares a top-level `required` either way.
+as_tool_type <- function(x, description = NULL, required = FALSE) {
 
-  res <- ellmer::type_from_schema(
-    text = jsonlite::toJSON(x, auto_unbox = TRUE)
+  desc <- coal(x[["description"]], description, fail_all = FALSE)
+
+  if (not_null(x[["enum"]])) {
+    return(ellmer::type_enum(as.character(x[["enum"]]), desc, required))
+  }
+
+  switch(
+    x[["type"]],
+    string  = ellmer::type_string(desc, required),
+    number  = ellmer::type_number(desc, required),
+    integer = ellmer::type_integer(desc, required),
+    boolean = ellmer::type_boolean(desc, required),
+    array   = ellmer::type_array(as_tool_type(x[["items"]]), desc, required),
+    object  = object_tool_type(x, desc, required),
+    stop("Unsupported argument type: ", x[["type"]], call. = FALSE)
   )
+}
 
-  res@required <- FALSE
+object_tool_type <- function(x, description, required) {
 
-  res
+  props <- x[["properties"]]
+  req <- as.character(x[["required"]])
+
+  do.call(
+    ellmer::type_object,
+    c(
+      set_names(
+        map(as_tool_type, props, required = names(props) %in% req),
+        names(props)
+      ),
+      list(.description = description, .required = required)
+    )
+  )
 }
 
 # An argument's description sits beside its type descriptor rather than in it,
-# so it has to be folded in here or the schema carries no prose at all. The
-# tool outlives the describe call that armed it, so it cannot lean on that
-# call's reply to say what an argument means.
-described_type <- function(type, description) {
-
-  if (is.null(type[["description"]])) {
-    type[["description"]] <- description
-  }
-
-  as_tool_type(type)
-}
-
+# so it is passed alongside or the schema carries no prose at all. The tool
+# outlives the describe call that armed it, so it cannot lean on that call's
+# reply to say what an argument means.
 arg_tool_types <- function(args) {
 
   types <- lapply(args, arg_spec_type)
@@ -62,7 +85,7 @@ arg_tool_types <- function(args) {
   }
 
   set_names(
-    map(described_type, types, lapply(args, arg_spec_description)),
+    map(as_tool_type, types, lapply(args, arg_spec_description)),
     names(args)
   )
 }

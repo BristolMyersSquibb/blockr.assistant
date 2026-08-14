@@ -18,7 +18,7 @@ test_that("a fully typed block type yields one tool argument per ctor arg", {
 
   expect_named(props, c("n", "direction", "block_name", "id"))
   expect_false(props[["n"]]@required)
-  expect_identical(props[["n"]]@json[["type"]], "integer")
+  expect_identical(props[["n"]]@type, "integer")
 })
 
 test_that("an argument's registry description reaches the tool schema", {
@@ -26,7 +26,7 @@ test_that("an argument's registry description reaches the tool schema", {
   props <- add_tool_types("head_block")
 
   expect_identical(
-    props[["n"]]@json[["description"]],
+    props[["n"]]@description,
     arg_spec_description(block_meta_arguments("head_block")[["n"]])
   )
 })
@@ -37,24 +37,73 @@ test_that("a description on the type descriptor is not overwritten", {
     x = new_arg_spec("Outer.", type = arg_string("Inner."))
   )
 
-  expect_identical(arg_tool_types(args)[["x"]]@json[["description"]], "Inner.")
+  expect_identical(arg_tool_types(args)[["x"]]@description, "Inner.")
 })
 
 test_that("a declared enum reaches the tool schema as an enum", {
 
   props <- add_tool_types("head_block")
 
-  expect_identical(
-    unlist(props[["direction"]]@json[["enum"]]), c("head", "tail")
-  )
+  expect_s3_class(props[["direction"]], "ellmer::TypeEnum")
+  expect_identical(props[["direction"]]@values, c("head", "tail"))
 })
 
 test_that("a declared array reaches the tool schema as an array", {
 
   props <- add_tool_types("merge_block")
 
-  expect_identical(props[["by"]]@json[["type"]], "array")
-  expect_identical(props[["by"]]@json[["items"]][["type"]], "string")
+  expect_s3_class(props[["by"]], "ellmer::TypeArray")
+  expect_identical(props[["by"]]@items@type, "string")
+})
+
+test_that("a nested object is built through ellmer's own type system", {
+
+  args <- new_arg_specs(
+    state = new_arg_spec(
+      "State.",
+      type = arg_object(
+        column = arg_string("Column."),
+        mode = arg_enum(c("include", "exclude"), "Mode.", required = FALSE)
+      )
+    )
+  )
+
+  state <- arg_tool_types(args)[["state"]]
+
+  expect_s3_class(state, "ellmer::TypeObject")
+  expect_named(state@properties, c("column", "mode"))
+  expect_true(state@properties[["column"]]@required)
+  expect_false(state@properties[["mode"]]@required)
+})
+
+# Each provider states tool schemas in its own dialect and ellmer reconciles
+# them only for types it built itself: Gemini rejects outright the
+# `additionalProperties` that OpenAI's strict mode requires. Handing over raw
+# JSON schema instead would send one spelling to every provider.
+test_that("a nested object carries no provider-specific keys of its own", {
+
+  props <- arg_tool_types(
+    new_arg_specs(
+      state = new_arg_spec("State.", type = arg_object(column = arg_string()))
+    )
+  )
+
+  gemini <- ellmer::chat_google_gemini(
+    credentials = function() list(key = "test")
+  )$get_provider()
+
+  json <- jsonlite::toJSON(
+    ellmer:::as_json(
+      gemini,
+      ellmer::tool(
+        function(state = NULL) "ok",
+        name = "t", description = "d", arguments = props
+      )
+    ),
+    auto_unbox = TRUE
+  )
+
+  expect_no_match(as.character(json), "additionalProperties", fixed = TRUE)
 })
 
 test_that("an argument with no declared type disqualifies the whole type", {
