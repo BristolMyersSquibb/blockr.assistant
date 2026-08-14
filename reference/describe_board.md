@@ -26,8 +26,9 @@ describe_board(b, markers, ..., view_data = NULL)
 
 - markers:
 
-  Named character vector of per-block condition markers (e.g. "1
-  error"), as produced by `block_condition_markers()`.
+  Named character vector of per-block markers carrying the block's eval
+  status and captured conditions, such as `[stale] [1 error]`, as
+  produced by `block_markers()`.
 
 - ...:
 
