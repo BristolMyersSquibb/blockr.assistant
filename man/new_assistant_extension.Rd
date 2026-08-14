@@ -94,14 +94,19 @@ limit.
 That threshold is a \strong{board option}, \code{chat_compact_tokens}, so a
 user can retune it during a session -- the trade is recall against
 how soon the chat starts summarising, and the right answer moves
-with the model, which is itself swappable at runtime. \code{Inf} switches
-compaction off. The deployment sets where it starts, through the
-\code{blockr.chat_compact_tokens} option or the
-\code{BLOCKR_CHAT_COMPACT_TOKENS} environment variable, defaulting to
-50000. Contrast \code{\link[=new_assistant_extension]{chat_save_turns}}, which
-stays a deployment setting because it governs whether conversations
-may land in a shared file at all -- not a decision to hand to the
-person whose conversation it is.
+with the model, which is itself swappable at runtime. It defaults to
+\code{Inf}, which leaves compaction \strong{off}: a threshold that would suit
+one provider's context window is wrong for another's, and nothing in
+the API reports that window, so a number picked here would be a
+guess -- silently inert on a small-context model and needlessly
+destructive on a large one. A deployment that knows its models sets
+the starting point through the \code{blockr.chat_compact_tokens} option
+or the \code{BLOCKR_CHAT_COMPACT_TOKENS} environment variable, and a user
+can pick a value for their own session. Contrast
+\code{\link[=new_assistant_extension]{chat_save_turns}}, which stays a
+deployment setting because it governs whether conversations may land
+in a shared file at all -- not a decision to hand to the person
+whose conversation it is.
 
 Compaction rewrites the browser transcript to match, which is what
 keeps the two honest. \code{shinychat} appends each turn to the DOM as it

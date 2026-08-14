@@ -28,6 +28,44 @@ test_that("chat_compact_tokens validates", {
   )
 })
 
+test_that("a threshold of Inf survives the board's JSON round trip", {
+
+  # JSON has no infinity: a board saved with compaction off writes `Inf` and
+  # reads back the string "Inf", which is what the constructor is handed on
+  # restore. Rejecting it would abort inside a board-server observer and take
+  # the board down, which is the failure #97 was about -- and `Inf` is the
+  # default, so it would be every board.
+  expect_identical(validate_compact_tokens("Inf"), Inf)
+  expect_identical(
+    blockr.core::board_option_value(new_chat_compact_option(value = "Inf")),
+    Inf
+  )
+
+  # The select also sends its value as character.
+  expect_identical(validate_compact_tokens("25000"), 25000)
+
+  # Coercion must not turn the validator into a sink.
+  expect_error(
+    validate_compact_tokens("abc"), class = "invalid_compact_tokens"
+  )
+  expect_error(
+    validate_compact_tokens(c("1", "2")), class = "invalid_compact_tokens"
+  )
+})
+
+test_that("compaction is off unless a deployment turns it on", {
+
+  expect_identical(
+    blockr.core::board_option_value(new_chat_compact_option()), Inf
+  )
+
+  withr::local_options(blockr.chat_compact_tokens = 50000L)
+
+  expect_identical(
+    blockr.core::board_option_value(new_chat_compact_option()), 50000
+  )
+})
+
 test_that("the compaction threshold is a board option", {
 
   withr::local_options(blockr.chat_compact_tokens = 50000L)
@@ -128,12 +166,27 @@ test_that("over_context_bound only fires on a real count", {
   )
 })
 
-test_that("compaction_split leaves a short conversation alone", {
+test_that("compaction_split needs two turns to work with", {
 
-  turns <- lapply(seq_len(4L), function(i) ellmer::Turn("user", "x"))
-
-  expect_null(compaction_split(turns, 8L))
   expect_null(compaction_split(list(), 8L))
+  expect_null(compaction_split(list(ellmer::Turn("user", "x")), 8L))
+})
+
+test_that("compaction_split sheds a short conversation that is over bound", {
+
+  # A single large tool result can exceed a context window in a couple of
+  # turns. Honouring `keep` there would decline to compact the one
+  # conversation that is about to be rejected -- the bound would be inert
+  # exactly where it is needed.
+  for (n in c(2L, 4L, 6L, 8L)) {
+
+    turns <- alternating_turns(n)
+    res <- compaction_split(turns, 8L)
+
+    expect_false(is.null(res), info = paste("n =", n))
+    expect_gte(length(res$summarise), 2L)
+    expect_length(res$summarise, n - length(res$keep))
+  }
 })
 
 test_that("compaction_split opens the kept window on a user turn", {

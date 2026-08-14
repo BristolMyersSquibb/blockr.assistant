@@ -17,11 +17,17 @@
   it can be retuned during a session rather than fixed at deploy time:
   it trades recall against how soon the chat starts summarising, and
   the right value moves with the model, which is itself a board option.
-  `Inf` switches compaction off. The deployment sets the starting point
+  It defaults to `Inf`, leaving compaction off. A threshold suited to
+  one provider's context window is wrong for another's, and no provider
+  reports that window through `ellmer` (see tidyverse/ellmer#1083), so
+  any number shipped here would be a guess -- silently doing nothing on
+  a small-context model and discarding history needlessly on a large
+  one. A deployment that knows its models sets the starting point
   through the new `blockr.chat_compact_tokens` option (or
-  `BLOCKR_CHAT_COMPACT_TOKENS`), default 50000. This is deliberately
-  unlike `blockr.chat_save_turns`, which stays deployment-only because
-  it governs whether conversations may be written to a shared file.
+  `BLOCKR_CHAT_COMPACT_TOKENS`), and a user can choose a value for
+  their own session. This is deliberately unlike
+  `blockr.chat_save_turns`, which stays deployment-only because it
+  governs whether conversations may be written to a shared file.
 
 * The chat transcript comes back with the conversation. It was left
   empty by anything that remounted the chat panel -- reopening a saved

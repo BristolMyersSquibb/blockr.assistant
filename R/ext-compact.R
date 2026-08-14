@@ -13,11 +13,11 @@ chat_compact_tokens <- function(session) {
 # right value can change mid-session. The deployment still sets where it
 # starts, through `blockr.chat_compact_tokens`.
 new_chat_compact_option <- function(value = blockr_option("chat_compact_tokens",
-                                                          50000L),
+                                                          Inf),
                                     category = "Assistant options",
                                     ...) {
 
-  validate_compact_tokens(value)
+  value <- validate_compact_tokens(value)
 
   new_board_option(
     id = "chat_compact_tokens",
@@ -60,6 +60,15 @@ compact_token_choices <- function(value) {
 }
 
 validate_compact_tokens <- function(x) {
+
+  # JSON has no infinity, so a board saved with compaction switched off brings
+  # `Inf` back as the string "Inf" -- and the select sends its value as
+  # character too. Coerce rather than reject: refusing here would abort inside
+  # a board-server observer on restore, which is how #97 took whole boards
+  # down. Anything that is not a number still fails below, via NA.
+  if (is.character(x) && is_scalar(x)) {
+    x <- suppressWarnings(as.numeric(x))
+  }
 
   if (!is_whole_bound(x, 1)) {
     blockr_abort(
@@ -124,11 +133,18 @@ over_context_bound <- function(turns, limit) {
 compaction_split <- function(turns, keep) {
 
   n <- length(turns)
-  cut <- n - keep
 
-  if (cut < 1L) {
+  if (n < 2L) {
     return(NULL)
   }
+
+  # `keep` is a preference, not a floor. This is only reached once the
+  # conversation is already over the bound, so there is no such thing as too
+  # short to bother: a single large tool result can exceed a context window in
+  # a couple of turns, and honouring `keep` there would decline to compact the
+  # very conversation that is about to be rejected. Keep at most what still
+  # leaves an exchange to summarise.
+  cut <- n - min(keep, n - 2L)
 
   while (cut < n && !identical(turns[[cut + 1L]]@role, "user")) {
     cut <- cut + 1L
