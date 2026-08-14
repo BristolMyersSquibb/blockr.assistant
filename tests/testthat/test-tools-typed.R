@@ -21,6 +21,25 @@ test_that("a fully typed block type yields one tool argument per ctor arg", {
   expect_identical(props[["n"]]@json[["type"]], "integer")
 })
 
+test_that("an argument's registry description reaches the tool schema", {
+
+  props <- add_tool_types("head_block")
+
+  expect_identical(
+    props[["n"]]@json[["description"]],
+    arg_spec_description(block_meta_arguments("head_block")[["n"]])
+  )
+})
+
+test_that("a description on the type descriptor is not overwritten", {
+
+  args <- new_arg_specs(
+    x = new_arg_spec("Outer.", type = arg_string("Inner."))
+  )
+
+  expect_identical(arg_tool_types(args)[["x"]]@json[["description"]], "Inner.")
+})
+
 test_that("a declared enum reaches the tool schema as an enum", {
 
   props <- add_tool_types("head_block")
