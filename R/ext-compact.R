@@ -23,51 +23,133 @@ new_chat_compact_option <- function(value = blockr_option("chat_compact_tokens",
     id = "chat_compact_tokens",
     default = value,
     ui = function(id) {
-      selectInput(
+      selectizeInput(
         NS(id, "chat_compact_tokens"),
         "Compact conversation above",
-        compact_token_choices(value),
-        selected = value
+        choices = compact_token_choices(value),
+        selected = compact_token_key(value),
+        options = compact_token_opts()
       )
     },
     server = function(..., session) {
       observeEvent(
         get_board_option_or_null("chat_compact_tokens", session),
-        updateSelectInput(
-          session,
-          "chat_compact_tokens",
-          selected = get_board_option_value("chat_compact_tokens", session)
-        )
+        {
+          val <- get_board_option_value("chat_compact_tokens", session)
+
+          updateSelectizeInput(
+            session,
+            "chat_compact_tokens",
+            choices = compact_token_choices(val),
+            selected = compact_token_key(val),
+            options = compact_token_opts()
+          )
+        }
       )
     },
-    transform = function(x) as.numeric(x),
+    transform = function(x) compact_tokens_value(x),
     category = category,
     ...
   )
 }
 
-# The deployment's own value is folded in, so a threshold set outside this list
-# stays selectable rather than silently snapping to a neighbour.
+# A combobox rather than a plain number field, because `Inf` is a mode and not
+# a magnitude: a numeric input cannot carry it, which forces an empty box to
+# stand in for "never" and then looks unset rather than deliberately off. The
+# ladder doubles as the answer to step size -- nobody cares about 123456 vs
+# 123457, and preset spacing that grows with magnitude gives fine granularity
+# where values are small without a stepper that has to change its own step.
+compact_token_ladder <- function() {
+  c(8000, 16000, 32000, 64000, 128000, 200000, 400000, 1000000)
+}
+
+combo_opts <- function(pattern) {
+  list(create = TRUE, createFilter = I(pattern), persist = FALSE)
+}
+
+# Whatever is in force is folded in, so a value set by a deployment or restored
+# from a board stays selectable instead of snapping to a neighbour or vanishing.
+# Not cosmetic on the slider: `sliderTextInput()` errors outright when
+# `selected` is absent from `choices`, and that render happens in the board
+# settings panel.
+ladder_values <- function(ladder, value) {
+  sort(unique(c(ladder, value[is.finite(value)])))
+}
+
+combo_choices <- function(ladder, value, label) {
+
+  vals <- ladder_values(ladder, value)
+
+  set_names(as.character(vals), chr_ply(vals, label))
+}
+
+compact_token_opts <- function() {
+  combo_opts("/^\\s*[0-9]+(\\.[0-9]+)?\\s*[kKmM]?\\s*$/")
+}
+
 compact_token_choices <- function(value) {
-
-  vals <- sort(unique(c(25000, 50000, 100000, 200000, value)))
-  vals <- vals[is.finite(vals)]
-
-  set_names(
-    c(vals, Inf),
-    c(paste(format(vals, big.mark = ",", trim = TRUE), "tokens"), "Never")
+  c(
+    combo_choices(compact_token_ladder(), value, format_token_count),
+    Never = "Inf"
   )
+}
+
+compact_token_key <- function(x) {
+  if (is.finite(x)) as.character(x) else "Inf"
+}
+
+format_token_count <- function(x) {
+
+  if (x >= 1e6) {
+    return(paste0(format(x / 1e6, trim = TRUE), "M"))
+  }
+
+  paste0(format(x / 1e3, trim = TRUE), "k")
+}
+
+compact_tokens_value <- function(x) {
+
+  if (!length(x) || all(is.na(x))) {
+    return(Inf)
+  }
+
+  parse_token_count(x)
+}
+
+# The combobox hands back whatever was typed, so "64k" and "1.5M" have to mean
+# what they say -- that spelling is the reason to offer free entry at all.
+parse_token_count <- function(x) {
+
+  if (is.numeric(x)) {
+    return(as.numeric(x))
+  }
+
+  x <- trimws(tolower(as.character(x)))
+
+  if (identical(x, "inf")) {
+    return(Inf)
+  }
+
+  scale <- c(k = 1e3, m = 1e6)
+  unit <- substring(x, nchar(x))
+
+  if (unit %in% names(scale)) {
+    x <- substring(x, 1L, nchar(x) - 1L)
+    return(suppressWarnings(as.numeric(trimws(x))) * scale[[unit]])
+  }
+
+  suppressWarnings(as.numeric(x))
 }
 
 validate_compact_tokens <- function(x) {
 
   # JSON has no infinity, so a board saved with compaction switched off brings
-  # `Inf` back as the string "Inf" -- and the select sends its value as
-  # character too. Coerce rather than reject: refusing here would abort inside
-  # a board-server observer on restore, which is how #97 took whole boards
-  # down. Anything that is not a number still fails below, via NA.
+  # `Inf` back as the string "Inf" -- and the combobox hands back whatever was
+  # typed, "64k" included. Coerce rather than reject: refusing here would abort
+  # inside a board-server observer on restore, which is how #97 took whole
+  # boards down. Anything that is not a number still fails below, via NA.
   if (is.character(x) && is_scalar(x)) {
-    x <- suppressWarnings(as.numeric(x))
+    x <- parse_token_count(x)
   }
 
   if (!is_whole_bound(x, 1)) {
@@ -83,10 +165,96 @@ validate_compact_tokens <- function(x) {
   x
 }
 
-# Four exchanges: enough that the model still has the thread it was pulling on
-# verbatim, few enough that a compaction is worth the call that bought it.
-compaction_keep_turns <- function() {
-  8L
+compaction_keep_turns <- function(session) {
+  validate_compact_keep(
+    get_board_option_value("chat_compact_keep", session)
+  )
+}
+
+# A slider here, where the threshold takes a combobox, because the constraints
+# differ rather than out of inconsistency: there is no sentinel to express, and
+# the quantity runs out of meaning at the top -- keeping 256 turns verbatim is
+# already barely compacting, so a ceiling costs nothing, where a ceiling on the
+# token threshold would rule out real context windows. Doubling rungs give the
+# finer steps at the small end that matter (2 against 4 verbatim turns is a
+# real difference, 128 against 130 is not) and nobody needs 10 while 8 and 16
+# are both on offer.
+compact_keep_ladder <- function() {
+  c(0, 2, 4, 8, 16, 32, 64, 128, 256)
+}
+
+new_chat_keep_option <- function(value = blockr_option("chat_compact_keep", 8L),
+                                 category = "Assistant options",
+                                 ...) {
+
+  value <- validate_compact_keep(value)
+
+  new_board_option(
+    id = "chat_compact_keep",
+    default = value,
+    ui = function(id) {
+      shinyWidgets::sliderTextInput(
+        NS(id, "chat_compact_keep"),
+        "Turns kept verbatim when compacting",
+        choices = compact_keep_choices(value),
+        selected = as.character(value),
+        grid = TRUE,
+        post = " turns"
+      )
+    },
+    server = function(..., session) {
+      observeEvent(
+        get_board_option_or_null("chat_compact_keep", session),
+        {
+          val <- get_board_option_value("chat_compact_keep", session)
+
+          shinyWidgets::updateSliderTextInput(
+            session,
+            "chat_compact_keep",
+            choices = compact_keep_choices(val),
+            selected = as.character(val)
+          )
+        }
+      )
+    },
+    transform = function(x) compact_keep_value(x),
+    category = category,
+    ...
+  )
+}
+
+compact_keep_choices <- function(value) {
+  as.character(ladder_values(compact_keep_ladder(), value))
+}
+
+# The slider hands back the rung as text. Falling back to the default rather
+# than erroring on an empty one matters because `compaction_keep_turns()` is
+# read from inside an observer, where an abort would take the session down.
+compact_keep_value <- function(x) {
+
+  if (!length(x) || all(is.na(x)) || !any(nzchar(as.character(x)))) {
+    return(8L)
+  }
+
+  as.integer(suppressWarnings(as.numeric(x)))
+}
+
+validate_compact_keep <- function(x) {
+
+  if (is.character(x) && is_scalar(x)) {
+    x <- suppressWarnings(as.numeric(x))
+  }
+
+  if (!is_whole_bound(x, 0) || is.infinite(x)) {
+    blockr_abort(
+      "Expecting `chat_compact_keep` to be a whole number of turns, `0` to ",
+      "keep none verbatim. Compaction is switched off through ",
+      "`chat_compact_tokens`, not here.",
+      class = "invalid_compact_keep"
+    )
+  }
+
+  as.integer(x)
 }
 
 # The provider's own accounting of the last request, plus what it wrote back:

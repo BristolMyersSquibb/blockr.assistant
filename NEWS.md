@@ -29,6 +29,17 @@
   `blockr.chat_save_turns`, which stays deployment-only because it
   governs whether conversations may be written to a shared file.
 
+* How much of the conversation survives a compaction is a board option too,
+  `chat_compact_keep` (or `blockr.chat_compact_keep`), counting the most
+  recent turns kept verbatim while everything older becomes the summary.
+  The two controls take different shapes because the quantities do: the
+  threshold is a combobox over a ladder of context sizes that also accepts
+  a typed value, `64k` and `1.5M` included, since real context windows run
+  from a few thousand tokens to a million and `Inf` has to be expressible;
+  the turn count is a slider over doubling rungs to 256, since it needs no
+  such sentinel and stops meaning much at the top -- keeping 256 turns
+  verbatim is already barely compacting.
+
 * The chat transcript comes back with the conversation. It was left
   empty by anything that remounted the chat panel -- reopening a saved
   board, or switching provider -- because `shinychat` builds the

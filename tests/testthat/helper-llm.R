@@ -38,7 +38,11 @@ with_llm_session <- function() {
 
   sess <- shiny::MockShinySession$new()
 
-  for (opt in list(new_llm_model_option(), new_chat_compact_option())) {
+  opts <- list(
+    new_llm_model_option(), new_chat_compact_option(), new_chat_keep_option()
+  )
+
+  for (opt in opts) {
     blockr.core:::board_option_to_userdata(opt, session = sess)
   }
 

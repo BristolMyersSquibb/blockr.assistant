@@ -78,6 +78,16 @@
 #' in a shared file at all -- not a decision to hand to the person
 #' whose conversation it is.
 #'
+#' How much survives a compaction is the companion board option,
+#' `chat_compact_keep` (deployment default `blockr.chat_compact_keep`,
+#' 8): the count of most recent turns left verbatim, with everything
+#' older becoming the summary. It is offered on doubling rungs to 256,
+#' since a turn count needs no `Inf` and stops meaning much at the top
+#' -- keeping 256 turns verbatim is already barely compacting. The
+#' figure is a preference rather than a floor: a conversation that
+#' exceeds the threshold in fewer turns than this is still compacted,
+#' or the bound would be inert exactly where it is needed.
+#'
 #' Compaction rewrites the browser transcript to match, which is what
 #' keeps the two honest. `shinychat` appends each turn to the DOM as it
 #' arrives and never reads the client back, so turns dropped from the
@@ -112,7 +122,9 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
     name = "Assistant",
     class = "assistant_extension",
     options = new_board_options(
-      new_llm_model_option(), new_chat_compact_option()
+      new_llm_model_option(),
+      new_chat_compact_option(),
+      new_chat_keep_option()
     ),
     ...
   )
@@ -503,7 +515,8 @@ asst_ext_srv <- function(system_prompt, messages) {
             return(invisible())
           }
 
-          split <- compaction_split(turns, compaction_keep_turns())
+          keep <- isolate(compaction_keep_turns(session))
+          split <- compaction_split(turns, keep)
 
           if (is.null(split) || !compacting$begin()) {
             return(invisible())

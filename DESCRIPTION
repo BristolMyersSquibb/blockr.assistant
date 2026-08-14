@@ -29,6 +29,7 @@ Imports:
     promises,
     shiny,
     shinychat,
+    shinyWidgets,
     yaml
 Suggests:
     chromote,

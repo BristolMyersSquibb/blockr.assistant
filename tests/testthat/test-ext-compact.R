@@ -89,20 +89,37 @@ test_that("the compaction threshold is a board option", {
   )
 })
 
-test_that("compact_token_choices keeps Never and folds in a custom value", {
+test_that("the combobox reads k/M notation as well as a bare count", {
 
-  expect_true(is.infinite(compact_token_choices(50000L)[["Never"]]))
-  expect_false(anyDuplicated(compact_token_choices(50000L)) > 0L)
+  expect_identical(parse_token_count("64k"), 64000)
+  expect_identical(parse_token_count("1.5M"), 1.5e6)
+  expect_identical(parse_token_count(" 200 K "), 200000)
+  expect_identical(parse_token_count("Inf"), Inf)
+  expect_identical(parse_token_count("123457"), 123457)
+  expect_true(is.na(parse_token_count("banana")))
 
-  # A deployment threshold outside the preset list stays selectable.
-  expect_true(75000 %in% compact_token_choices(75000))
-  expect_true("75,000 tokens" %in% names(compact_token_choices(75000)))
+  # Whatever the control hands back is what gets stored, so the two have to
+  # agree on the notation the filter lets through.
+  expect_identical(compact_tokens_value("64k"), 64000)
+  expect_identical(compact_tokens_value(NA), Inf)
+  expect_identical(validate_compact_tokens("64k"), 64000)
+  expect_match(as.character(compact_token_opts()$createFilter), "kKmM")
+})
 
-  # Inf as the deployment default must not yield two "Never" entries.
-  choices <- compact_token_choices(Inf)
+test_that("a count typed past the ladder stays selected", {
 
-  expect_length(choices, 5L)
-  expect_identical(sum(is.infinite(choices)), 1L)
+  choices <- compact_token_choices(123457)
+
+  expect_true("123457" %in% choices)
+  expect_true("Inf" %in% choices)
+  expect_identical(compact_token_key(123457), "123457")
+  expect_identical(compact_token_key(Inf), "Inf")
+
+  # Inf as the default must not produce a second "Never" entry.
+  expect_identical(sum(compact_token_choices(Inf) == "Inf"), 1L)
+
+  expect_identical(format_token_count(64000), "64k")
+  expect_identical(format_token_count(1e6), "1M")
 })
 
 tokened_turn <- function(text, input, output) {
@@ -283,4 +300,56 @@ test_that("compaction_client leaves the live client armed and intact", {
   expect_length(live$get_tools(), 1L)
   expect_length(live$get_turns(), 4L)
   expect_identical(live$get_system_prompt(), "the board prompt")
+})
+
+test_that("keep is a whole number of turns, and not where you switch off", {
+
+  expect_identical(validate_compact_keep(0), 0L)
+  expect_identical(validate_compact_keep(8L), 8L)
+  expect_identical(validate_compact_keep("8"), 8L)
+
+  # `Inf` here would mean "summarise as little as possible", not "off" --
+  # compaction is switched off through the threshold instead.
+  expect_error(validate_compact_keep(Inf), class = "invalid_compact_keep")
+  expect_error(validate_compact_keep(-1), class = "invalid_compact_keep")
+  expect_error(validate_compact_keep(2.5), class = "invalid_compact_keep")
+})
+
+test_that("keep is a board option on a doubling ladder", {
+
+  opt <- new_chat_keep_option()
+
+  expect_true(blockr.core::is_board_option(opt))
+  expect_identical(blockr.core::board_option_id(opt), "chat_compact_keep")
+  expect_identical(blockr.core::board_option_value(opt), 8L)
+  expect_identical(
+    compact_keep_choices(8L),
+    c("0", "2", "4", "8", "16", "32", "64", "128", "256")
+  )
+
+  # The slider hands its rung back as text.
+  expect_identical(blockr.core::board_option_transform(opt)("128"), 128L)
+
+  # Reading it cannot abort: it happens inside an observer.
+  expect_identical(blockr.core::board_option_transform(opt)(""), 8L)
+})
+
+test_that("an off-ladder keep value still renders", {
+
+  # `sliderTextInput()` errors outright when `selected` is not among
+  # `choices`, and that render is the board settings panel. Nothing stops a
+  # deployment setting 20, or a board carrying it, so the value in force has
+  # to be folded into the rungs.
+  withr::local_options(blockr.chat_compact_keep = 20L)
+
+  opt <- new_chat_keep_option()
+
+  expect_identical(blockr.core::board_option_value(opt), 20L)
+  expect_true("20" %in% compact_keep_choices(20L))
+  expect_silent(blockr.core::board_option_ui(opt)("opt"))
+
+  html <- as.character(blockr.core::board_option_ui(opt)("opt"))
+
+  expect_match(html, "sw-slider-text", fixed = TRUE)
+  expect_match(html, "chat_compact_keep", fixed = TRUE)
 })
