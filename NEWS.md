@@ -13,10 +13,12 @@
   block's own type, both of which the model already calls before
   configuring. The two kinds are held in separately capped, separately
   evicted pools sized by the `blockr.assistant_block_tool_pool` option
-  (default 10 each), least recently used first. A tool armed during the
-  current turn is never evicted; when a pool is full of such tools the
-  arming is refused and the model is told to fall back rather than
-  overflowing the cap. The `add_block` and `modify_block` pair is
+  (default 20 each), least recently used first. Since a pool is also
+  bounded by how many types qualify, that default tops out at 37 typed
+  tools alongside the 38 static ones in the stack above. A tool armed
+  during the current turn is never evicted; when a pool is full of such
+  tools the arming is refused and the model is told to fall back rather
+  than overflowing the cap. The `add_block` and `modify_block` pair is
   unchanged and stays registered: five argument shapes across the stack --
   free-form reader and writer `args`, an arbitrary-key `renames` map, an
   any-type `values_fill` -- cannot be expressed as a closed-key schema at
