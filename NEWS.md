@@ -1,5 +1,55 @@
 # blockr.assistant (development version)
 
+* Nothing bounded the live conversation, only what was written to the
+  board, so a long session grew more expensive with every message and
+  eventually exceeded the provider's context window -- and since that
+  limit is reached by accumulation, every later message was over it
+  too, leaving the chat dead until the extension was remounted. The
+  conversation is now compacted: once an exchange exceeds the
+  threshold, the older turns are replaced by a summary the model writes
+  of them and the recent turns are kept verbatim. The threshold counts
+  what the provider billed for the last exchange rather than turns,
+  that being what a context window is spent in. A restored board is
+  checked on mount too, so reopening a long conversation no longer
+  lands already over the limit. Fixes #101.
+
+* The compaction threshold is a board option, `chat_compact_tokens`, so
+  it can be retuned during a session rather than fixed at deploy time:
+  it trades recall against how soon the chat starts summarising, and
+  the right value moves with the model, which is itself a board option.
+  It defaults to `Inf`, leaving compaction off. A threshold suited to
+  one provider's context window is wrong for another's, and no provider
+  reports that window through `ellmer` (see tidyverse/ellmer#1083), so
+  any number shipped here would be a guess -- silently doing nothing on
+  a small-context model and discarding history needlessly on a large
+  one. A deployment that knows its models sets the starting point
+  through the new `blockr.chat_compact_tokens` option (or
+  `BLOCKR_CHAT_COMPACT_TOKENS`), and a user can choose a value for
+  their own session. This is deliberately unlike
+  `blockr.chat_save_turns`, which stays deployment-only because it
+  governs whether conversations may be written to a shared file.
+
+* How much of the conversation survives a compaction is a board option too,
+  `chat_compact_keep` (or `blockr.chat_compact_keep`), counting the most
+  recent turns kept verbatim while everything older becomes the summary.
+  The two controls take different shapes because the quantities do: the
+  threshold is a combobox over a ladder of context sizes that also accepts
+  a typed value, `64k` and `1.5M` included, since real context windows run
+  from a few thousand tokens to a million and `Inf` has to be expressible;
+  the turn count is a slider over doubling rungs to 256, since it needs no
+  such sentinel and stops meaning much at the top -- keeping 256 turns
+  verbatim is already barely compacting.
+
+* The chat transcript comes back with the conversation. It was left
+  empty by anything that remounted the chat panel -- reopening a saved
+  board, or switching provider -- because `shinychat` builds the
+  transcript by appending turns to the DOM as they arrive, and the
+  replay that would rebuild it from the client is reached only when its
+  `history` argument is on, which it is not. The model remembered a
+  conversation the user could no longer see. The extension now replays
+  the client's turns itself on every mount, which is also what lets
+  compaction drop turns without stranding them on screen.
+
 * Block eval status now reaches the model. Each block line in the Board
   summary carries a marker while the block holds no current result
   (`[dormant]`, `[stale]`, `[waiting]`, `[unset]`, `[failed]`),

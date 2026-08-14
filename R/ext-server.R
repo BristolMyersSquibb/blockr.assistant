@@ -47,6 +47,54 @@
 #' stripped before saving, and the saved window is trimmed to whole
 #' exchanges so it never opens or closes on half of a tool call.
 #'
+#' The live conversation is bounded separately, since saving bounds
+#' only the file: every turn is re-sent on every request, so an
+#' unbounded session costs more as it goes and eventually exceeds the
+#' provider's context window -- and because that limit is reached by
+#' accumulation, every later message is over it too, leaving the chat
+#' dead until the extension is remounted. Once an exchange exceeds the
+#' threshold, the older part of the conversation is replaced by a
+#' summary the model writes of it, and the recent turns are kept
+#' verbatim. The threshold counts what the provider itself billed for
+#' the last exchange rather than turns, that being what the context
+#' window is actually spent in. A restored board is checked on mount as
+#' well, so reopening a long conversation cannot land already over the
+#' limit.
+#'
+#' That threshold is a **board option**, `chat_compact_tokens`, so a
+#' user can retune it during a session -- the trade is recall against
+#' how soon the chat starts summarising, and the right answer moves
+#' with the model, which is itself swappable at runtime. It defaults to
+#' `Inf`, which leaves compaction **off**: a threshold that would suit
+#' one provider's context window is wrong for another's, and nothing in
+#' the API reports that window, so a number picked here would be a
+#' guess -- silently inert on a small-context model and needlessly
+#' destructive on a large one. A deployment that knows its models sets
+#' the starting point through the `blockr.chat_compact_tokens` option
+#' or the `BLOCKR_CHAT_COMPACT_TOKENS` environment variable, and a user
+#' can pick a value for their own session. Contrast
+#' [`chat_save_turns`][new_assistant_extension], which stays a
+#' deployment setting because it governs whether conversations may land
+#' in a shared file at all -- not a decision to hand to the person
+#' whose conversation it is.
+#'
+#' How much survives a compaction is the companion board option,
+#' `chat_compact_keep` (deployment default `blockr.chat_compact_keep`,
+#' 8): the count of most recent turns left verbatim, with everything
+#' older becoming the summary. It is offered on doubling rungs to 256,
+#' since a turn count needs no `Inf` and stops meaning much at the top
+#' -- keeping 256 turns verbatim is already barely compacting. The
+#' figure is a preference rather than a floor: a conversation that
+#' exceeds the threshold in fewer turns than this is still compacted,
+#' or the bound would be inert exactly where it is needed.
+#'
+#' Compaction rewrites the browser transcript to match, which is what
+#' keeps the two honest. `shinychat` appends each turn to the DOM as it
+#' arrives and never reads the client back, so turns dropped from the
+#' client would otherwise stay on screen unremembered. The same replay
+#' fills in a transcript that a restore or a provider swap leaves
+#' empty; tool traffic carries no text and is not replayed.
+#'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
 #'   scalar (used verbatim, no refresh). Defaults to the
@@ -73,7 +121,11 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
-    options = new_board_options(new_llm_model_option()),
+    options = new_board_options(
+      new_llm_model_option(),
+      new_chat_compact_option(),
+      new_chat_keep_option()
+    ),
     ...
   )
 }
@@ -341,14 +393,12 @@ asst_ext_srv <- function(system_prompt, messages) {
           shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
         })
 
-        # Mount the chat module against the current client.
-        # shinychat::chat_mod_server() calls chat_restore() internally,
-        # which fires client_set_ui() on the next reactive flush --
-        # that hook already replays every prior turn into the
-        # freshly-rendered UI via chat_append(). No manual replay
-        # needed (and earlier attempts targeted the wrong DOM id
-        # because the chat container lives under shinychat's own
-        # NS("chat")).
+        # Mount the chat module against the current client. Every mount
+        # renders a fresh, empty container -- chat_sub_id() changes with
+        # mount_idx, and shinychat's own replay hook is out of reach here:
+        # client_set_ui() is called only from chat_restore(), which
+        # chat_server() reaches only when `history` is not FALSE. So the
+        # transcript is ours to populate, via replay_transcript() below.
         #
         # history = FALSE is load-bearing. It defaults to TRUE, which opts
         # into shinychat's on-disk conversation store -- and that store
@@ -385,6 +435,120 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           mod_r(mod)
         })
+
+        # The client carries the conversation across a mount; the browser does
+        # not. Restoring a saved board and swapping provider both land here
+        # with turns the user never sees, so each fresh mount replays what the
+        # client holds, then checks whether what it holds is already too big.
+        observe({
+
+          mod <- mod_r()
+
+          req(mod)
+
+          replay_transcript(mod, isolate(client_turns(client_r())))
+          maybe_compact()
+        })
+
+        compacting <- local({
+
+          running <- FALSE
+
+          list(
+            begin = function() {
+              if (running) {
+                return(FALSE)
+              }
+              running <<- TRUE
+              TRUE
+            },
+            end = function() {
+              running <<- FALSE
+              invisible()
+            }
+          )
+        })
+
+        # Summarising is itself a request, so it happens off the live client on
+        # a clone. Turns that arrive while it is in flight are carried over
+        # rather than clobbered, and a stream that starts in the meantime defers
+        # the swap: the bound is still exceeded next turn, so this runs again.
+        apply_compaction <- function(cl, mod, summary, kept, seen) {
+
+          if (identical(isolate(mod$status()), "streaming")) {
+            return(invisible())
+          }
+
+          current <- cl$get_turns()
+
+          arrived <- if (length(current) > seen) {
+            current[seq.int(seen + 1L, length(current))]
+          } else {
+            list()
+          }
+
+          turns <- c(compacted_turns(summary, kept), arrived)
+
+          cl$set_turns(turns)
+          replay_transcript(mod, turns)
+
+          invisible()
+        }
+
+        maybe_compact <- function() {
+
+          cl  <- isolate(client_r())
+          mod <- isolate(mod_r())
+
+          if (is.null(cl) || is.null(mod)) {
+            return(invisible())
+          }
+
+          turns <- cl$get_turns()
+
+          # Isolated because the threshold is read at the moment a turn ends,
+          # not depended on: the mount observer calls this, and a dependency
+          # would replay the whole transcript every time the user retunes it.
+          bound <- isolate(chat_compact_tokens(session))
+
+          if (!over_context_bound(turns, bound)) {
+            return(invisible())
+          }
+
+          keep <- isolate(compaction_keep_turns(session))
+          split <- compaction_split(turns, keep)
+
+          if (is.null(split) || !compacting$begin()) {
+            return(invisible())
+          }
+
+          seen <- length(turns)
+
+          promises::finally(
+            promises::catch(
+              promises::then(
+                summarise_turns(cl, split$summarise),
+                function(summary) {
+                  apply_compaction(cl, mod, summary, split$keep, seen)
+                }
+              ),
+              function(e) {
+                notify(
+                  paste(
+                    "Could not compact the conversation:",
+                    conditionMessage(e)
+                  ),
+                  type = "warning",
+                  session = session
+                )
+              }
+            ),
+            compacting$end
+          )
+
+          invisible()
+        }
+
 
         # The chat module runs the turn inside a `shiny::ExtendedTask` whose
         # result nothing ever reads. A stream that fails before its first
@@ -586,6 +750,8 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
+          } else {
+            maybe_compact()
           }
 
           invisible()
@@ -697,6 +863,29 @@ asst_ext_srv <- function(system_prompt, messages) {
 
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
+}
+
+# `keep` leaves the client alone -- the turns are set by the caller, which is
+# the point: this is what stops the transcript and the model's memory drifting
+# apart. Tool traffic carries no text and is not replayed.
+replay_transcript <- function(mod, turns) {
+
+  mod$clear(client_history = "keep")
+
+  for (turn in turns) {
+
+    if (!turn@role %in% c("user", "assistant")) {
+      next
+    }
+
+    txt <- turn_text(turn)
+
+    if (nzchar(txt)) {
+      mod$append(txt, role = turn@role)
+    }
+  }
+
+  invisible()
 }
 
 stream_task <- function(mod) {

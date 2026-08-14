@@ -21,6 +21,11 @@ truncate_chars <- function(txt, max_chars, hint = NULL) {
   paste0(substr(txt, 1L, keep), marker(nchar(txt) - keep))
 }
 
+is_whole_bound <- function(x, min) {
+  is.numeric(x) && is_scalar(x) && !is.na(x) && x >= min &&
+    (is.infinite(x) || isTRUE(x == trunc(x)))
+}
+
 summary_max_chars <- function() {
   as.integer(blockr_option("assistant_summary_max_chars", 2000L))
 }

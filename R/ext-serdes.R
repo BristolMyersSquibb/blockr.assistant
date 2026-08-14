@@ -27,10 +27,7 @@ chat_save_turns <- function() {
 
 validate_save_turns <- function(x) {
 
-  ok <- is.numeric(x) && is_scalar(x) && !is.na(x) && x >= 0 &&
-    (is.infinite(x) || isTRUE(x == trunc(x)))
-
-  if (!ok) {
+  if (!is_whole_bound(x, 0)) {
     blockr_abort(
       "Expecting `chat_save_turns` to be `0`, a positive whole number or ",
       "`Inf`.",

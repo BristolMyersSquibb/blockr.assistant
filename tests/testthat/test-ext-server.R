@@ -829,11 +829,7 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -920,11 +916,7 @@ test_that("llm_model swap drops an empty assistant placeholder", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -976,11 +968,7 @@ test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
   opts <- list(A = fake_a, B = fake_b)
   withr::local_options(blockr.chat_function = opts)
 
-  sess <- shiny::MockShinySession$new()
-  blockr.core:::board_option_to_userdata(
-    new_llm_model_option(),
-    session = sess
-  )
+  sess <- with_llm_session()
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
@@ -1133,6 +1121,163 @@ test_that("a repeated nudge re-fires the injection with a fresh sequence id", {
     },
     args = list(
       board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a restored conversation is replayed into the transcript", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  mod <- fake_chat_mod()
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  seed <- lapply(
+    list(
+      ellmer::Turn("user", "load iris"),
+      ellmer::Turn("assistant", "loaded")
+    ),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, seed),
+    {
+      session$flushReact()
+
+      expect_identical(
+        mod$transcript(),
+        c("user: load iris", "assistant: loaded")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a conversation over the token bound is compacted", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = 100L
+  )
+
+  mod <- fake_chat_mod()
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("iris loaded, plot built")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    {
+      session$flushReact()
+      later::run_now()
+      session$flushReact()
+
+      turns <- client_r()$get_turns()
+
+      expect_length(turns, 10L)
+      expect_identical(turns[[1L]]@role, "user")
+      expect_identical(turn_text(turns[[2L]]), "iris loaded, plot built")
+      expect_identical(turn_text(turns[[3L]]), "5")
+
+      expect_identical(mod$transcript()[[2L]],
+                       "assistant: iris loaded, plot built")
+      expect_length(mod$transcript(), 10L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a conversation within the token bound is left alone", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = 10000L
+  )
+
+  mod <- fake_chat_mod()
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      stop("must not be called")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    {
+      session$flushReact()
+      later::run_now()
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 12L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("compaction defers while a stream is in flight", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = 100L
+  )
+
+  mod <- fake_chat_mod(status = "streaming")
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("summary")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    {
+      session$flushReact()
+      later::run_now()
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 12L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
       update = reactiveVal()
     ),
     session = with_llm_session()
