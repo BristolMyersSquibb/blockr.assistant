@@ -350,6 +350,64 @@ test_that("server registers the read and mutation tools on the client", {
   )
 })
 
+test_that("describing a block type arms its typed tool on the client", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      client <- client_r()
+
+      expect_false("add_head_block" %in% names(client$get_tools()))
+
+      res <- client$get_tools()[["describe_block_type"]]("head_block")
+
+      expect_match(res$typed_tool, "add_head_block")
+      expect_true("add_head_block" %in% names(client$get_tools()))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a fresh user turn lets the pool reclaim an armed tool", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_block_tool_pool = 1L
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      client <- client_r()
+      describe <- client$get_tools()[["describe_block_type"]]
+
+      describe("head_block")
+
+      expect_match(describe("merge_block")$typed_tool, "pool is full")
+
+      on_user_input()
+
+      expect_match(describe("merge_block")$typed_tool, "add_merge_block")
+      expect_false("add_head_block" %in% names(client$get_tools()))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("a dock board additionally registers the extension tools", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -705,7 +763,7 @@ test_that("initial refresh sets the composed prompt on the client", {
       session$flushReact()
 
       prompt <- client_r()$get_system_prompt()
-      expect_match(prompt, "## Tools", fixed = TRUE)
+      expect_no_match(prompt, "## Tools", fixed = TRUE)
       expect_match(prompt, "## Board", fixed = TRUE)
       expect_match(prompt, "d <dataset_block>", fixed = TRUE)
     },

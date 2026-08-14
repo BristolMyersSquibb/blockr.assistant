@@ -1,10 +1,15 @@
 #' Default assistant system prompt
 #'
-#' Builds the four-section system prompt the assistant ships by
-#' default: an intro / conventions block, an auto-generated tool
-#' catalogue from `client$get_tools()`, a one-line-per-skill
+#' Builds the three-section system prompt the assistant ships by
+#' default: an intro / conventions block, a one-line-per-skill
 #' catalogue of the deployment's globally-scoped skills, and a
 #' compact board summary.
+#'
+#' The registered tools are deliberately not catalogued here. They
+#' reach the model as a structured tool manifest alongside the
+#' system prompt, so a prompt-side listing duplicates them -- and
+#' the per-block-type tools come and go within a conversation, so
+#' any such listing would go stale mid-turn.
 #'
 #' Each argument is optional; the corresponding section is
 #' omitted when its input is `NULL`, so `default_system_prompt()`
@@ -21,8 +26,9 @@
 #'
 #' @param board Reactive containing the live board, as supplied
 #'   to the extension server. `NULL` omits the board section.
-#' @param client An `ellmer::Chat`. `NULL` omits the tool
-#'   catalogue.
+#' @param client An `ellmer::Chat`. Unused by this composer, and
+#'   passed for the benefit of custom ones -- the model and token
+#'   state are read off it.
 #' @param view_data Reactive holding `blockr.dock`'s live all-views
 #'   layout (a `list(views, grids)`), as supplied to the extension
 #'   server, or `NULL`. Read for the board section's view summary,
@@ -39,12 +45,6 @@
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
                                   view_data = NULL, skills = NULL, ...) {
-
-  tools <- if (!is.null(client)) {
-    paste0("\n\n## Tools\n", format_tool_catalogue(client))
-  } else {
-    ""
-  }
 
   catalogue <- if (!is.null(skills)) {
     format_skill_catalogue(global_skills(skills))
@@ -63,7 +63,6 @@ default_system_prompt <- function(board = NULL, client = NULL,
   }
 
   slots <- list(
-    tools = tools,
     skills = skill_section,
     board = board_summary
   )
@@ -87,38 +86,4 @@ read_prompt <- function(name) {
   )
 
   paste(readLines(path, warn = FALSE), collapse = "\n")
-}
-
-format_tool_catalogue <- function(client) {
-
-  tools <- client$get_tools()
-
-  if (!length(tools)) {
-    return("(none)")
-  }
-
-  lines <- chr_ply(tools, function(t) {
-    sprintf(
-      "- `%s`: %s",
-      format_tool_signature(t),
-      gsub("\\s+", " ", t@description)
-    )
-  })
-
-  paste(lines, collapse = "\n")
-}
-
-format_tool_signature <- function(tool) {
-
-  args <- tool@arguments@properties
-
-  if (!length(args)) {
-    return(sprintf("%s()", tool@name))
-  }
-
-  parts <- chr_ply(names(args), function(nm) {
-    if (isTRUE(args[[nm]]@required)) nm else paste0(nm, "?")
-  })
-
-  sprintf("%s(%s)", tool@name, paste(parts, collapse = ", "))
 }

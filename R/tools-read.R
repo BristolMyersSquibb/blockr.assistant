@@ -1,7 +1,7 @@
-register_read_tools <- function(client, board, update, session) {
+register_read_tools <- function(client, board, update, session, pool = NULL) {
 
   client$register_tool(tool_list_blocks(board, update, session))
-  client$register_tool(tool_describe_block(board, update, session))
+  client$register_tool(tool_describe_block(board, update, session, pool))
   client$register_tool(tool_list_links(board, update, session))
   client$register_tool(tool_list_stacks(board, update, session))
   client$register_tool(tool_describe_stack(board, update, session))
@@ -9,7 +9,7 @@ register_read_tools <- function(client, board, update, session) {
     tool_list_block_types(board, update, session)
   )
   client$register_tool(
-    tool_describe_block_type(board, update, session)
+    tool_describe_block_type(board, update, session, pool)
   )
   client$register_tool(
     tool_get_block_result(board, update, session)
@@ -70,7 +70,7 @@ tool_list_blocks <- function(board, update, session) {
   )
 }
 
-tool_describe_block <- function(board, update, session) {
+tool_describe_block <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
@@ -95,13 +95,14 @@ tool_describe_block <- function(board, update, session) {
           summary_max_chars()
         )
 
-        skills <- block_skills(registry_id_from_block(blks[[id]]))
+        type <- registry_id_from_block(blks[[id]])
 
         paste(
           c(
             summary,
             eval_status_line(eval_status(id, board)),
-            skill_lines(skills)
+            skill_lines(block_skills(type)),
+            arm_block_tool(pool, "modify", type)
           ),
           collapse = "\n"
         )
@@ -113,7 +114,10 @@ tool_describe_block <- function(board, update, session) {
       "name, arguments and current values, external-control",
       "declaration, incoming links, eval status (whether it holds a",
       "current result, and if not why), and any deployment-authored",
-      "`skills` scoped to its type."
+      "`skills` scoped to its type. Calling this also registers a",
+      "typed modify_<type> tool where the block's type declares one,",
+      "named on the last line; call that in preference to",
+      "modify_block."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
@@ -217,8 +221,8 @@ tool_describe_stack <- function(board, update, session) {
 arg_spec <- function(x) {
   compact(
     list(
-      description = block_arg_description(x),
-      type = block_arg_type(x)
+      description = arg_spec_description(x),
+      type = arg_spec_type(x)
     )
   )
 }
@@ -303,7 +307,7 @@ tool_list_block_types <- function(board, update, session) {
   )
 }
 
-tool_describe_block_type <- function(board, update, session) {
+tool_describe_block_type <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
@@ -334,7 +338,8 @@ tool_describe_block_type <- function(board, update, session) {
             skills      = skill_refs(block_skills(id)),
             inputs      = nullify(type_inputs(id)),
             arguments   = nullify(arg_specs(meta$arguments[[1L]])),
-            examples    = nullify(meta$examples[[1L]])
+            examples    = nullify(meta$examples[[1L]]),
+            typed_tool  = arm_block_tool(pool, "add", id)
           )
         )
       })
@@ -348,10 +353,12 @@ tool_describe_block_type <- function(board, update, session) {
       "values), and `examples` -- complete worked configurations keyed",
       "by argument name. The per-type drill-down companion to",
       "list_block_types: pick a type from that lean list, then",
-      "call this before configuring it with add_block. Any `skills`",
-      "named alongside are this deployment's convention for the type --",
-      "more specific than the package's `guidance` and winning where",
-      "the two differ; load one with read_skill."
+      "call this before configuring it. Doing so registers a typed",
+      "add_<type> tool where the type declares one, reported back as",
+      "`typed_tool`; call that in preference to add_block. Any",
+      "`skills` named alongside are this deployment's convention for",
+      "the type -- more specific than the package's `guidance` and",
+      "winning where the two differ; load one with read_skill."
     ),
     arguments   = list(
       id = ellmer::type_string(
