@@ -45,3 +45,7 @@ skill_description_max_chars <- function() {
 skill_catalogue_max_chars <- function() {
   as.integer(blockr_option("assistant_skill_catalogue_max_chars", 4000L))
 }
+
+block_tool_pool_size <- function() {
+  as.integer(blockr_option("assistant_block_tool_pool", 20L))
+}

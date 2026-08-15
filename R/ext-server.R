@@ -280,6 +280,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         })
 
         client_r   <- reactiveVal(NULL)
+        pool_r     <- reactiveVal(NULL)
         mod_r      <- reactiveVal(NULL)
         mount_idx  <- reactiveVal(0L)
 
@@ -291,7 +292,9 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           cl <- ctor(system_prompt = "")
 
-          register_read_tools(cl, board, update, session)
+          pool <- new_block_tool_pool(cl, board, pending_update, session)
+
+          register_read_tools(cl, board, update, session, pool)
           register_mutation_tools(
             cl, board, pending_update, session
           )
@@ -340,7 +343,7 @@ asst_ext_srv <- function(system_prompt, messages) {
             cl$set_turns(seed_turns)
           }
 
-          cl
+          list(client = cl, pool = pool)
         }
 
         # When the chat constructor changes (initial mount or after a
@@ -385,7 +388,8 @@ asst_ext_srv <- function(system_prompt, messages) {
             return()
           }
 
-          client_r(new_client)
+          client_r(new_client$client)
+          pool_r(new_client$pool)
           mount_idx(isolate(mount_idx()) + 1L)
         })
 
@@ -734,6 +738,12 @@ asst_ext_srv <- function(system_prompt, messages) {
         # nudge arrives as a synthetic user turn too, and must not wipe the
         # pending it is asking the model to resolve.
         on_user_input <- function() {
+
+          pool <- isolate(pool_r())
+
+          if (!is.null(pool)) {
+            pool$new_turn()
+          }
 
           if (isolate(report$injecting)) {
             report$injecting <- FALSE

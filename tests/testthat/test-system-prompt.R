@@ -76,7 +76,7 @@ test_that("default_system_prompt() golden on a populated board", {
   expect_snapshot(cat(prompt))
 })
 
-test_that("default_system_prompt() with client adds the catalogue", {
+test_that("default_system_prompt() does not catalogue the client's tools", {
 
   client <- fake_chat_function()
   client$register_tool(
@@ -90,9 +90,9 @@ test_that("default_system_prompt() with client adds the catalogue", {
 
   res <- default_system_prompt(client = client)
 
-  expect_match(res, "## Tools", fixed = TRUE)
-  expect_match(res, "demo_tool()", fixed = TRUE)
-  expect_match(res, "A demo tool description.")
+  expect_no_match(res, "## Tools", fixed = TRUE)
+  expect_no_match(res, "demo_tool", fixed = TRUE)
+  expect_no_match(res, "A demo tool description.", fixed = TRUE)
 })
 
 test_that("default_system_prompt() with board adds the summary", {
@@ -132,32 +132,4 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   expect_match(res, "### Views")
   expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
   expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
-})
-
-test_that("format_tool_catalogue marks optional args with `?`", {
-
-  client <- fake_chat_function()
-  client$register_tool(
-    ellmer::tool(
-      function(x, y) "ok",
-      name = "demo",
-      description = "demo",
-      arguments = list(
-        x = ellmer::type_string("required"),
-        y = ellmer::type_string("optional", required = FALSE)
-      )
-    )
-  )
-
-  res <- format_tool_catalogue(client)
-
-  expect_match(res, "demo(x, y?)", fixed = TRUE)
-})
-
-test_that("format_tool_catalogue handles a client with no tools", {
-
-  client <- fake_chat_function()
-  res <- format_tool_catalogue(client)
-
-  expect_identical(res, "(none)")
 })

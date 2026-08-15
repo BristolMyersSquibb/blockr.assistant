@@ -16,8 +16,9 @@ default_system_prompt(
 \item{board}{Reactive containing the live board, as supplied
 to the extension server. \code{NULL} omits the board section.}
 
-\item{client}{An \code{ellmer::Chat}. \code{NULL} omits the tool
-catalogue.}
+\item{client}{An \code{ellmer::Chat}. Unused by this composer, and
+passed for the benefit of custom ones -- the model and token
+state are read off it.}
 
 \item{view_data}{Reactive holding \code{blockr.dock}'s live all-views
 layout (a \code{list(views, grids)}), as supplied to the extension
@@ -36,13 +37,18 @@ through the tools that describe their target.}
 A character scalar.
 }
 \description{
-Builds the four-section system prompt the assistant ships by
-default: an intro / conventions block, an auto-generated tool
-catalogue from \code{client$get_tools()}, a one-line-per-skill
+Builds the three-section system prompt the assistant ships by
+default: an intro / conventions block, a one-line-per-skill
 catalogue of the deployment's globally-scoped skills, and a
 compact board summary.
 }
 \details{
+The registered tools are deliberately not catalogued here. They
+reach the model as a structured tool manifest alongside the
+system prompt, so a prompt-side listing duplicates them -- and
+the per-block-type tools come and go within a conversation, so
+any such listing would go stale mid-turn.
+
 Each argument is optional; the corresponding section is
 omitted when its input is \code{NULL}, so \code{default_system_prompt()}
 at the REPL returns just the intro block -- useful for

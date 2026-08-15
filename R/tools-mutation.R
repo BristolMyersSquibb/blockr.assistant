@@ -30,15 +30,38 @@ existing_ids <- function(board, pending, entity) {
   unique(c(live, names(ent$add), names(ent$mod), ent$rm))
 }
 
+stage_added_block <- function(board, pending, id, type, args) {
+
+  if (is.null(id) || !nzchar(id)) {
+    id <- rand_names(existing_ids(board, pending, "blocks"))
+  }
+
+  stage_block_add(
+    pending, board, id, do.call(create_block, c(list(type), args))
+  )
+
+  sprintf("Staged add_block(%s) -- call commit to apply.", id)
+}
+
+stage_modified_block <- function(board, pending, id, delta) {
+
+  if (!length(delta)) {
+    stop(
+      "no fields supplied; pass at least one argument to change",
+      call. = FALSE
+    )
+  }
+
+  stage_block_mod(pending, board, id, delta)
+
+  sprintf("Staged modify_block(%s) -- call commit to apply.", id)
+}
+
 tool_add_block <- function(board, pending, session) {
 
   ellmer::tool(
     function(type, args, id = NULL) {
       with_tool_errors("add_block", {
-
-        if (is.null(id) || !nzchar(id)) {
-          id <- rand_names(existing_ids(board, pending, "blocks"))
-        }
 
         if (!type %in% list_blocks()) {
           stop(
@@ -75,13 +98,7 @@ tool_add_block <- function(board, pending, session) {
           )
         }
 
-        block <- do.call(create_block, c(list(type), parsed))
-
-        stage_block_add(pending, board, id, block)
-
-        sprintf(
-          "Staged add_block(%s) -- call commit to apply.", id
-        )
+        stage_added_block(board, pending, id, type, parsed)
       })
     },
     name        = "add_block",
@@ -153,19 +170,8 @@ tool_modify_block <- function(board, pending, session) {
     function(id, args) {
       with_tool_errors("modify_block", {
 
-        delta <- parse_args_json(args, "modify_block")
-
-        if (!length(delta)) {
-          stop(
-            "no fields supplied; pass at least one key in `args`",
-            call. = FALSE
-          )
-        }
-
-        stage_block_mod(pending, board, id, delta)
-
-        sprintf(
-          "Staged modify_block(%s) -- call commit to apply.", id
+        stage_modified_block(
+          board, pending, id, parse_args_json(args, "modify_block")
         )
       })
     },
