@@ -2,6 +2,44 @@
 
 ## blockr.assistant (development version)
 
+- Block mutation is now available through typed, per-block-type tools,
+  so a block’s constructor arguments reach the model as a checked schema
+  rather than a JSON string it has to hand-write. A type qualifies when
+  every registered argument declares a `type` in the block registry –
+  which, across `blockr.core`, `blockr.dplyr`, `blockr.ggplot` and
+  `blockr.io`, is 26 of 31 registered types for `add_<type>` and 17 of
+  the 19 externally controllable ones for `modify_<type>`. Registering
+  one per type up front would put roughly 43 extra tools in the
+  manifest, so they are materialized on demand instead:
+  `describe_block_type` registers `add_<type>` and `describe_block`
+  registers `modify_<type>` for the block’s own type, both of which the
+  model already calls before configuring. Schemas are built through
+  `ellmer`’s own type constructors rather than handed over as raw JSON
+  schema, so each provider receives the dialect it states tool schemas
+  in – Gemini rejects outright the `additionalProperties` that OpenAI’s
+  strict mode requires, and a raw schema would have sent one spelling to
+  all of them. The two kinds are held in separately capped, separately
+  evicted pools sized by the `blockr.assistant_block_tool_pool` option
+  (default 20 each), least recently used first. Since a pool is also
+  bounded by how many types qualify, that default tops out at 37 typed
+  tools alongside the 38 static ones in the stack above. A tool armed
+  during the current turn is never evicted; when a pool is full of such
+  tools the arming is refused and the model is told to fall back rather
+  than overflowing the cap. The `add_block` and `modify_block` pair is
+  unchanged and stays registered: five argument shapes across the stack
+  – free-form reader and writer `args`, an arbitrary-key `renames` map,
+  an any-type `values_fill` – cannot be expressed as a closed-key schema
+  at all, and those types keep using it.
+
+- The system prompt no longer carries a tool catalogue. Registered tools
+  already reach the model as a structured manifest alongside the prompt,
+  so the catalogue duplicated them, and it would have gone stale
+  mid-turn now that the per-type tools come and go. The `client`
+  argument of
+  [`default_system_prompt()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
+  is kept for custom composers that read the model or token state off
+  it.
+
 - Nothing bounded the live conversation, only what was written to the
   board, so a long session grew more expensive with every message and
   eventually exceeded the provider’s context window – and since that

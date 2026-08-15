@@ -1,9 +1,8 @@
 # Default assistant system prompt
 
-Builds the four-section system prompt the assistant ships by default: an
-intro / conventions block, an auto-generated tool catalogue from
-`client$get_tools()`, a one-line-per-skill catalogue of the deployment's
-globally-scoped skills, and a compact board summary.
+Builds the three-section system prompt the assistant ships by default:
+an intro / conventions block, a one-line-per-skill catalogue of the
+deployment's globally-scoped skills, and a compact board summary.
 
 ## Usage
 
@@ -27,7 +26,8 @@ default_system_prompt(
 - client:
 
   An [`ellmer::Chat`](https://ellmer.tidyverse.org/reference/Chat.html).
-  `NULL` omits the tool catalogue.
+  Unused by this composer, and passed for the benefit of custom ones –
+  the model and token state are read off it.
 
 - view_data:
 
@@ -53,6 +53,12 @@ default_system_prompt(
 A character scalar.
 
 ## Details
+
+The registered tools are deliberately not catalogued here. They reach
+the model as a structured tool manifest alongside the system prompt, so
+a prompt-side listing duplicates them – and the per-block-type tools
+come and go within a conversation, so any such listing would go stale
+mid-turn.
 
 Each argument is optional; the corresponding section is omitted when its
 input is `NULL`, so `default_system_prompt()` at the REPL returns just
