@@ -135,6 +135,9 @@ asst_ext_ui <- function(id, board, ...) {
     asst_ext_styles(),
     div(
       class = "asst-panel",
+      uiOutput(NS(id, "focus_chip"), container = function(...) {
+        div(class = "asst-focus-slot", ...)
+      }),
       uiOutput(NS(id, "chat_panel"), container = function(...) {
         div(class = "asst-chat-slot", ...)
       }),
@@ -167,6 +170,56 @@ asst_ext_styles <- function() {
         min-height: 0;
         display: flex;
         flex-direction: column;
+      }
+      /* Empty until a block is selected, so it must take no room at all --
+         a slot with padding would leave a gap above the transcript. Laid out
+         as a row so the chip sizes to its text rather than to the panel. */
+      .asst-focus-slot.shiny-html-output {
+        display: flex;
+        justify-content: flex-start;
+        flex: 0 0 auto;
+        width: min(680px, 100%);
+        margin: 0 auto;
+      }
+      .asst-focus-slot:has(.asst-focus) {
+        padding: 8px 4px 2px 4px;
+      }
+      .asst-focus {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        padding: 3px 6px 3px 8px;
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 999px;
+        font-size: 11px;
+        line-height: 1.4;
+        color: var(--bs-body-color, #212529);
+        background: var(--bs-tertiary-bg, #f8f9fa);
+      }
+      .asst-focus svg {
+        width: 11px;
+        height: 11px;
+        opacity: 0.7;
+      }
+      .asst-focus-id {
+        font-family: var(--bs-font-monospace, monospace);
+        font-weight: 600;
+      }
+      .asst-focus-type {
+        color: var(--bs-secondary-color, #6c757d);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .asst-focus-clear {
+        display: inline-flex;
+        align-items: center;
+        color: var(--bs-secondary-color, #6c757d);
+        text-decoration: none;
+      }
+      .asst-focus-clear:hover {
+        color: var(--bs-body-color, #212529);
       }
       .asst-chat-slot shiny-chat-container {
         flex: 1 1 0;
@@ -236,6 +289,14 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         pending_update <- reactiveVal(empty_pending())
         touched        <- reactiveVal(character())
+
+        focus <- new_focus_tracker(board, view_data)
+
+        output$focus_chip <- renderUI(
+          focus_chip(focus$get(), board, session$ns)
+        )
+
+        observeEvent(input$focus_clear, focus$clear(), ignoreInit = TRUE)
 
         report <- reactiveValues(
           count     = 0L,
@@ -585,9 +646,15 @@ asst_ext_srv <- function(system_prompt, messages) {
           cl <- client_r()
           if (is.null(cl)) return(invisible())
 
+          # Read here rather than leaving it to `compose`: the refresh observer
+          # has to take the dependency whether or not a custom composer uses
+          # the selection, or a prompt that does use it goes stale on a click.
+          selected <- focus$get()
+
           prompt <- tryCatch(
             compose(
-              board, cl, view_data = view_data, skills = skill_catalogue()
+              board, cl, view_data = view_data, skills = skill_catalogue(),
+              focus = selected
             ),
             error = function(e) {
               notify(

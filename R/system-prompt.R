@@ -38,13 +38,19 @@
 #'   server. `NULL` omits the skill catalogue. Only globally-scoped
 #'   skills are listed here; block- and extension-scoped ones surface
 #'   through the tools that describe their target.
+#' @param focus Id of the block the user has selected in the board UI,
+#'   or `NULL` for no selection. Reported to the model as what an
+#'   unqualified request refers to; the section is omitted when there
+#'   is no selection, or when `board` is `NULL` or no longer carries
+#'   the block.
 #' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  view_data = NULL, skills = NULL, ...) {
+                                  view_data = NULL, skills = NULL,
+                                  focus = NULL, ...) {
 
   catalogue <- if (!is.null(skills)) {
     format_skill_catalogue(global_skills(skills))
@@ -62,9 +68,23 @@ default_system_prompt <- function(board = NULL, client = NULL,
     ""
   }
 
+  # Last, and after the board summary it refers to: the selection is the
+  # freshest thing the model is told and the one most likely to be drowned out
+  # by the sheer length of what precedes it.
+  focus_desc <- if (!is.null(board) && !is.null(focus)) {
+    describe_focus(focus, board)
+  }
+
+  focus_note <- if (!is.null(focus_desc)) {
+    paste0("\n\n## Selected block\n", focus_desc)
+  } else {
+    ""
+  }
+
   slots <- list(
     skills = skill_section,
-    board = board_summary
+    board = board_summary,
+    focus = focus_note
   )
 
   as.character(

@@ -89,4 +89,4 @@ analysis is wanted and any build would likely be the wrong one;
 a detail you can default is not that, but no data on the board
 at all is.
 
-Answer concisely.<<skills>><<board>>
+Answer concisely.<<skills>><<board>><<focus>>

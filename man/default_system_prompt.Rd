@@ -9,6 +9,7 @@ default_system_prompt(
   client = NULL,
   view_data = NULL,
   skills = NULL,
+  focus = NULL,
   ...
 )
 }
@@ -30,6 +31,12 @@ view has reported its layout).}
 server. \code{NULL} omits the skill catalogue. Only globally-scoped
 skills are listed here; block- and extension-scoped ones surface
 through the tools that describe their target.}
+
+\item{focus}{Id of the block the user has selected in the board UI,
+or \code{NULL} for no selection. Reported to the model as what an
+unqualified request refers to; the section is omitted when there
+is no selection, or when \code{board} is \code{NULL} or no longer carries
+the block.}
 
 \item{...}{Forward-compatibility slot for future inputs.}
 }
