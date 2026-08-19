@@ -226,11 +226,7 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     )
   )
 
-  # Should this ever fail with shinychat's own wording ("An error
-  # occurred:") in the first bubble, posit-dev/shinychat#304 has landed and
-  # is rendering the error before we do -- leaving the user with the same
-  # message twice. Delete our workaround; do not repair this assertion.
-  expect_match(reply, "could not complete this turn", fixed = TRUE)
+  expect_match(reply, "An error occurred:", fixed = TRUE)
 
   # The spinner and the locked composer are the same client-side state: a
   # turn that never finishes leaves both up for good.
@@ -241,10 +237,10 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     )
   )
 
-  # A slash command streams outside shinychat's task, so the same rejection
-  # arrives at our own `append()` call as a plain error instead of a task
-  # status. Fired through the input the browser would set, to keep the
-  # command palette's keyboard handling out of it.
+  # A slash command streams outside shinychat's task, reaching the same
+  # reporting through our own `append()` call. Fired through the input the
+  # browser would set, to keep the command palette's keyboard handling out
+  # of it.
   app$run_js(
     "const id = document.querySelector('shiny-chat-container').id;
      Shiny.setInputValue(
@@ -265,5 +261,5 @@ test_that("a rejected turn surfaces the error and releases the chat", {
        .map(m => m.innerText)"
   )
 
-  expect_match(replies[[2]], "could not complete this turn", fixed = TRUE)
+  expect_match(replies[[2]], "An error occurred:", fixed = TRUE)
 })
