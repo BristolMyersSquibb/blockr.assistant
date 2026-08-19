@@ -154,11 +154,7 @@ test_that("a user-invocable skill reaches the browser's command palette", {
     timeout = 20 * 1000
   )
 
-  chrome <- app$get_chromote_session()
-  chrome$Runtime$evaluate(
-    "document.querySelector('.tiptap.ProseMirror').focus()"
-  )
-  chrome$Input$insertText(text = "/exp")
+  type_in_composer(app, "/exp")
 
   app$wait_for_js(
     "document.querySelector('.shiny-chat-slash-palette') !== null",
@@ -199,11 +195,7 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     timeout = 15 * 1000
   )
 
-  chrome <- app$get_chromote_session()
-  chrome$Runtime$evaluate(
-    "document.querySelector('.tiptap.ProseMirror').focus()"
-  )
-  chrome$Input$insertText(text = "load the iris data")
+  type_in_composer(app, "load the iris data")
 
   app$wait_for_js(
     "!document.querySelector('.shiny-chat-btn-send').disabled",
