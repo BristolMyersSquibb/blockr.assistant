@@ -31,12 +31,19 @@ test_that("default_system_prompt returns a non-empty string", {
   expect_gt(nchar(res), 0L)
 })
 
-test_that("format_token_telemetry handles missing / NA / real tokens", {
+test_that("format_token_telemetry reports zeros before a turn arrives", {
 
-  expect_null(format_token_telemetry(NULL))
+  for (turn in list(NULL, ellmer::Turn("assistant", "hi"))) {
 
-  na_turn <- ellmer::Turn("assistant", "hi")
-  expect_null(format_token_telemetry(na_turn))
+    html <- as.character(format_token_telemetry(turn))
+
+    expect_match(html, "asst-meta", fixed = TRUE)
+    expect_match(html, ">0<")
+    expect_match(html, "Input tokens (this turn): 0", fixed = TRUE)
+  }
+})
+
+test_that("format_token_telemetry reports real tokens", {
 
   real_turn <- ellmer::Turn("assistant", "hi")
   real_turn@tokens <- c(312, 84, NA)

@@ -264,6 +264,28 @@ asst_ext_styles <- function() {
       .asst-focus-slot .selectize-input {
         max-height: 84px;
         overflow-y: auto;
+        flex-wrap: wrap;
+        gap: 3px;
+      }
+      /* Selectize spaces stacked chips with a bottom margin on each, which
+         in this centred flex box reads as the chip sitting high. Carry the
+         row spacing on the container's gap instead. The selector matches
+         selectize's own `.selectize-control.multi` specificity, or its
+         margin wins. */
+      .asst-focus-slot .selectize-control.multi .selectize-input > div {
+        margin: 0;
+      }
+      /* Match the composer above: shinychat renders at 14px/21px and draws
+         its placeholder in --bs-gray-600, where selectize would use the
+         theme's 15px body size and its own grey. */
+      .asst-focus-slot .selectize-input,
+      .asst-focus-slot .selectize-input input {
+        font-size: 14px;
+        line-height: 21px;
+      }
+      .asst-focus-slot .selectize-input input::placeholder {
+        color: var(--bs-gray-600, #707782);
+        opacity: 1;
       }
       .asst-token-slot.shiny-html-output {
         display: flex;
@@ -1017,13 +1039,13 @@ turn_text <- function(turn) {
   paste(texts[nzchar(texts)], collapse = "\n")
 }
 
+# Rendered even before a turn has reported, as zeros. The meter shares its
+# row with the focus picker, so letting it appear only once it has numbers
+# would resize the picker out from under the user mid-conversation.
 format_token_telemetry <- function(turn) {
 
-  if (is.null(turn) || all(is.na(turn@tokens))) {
-    return(NULL)
-  }
+  toks <- if (is.null(turn)) c(NA, NA) else turn@tokens
 
-  toks <- turn@tokens
   in_t  <- if (is.na(toks[1])) 0L else as.integer(toks[1])
   out_t <- if (is.na(toks[2])) 0L else as.integer(toks[2])
 
