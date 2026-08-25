@@ -1,5 +1,23 @@
 # blockr.assistant (development version)
 
+* The assistant can now be pointed at particular blocks. A picker below the
+  chat lists the board's blocks -- the rich selectize the board itself uses
+  wherever a block is chosen, reached through
+  `blockr.dock::board_block_select()` -- and whatever is selected there is
+  named to the model in a `## Focus` section of the system prompt, under the
+  same `- <id> <block>` identity the `## Board` section carries so the two
+  tie together. The section says where the user's attention is rather than
+  what the model may touch: it biases an under-specified request towards the
+  selection without narrowing what can be asked or which tools are reachable.
+  A focus change reaches the model on the next request the way a board change
+  does, and a block that leaves the board drops out of the selection rather
+  than leaving the prompt naming an id that is gone. Selecting nothing is how
+  the focus is cleared, and returns the prompt to what it was byte for byte.
+  The composer gained a `focus` argument for this, so a custom
+  `system_prompt` function that accepts `...` is unaffected. Focus is session
+  state: it is not written to the extension's `state` and so does not survive
+  a board save and restore (#122).
+
 * Block mutation is now available through typed, per-block-type tools, so
   a block's constructor arguments reach the model as a checked schema
   rather than a JSON string it has to hand-write. A type qualifies when

@@ -133,3 +133,62 @@ test_that("default_system_prompt() lists views on a multi-view dock_board", {
   expect_match(res, "- Analysis (id: v_main) (active)", fixed = TRUE)
   expect_match(res, "- Overview (id: v_over)", fixed = TRUE)
 })
+
+test_that("default_system_prompt() names the focused blocks", {
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris"), h = new_head_block())
+  )
+
+  res <- default_system_prompt(
+    board = reactiveValues(board = brd), focus = c("h", "d")
+  )
+
+  expect_match(res, "## Focus", fixed = TRUE)
+  expect_match(res, "- h <head_block> n, direction", fixed = TRUE)
+  expect_match(res, "- d <dataset_block> dataset*, package", fixed = TRUE)
+  expect_match(res, "where the user's attention is", fixed = TRUE)
+})
+
+test_that("default_system_prompt() drops focus ids that left the board", {
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  board <- reactiveValues(board = brd)
+
+  res <- default_system_prompt(board = board, focus = c("d", "gone"))
+
+  expect_match(res, "- d <dataset_block>", fixed = TRUE)
+  expect_no_match(res, "- gone", fixed = TRUE)
+
+  expect_no_match(
+    default_system_prompt(board = board, focus = "gone"),
+    "## Focus",
+    fixed = TRUE
+  )
+})
+
+test_that("default_system_prompt() omits the focus section by default", {
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  expect_no_match(
+    default_system_prompt(board = reactiveValues(board = brd)),
+    "## Focus",
+    fixed = TRUE
+  )
+  expect_no_match(
+    default_system_prompt(focus = "d"), "## Focus", fixed = TRUE
+  )
+})
+
+test_that("default_system_prompt() keeps focus out of the focus_panel lane", {
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  res <- default_system_prompt(
+    board = reactiveValues(board = brd), focus = "d"
+  )
+
+  expect_match(res, "does not\nnarrow what you may do", fixed = TRUE)
+  expect_match(res, "Nothing about this section asks", fixed = TRUE)
+})

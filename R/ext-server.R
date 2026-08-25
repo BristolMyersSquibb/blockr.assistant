@@ -139,11 +139,69 @@ asst_ext_ui <- function(id, board, ...) {
       uiOutput(NS(id, "chat_panel"), container = function(...) {
         div(class = "asst-chat-slot", ...)
       }),
-      uiOutput(NS(id, "tokens"), container = function(...) {
-        div(class = "asst-token-slot", ...)
-      })
+      div(
+        class = "asst-footer",
+        uiOutput(NS(id, "focus_picker"), container = function(...) {
+          div(class = "asst-focus-slot", ...)
+        }),
+        uiOutput(NS(id, "tokens"), container = function(...) {
+          div(class = "asst-token-slot", ...)
+        })
+      )
     )
   )
+}
+
+asst_focus_select <- function(id, board, blk_ids, selected) {
+  board_block_select(
+    id,
+    board,
+    blk_ids,
+    selected = selected,
+    max_items = NULL,
+    options = list(
+      placeholder = "Focus on block(s)...",
+      plugins = list("remove_button"),
+      dropdownParent = "body",
+      onDropdownOpen = I(js_focus_dropdown_flip())
+    )
+  )
+}
+
+# Every other board-block picker sits near the top of its container, so
+# selectize's downward-only placement suits it. This one is pinned to the
+# bottom edge of a full-height panel, where opening downward puts the menu
+# below the fold. A body-parented dropdown carries a JS-set `top`, so the
+# lift cannot be done in CSS -- it has to run after selectize positions, and
+# again on its own whenever the menu changes height, since the menu has none
+# until a frame after it opens and grows and shrinks as a search narrows it.
+js_focus_dropdown_flip <- function() {
+  "function($dropdown) {
+     if (this.focusLift) return;
+     this.focusLift = true;
+
+     var self = this;
+     var menu = $dropdown[0];
+
+     var lift = function() {
+       var box = self.$control[0].getBoundingClientRect();
+       var height = menu.offsetHeight;
+
+       if (height > 0 && box.bottom + height > window.innerHeight &&
+           box.top - height > 0) {
+         menu.style.top = (window.scrollY + box.top - height) + 'px';
+       }
+     };
+
+     var position = self.positionDropdown.bind(self);
+
+     self.positionDropdown = function() {
+       position();
+       lift();
+     };
+
+     new ResizeObserver(lift).observe(menu);
+   }"
 }
 
 asst_ext_styles <- function() {
@@ -174,16 +232,44 @@ asst_ext_styles <- function() {
         min-height: 0;
       }
       /* Sits under the chat container, aligned to the composer: shinychat
-         insets its own column by --shiny-chat-fill-padding, so the meta line
-         has to carry the same inset to end on the composer's edge. */
+         insets its own column by --shiny-chat-fill-padding, so the footer
+         has to carry the same inset for the picker's left edge and the
+         meter's right edge to land on the composer's. */
+      .asst-footer {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 0 0 auto;
+        width: min(680px, 100%);
+        margin: 0 auto;
+        padding: 8px var(--shiny-chat-fill-padding, 0.25rem) 0;
+      }
+      /* Shiny styles a non-empty uiOutput div `display: contents`, under
+         which the flexing below would be inert, so it is overridden here
+         the way the token slot below overrides it with `display: flex`. */
+      .asst-focus-slot.shiny-html-output {
+        display: block;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      /* Shiny gives every input container a 300px default width, which
+         would leave the picker a third of the strip it shares. */
+      .asst-focus-slot .shiny-input-container {
+        width: 100%;
+        margin-bottom: 0;
+      }
+      /* The footer is flex:0 0 auto against a flex:1 1 0 transcript, so an
+         unbounded multi-select would grow into the chat as selections pile
+         up. Two rows of chips, then scroll. */
+      .asst-focus-slot .selectize-input {
+        max-height: 84px;
+        overflow-y: auto;
+      }
       .asst-token-slot.shiny-html-output {
         display: flex;
         justify-content: flex-end;
         flex: 0 0 auto;
-        width: min(680px, 100%);
-        margin: 0 auto;
         min-height: 15px;
-        padding: 2px var(--shiny-chat-fill-padding, 0.25rem) 0;
       }
       .asst-meta {
         display: inline-flex;
@@ -573,6 +659,34 @@ asst_ext_srv <- function(system_prompt, messages) {
           invisible()
         }
 
+        # Keyed on what the picker actually shows rather than on the board,
+        # so a commit that touches neither the block set nor a block name
+        # leaves an open dropdown and a half-typed search alone.
+        focus_choices <- reactiveVal()
+
+        observe({
+          blks <- board_blocks(board$board)
+          focus_choices(set_names(chr_ply(blks, block_name), names(blks)))
+        })
+
+        focus_r <- reactive(
+          intersect(input$focus, board_block_ids(board$board))
+        )
+
+        output$focus_picker <- renderUI({
+
+          blk_ids <- names(focus_choices())
+
+          if (!length(blk_ids)) {
+            return(NULL)
+          }
+
+          asst_focus_select(
+            session$ns("focus"), isolate(board$board), blk_ids,
+            isolate(focus_r())
+          )
+        })
+
         refresh_prompt <- function() {
 
           cl <- client_r()
@@ -580,7 +694,8 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           prompt <- tryCatch(
             compose(
-              board, cl, view_data = view_data, skills = skill_catalogue()
+              board, cl, view_data = view_data, skills = skill_catalogue(),
+              focus = focus_r()
             ),
             error = function(e) {
               notify(
@@ -602,6 +717,7 @@ asst_ext_srv <- function(system_prompt, messages) {
         observe({
           board$board
           client_r()
+          focus_r()
           refresh_prompt()
         })
 
