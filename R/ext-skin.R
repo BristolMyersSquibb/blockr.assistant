@@ -28,29 +28,31 @@ asst_greeting <- function(board) {
 
   empty <- !length(board_blocks(isolate(board$board)))
 
-  lead <- if (empty) {
-    "What do you want to build?"
-  } else {
-    "What do you want to see?"
-  }
+  if (empty) {
 
-  suggestions <- if (empty) {
-    c(
-      "Show me which block types are available",
-      "Load a dataset to start from"
+    lead <- "What do you want to build?"
+    note <- "I can add blocks from the installed types and wire them together"
+    suggestions <- c(
+      "Load a dataset and show me what is in it",
+      "Build a chart from one of the built-in datasets",
+      "Set up a filtered table I can explore"
     )
+
   } else {
-    c(
+
+    lead <- "What do you want to see?"
+    note <- "I can read what these blocks produce, change and rewire them"
+    suggestions <- c(
       "Summarize what is on this board",
-      "Chart the data on this board",
-      "Explain how these blocks fit together"
+      "Add a chart of the data on this board",
+      "Check this board for problems"
     )
   }
 
   shinychat::chat_greeting(
     paste0(
       "### ", lead, "\n\n",
-      "Describe an analysis and I will build it on this board\n\n",
+      note, "\n\n",
       paste0(
         "- <span class=\"suggestion\">", suggestions, "</span>\n",
         collapse = ""

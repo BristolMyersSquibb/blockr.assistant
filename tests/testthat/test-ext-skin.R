@@ -81,8 +81,9 @@ test_that("an empty board is asked what to build, and offers a way in", {
   expect_identical(
     greeting_chip_text(board),
     c(
-      "Show me which block types are available",
-      "Load a dataset to start from"
+      "Load a dataset and show me what is in it",
+      "Build a chart from one of the built-in datasets",
+      "Set up a filtered table I can explore"
     )
   )
 })
@@ -96,8 +97,8 @@ test_that("a populated board is asked what to see, and offers no way in", {
     greeting_chip_text(board),
     c(
       "Summarize what is on this board",
-      "Chart the data on this board",
-      "Explain how these blocks fit together"
+      "Add a chart of the data on this board",
+      "Check this board for problems"
     )
   )
 })
