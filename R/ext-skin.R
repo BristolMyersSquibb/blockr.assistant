@@ -21,101 +21,42 @@
 # shadows. Tokens are referenced with literal fallbacks so the panel
 # renders sensibly when the `--blockr-*` sheet is absent.
 
+# Nothing here reads eval status: the greeting resolves before the board's
+# first evaluation pass, so blocks report `dormant` or no status at all, and
+# anything keyed on a result would be reading a board that has not run yet.
 asst_greeting <- function(board) {
 
-  state <- greeting_state(board)
+  empty <- !length(board_blocks(isolate(board$board)))
+
+  lead <- if (empty) {
+    "What do you want to build?"
+  } else {
+    "What do you want to see?"
+  }
+
+  suggestions <- if (empty) {
+    c(
+      "Show me which block types are available",
+      "Load a dataset to start from"
+    )
+  } else {
+    c(
+      "Summarize what is on this board",
+      "Chart the data on this board",
+      "Explain how these blocks fit together"
+    )
+  }
 
   shinychat::chat_greeting(
     paste0(
-      greeting_lead(state),
-      "\n\n",
+      "### ", lead, "\n\n",
+      "Describe an analysis and I will build it on this board\n\n",
       paste0(
-        "- <span class=\"suggestion\">",
-        greeting_suggestions(state),
-        "</span>\n",
+        "- <span class=\"suggestion\">", suggestions, "</span>\n",
         collapse = ""
       )
     )
   )
-}
-
-# `dormant` and `stale` are the board deferring off-screen work rather than
-# anything being wrong, so they are not offered as something to look into.
-greeting_state <- function(board) {
-
-  brd <- isolate(board$board)
-  blks <- board_blocks(brd)
-
-  status <- if (length(blks)) {
-    chr_ply(names(blks), eval_status, board)
-  } else {
-    character()
-  }
-
-  list(
-    blocks = length(blks),
-    faulted = sum(has_no_result(status) & !eval_deferred(status)),
-    ready = sum(!has_no_result(status)),
-    links = length(board_links(brd))
-  )
-}
-
-greeting_lead <- function(state) {
-
-  if (!state$blocks) {
-    return(
-      paste0(
-        "### What do you want to build?\n\n",
-        "Describe an analysis and I will build it on this board"
-      )
-    )
-  }
-
-  if (state$faulted) {
-    return(
-      paste0(
-        "### Some blocks are not producing results\n\n",
-        "Ask me to look into them, or describe something new to build"
-      )
-    )
-  }
-
-  paste0(
-    "### What do you want to see?\n\n",
-    "Describe an analysis and I will build it on this board"
-  )
-}
-
-greeting_suggestions <- function(state) {
-
-  texts <- c(
-    "Show me which block types are available",
-    "Load a dataset to start from",
-    greeting_fault_text(state$faulted),
-    "Summarize what is on this board",
-    "Chart the data on this board",
-    "Explain how these blocks fit together"
-  )
-
-  offer <- c(
-    state$blocks == 0L,
-    state$blocks == 0L,
-    state$faulted > 0L,
-    state$blocks > 0L,
-    state$ready > 0L,
-    state$links > 0L
-  )
-
-  texts[offer][seq_len(min(3L, sum(offer)))]
-}
-
-greeting_fault_text <- function(faulted) {
-
-  if (faulted == 1L) {
-    return("Look into the block that has no result")
-  }
-
-  sprintf("Look into the %d blocks that have no result", faulted)
 }
 
 # Tool rows title from `annotations$title` (shinychat renders it in place of
