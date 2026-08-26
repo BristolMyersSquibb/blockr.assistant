@@ -402,7 +402,6 @@ asst_ext_srv <- function(system_prompt, messages) {
         output$chat_panel <- renderUI({
           shinychat::chat_mod_ui(
             session$ns(chat_sub_id(mount_idx())),
-            greeting = asst_greeting(),
             placeholder = "Ask about your board"
           )
         })
@@ -439,8 +438,14 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
+          # A function greeting is resolved on `greeting_requested`, which
+          # fires once the empty chat is on screen, so it reads the board as
+          # the user sees it. Passing one to chat_mod_ui() as well would set
+          # a greeting up front and that input would never fire.
           mod <- shinychat::chat_mod_server(
-            chat_sub_id(idx), cl, history = FALSE
+            chat_sub_id(idx), cl,
+            greeting = function() asst_greeting(board),
+            history = FALSE
           )
 
           # Advertising the slash commands is a one-shot push to the chat
