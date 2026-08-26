@@ -133,6 +133,7 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
 asst_ext_ui <- function(id, board, ...) {
   tagList(
     asst_ext_styles(),
+    asst_skin_styles(),
     div(
       class = "asst-panel",
       uiOutput(NS(id, "chat_panel"), container = function(...) {
@@ -172,14 +173,17 @@ asst_ext_styles <- function() {
         flex: 1 1 0;
         min-height: 0;
       }
+      /* Sits under the chat container, aligned to the composer: shinychat
+         insets its own column by --shiny-chat-fill-padding, so the meta line
+         has to carry the same inset to end on the composer's edge. */
       .asst-token-slot.shiny-html-output {
         display: flex;
         justify-content: flex-end;
         flex: 0 0 auto;
         width: min(680px, 100%);
         margin: 0 auto;
-        min-height: 21px;
-        padding: 10px 4px 0 4px;
+        min-height: 15px;
+        padding: 2px var(--shiny-chat-fill-padding, 0.25rem) 0;
       }
       .asst-meta {
         display: inline-flex;
@@ -187,7 +191,7 @@ asst_ext_styles <- function() {
         gap: 14px;
         font-size: 11px;
         line-height: 1;
-        color: var(--bs-secondary-color, #6c757d);
+        color: var(--blockr-color-text-subtle, #9ca3af);
         font-variant-numeric: tabular-nums slashed-zero;
       }
       .asst-meta-item {
@@ -198,7 +202,7 @@ asst_ext_styles <- function() {
         transition: color 120ms ease;
       }
       .asst-meta-item:hover {
-        color: var(--bs-body-color, #212529);
+        color: var(--blockr-color-text-secondary, #374151);
       }
       .asst-meta-item svg {
         width: 12px;
@@ -312,6 +316,8 @@ asst_ext_srv <- function(system_prompt, messages) {
             )
           }
 
+          annotate_tool_titles(cl)
+
           # Drop trailing turns that represent an incomplete or
           # failed exchange. Two shapes show up after a stream error
           # on the prior provider:
@@ -394,7 +400,10 @@ asst_ext_srv <- function(system_prompt, messages) {
         })
 
         output$chat_panel <- renderUI({
-          shinychat::chat_mod_ui(session$ns(chat_sub_id(mount_idx())))
+          shinychat::chat_mod_ui(
+            session$ns(chat_sub_id(mount_idx())),
+            placeholder = "Ask about your board"
+          )
         })
 
         # Mount the chat module against the current client. Every mount
@@ -407,16 +416,21 @@ asst_ext_srv <- function(system_prompt, messages) {
         # history = FALSE is load-bearing. It defaults to TRUE, which opts
         # into shinychat's on-disk conversation store -- and that store
         # persists turns through the same ellmer record/replay pair that is
-        # not JSON-safe: `version` is written as a double and read back as
-        # an integer, which the type-strict `identical()` in
-        # ellmer:::check_recorded() rejects as "Unsupported version 1.",
-        # naming the value when it is the type that differs. The replay
-        # aborts inside a restore observer, so the session dies. The store
-        # is scoped per user (or per browser, unauthenticated) and survives
-        # redeploys, so one poisoned record keeps killing that user's
-        # sessions with nothing in the UI to clear it. Revisit once that
-        # comparison is numeric upstream, and once the store's behaviour on
-        # Connect is better understood.
+        # not JSON-safe: `version` is written as a double and read back as an
+        # integer, `tokens` as a list where a numeric vector is demanded, and
+        # `cost` as the string "NA". The replay aborts inside a restore
+        # observer, so the session dies -- and because the store is scoped per
+        # user and survives redeploys, one poisoned record keeps killing that
+        # user's sessions with nothing in the UI to clear it.
+        #
+        # Turning it on means owning that round trip: writing each turn as an
+        # opaque serializeJSON() blob, the way this package already stores
+        # turns in board state, and following shinychat's restore rather than
+        # replaying here. That is done and parked on the
+        # `assistant-history-experiment` branch, held back because it is
+        # untested and because the store partitions on the chat element id --
+        # which carries the board id, so conversations do not survive a
+        # restart that renames the board.
         observe({
 
           idx <- mount_idx()
@@ -424,8 +438,14 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           req(cl)
 
+          # A function greeting is resolved on `greeting_requested`, which
+          # fires once the empty chat is on screen, so it reads the board as
+          # the user sees it. Passing one to chat_mod_ui() as well would set
+          # a greeting up front and that input would never fire.
           mod <- shinychat::chat_mod_server(
-            chat_sub_id(idx), cl, history = FALSE
+            chat_sub_id(idx), cl,
+            greeting = function() asst_greeting(board),
+            history = FALSE
           )
 
           # Advertising the slash commands is a one-shot push to the chat
