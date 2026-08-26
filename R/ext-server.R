@@ -173,9 +173,9 @@ asst_ext_styles <- function() {
         flex: 1 1 0;
         min-height: 0;
       }
-      /* Sits under the chat container, aligned to the composer: same max
-         width and centring as shinychat's own wrapper, so the meta line reads
-         as part of the input rather than as a panel footer. */
+      /* Sits under the chat container, aligned to the composer: shinychat
+         insets its own column by --shiny-chat-fill-padding, so the meta line
+         has to carry the same inset to end on the composer's edge. */
       .asst-token-slot.shiny-html-output {
         display: flex;
         justify-content: flex-end;
@@ -183,7 +183,7 @@ asst_ext_styles <- function() {
         width: min(680px, 100%);
         margin: 0 auto;
         min-height: 15px;
-        padding-top: 2px;
+        padding: 2px var(--shiny-chat-fill-padding, 0.25rem) 0;
       }
       .asst-meta {
         display: inline-flex;
@@ -191,7 +191,7 @@ asst_ext_styles <- function() {
         gap: 14px;
         font-size: 11px;
         line-height: 1;
-        color: var(--bs-secondary-color, #6c757d);
+        color: var(--blockr-color-text-subtle, #9ca3af);
         font-variant-numeric: tabular-nums slashed-zero;
       }
       .asst-meta-item {
@@ -202,7 +202,7 @@ asst_ext_styles <- function() {
         transition: color 120ms ease;
       }
       .asst-meta-item:hover {
-        color: var(--bs-body-color, #212529);
+        color: var(--blockr-color-text-secondary, #374151);
       }
       .asst-meta-item svg {
         width: 12px;
@@ -859,7 +859,6 @@ asst_ext_srv <- function(system_prompt, messages) {
 chat_sub_id <- function(idx) {
   sprintf("chat_%d", as.integer(idx))
 }
-
 
 # `keep` leaves the client alone -- the turns are set by the caller, which is
 # the point: this is what stops the transcript and the model's memory drifting

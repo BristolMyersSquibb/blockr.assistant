@@ -1,13 +1,19 @@
 # Visual skin for the assistant chat panel.
 #
 # shinychat stays vanilla: everything here is either (a) content passed
-# through shinychat's documented API (the greeting), (b) values for its
-# public `--shiny-chat-*` custom properties, or (c) a thin CSS overlay on
-# its stable public classes (`.shiny-chat-*`, `.shiny-tool-card`). If a
-# shinychat update changes markup under (c), the affected rule stops
-# matching and that piece falls back to shinychat's default look -- the
-# panel degrades, it does not break. All selectors are scoped under
-# `.asst-panel` so none of this leaks into other chat UIs on the page.
+# through shinychat's documented API (the greeting), (b) a value for one of
+# its `--shiny-chat-*` custom properties, or (c) a CSS overlay on its public
+# class names. Only the two footer properties are documented in shinychat's
+# reference; the rest are public by its own prefix convention, where `--_`
+# marks the private ones. If a shinychat update changes markup under (c), the
+# affected rule stops matching and that piece falls back to shinychat's
+# default look -- the panel degrades, it does not break. All selectors are
+# scoped under `.asst-panel` so none of this leaks into other chat UIs on the
+# page.
+#
+# The tool rows are the volatile part of shinychat's markup: the card stack
+# these classes replaced was itself only one release old. Verified against
+# shinychat main, which is what this package's `Remotes:` pins.
 #
 # The design targets the blockr design system (blockr.docs/design-system):
 # greyscale palette, 8px radii on inputs and cards, the 42/30/26/24px
@@ -28,10 +34,10 @@ asst_greeting <- function() {
   )
 }
 
-# Tool cards title from `annotations$title` (shinychat renders it in the
-# card header in place of the bare function name). Rather than repeating a
-# title at ~35 `ellmer::tool()` definitions, derive it from the name:
-# `list_blocks` -> "List blocks". A tool that carries its own title keeps it.
+# Tool rows title from `annotations$title` (shinychat renders it in place of
+# the bare function name). Rather than repeating a title at ~35
+# `ellmer::tool()` definitions, derive it from the name: `list_blocks` ->
+# "List blocks". A tool that carries its own title keeps it.
 annotate_tool_title <- function(tool) {
 
   if (!is.null(tool@annotations$title)) {
@@ -59,24 +65,28 @@ asst_skin_styles <- function() {
   tags$style(
     HTML(
       "
-      /* ---- tokens: shinychat's public theming variables ------------- */
+      /* ---- tokens ---------------------------------------------------- */
       .asst-panel shiny-chat-container {
         --shiny-chat-border: 1px solid var(--blockr-color-border, #e5e7eb);
         --shiny-chat-user-message-bg: var(--blockr-color-bg-input, #f9fafb);
         --shiny-chat-greeting-color: var(--blockr-color-text-muted, #6b7280);
-        --shiny-chat-thinking-border-color:
-          var(--blockr-color-border, #e5e7eb);
-        --shiny-chat-thinking-content-color:
-          var(--blockr-color-text-muted, #6b7280);
         --shiny-chat-streaming-color:
           var(--blockr-grey-400, #9ca3af),
           var(--blockr-grey-500, #6b7280),
           var(--blockr-grey-700, #374151);
         --shiny-tool-card-spinner-color:
           var(--blockr-color-text-muted, #6b7280);
-        --shiny-chat-footer-color: var(--blockr-color-text-subtle, #9ca3af);
-        --shiny-chat-footer-font-size: 11px;
         font-size: 14px;
+      }
+      /* shinychat declares these on the thinking block itself, so a value
+         inherited from the container is shadowed */
+      .asst-panel .shiny-chat-thinking {
+        --shiny-chat-thinking-border-color:
+          var(--blockr-color-border, #e5e7eb);
+        --shiny-chat-thinking-content-color:
+          var(--blockr-color-text-muted, #6b7280);
+        --shiny-chat-thinking-header-color:
+          var(--blockr-color-text-secondary, #374151);
       }
 
       /* ---- no avatar column: assistant turns are plain prose -------- */
@@ -152,44 +162,63 @@ asst_skin_styles <- function() {
         display: none;
       }
 
-      /* ---- tool calls: run rows, adjacent cards merge into one ------- */
+      /* ---- tool calls: shinychat's activity rows on the ladder ------- */
+      .asst-panel .shiny-chat-tool-loop {
+        margin: 6px 0;
+      }
+      .asst-panel :is(.shiny-chat-tool-group__row,
+                      .shiny-chat-tool-call-row__summary) {
+        min-height: 30px;
+        padding: 2px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--blockr-color-text-muted, #6b7280);
+        transition: background 0.15s ease;
+      }
+      .asst-panel :is(.shiny-chat-tool-group__row,
+                      .shiny-chat-tool-call-row__summary):hover {
+        background: var(--blockr-color-bg-hover, #f3f4f6);
+      }
+      .asst-panel :is(.shiny-chat-tool-group__row,
+                      .shiny-chat-tool-call-row__summary):focus-visible {
+        outline: none;
+        box-shadow:
+          var(--blockr-focus-ring, 0 0 0 3px rgba(37, 99, 235, 0.12));
+      }
+      .asst-panel .shiny-chat-tool-group__title {
+        font-weight: 500;
+        color: var(--blockr-color-text-secondary, #374151);
+      }
+      /* a tool with no title falls back to a <code> name, which Bootstrap
+         renders in its own accent */
+      .asst-panel :is(.shiny-chat-tool-group__toolname,
+                      .shiny-chat-tool-call-row__label code) {
+        padding: 0;
+        background: none;
+        font-size: inherit;
+        color: inherit;
+      }
+      .asst-panel :is(.shiny-chat-tool-group__count,
+                      .shiny-chat-tool-group__overflow,
+                      .shiny-chat-tool-call-row__preview,
+                      .shiny-chat-tool-row__intent,
+                      .shiny-chat-tool-group__glyph,
+                      .shiny-chat-tool-group__chevron,
+                      .shiny-chat-tool-call-row__status,
+                      .shiny-chat-tool-call-row__chevron) {
+        color: var(--blockr-color-text-subtle, #9ca3af);
+      }
+      .asst-panel .shiny-chat-tool-group__failed {
+        color: var(--blockr-color-error, #dc2626);
+      }
+
+      /* ---- tool detail: the card behind an expanded row -------------- */
       .asst-panel .shiny-tool-card {
         border: 1px solid var(--blockr-color-border, #e5e7eb);
         border-radius: 8px;
         box-shadow: none;
         margin: 0;
         background: transparent;
-      }
-      /* each card sits in a .shiny-tool-request / .shiny-tool-result
-         wrapper; consecutive wrappers read as one ledger: outer radius
-         only at the ends of the run, hairline separators inside */
-      .asst-panel :is(.shiny-tool-request, .shiny-tool-result) {
-        margin: 2px 0;
-      }
-      .asst-panel :is(.shiny-tool-request, .shiny-tool-result):has(
-          + :is(.shiny-tool-request, .shiny-tool-result)) {
-        margin-bottom: 0;
-      }
-      .asst-panel :is(.shiny-tool-request, .shiny-tool-result):has(
-          + :is(.shiny-tool-request, .shiny-tool-result)) .shiny-tool-card {
-        border-bottom-left-radius: 0;
-        border-bottom-right-radius: 0;
-        border-bottom: none;
-      }
-      .asst-panel :is(.shiny-tool-request, .shiny-tool-result)
-        + :is(.shiny-tool-request, .shiny-tool-result) {
-        margin-top: 0;
-      }
-      .asst-panel :is(.shiny-tool-request, .shiny-tool-result)
-        + :is(.shiny-tool-request, .shiny-tool-result) .shiny-tool-card {
-        border-top-left-radius: 0;
-        border-top-right-radius: 0;
-        border-top: 1px solid var(--blockr-grey-100, #f3f4f6);
-      }
-      /* completed rows drop the wrench pictogram; pending requests keep
-         the icon slot, which doubles as the spinner */
-      .asst-panel .shiny-tool-result .tool-icon {
-        display: none;
       }
       .asst-panel .shiny-tool-card > .card-header {
         background: transparent;
@@ -204,8 +233,7 @@ asst_skin_styles <- function() {
       .asst-panel .shiny-tool-card > .card-header:focus-visible {
         background: var(--blockr-color-bg-subtle, #f9fafb);
       }
-      .asst-panel .shiny-tool-card .tool-title-name,
-      .asst-panel .shiny-tool-card .function-name {
+      .asst-panel .shiny-tool-card .tool-title-name {
         font-weight: 500;
         color: var(--blockr-color-text-secondary, #374151);
       }
@@ -227,6 +255,7 @@ asst_skin_styles <- function() {
         background: var(--bs-body-bg, #fff);
         font-size: 13.5px;
         min-height: 42px;
+        align-content: center;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .asst-panel .shiny-chat-input .tiptap:focus,
@@ -238,6 +267,18 @@ asst_skin_styles <- function() {
       }
       .asst-panel .shiny-chat-input .tiptap.is-empty:before {
         color: var(--blockr-color-text-subtle, #9ca3af);
+      }
+      /* shinychat pins both buttons to the bottom of .shiny-chat-input,
+         which is a taller box than the one the text is laid out in, so the
+         two only agree at shinychat's own composer height. Anchoring them
+         to the text's box keeps them centred as the composer grows. */
+      .asst-panel .shiny-chat-input-dropzone {
+        position: relative;
+      }
+      .asst-panel :is(.shiny-chat-btn-send, .shiny-chat-btn-attach) {
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
       }
       .asst-panel .shiny-chat-btn-send {
         width: 26px;
