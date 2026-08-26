@@ -264,7 +264,6 @@ asst_ext_styles <- function() {
       .asst-focus-slot .selectize-input {
         max-height: 84px;
         overflow-y: auto;
-        flex-wrap: wrap;
         gap: 3px;
       }
       /* Selectize spaces stacked chips with a bottom margin on each, which
@@ -274,18 +273,6 @@ asst_ext_styles <- function() {
          margin wins. */
       .asst-focus-slot .selectize-control.multi .selectize-input > div {
         margin: 0;
-      }
-      /* Match the composer above: shinychat renders at 14px/21px and draws
-         its placeholder in --bs-gray-600, where selectize would use the
-         theme's 15px body size and its own grey. */
-      .asst-focus-slot .selectize-input,
-      .asst-focus-slot .selectize-input input {
-        font-size: 14px;
-        line-height: 21px;
-      }
-      .asst-focus-slot .selectize-input input::placeholder {
-        color: var(--bs-gray-600, #707782);
-        opacity: 1;
       }
       .asst-token-slot.shiny-html-output {
         display: flex;
