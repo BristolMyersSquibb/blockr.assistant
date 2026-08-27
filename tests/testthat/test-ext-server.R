@@ -66,7 +66,7 @@ test_that("the chat module is mounted with history disabled", {
   testthat::local_mocked_bindings(
     chat_mod_server = function(id, client, history = TRUE, ...) {
       history_arg <<- history
-      NULL
+      fake_chat_mod()
     },
     .package = "shinychat"
   )
@@ -1376,7 +1376,9 @@ test_that("user-invocable skills reach shinychat as slash commands", {
 
       commands <- rec$slash_commands()
 
-      expect_setequal(chr_xtr(commands, "name"), c("layout", "drill"))
+      expect_setequal(
+        chr_xtr(commands, "name"), c("compact", "clear", "layout", "drill")
+      )
       expect_true("A drill." %in% chr_xtr(commands, "description"))
     },
     args = list(
@@ -1384,6 +1386,208 @@ test_that("user-invocable skills reach shinychat as slash commands", {
       update = reactiveVal()
     ),
     session = rec$session
+  )
+})
+
+test_that("the built-in commands are advertised without an echo", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  rec <- recording_session()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+      session$flushReact()
+
+      commands <- rec$slash_commands()
+      builtin <- chr_xtr(commands, "name") %in% c("compact", "clear")
+
+      expect_length(which(builtin), 2L)
+      expect_false(any(lgl_xtr(commands[builtin], "echo")))
+
+      # A skill command echoes, so this is the built-ins being asked for
+      # something else rather than shinychat defaulting everything off.
+      expect_true(all(lgl_xtr(commands[!builtin], "echo")))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = rec$session
+  )
+})
+
+test_that("a skill cannot take a built-in command's name", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "compact",
+    c(
+      "name: compact", "description: A deployment skill.",
+      "user-invocable: true"
+    )
+  )
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  rec <- recording_session()
+
+  logs <- capture_logs(
+    testServer(
+      asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+      {
+        session$flushReact()
+        session$flushReact()
+
+        commands <- rec$slash_commands()
+        taken <- chr_xtr(commands, "name") == "compact"
+
+        expect_length(which(taken), 1L)
+        expect_false(
+          "A deployment skill." %in% chr_xtr(commands[taken], "description")
+        )
+      },
+      args = list(
+        board = reactiveValues(board = blockr.core::new_board()),
+        update = reactiveVal()
+      ),
+      session = rec$session
+    )
+  )
+
+  expect_match(logs, "Slash command /compact was not registered")
+})
+
+test_that("/compact summarises a conversation the bound leaves alone", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  mod <- fake_chat_mod()
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("iris loaded, plot built")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    {
+      session$flushReact()
+      later::run_now()
+      session$flushReact()
+
+      expect_length(client_r()$get_turns(), 12L)
+
+      compact_conversation()
+
+      later::run_now()
+      session$flushReact()
+
+      turns <- client_r()$get_turns()
+
+      expect_length(turns, 10L)
+      expect_identical(turn_text(turns[[2L]]), "iris loaded, plot built")
+      expect_identical(turn_text(turns[[3L]]), "5")
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("/clear empties both copies of the conversation", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  mod <- NULL
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) {
+      mod <<- fake_chat_mod(client = client)
+      mod
+    },
+    .package = "shinychat"
+  )
+
+  seed <- lapply(
+    list(
+      ellmer::Turn("user", "load iris"),
+      ellmer::Turn("assistant", "loaded")
+    ),
+    ellmer::contents_record
+  )
+
+  testServer(
+    asst_ext_srv(default_system_prompt, seed),
+    {
+      session$flushReact()
+
+      expect_length(mod$transcript(), 2L)
+      expect_length(client_r()$get_turns(), 2L)
+
+      clear_conversation()
+
+      expect_identical(mod$transcript(), character())
+      expect_identical(client_r()$get_turns(), list())
+      expect_true(mod$cleared()$greeting)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("/clear drops changes staged against the cleared conversation", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  mod <- fake_chat_mod()
+
+  testthat::local_mocked_bindings(
+    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    .package = "shinychat"
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      stage_block_add(pending_update, board, "new", new_head_block())
+      touched("d")
+      report$count <- 2L
+
+      expect_true(isolate(has_any_changes(pending_update())))
+
+      clear_conversation()
+
+      expect_false(isolate(has_any_changes(pending_update())))
+      expect_identical(isolate(touched()), character())
+      expect_identical(report$count, 0L)
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
   )
 })
 

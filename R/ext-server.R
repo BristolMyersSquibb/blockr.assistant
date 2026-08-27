@@ -95,6 +95,17 @@
 #' fills in a transcript that a restore or a provider swap leaves
 #' empty; tool traffic carries no text and is not replayed.
 #'
+#' Both the conversation and its size are reachable from the chat's
+#' command palette, which lists two built-in commands alongside the
+#' user-invocable skills. The `/compact` command runs the same
+#' summarise-and-replace on demand, without waiting for the threshold
+#' -- for a thread that has gone stale rather than large, where a long
+#' build has finished and the next question is unrelated to it. The
+#' `/clear` command drops the conversation outright: the browser
+#' transcript, the turns the model is sent, and any changes staged but
+#' never committed go together, and the emptied chat reopens on a
+#' greeting read off the board as it now stands.
+#'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
 #'   scalar (used verbatim, no refresh). Defaults to the
@@ -547,8 +558,17 @@ asst_ext_srv <- function(system_prompt, messages) {
           # element, so it has to wait for the flush that carries that
           # element's UI: registering in-line here sends it a flush early,
           # and the browser drops what it cannot yet address.
+          #
+          # The built-ins go first so that a deployment skill named after one
+          # of them is the registration that collides and is logged, rather
+          # than the one that silently takes the name.
           session$onFlushed(
-            function() register_skill_commands(mod, run_skill_command),
+            function() {
+              register_builtin_commands(
+                mod, compact_conversation, clear_conversation
+              )
+              register_skill_commands(mod, run_skill_command)
+            },
             once = TRUE
           )
 
@@ -614,7 +634,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           invisible()
         }
 
-        maybe_compact <- function() {
+        compact_conversation <- function() {
 
           cl  <- isolate(client_r())
           mod <- isolate(mod_r())
@@ -624,17 +644,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
 
           turns <- cl$get_turns()
-
-          # Isolated because the threshold is read at the moment a turn ends,
-          # not depended on: the mount observer calls this, and a dependency
-          # would replay the whole transcript every time the user retunes it.
-          bound <- isolate(chat_compact_tokens(session))
-
-          if (!over_context_bound(turns, bound)) {
-            return(invisible())
-          }
-
-          keep <- isolate(compaction_keep_turns(session))
+          keep  <- isolate(compaction_keep_turns(session))
           split <- compaction_split(turns, keep)
 
           if (is.null(split) || !compacting$begin()) {
@@ -664,6 +674,26 @@ asst_ext_srv <- function(system_prompt, messages) {
             ),
             compacting$end
           )
+
+          invisible()
+        }
+
+        maybe_compact <- function() {
+
+          cl <- isolate(client_r())
+
+          if (is.null(cl)) {
+            return(invisible())
+          }
+
+          # Isolated because the threshold is read at the moment a turn ends,
+          # not depended on: the mount observer calls this, and a dependency
+          # would replay the whole transcript every time the user retunes it.
+          bound <- isolate(chat_compact_tokens(session))
+
+          if (over_context_bound(cl$get_turns(), bound)) {
+            compact_conversation()
+          }
 
           invisible()
         }
@@ -852,6 +882,15 @@ asst_ext_srv <- function(system_prompt, messages) {
           ignoreNULL = TRUE
         )
 
+        reset_staging <- function() {
+
+          report$count <- 0L
+          reset_pending(pending_update)
+          touched(character())
+
+          invisible()
+        }
+
         # A fresh user turn resets the staging slate -- but our own injected
         # nudge arrives as a synthetic user turn too, and must not wipe the
         # pending it is asking the model to resolve.
@@ -866,9 +905,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           if (isolate(report$injecting)) {
             report$injecting <- FALSE
           } else {
-            report$count <- 0L
-            reset_pending(pending_update)
-            touched(character())
+            reset_staging()
           }
         }
 
@@ -911,6 +948,26 @@ asst_ext_srv <- function(system_prompt, messages) {
               )
             }
           )
+
+          invisible()
+        }
+
+        # One call empties both copies of the conversation -- the browser
+        # transcript and the turns on the very client this extension holds --
+        # and asks for the greeting again, so the fresh chat opens on the board
+        # as it stands now. The staging slate goes with it: changes staged but
+        # never committed refer to a conversation nobody can read any more.
+        clear_conversation <- function() {
+
+          mod <- isolate(mod_r())
+
+          if (is.null(mod)) {
+            return(invisible())
+          }
+
+          mod$clear(greeting = TRUE, client_history = "clear")
+
+          reset_staging()
 
           invisible()
         }

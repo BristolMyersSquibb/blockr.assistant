@@ -128,7 +128,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   expect_true(app$get_js(visible))
 })
 
-test_that("a user-invocable skill reaches the browser's command palette", {
+test_that("the browser's command palette lists built-ins and skills", {
 
   skip_on_cran()
   skip_if_not_installed("shinytest2")
@@ -202,7 +202,9 @@ test_that("a user-invocable skill reaches the browser's command palette", {
     timeout = 20 * 1000
   )
 
-  type_in_composer(app, "/exp")
+  # A bare slash filters nothing, so one palette read covers both what the
+  # skill scan found and the built-ins registered ahead of it.
+  type_in_composer(app, "/")
 
   app$wait_for_js(
     "document.querySelector('.shiny-chat-slash-palette') !== null",
@@ -214,6 +216,8 @@ test_that("a user-invocable skill reaches the browser's command palette", {
   )
 
   expect_match(palette, "exposure-check", fixed = TRUE)
+  expect_match(palette, "/compact", fixed = TRUE)
+  expect_match(palette, "/clear", fixed = TRUE)
 })
 
 test_that("a rejected turn surfaces the error and releases the chat", {
