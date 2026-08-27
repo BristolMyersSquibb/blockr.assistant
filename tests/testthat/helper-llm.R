@@ -11,14 +11,28 @@ fake_chat_function <- function(system_prompt = NULL, params = NULL) {
 # unobservable unless something records it -- which is why `transcript()` is
 # here. Mocking chat_mod_server() to NULL, as the other tests do, makes
 # `mod_r` NULL and takes every mod-driven path out of reach.
-fake_chat_mod <- function(status = "idle") {
+#
+# `clear()` reaches through to the client the way the real one does, so a test
+# that drives it sees both copies of the conversation go. Pass the `client`
+# the mocked chat_mod_server() was handed to wire that up.
+fake_chat_mod <- function(status = "idle", client = NULL) {
 
   log <- character()
+  cleared <- NULL
 
   list(
     clear = function(messages = NULL, greeting = FALSE,
                      client_history = c("clear", "set", "append", "keep")) {
+
+      client_history <- match.arg(client_history)
+
       log <<- character()
+      cleared <<- list(greeting = greeting, client_history = client_history)
+
+      if (identical(client_history, "clear") && !is.null(client)) {
+        client$set_turns(list())
+      }
+
       invisible()
     },
     append = function(response, role = "assistant", icon = NULL) {
@@ -27,10 +41,14 @@ fake_chat_mod <- function(status = "idle") {
     },
     status = shiny::reactive(status),
     transcript = function() log,
+    cleared = function() cleared,
     last_turn = shiny::reactiveVal(NULL),
     last_input = shiny::reactiveVal(NULL),
     update_user_input = function(...) invisible(),
-    slash_command = function(name, description, handler) invisible()
+    slash_command = function(name, description, handler, ..., echo = NULL,
+                             force = FALSE) {
+      invisible()
+    }
   )
 }
 
