@@ -12,6 +12,7 @@ default_system_prompt(
   client = NULL,
   view_data = NULL,
   skills = NULL,
+  focus = NULL,
   ...
 )
 ```
@@ -43,6 +44,13 @@ default_system_prompt(
   omits the skill catalogue. Only globally-scoped skills are listed
   here; block- and extension-scoped ones surface through the tools that
   describe their target.
+
+- focus:
+
+  Character vector of block IDs the user has singled out as what they
+  are working on, as reported by the extension's block picker. The focus
+  section is omitted when this is `NULL` or names no block still on
+  `board`.
 
 - ...:
 

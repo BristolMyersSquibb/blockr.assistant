@@ -62,6 +62,7 @@ compact board summary.</p>
 <span>  client <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  view_data <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  skills <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  focus <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -94,6 +95,13 @@ view has reported its layout).</p></dd>
 server. <code>NULL</code> omits the skill catalogue. Only globally-scoped
 skills are listed here; block- and extension-scoped ones surface
 through the tools that describe their target.</p></dd>
+
+
+<dt id="arg-focus">focus<a class="anchor" aria-label="anchor" href="#arg-focus"></a></dt>
+<dd><p>Character vector of block IDs the user has singled
+out as what they are working on, as reported by the extension's
+block picker. The focus section is omitted when this is <code>NULL</code>
+or names no block still on <code>board</code>.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
