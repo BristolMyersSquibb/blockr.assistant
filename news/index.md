@@ -2,6 +2,22 @@
 
 ## blockr.assistant (development version)
 
+- The chat’s command palette gained two built-in commands, listed
+  alongside the user-invocable skills it already carried. The `/compact`
+  command runs the conversation through the same summarise-and-replace
+  that `chat_compact_tokens` triggers on its own, without waiting for
+  the threshold – what a stale thread needs rather than a large one,
+  where a long build has finished and the next question is unrelated to
+  it. The `/clear` command drops the conversation outright: the browser
+  transcript, the turns the model is sent and the changes staged but
+  never committed all go together, since staged edits whose argument
+  nobody can read any more are worse than none, and the emptied chat
+  reopens on a greeting read off the board as it now stands. Neither
+  echoes its invocation into the transcript, both being about to rewrite
+  it. They are registered ahead of the skills, so a deployment skill
+  that takes one of their names is the registration refused and logged,
+  rather than one that silently shadows a built-in (#125).
+
 - The assistant can now be pointed at particular blocks. A picker below
   the chat lists the board’s blocks – the rich selectize the board
   itself uses wherever a block is chosen, reached through

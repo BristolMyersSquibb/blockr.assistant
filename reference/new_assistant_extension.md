@@ -136,6 +136,16 @@ otherwise stay on screen unremembered. The same replay fills in a
 transcript that a restore or a provider swap leaves empty; tool traffic
 carries no text and is not replayed.
 
+Both the conversation and its size are reachable from the chat's command
+palette, which lists two built-in commands alongside the user-invocable
+skills. The `/compact` command runs the same summarise-and-replace on
+demand, without waiting for the threshold – for a thread that has gone
+stale rather than large, where a long build has finished and the next
+question is unrelated to it. The `/clear` command drops the conversation
+outright: the browser transcript, the turns the model is sent, and any
+changes staged but never committed go together, and the emptied chat
+reopens on a greeting read off the board as it now stands.
+
 ## Examples
 
 ``` r
