@@ -30,7 +30,7 @@ test_that("the package ships the layout skill as a global skill", {
 
   expect_type(layout, "list")
   expect_true(is_global_skill(layout))
-  expect_true(layout$user_invocable)
+  expect_false(layout$user_invocable)
   expect_match(skill_body(layout), "Views are tabs")
   expect_match(skill_body(layout), "orientation")
 })

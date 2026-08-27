@@ -229,6 +229,13 @@ test_that("a rejected turn surfaces the error and releases the chat", {
   chromote_obj <- chromote::default_chromote_object()
   chromote_obj$default_timeout <- 30
 
+  skills_dir <- withr::local_tempdir()
+
+  write_skill(
+    skills_dir, "drill",
+    c("name: drill", "description: A drill.", "user-invocable: true")
+  )
+
   # Nothing listens on port 1, so the provider refuses the turn before it
   # streams anything -- the shape a quota or context-length rejection
   # arrives in. Injected as an option rather than baked into a fixture app,
@@ -238,7 +245,10 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     name = "stream-failure",
     seed = 42,
     load_timeout = 30 * 1000,
-    options = list(blockr.chat_function = dead_chat_function)
+    options = list(
+      blockr.chat_function = dead_chat_function,
+      blockr.assistant_skills = skills_dir
+    )
   )
   withr::defer(app$stop())
 
@@ -289,7 +299,7 @@ test_that("a rejected turn surfaces the error and releases the chat", {
     "const id = document.querySelector('shiny-chat-container').id;
      Shiny.setInputValue(
        id + '_slash_command',
-       {command: 'layout', userText: ''},
+       {command: 'drill', userText: ''},
        {priority: 'event'}
      );"
   )

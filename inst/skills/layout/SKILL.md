@@ -6,7 +6,6 @@ description: >-
   remove_panel_from_view, move_panel, resize_panel, focus_panel) that
   edit an existing view in place. Read before creating a view or
   rearranging panels.
-user-invocable: true
 ---
 
 # Layout
