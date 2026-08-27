@@ -38,13 +38,18 @@
 #'   server. `NULL` omits the skill catalogue. Only globally-scoped
 #'   skills are listed here; block- and extension-scoped ones surface
 #'   through the tools that describe their target.
+#' @param focus Character vector of block IDs the user has singled
+#'   out as what they are working on, as reported by the extension's
+#'   block picker. The focus section is omitted when this is `NULL`
+#'   or names no block still on `board`.
 #' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
 #'
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
-                                  view_data = NULL, skills = NULL, ...) {
+                                  view_data = NULL, skills = NULL,
+                                  focus = NULL, ...) {
 
   catalogue <- if (!is.null(skills)) {
     format_skill_catalogue(global_skills(skills))
@@ -62,9 +67,20 @@ default_system_prompt <- function(board = NULL, client = NULL,
     ""
   }
 
+  focused <- if (!is.null(board)) {
+    format_focus(board, focus)
+  }
+
+  focus_section <- if (!is.null(focused)) {
+    paste0("\n\n## Focus\n", focused)
+  } else {
+    ""
+  }
+
   slots <- list(
     skills = skill_section,
-    board = board_summary
+    board = board_summary,
+    focus = focus_section
   )
 
   as.character(
@@ -75,6 +91,43 @@ default_system_prompt <- function(board = NULL, client = NULL,
       .close = ">>",
       .trim = FALSE
     )
+  )
+}
+
+format_focus <- function(board, focus) {
+
+  blks <- board_blocks(isolate(board$board))
+  hits <- intersect(focus, names(blks))
+
+  if (!length(hits)) {
+    return(NULL)
+  }
+
+  paste(
+    c(
+      focus_preamble(),
+      "",
+      paste0("- ", hits, " ", chr_ply(blks[hits], str_value))
+    ),
+    collapse = "\n"
+  )
+}
+
+focus_preamble <- function() {
+  paste(
+    c(
+      "The user has singled out the block(s) listed below as what",
+      "they are working on. Read an under-specified request -- \"add",
+      "a filter\", \"switch the axes\" -- as being about them, and",
+      "prefer them where a request could plausibly land on several",
+      "blocks. This says where the user's attention is; it does not",
+      "narrow what you may do. Answer freely about any other part of",
+      "the board, and never decline or defer a question because its",
+      "subject is not listed here. Nothing about this section asks",
+      "you to call `focus_panel`, which fronts a panel's tab and is",
+      "a separate matter."
+    ),
+    collapse = "\n"
   )
 }
 

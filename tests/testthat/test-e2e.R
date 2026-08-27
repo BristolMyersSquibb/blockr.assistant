@@ -78,6 +78,54 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     nzchar(tokens_html %||% ""),
     info = "the token-telemetry slot should be in the DOM"
   )
+
+  app$wait_for_js(
+    "document.querySelector('.asst-focus-slot select') !== null &&
+     document.querySelector('.asst-focus-slot select').selectize !== undefined",
+    timeout = 15 * 1000
+  )
+
+  slots <- unlst(
+    app$get_js(
+      "Array.from(document.querySelector('.asst-footer').children)
+         .map(function(el) { return el.className; })"
+    )
+  )
+
+  expect_length(slots, 2L)
+  expect_match(slots[[1L]], "asst-focus-slot")
+  expect_match(slots[[2L]], "asst-token-slot")
+
+  picker <- "document.querySelector('.asst-focus-slot select').selectize"
+
+  expect_setequal(
+    unlst(app$get_js(paste0("Object.keys(", picker, ".options)"))),
+    c("data", "head")
+  )
+  expect_null(app$get_js(paste0(picker, ".settings.maxItems")))
+
+  # Without dropdownParent the menu is clipped by the panel it opens inside.
+  expect_identical(
+    app$get_js(paste0(picker, ".$dropdown.parent()[0].tagName")),
+    "BODY"
+  )
+
+  # Short enough that the menu cannot fit below a picker pinned to the
+  # bottom of the panel, so opening it has to lift it over the transcript.
+  app$set_window_size(width = 1200, height = 700)
+  app$run_js(paste0(picker, ".open();"))
+
+  visible <- paste0(
+    "(function() {
+       var menu = ", picker, ".$dropdown[0];
+       if (menu.offsetHeight === 0) return false;
+       var box = menu.getBoundingClientRect();
+       return box.top >= 0 && box.bottom <= window.innerHeight;
+     })()"
+  )
+
+  app$wait_for_js(visible, timeout = 10 * 1000)
+  expect_true(app$get_js(visible))
 })
 
 test_that("a user-invocable skill reaches the browser's command palette", {

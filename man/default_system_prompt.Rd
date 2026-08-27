@@ -9,6 +9,7 @@ default_system_prompt(
   client = NULL,
   view_data = NULL,
   skills = NULL,
+  focus = NULL,
   ...
 )
 }
@@ -30,6 +31,11 @@ view has reported its layout).}
 server. \code{NULL} omits the skill catalogue. Only globally-scoped
 skills are listed here; block- and extension-scoped ones surface
 through the tools that describe their target.}
+
+\item{focus}{Character vector of block IDs the user has singled
+out as what they are working on, as reported by the extension's
+block picker. The focus section is omitted when this is \code{NULL}
+or names no block still on \code{board}.}
 
 \item{...}{Forward-compatibility slot for future inputs.}
 }

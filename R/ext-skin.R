@@ -295,6 +295,21 @@ asst_skin_styles <- function() {
       .asst-panel .shiny-chat-input .tiptap.is-empty:before {
         color: var(--blockr-color-text-subtle, #9ca3af);
       }
+
+      /* ---- focus picker: the composer's type, one row down ----------- */
+      /* Only type is set here. The surface -- border, 8px radius, 42px
+         min-height, the focus ring -- already comes from blockr.dock's own
+         `.selectize-input` rules, which carry `!important`, so restating any
+         of it would be CSS that cannot win. Type is the exception: dock sets
+         the base font size without `!important`. */
+      .asst-panel .asst-focus-slot .selectize-input,
+      .asst-panel .asst-focus-slot .selectize-input input {
+        font-size: 13.5px;
+      }
+      .asst-panel .asst-focus-slot .selectize-input input::placeholder {
+        color: var(--blockr-color-text-subtle, #9ca3af);
+        opacity: 1;
+      }
       /* shinychat pins both buttons to the bottom of .shiny-chat-input,
          which is a taller box than the one the text is laid out in, so the
          two only agree at shinychat's own composer height. Anchoring them

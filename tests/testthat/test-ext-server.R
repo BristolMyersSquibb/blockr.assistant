@@ -31,12 +31,19 @@ test_that("default_system_prompt returns a non-empty string", {
   expect_gt(nchar(res), 0L)
 })
 
-test_that("format_token_telemetry handles missing / NA / real tokens", {
+test_that("format_token_telemetry reports zeros before a turn arrives", {
 
-  expect_null(format_token_telemetry(NULL))
+  for (turn in list(NULL, ellmer::Turn("assistant", "hi"))) {
 
-  na_turn <- ellmer::Turn("assistant", "hi")
-  expect_null(format_token_telemetry(na_turn))
+    html <- as.character(format_token_telemetry(turn))
+
+    expect_match(html, "asst-meta", fixed = TRUE)
+    expect_match(html, ">0<")
+    expect_match(html, "Input tokens (this turn): 0", fixed = TRUE)
+  }
+})
+
+test_that("format_token_telemetry reports real tokens", {
 
   real_turn <- ellmer::Turn("assistant", "hi")
   real_turn@tokens <- c(312, 84, NA)
@@ -1398,5 +1405,138 @@ test_that("a mistyped skills directory takes the mount down", {
       session = with_llm_session()
     ),
     class = "missing_skills_dir"
+  )
+})
+
+test_that("asst_focus_select builds an uncapped multi-select block picker", {
+
+  brd <- new_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+  )
+
+  html <- as.character(asst_focus_select("focus", brd, c("a", "b"), "b"))
+
+  expect_match(html, "multiple=\"multiple\"", fixed = TRUE)
+  expect_no_match(html, "maxItems", fixed = TRUE)
+  expect_match(html, "\"items\":[\"b\"]", fixed = TRUE)
+  expect_match(html, "remove_button", fixed = TRUE)
+  expect_match(html, "\"dropdownParent\":\"body\"", fixed = TRUE)
+})
+
+test_that("the focus picker offers the live board's blocks", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(blocks = c(a = new_dataset_block("iris")))
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_match(output$focus_picker$html, "ID: a", fixed = TRUE)
+      expect_no_match(output$focus_picker$html, "ID: b", fixed = TRUE)
+
+      board$board <- new_board(
+        blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+      )
+      session$flushReact()
+
+      expect_match(output$focus_picker$html, "ID: b", fixed = TRUE)
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
+test_that("the picker is absent while the board holds no blocks", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_null(output$focus_picker)
+    },
+    args = list(
+      board = reactiveValues(board = new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a picker selection reaches the model's system prompt", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
+
+      session$setInputs(focus = "b")
+
+      expect_match(
+        client_r()$get_system_prompt(),
+        "- b <head_block> n, direction",
+        fixed = TRUE
+      )
+
+      session$setInputs(focus = character())
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
+test_that("removing a focused block drops it from the prompt", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$setInputs(focus = c("a", "b"))
+
+      expect_match(
+        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+      )
+
+      board$board <- new_board(blocks = c(a = new_dataset_block("iris")))
+      session$flushReact()
+
+      prompt <- client_r()$get_system_prompt()
+
+      expect_match(prompt, "## Focus", fixed = TRUE)
+      expect_match(prompt, "- a <dataset_block>", fixed = TRUE)
+      expect_no_match(prompt, "- b <head_block>", fixed = TRUE)
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
   )
 })
