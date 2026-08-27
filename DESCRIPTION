@@ -39,8 +39,8 @@ Suggests:
     testthat (>= 3.0.0),
     withr
 Remotes:
-    BristolMyersSquibb/blockr.core,
-    BristolMyersSquibb/blockr.dock,
+    BristolMyersSquibb/blockr.core@349-ui-build-timing,
+    BristolMyersSquibb/blockr.dock#442,
     posit-dev/shinychat/pkg-r
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
