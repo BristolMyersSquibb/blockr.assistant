@@ -40,7 +40,10 @@ stage_added_block <- function(board, pending, id, type, args) {
     pending, board, id, do.call(create_block, c(list(type), args))
   )
 
-  glue::glue("Staged add_block({id}) -- call commit to apply.")
+  glue::glue(
+    "Staged add_block({id}) -- call commit to apply. ",
+    "Use id `{id}` to link or modify this block."
+  )
 }
 
 stage_modified_block <- function(board, pending, id, delta) {
