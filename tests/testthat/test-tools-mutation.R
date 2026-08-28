@@ -86,6 +86,37 @@ test_that("add_block accepts a documented argument", {
   expect_match(res, "Staged add_block(d2)", fixed = TRUE)
 })
 
+test_that("add_block hands back the new id as a handle", {
+
+  env <- new_mutation_env()
+  add <- tool_add_block(env$board, env$pending, NULL)
+
+  res <- add(type = "head_block", args = "{}", id = "fresh")
+
+  expect_match(
+    res, "Use id `fresh` to link or modify this block.", fixed = TRUE
+  )
+})
+
+test_that("add_link names the unknown block, not the generated link id", {
+
+  env <- new_mutation_env()
+  add <- tool_add_link(env$board, env$pending, NULL)
+
+  res <- add(from = "data", to = "scatter_plot", input = "data")
+
+  expect_match(
+    res,
+    paste(
+      "add_link failed: no block `scatter_plot` to link to.",
+      "Known block ids: data, head, tail."
+    ),
+    fixed = TRUE
+  )
+
+  expect_length(isolate(env$pending()$links$add), 0L)
+})
+
 test_that("parse_args_json keeps an array of objects as a list of records", {
 
   parsed <- parse_args_json(

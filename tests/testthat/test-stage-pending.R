@@ -419,6 +419,79 @@ test_that("stage_link_add rejects when id is pending mod or rm", {
   )
 })
 
+test_that("stage_link_add names the unknown endpoint and the known ids", {
+
+  env <- new_pending_env()
+
+  expect_error(
+    stage_link_add(
+      env$pending, env$board, "new",
+      new_link("data", "scatter_plot", "data")
+    ),
+    "no block `scatter_plot` to link to. Known block ids: data, head, spare",
+    fixed = TRUE
+  )
+
+  expect_length(isolate(env$pending()$links$add), 0L)
+})
+
+test_that("stage_link_add reports both endpoints when both are unknown", {
+
+  env <- new_pending_env()
+
+  expect_error(
+    stage_link_add(
+      env$pending, env$board, "new",
+      new_link("nope", "nada", "data")
+    ),
+    "no block `nope` to link from and no block `nada` to link to",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_link_add accepts an endpoint staged this turn", {
+
+  env <- new_pending_env()
+  stage_block_add(env$pending, env$board, "fresh", new_head_block())
+
+  stage_link_add(
+    env$pending, env$board, "new",
+    new_link("data", "fresh", "data")
+  )
+
+  expect_named(isolate(env$pending()$links$add), "new")
+})
+
+test_that("stage_link_add rejects an endpoint staged for removal", {
+
+  env <- new_pending_env()
+  stage_block_rm(env$pending, env$board, "spare")
+
+  expect_error(
+    stage_link_add(
+      env$pending, env$board, "new",
+      new_link("data", "spare", "data")
+    ),
+    "no block `spare` to link to. Known block ids: data, head",
+    fixed = TRUE
+  )
+})
+
+test_that("stage_link_mod checks only the endpoints in the delta", {
+
+  env <- new_pending_env()
+
+  expect_error(
+    stage_link_mod(env$pending, env$board, "lnk1", list(to = "scatter_plot")),
+    "no block `scatter_plot` to link to",
+    fixed = TRUE
+  )
+
+  stage_link_mod(env$pending, env$board, "lnk1", list(input = "data"))
+
+  expect_named(isolate(env$pending()$links$mod), "lnk1")
+})
+
 test_that("stage_link_mod rejects against a pending add", {
 
   env <- new_pending_env()
