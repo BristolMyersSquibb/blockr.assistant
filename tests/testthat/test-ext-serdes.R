@@ -259,9 +259,16 @@ test_that("the store lists threads newest first", {
     )
   )
 
-  expect_identical(
-    chr_xtr(store$list(NULL), "id"),
-    c("c_new", "c_old")
+  listed <- store$list(NULL)
+
+  expect_identical(chr_xtr(listed, "id"), c("c_new", "c_old"))
+
+  # The client maps over `conversations`, so this has to cross the wire as a
+  # JSON array; a named list would arrive as an object and read as empty.
+  expect_null(names(listed))
+  expect_match(
+    as.character(jsonlite::toJSON(listed, auto_unbox = TRUE)),
+    "^\\["
   )
 
   store$delete(NULL, "c_new")

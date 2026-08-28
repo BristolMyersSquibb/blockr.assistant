@@ -257,6 +257,9 @@ asst_ext_styles <- function() {
         display: flex;
         flex-direction: column;
       }
+      .asst-panel {
+        container-type: inline-size;
+      }
       .asst-chat-slot shiny-chat-container {
         flex: 1 1 0;
         min-height: 0;
@@ -336,6 +339,31 @@ asst_ext_styles <- function() {
       }
       .asst-meta-num {
         font-weight: 500;
+      }
+      /* A collapsed dock panel is a ~30px sliver, and the chat keeps painting
+         into it: a transcript one character wide, with the history trigger
+         (absolutely positioned, 2rem across) escaping the panel altogether to
+         float over the board beside it. Blank the panel rather than leave a
+         smear of itself. The threshold sits well below any panel a chat is
+         readable in, so narrowing one still gives a cramped chat rather than
+         nothing. Last in the sheet because it overrides the display the two
+         slots are given above. */
+      /* The history trigger nudges itself inward when something outside the
+         chat overlaps its corner -- meant for a sidebar reveal button. Dock
+         renders panel content in an overlay layer, so the panel's own
+         `dv-content-container` is not an ancestor of the chat and reads as
+         exactly that kind of obstacle; spanning the whole panel, it never
+         clears, so the button parks at the cap of a third of the panel width
+         and reads as floating loose in the transcript. The nudge writes an
+         inline custom property, so pinning the edge takes `!important`. */
+      .asst-chat-slot .shiny-chat-history-trigger {
+        inset-inline-start: 0.5rem !important;
+      }
+      @container (max-width: 140px) {
+        .asst-chat-slot,
+        .asst-footer {
+          display: none;
+        }
       }
       "
     )
@@ -556,6 +584,7 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
             mod <- shinychat::chat_server(
               "chat", isolate(client_r()),
               greeting = function() {
+                restore_thread_state(list())
                 reset_staging()
                 asst_greeting(board)
               },
@@ -574,16 +603,14 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
             mod$history$on_save(
               function(values) {
                 values[["focus"]] <- as.list(isolate(focus_r()))
+                values[["spent"]] <- as.list(isolate(spent()))
                 values
               }
             )
 
             mod$history$on_restore(
               function(values) {
-                updateSelectizeInput(
-                  session, "focus",
-                  selected = unlst(values[["focus"]])
-                )
+                restore_thread_state(values)
                 reset_staging()
                 maybe_compact()
               }
@@ -802,10 +829,26 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 
-        # The turn to report telemetry for. A typed message settles through
-        # shinychat's own stream task and shows up on last_turn_r(); a slash
-        # command streams outside it and reports its turn here directly.
-        shown_turn <- reactiveVal(NULL)
+        # What the conversation has cost so far, not what the last exchange
+        # did: the meter belongs to the thread, so it is carried in the
+        # thread's saved values, restored with it and reset when a fresh one
+        # opens. Accumulated rather than summed over the client's turns, which
+        # compaction and the save budget both shorten.
+        spent <- reactiveVal(c(0L, 0L))
+
+        account_turn <- function(turn) {
+
+          toks <- turn@tokens
+
+          spent(
+            isolate(spent()) + c(
+              if (is.na(toks[1])) 0L else as.integer(toks[1]),
+              if (is.na(toks[2])) 0L else as.integer(toks[2])
+            )
+          )
+
+          invisible()
+        }
 
         # Capture the blocks the model touched this turn off core's `update`
         # reactiveVal. By the time a default-priority observer sees it,
@@ -921,6 +964,24 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
           ignoreNULL = TRUE
         )
 
+        # Both of these belong to the conversation rather than the board, so a
+        # switch carries them over and a fresh thread opens without them. An
+        # absent value is the fresh case: no focus, nothing spent.
+        restore_thread_state <- function(values) {
+
+          focus <- unlst(values[["focus"]])
+          meter <- unlst(values[["spent"]])
+
+          updateSelectizeInput(
+            session, "focus",
+            selected = if (length(focus)) as.character(focus) else character()
+          )
+
+          spent(if (length(meter) == 2L) as.integer(meter) else c(0L, 0L))
+
+          invisible()
+        }
+
         reset_staging <- function() {
 
           report$count <- 0L
@@ -950,7 +1011,7 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
 
         on_model_turn <- function(turn) {
 
-          shown_turn(turn)
+          account_turn(turn)
 
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
@@ -1036,7 +1097,7 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
         )
 
         output$tokens <- renderUI(
-          format_token_telemetry(shown_turn())
+          format_token_telemetry(spent())
         )
 
         # Resolved by the board's serializer at save time, so the budget and
@@ -1115,12 +1176,10 @@ turn_text <- function(turn) {
 # Rendered even before a turn has reported, as zeros. The meter shares its
 # row with the focus picker, so letting it appear only once it has numbers
 # would resize the picker out from under the user mid-conversation.
-format_token_telemetry <- function(turn) {
+format_token_telemetry <- function(spent) {
 
-  toks <- if (is.null(turn)) c(NA, NA) else turn@tokens
-
-  in_t  <- if (is.na(toks[1])) 0L else as.integer(toks[1])
-  out_t <- if (is.na(toks[2])) 0L else as.integer(toks[2])
+  in_t  <- spent[[1L]]
+  out_t <- spent[[2L]]
 
   meta_item <- function(icon, value, title) {
     span(
@@ -1135,11 +1194,11 @@ format_token_telemetry <- function(turn) {
     class = "asst-meta",
     meta_item(
       "arrow-up-short", in_t,
-      sprintf("Input tokens (this turn): %d", in_t)
+      sprintf("Input tokens (this conversation): %d", in_t)
     ),
     meta_item(
       "arrow-down-short", out_t,
-      sprintf("Output tokens (this turn): %d", out_t)
+      sprintf("Output tokens (this conversation): %d", out_t)
     )
   )
 }

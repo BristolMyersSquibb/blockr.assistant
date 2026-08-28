@@ -38,7 +38,10 @@ thread_store_class <- R6::R6Class(
         }
       )
 
-      metas[order(chr_xtr(metas, "updated_at"), decreasing = TRUE)]
+      # Unnamed, like FileConversationStore: the client types `conversations`
+      # as an array and maps over it, and a named list crosses the wire as a
+      # JSON object, which reads on the other side as no conversations at all.
+      unname(metas[order(chr_xtr(metas, "updated_at"), decreasing = TRUE)])
     },
 
     get = function(partition, id) {

@@ -22,6 +22,19 @@
   state, so a board reopened elsewhere lists its threads without selecting
   one.
 
+* The token meter counts the conversation rather than the last exchange, and
+  the block focus selection travels with the conversation too. Both are saved
+  alongside the thread's turns, restored when you switch back to it, and start
+  over in a new one -- a meter and a focus left pointing at the thread you just
+  left are worse than none.
+
+* A collapsed dock panel no longer leaves a sliver of chat behind it, and the
+  history button stays in the panel's corner instead of drifting into the
+  middle of the transcript. Dock renders panel content in an overlay layer, so
+  the panel's own container reads to the chat as an unrelated element
+  overlapping the button's corner, and the button nudges away from it until it
+  hits its travel limit.
+
 * The `/clear` command is gone. Starting a fresh thread is the history
   drawer's own affordance, and nothing in `shinychat`'s server API opens
   one, so a command that emptied the transcript would have left the stored

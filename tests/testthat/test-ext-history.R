@@ -158,3 +158,59 @@ test_that("switching threads restores the client and the focus selection", {
     session = with_llm_session()
   )
 })
+
+test_that("the meter counts the conversation, not the last exchange", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  priced <- function(input, output) {
+    turn <- ellmer::Turn("assistant", "ok")
+    turn@tokens <- c(input, output, NA)
+    turn
+  }
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      on_model_turn(priced(100, 20))
+      on_model_turn(priced(150, 30))
+
+      expect_identical(spent(), c(250L, 50L))
+
+      cl <- client_r()
+      cl$set_turns(
+        list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
+      )
+      ctrl$on_response(recorded(cl))
+
+      first <- ctrl$record$id
+      expect_identical(ctrl$record$values[["spent"]], list(250L, 50L))
+
+      # A fresh thread starts the meter over, and switching back brings the
+      # first thread's total with it.
+      ctrl$new_chat()
+      later::run_now()
+      session$flushReact()
+
+      expect_identical(spent(), c(0L, 0L))
+
+      cl$set_turns(
+        list(ellmer::Turn("user", "two"), ellmer::Turn("assistant", "second"))
+      )
+      ctrl$on_response(recorded(cl))
+      ctrl$switch_to(first)
+
+      expect_identical(spent(), c(250L, 50L))
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})

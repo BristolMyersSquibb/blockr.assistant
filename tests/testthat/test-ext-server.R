@@ -33,22 +33,16 @@ test_that("default_system_prompt returns a non-empty string", {
 
 test_that("format_token_telemetry reports zeros before a turn arrives", {
 
-  for (turn in list(NULL, ellmer::Turn("assistant", "hi"))) {
+  html <- as.character(format_token_telemetry(c(0L, 0L)))
 
-    html <- as.character(format_token_telemetry(turn))
-
-    expect_match(html, "asst-meta", fixed = TRUE)
-    expect_match(html, ">0<")
-    expect_match(html, "Input tokens (this turn): 0", fixed = TRUE)
-  }
+  expect_match(html, "asst-meta", fixed = TRUE)
+  expect_match(html, ">0<")
+  expect_match(html, "Input tokens (this conversation): 0", fixed = TRUE)
 })
 
-test_that("format_token_telemetry reports real tokens", {
+test_that("format_token_telemetry reports what the conversation has spent", {
 
-  real_turn <- ellmer::Turn("assistant", "hi")
-  real_turn@tokens <- c(312, 84, NA)
-
-  res <- format_token_telemetry(real_turn)
+  res <- format_token_telemetry(c(312L, 84L))
   expect_s3_class(res, "shiny.tag")
 
   html <- as.character(res)
