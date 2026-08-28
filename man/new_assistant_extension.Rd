@@ -7,6 +7,7 @@
 new_assistant_extension(
   system_prompt = default_system_prompt,
   messages = NULL,
+  threads = NULL,
   ...
 )
 }
@@ -19,7 +20,11 @@ exported \link{default_system_prompt} function.}
 \item{messages}{Optional list of recorded turns (as produced by
 \code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
 server start. \code{NULL} starts with an empty conversation. This is
-also how a restored board seeds the chat it was saved with.}
+how a board saved before threads existed seeds the chat.}
+
+\item{threads}{Optional named list of conversation records to seed
+the history with, keyed by conversation id. Defaults to no threads.
+This is how a restored board seeds the chats it was saved with.}
 
 \item{...}{Forwarded to \code{\link[blockr.dock:new_dock_extension]{blockr.dock::new_dock_extension()}}.}
 }
@@ -55,27 +60,38 @@ ser/des. Function-valued \code{system_prompt} is omitted from \code{state} so
 restore falls back to the constructor default (functions don't
 serialise robustly across sessions).
 
-The conversation is saved alongside it and restored into the chat
-when the board is reopened. How many of the most recent turns are
-written is read at save time from the \code{blockr.chat_save_turns}
-option (or the \code{BLOCKR_CHAT_SAVE_TURNS} environment variable),
-which takes \code{0} for none, a positive whole number, or \code{Inf} for
-all, and defaults to 50. Setting it to \code{0} is worth considering
-where boards are shared, since the file otherwise carries whatever
-was typed into the chat. It describes the deployment rather than
-the board, so it is neither a constructor argument nor part of
-\code{state} -- restore reads whatever the file holds.
+Conversations are saved alongside it and restored into the chat when
+the board is reopened. The chat holds several of them: the history
+control above the transcript opens a drawer listing every thread on
+this board, with switching, renaming, deletion and model-written
+titles, and the whole set rides into \code{state} as one
+\code{\link[jsonlite:serializeJSON]{jsonlite::serializeJSON()}} blob. How many of the most recent turns
+are written \strong{per thread} is read at save time from the
+\code{blockr.chat_save_turns} option (or the \code{BLOCKR_CHAT_SAVE_TURNS}
+environment variable), which takes \code{0} for none, a positive whole
+number, or \code{Inf} for all, and defaults to 50. Setting it to \code{0} is
+worth considering where boards are shared, since the file otherwise
+carries whatever was typed into every thread. It describes the
+deployment rather than the board, so it is neither a constructor
+argument nor part of \code{state} -- restore reads whatever the file
+holds.
 
-Turns are stored as an opaque \code{\link[jsonlite:serializeJSON]{jsonlite::serializeJSON()}} blob.
-Recorded turns written into \code{state} directly do not survive the
-board's JSON round trip -- \code{ellmer::contents_replay()} rejects the
-integer \code{version} that comes back, and typed props such as \code{tokens}
-return as lists -- and since the replay happens in a board-server
-observer, such a board took the whole session down on restore
-rather than just the chat panel. Payloads written in that earlier
-shape are dropped on deserialisation. The raw provider response is
-stripped before saving, and the saved window is trimmed to whole
-exchanges so it never opens or closes on half of a tool call.
+The blob is opaque on purpose. Recorded turns written into \code{state}
+directly do not survive the board's JSON round trip --
+\code{ellmer::contents_replay()} rejects the integer \code{version} that comes
+back, and typed props such as \code{tokens} return as lists -- and since
+the replay happens in a board-server observer, such a board took the
+whole session down on restore rather than just the chat panel.
+Payloads written in that earlier shape are dropped on
+deserialisation; a board saved with a single conversation opens with
+it on screen and records it as that board's first thread. The raw
+provider response is stripped before saving, and a thread trimmed to
+the budget is cut between exchanges rather than inside one, so it
+never opens on half of a tool call.
+
+Which thread is open is remembered by the browser rather than in
+\code{state}, so a board reopened elsewhere lists its threads without
+selecting one.
 
 The live conversation is bounded separately, since saving bounds
 only the file: every turn is re-sent on every request, so an
@@ -122,19 +138,19 @@ Compaction rewrites the browser transcript to match, which is what
 keeps the two honest. \code{shinychat} appends each turn to the DOM as it
 arrives and never reads the client back, so turns dropped from the
 client would otherwise stay on screen unremembered. The same replay
-fills in a transcript that a restore or a provider swap leaves
-empty; tool traffic carries no text and is not replayed.
+fills in a transcript that a board saved before threads existed
+leaves empty; tool traffic carries no text and is not replayed.
 
-Both the conversation and its size are reachable from the chat's
-command palette, which lists two built-in commands alongside the
-user-invocable skills. The \verb{/compact} command runs the same
-summarise-and-replace on demand, without waiting for the threshold
--- for a thread that has gone stale rather than large, where a long
-build has finished and the next question is unrelated to it. The
-\verb{/clear} command drops the conversation outright: the browser
-transcript, the turns the model is sent, and any changes staged but
-never committed go together, and the emptied chat reopens on a
-greeting read off the board as it now stands.
+Conversation size is reachable from the chat's command palette,
+which lists one built-in command alongside the user-invocable
+skills. The \verb{/compact} command runs the same summarise-and-replace
+on demand, without waiting for the threshold -- for a thread that
+has gone stale rather than large, where a long build has finished
+and the next question is unrelated to it. Opening a fresh thread is
+the history drawer's own affordance rather than a command, because
+nothing in \code{shinychat}'s server API starts one: a command that
+emptied the transcript would leave the stored thread behind for the
+next response to extend.
 }
 \examples{
 ext <- new_assistant_extension()

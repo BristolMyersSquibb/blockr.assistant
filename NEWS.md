@@ -1,20 +1,43 @@
 # blockr.assistant (development version)
 
+* The chat holds several conversations per board rather than one. A history
+  control above the transcript opens a drawer listing every thread, with
+  switching, renaming, deletion, search and model-written titles, and the
+  whole set rides into board state as a single `serializeJSON()` blob --
+  the encoding one conversation already used, now carrying a set. The
+  `chat_save_turns` budget applies per thread and cuts between exchanges
+  rather than inside one, so a trimmed thread never opens on a reply or on
+  a tool result stranded from its request; `0` still writes nothing at all.
+  A board saved before threads existed opens with its conversation on
+  screen and is written back as that board's first thread, so reopening one
+  and saving it again no longer has anywhere to lose it (#127).
+
+* Swapping the `llm_model` board option now hands the new client to the
+  mounted chat instead of remounting it. A remount rendered a fresh chat
+  element, and conversation storage partitions on that element's id, so
+  every thread recorded before a swap would have been stranded under the
+  old one.
+
+* Which thread is open is remembered by the browser rather than in board
+  state, so a board reopened elsewhere lists its threads without selecting
+  one.
+
+* The `/clear` command is gone. Starting a fresh thread is the history
+  drawer's own affordance, and nothing in `shinychat`'s server API opens
+  one, so a command that emptied the transcript would have left the stored
+  thread behind for the next response to extend. Opening a thread still
+  drops the changes staged against the one before it.
+
 * The chat's command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
   command runs the conversation through the same summarise-and-replace
   that `chat_compact_tokens` triggers on its own, without waiting for the
   threshold -- what a stale thread needs rather than a large one, where a
-  long build has finished and the next question is unrelated to it. The
-  `/clear` command drops the conversation outright: the browser
-  transcript, the turns the model is sent and the changes staged but never
-  committed all go together, since staged edits whose argument nobody can
-  read any more are worse than none, and the emptied chat reopens on a
-  greeting read off the board as it now stands. Neither echoes its
-  invocation into the transcript, both being about to rewrite it. They are
-  registered ahead of the skills, so a deployment skill that takes one of
-  their names is the registration refused and logged, rather than one that
-  silently shadows a built-in (#125).
+  long build has finished and the next question is unrelated to it. It does
+  not echo its invocation into the transcript, being about to rewrite it.
+  Built-ins are registered ahead of the skills, so a deployment skill that
+  takes one of their names is the registration refused and logged, rather
+  than one that silently shadows a built-in (#125).
 
 * The assistant can now be pointed at particular blocks. A picker below the
   chat lists the board's blocks -- the rich selectize the board itself uses

@@ -9,12 +9,12 @@ fake_chat_function <- function(system_prompt = NULL, params = NULL) {
 # Stand-in for the shinychat module object. chat_append() is UI-only and
 # leaves nothing on the client to read back, so the browser transcript is
 # unobservable unless something records it -- which is why `transcript()` is
-# here. Mocking chat_mod_server() to NULL, as the other tests do, makes
+# here. Mocking chat_server() to NULL, as the other tests do, makes
 # `mod_r` NULL and takes every mod-driven path out of reach.
 #
 # `clear()` reaches through to the client the way the real one does, so a test
 # that drives it sees both copies of the conversation go. Pass the `client`
-# the mocked chat_mod_server() was handed to wire that up.
+# the mocked chat_server() was handed to wire that up.
 fake_chat_mod <- function(status = "idle", client = NULL) {
 
   log <- character()
@@ -45,6 +45,15 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     last_turn = shiny::reactiveVal(NULL),
     last_input = shiny::reactiveVal(NULL),
     update_user_input = function(...) invisible(),
+    set_client = function(new_client, sync = TRUE) {
+      client <<- new_client
+      invisible()
+    },
+    history = list(
+      save = function() FALSE,
+      on_save = function(fn) invisible(fn),
+      on_restore = function(fn) invisible(fn)
+    ),
     slash_command = function(name, description, handler, ..., echo = NULL,
                              force = FALSE) {
       invisible()

@@ -9,16 +9,36 @@ blockr_deser.assistant_extension <- function(x, data, ...) {
     # recorded turns here. Replaying those is what takes the board down, and
     # they are mistyped beyond what is worth repairing, so they are discarded.
     payload[["messages"]] <- NULL
+    payload[["threads"]]  <- NULL
 
-    if (!is.null(payload[["history"]])) {
-      payload[["messages"]] <- deserialize_chat_history(payload[["history"]])
-      payload[["history"]] <- NULL
+    restored <- deserialize_chat_history(payload[["history"]])
+
+    if (is_thread_set(restored)) {
+      payload[["threads"]] <- restored
+    } else {
+      payload[["messages"]] <- restored
     }
+
+    payload[["history"]] <- NULL
 
     data[["payload"]] <- payload
   }
 
   NextMethod()
+}
+
+# Boards saved with a single conversation carry a list of recorded turns;
+# boards saved with threads carry conversation records, which are the only
+# ones to declare a schema version.
+is_thread_set <- function(x) {
+
+  if (!is.list(x) || !length(x)) {
+    return(FALSE)
+  }
+
+  all(
+    lgl_ply(x, function(rec) is.list(rec) && not_null(rec[["schema_version"]]))
+  )
 }
 
 chat_save_turns <- function() {
@@ -47,21 +67,28 @@ client_turns <- function(client) {
   client$get_turns()
 }
 
-serialize_chat_history <- function(turns, save_turns) {
+serialize_chat_threads <- function(store, save_turns, unrecorded = list()) {
 
-  if (!length(turns) || save_turns <= 0) {
+  if (save_turns <= 0) {
     return(NULL)
   }
 
-  recs <- drop_unpaired_tool_turns(
-    last_turns(lapply(turns, record_without_response), save_turns)
+  raw <- store$threads()
+
+  if (!length(raw) && length(unrecorded)) {
+    raw <- list(c_restored = migrated_thread(unrecorded))
+  }
+
+  threads <- Filter(
+    not_null,
+    lapply(raw, save_ready_thread, save_turns)
   )
 
-  if (!length(recs)) {
+  if (!length(threads)) {
     return(NULL)
   }
 
-  jsonlite::serializeJSON(recs)
+  jsonlite::serializeJSON(threads)
 }
 
 deserialize_chat_history <- function(blob) {
@@ -77,41 +104,33 @@ deserialize_chat_history <- function(blob) {
   tryCatch(jsonlite::unserializeJSON(blob), error = function(e) NULL)
 }
 
-record_without_response <- function(turn) {
+save_ready_thread <- function(record, save_turns) {
 
-  rec <- ellmer::contents_record(turn)
+  record <- trim_thread(record, save_turns)
+
+  if (is.null(record)) {
+    return(NULL)
+  }
+
+  record[["nodes"]] <- lapply(record[["nodes"]], node_without_responses)
+
+  record
+}
+
+node_without_responses <- function(node) {
+
+  node[["turns"]] <- lapply(node[["turns"]], drop_raw_response)
+
+  node
+}
+
+drop_raw_response <- function(rec) {
 
   if ("json" %in% names(rec[["props"]])) {
     rec[["props"]][["json"]] <- list()
   }
 
   rec
-}
-
-last_turns <- function(recs, save_turns) {
-
-  if (is.infinite(save_turns) || length(recs) <= save_turns) {
-    return(recs)
-  }
-
-  recs[seq.int(length(recs) - save_turns + 1L, length(recs))]
-}
-
-# A window cut out of the middle of a conversation can open on a tool result
-# whose request fell outside it, or close on a request whose result did.
-# Providers reject either half, so the window is shrunk to whole exchanges.
-drop_unpaired_tool_turns <- function(recs) {
-
-  while (length(recs) && has_content(recs[[1L]], "ellmer::ContentToolResult")) {
-    recs <- recs[-1L]
-  }
-
-  while (length(recs) &&
-           has_content(recs[[length(recs)]], "ellmer::ContentToolRequest")) {
-    recs <- recs[-length(recs)]
-  }
-
-  recs
 }
 
 has_content <- function(rec, class) {
