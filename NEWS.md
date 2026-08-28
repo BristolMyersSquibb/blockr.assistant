@@ -192,10 +192,10 @@
 
 * The layout grammar is no longer spliced into every prompt. The ~5 KB
   `inst/prompts/layout.md` fragment becomes the built-in `layout`
-  skill, read on demand and invocable as `/layout`; `add_view` and
-  `list_views` point at it. Turns that never touch the view tools --
-  which is most of them, since `blockr.dock` auto-places panels for
-  newly added blocks -- no longer pay for it.
+  skill, read on demand; `add_view` and `list_views` point at it.
+  Turns that never touch the view tools -- which is most of them,
+  since `blockr.dock` auto-places panels for newly added blocks -- no
+  longer pay for it.
 
 * A board saved after any assistant turn could not be reopened. The
   recorded turns were written into board state as a nested structure,

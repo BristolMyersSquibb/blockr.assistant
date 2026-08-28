@@ -145,7 +145,7 @@ test_that("only user-invocable skills become slash commands", {
 
   register_skill_commands(mod, function(skill, content) skill$name)
 
-  expect_setequal(names(registered), c("layout", "playbook"))
+  expect_setequal(names(registered), "playbook")
   expect_identical(registered$playbook$description, "Run the drill.")
 })
 
