@@ -27,12 +27,9 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
 
   if (!panel %in% valid) {
     stop(
-      sprintf(
-        paste(
-          "panel %s does not resolve to a current block or extension",
-          "(call list_blocks for current ids)"
-        ),
-        panel
+      glue::glue(
+        "panel {panel} does not resolve to a current block or extension ",
+        "(call list_blocks for current ids)"
       ),
       call. = FALSE
     )
@@ -40,9 +37,8 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
 
   if (not_null(near) && !near %in% valid) {
     stop(
-      sprintf(
-        "near panel %s does not resolve to a current block or extension",
-        near
+      glue::glue(
+        "near panel {near} does not resolve to a current block or extension"
       ),
       call. = FALSE
     )
@@ -50,8 +46,8 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
 
   if (not_null(side) && !side %in% valid_panel_sides()) {
     stop(
-      sprintf(
-        "side must be one of: %s", paste(valid_panel_sides(), collapse = ", ")
+      glue::glue(
+        "side must be one of: {paste(valid_panel_sides(), collapse = ', ')}"
       ),
       call. = FALSE
     )
@@ -80,7 +76,7 @@ placement_suffix <- function(near, side) {
     if (not_null(near)) paste("of", near)
   )
 
-  sprintf(" (%s)", paste(parts, collapse = " "))
+  glue::glue(" ({paste(parts, collapse = ' ')})")
 }
 
 panel_id_sets <- function(board, pending) {
@@ -232,20 +228,18 @@ tool_validate_layout <- function(board, pending, session) {
 
         if (length(bad)) {
           stop(
-            sprintf(
-              paste(
-                "panel ID(s) do not resolve to current blocks or",
-                "extensions (call list_blocks for current ids): %s"
-              ),
-              paste(bad, collapse = ", ")
+            glue::glue(
+              "panel ID(s) do not resolve to current blocks or ",
+              "extensions (call list_blocks for current ids): ",
+              "{paste(bad, collapse = ', ')}"
             ),
             call. = FALSE
           )
         }
 
-        sprintf(
-          "OK -- layout parses and all panel IDs resolve. Normalized: %s",
-          jsonlite::toJSON(layout_to_llm_spec(parsed), auto_unbox = TRUE)
+        glue::glue(
+          "OK -- layout parses and all panel IDs resolve. Normalized: ",
+          "{jsonlite::toJSON(layout_to_llm_spec(parsed), auto_unbox = TRUE)}"
         )
       })
     },
@@ -277,10 +271,10 @@ tool_add_view <- function(board, pending, session) {
           pending, board, name, layout_obj, active = isTRUE(active)
         )
 
-        sprintf(
-          "Staged add_view(%s)%s -- call commit to apply.",
-          name,
-          if (isTRUE(active)) " as active" else ""
+        glue::glue(
+          "Staged add_view({name})",
+          "{if (isTRUE(active)) ' as active' else ''}",
+          " -- call commit to apply."
         )
       })
     },
@@ -327,9 +321,7 @@ tool_remove_view <- function(board, pending, session) {
 
         stage_view_rm(pending, board, id)
 
-        sprintf(
-          "Staged remove_view(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged remove_view({id}) -- call commit to apply.")
       })
     },
     name = "remove_view",
@@ -359,9 +351,9 @@ tool_add_panel_to_view <- function(board, pending, session) {
           pending, board, "add_panel_to_view", view, "add", ref
         )
 
-        sprintf(
-          "Staged add_panel_to_view(%s, %s)%s -- call commit to apply.",
-          view, panel, placement_suffix(near, side)
+        glue::glue(
+          "Staged add_panel_to_view({view}, {panel})",
+          "{placement_suffix(near, side)} -- call commit to apply."
         )
       })
     },
@@ -414,9 +406,9 @@ tool_remove_panel_from_view <- function(board, pending, session) {
           pending, board, "remove_panel_from_view", view, "rm", ref
         )
 
-        sprintf(
-          "Staged remove_panel_from_view(%s, %s) -- call commit to apply.",
-          view, panel
+        glue::glue(
+          "Staged remove_panel_from_view({view}, {panel})",
+          " -- call commit to apply."
         )
       })
     },
@@ -450,9 +442,9 @@ tool_move_panel <- function(board, pending, session) {
 
         stage_view_panel_op(pending, board, "move_panel", view, "move", ref)
 
-        sprintf(
-          "Staged move_panel(%s, %s)%s -- call commit to apply.",
-          view, panel, placement_suffix(near, side)
+        glue::glue(
+          "Staged move_panel({view}, {panel})",
+          "{placement_suffix(near, side)} -- call commit to apply."
         )
       })
     },
@@ -495,9 +487,9 @@ tool_resize_panel <- function(board, pending, session) {
           pending, board, "resize_panel", view, "resize", ref
         )
 
-        sprintf(
-          "Staged resize_panel(%s, %s) to %s -- call commit to apply.",
-          view, panel, size
+        glue::glue(
+          "Staged resize_panel({view}, {panel}) to {size}",
+          " -- call commit to apply."
         )
       })
     },
@@ -543,10 +535,10 @@ tool_focus_panel <- function(board, pending, session) {
           stage_view_active(pending, board, view)
         }
 
-        sprintf(
-          "Staged focus_panel(%s, %s)%s -- call commit to apply.",
-          view, panel,
-          if (switched) " and switched to that view" else ""
+        glue::glue(
+          "Staged focus_panel({view}, {panel})",
+          "{if (switched) ' and switched to that view' else ''}",
+          " -- call commit to apply."
         )
       })
     },
@@ -582,9 +574,8 @@ tool_set_active_view <- function(board, pending, session) {
 
         if (!id %in% candidates) {
           stop(
-            sprintf(
-              "view %s does not exist (and is not staged for creation)",
-              id
+            glue::glue(
+              "view {id} does not exist (and is not staged for creation)"
             ),
             call. = FALSE
           )
@@ -592,9 +583,7 @@ tool_set_active_view <- function(board, pending, session) {
 
         stage_view_active(pending, board, id)
 
-        sprintf(
-          "Staged set_active_view(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged set_active_view({id}) -- call commit to apply.")
       })
     },
     name = "set_active_view",
@@ -623,16 +612,16 @@ tool_rename_view <- function(board, pending, session) {
 
         if (!id %in% current_view_ids(board)) {
           stop(
-            sprintf("view %s does not exist", id),
+            glue::glue("view {id} does not exist"),
             call. = FALSE
           )
         }
 
         stage_view_rename(pending, board, id, name)
 
-        sprintf(
-          "Staged rename_view(%s -> %s) -- call commit to apply.",
-          id, name
+        glue::glue(
+          "Staged rename_view({id} -> {name})",
+          " -- call commit to apply."
         )
       })
     },

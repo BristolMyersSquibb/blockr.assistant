@@ -1044,7 +1044,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 }
 
 chat_sub_id <- function(idx) {
-  sprintf("chat_%d", as.integer(idx))
+  glue::glue("chat_{as.integer(idx)}")
 }
 
 # `keep` leaves the client alone -- the turns are set by the caller, which is
@@ -1106,11 +1106,11 @@ format_token_telemetry <- function(turn) {
     class = "asst-meta",
     meta_item(
       "arrow-up-short", in_t,
-      sprintf("Input tokens (this turn): %d", in_t)
+      glue::glue("Input tokens (this turn): {in_t}")
     ),
     meta_item(
       "arrow-down-short", out_t,
-      sprintf("Output tokens (this turn): %d", out_t)
+      glue::glue("Output tokens (this turn): {out_t}")
     )
   )
 }

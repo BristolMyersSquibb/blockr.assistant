@@ -181,9 +181,9 @@ add_tool_description <- function(type) {
   meta <- block_metadata(type)
 
   paste(
-    sprintf(
-      "Add a %s to the board, with typed constructor arguments.",
-      meta[["name"]]
+    glue::glue(
+      "Add a {meta[['name']]} to the board, ",
+      "with typed constructor arguments."
     ),
     block_type_blurb(type),
     "An omitted argument takes the constructor's default. Prefer this",
@@ -196,9 +196,9 @@ modify_tool_description <- function(type) {
   meta <- block_metadata(type)
 
   paste(
-    sprintf(
-      "Change the externally controllable arguments of a %s already on",
-      meta[["name"]]
+    glue::glue(
+      "Change the externally controllable arguments of a ",
+      "{meta[['name']]} already on"
     ),
     "the board. Only supplied arguments change; the rest keep their",
     "current values. Prefer this over modify_block for this block type."
@@ -276,13 +276,10 @@ block_tool <- function(kind, type, board, pending, session, note) {
 }
 
 armed_note <- function(kind, type) {
-  sprintf(
-    paste(
-      "The typed `%s` tool is now registered for this block type -- call",
-      "it rather than %s."
-    ),
-    block_tool_name(kind, type),
-    generic_tool_name(kind)
+  glue::glue(
+    "The typed `{block_tool_name(kind, type)}` tool is now registered ",
+    "for this block type -- call it rather than ",
+    "{generic_tool_name(kind)}."
   )
 }
 
@@ -297,24 +294,20 @@ untyped_note <- function(kind, type) {
     )
   }
 
-  sprintf(
-    paste(
-      "No typed tool is available for this block type: not every argument",
-      "declares a type. Call %s with JSON arguments instead."
-    ),
-    generic_tool_name(kind)
+  glue::glue(
+    "No typed tool is available for this block type: not every argument ",
+    "declares a type. Call {generic_tool_name(kind)} with JSON arguments ",
+    "instead."
   )
 }
 
 pool_full_note <- function(kind, entries) {
-  sprintf(
-    paste(
-      "The typed-tool pool is full -- %s were armed this turn and are",
-      "still callable. Call %s for this block type, or commit what you",
-      "have and describe it again on the next turn."
-    ),
-    paste(chr_xtr(entries, "type"), collapse = ", "),
-    generic_tool_name(kind)
+  glue::glue(
+    "The typed-tool pool is full -- ",
+    "{paste(chr_xtr(entries, 'type'), collapse = ', ')} were armed this ",
+    "turn and are still callable. Call {generic_tool_name(kind)} for this ",
+    "block type, or commit what you have and describe it again on the ",
+    "next turn."
   )
 }
 
