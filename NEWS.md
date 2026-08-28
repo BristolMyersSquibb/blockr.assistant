@@ -1,16 +1,17 @@
 # blockr.assistant (development version)
 
 * The chat holds several conversations per board rather than one. A history
-  control above the transcript opens a drawer listing every thread, with
-  switching, renaming, deletion, search and model-written titles, and the
-  whole set rides into board state as a single `serializeJSON()` blob --
-  the encoding one conversation already used, now carrying a set. The
-  `chat_save_turns` budget applies per thread and cuts between exchanges
-  rather than inside one, so a trimmed thread never opens on a reply or on
-  a tool result stranded from its request; `0` still writes nothing at all.
-  A board saved before threads existed opens with its conversation on
-  screen and is written back as that board's first thread, so reopening one
-  and saving it again no longer has anywhere to lose it (#127).
+  control in the footer, beside the token meter, opens a drawer listing
+  every thread, with switching, renaming, deletion, search and
+  model-written titles, and the whole set rides into board state as a
+  single `serializeJSON()` blob -- the encoding one conversation already
+  used, now carrying a set. The `chat_save_turns` budget applies per thread
+  and cuts between exchanges rather than inside one, so a trimmed thread
+  never opens on a reply or on a tool result stranded from its request; `0`
+  still writes nothing at all. A board saved before threads existed opens
+  with its conversation on screen and is written back as that board's first
+  thread, so reopening one and saving it again no longer has anywhere to
+  lose it (#127).
 
 * Swapping the `llm_model` board option now hands the new client to the
   mounted chat instead of remounting it. A remount rendered a fresh chat

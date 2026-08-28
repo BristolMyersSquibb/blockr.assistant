@@ -176,9 +176,27 @@ asst_ext_ui <- function(id, board, ...) {
         }),
         uiOutput(NS(id, "tokens"), container = function(...) {
           div(class = "asst-token-slot", ...)
-        })
+        }),
+        asst_history_button()
       )
     )
+  )
+}
+
+# React binds the trigger's click at the `shiny-chat-container` root and
+# re-renders the button, so the node cannot be moved into the footer -- this
+# one forwards to it instead, and the original stays in the DOM, hidden.
+asst_history_button <- function() {
+  tags$button(
+    class = "asst-history-btn",
+    type = "button",
+    title = "Conversation history",
+    `aria-label` = "Conversation history",
+    onclick = paste0(
+      "this.closest('.asst-panel')",
+      ".querySelector('.shiny-chat-history-trigger').click()"
+    ),
+    bsicons::bs_icon("clock-history")
   )
 }
 
@@ -340,25 +358,59 @@ asst_ext_styles <- function() {
       .asst-meta-num {
         font-weight: 500;
       }
-      /* A collapsed dock panel is a ~30px sliver, and the chat keeps painting
-         into it: a transcript one character wide, with the history trigger
-         (absolutely positioned, 2rem across) escaping the panel altogether to
-         float over the board beside it. Blank the panel rather than leave a
-         smear of itself. The threshold sits well below any panel a chat is
-         readable in, so narrowing one still gives a cramped chat rather than
-         nothing. Last in the sheet because it overrides the display the two
-         slots are given above. */
-      /* The history trigger nudges itself inward when something outside the
-         chat overlaps its corner -- meant for a sidebar reveal button. Dock
-         renders panel content in an overlay layer, so the panel's own
-         `dv-content-container` is not an ancestor of the chat and reads as
-         exactly that kind of obstacle; spanning the whole panel, it never
-         clears, so the button parks at the cap of a third of the panel width
-         and reads as floating loose in the transcript. The nudge writes an
-         inline custom property, so pinning the edge takes `!important`. */
+      /* shinychat floats its history trigger over the top-left of the
+         transcript, where it reads as loose in the prose. The footer control
+         replaces it: hidden here, the original still owns the drawer, and
+         `asst_history_button()` forwards to it. */
       .asst-chat-slot .shiny-chat-history-trigger {
-        inset-inline-start: 0.5rem !important;
+        display: none;
       }
+      /* The band shinychat reserves at the top of the transcript is for the
+         floating button that is no longer painted there. */
+      .asst-chat-slot shiny-chat-container[data-inline-controls] {
+        --_chat-inline-controls-inset: 0px;
+      }
+      /* shinychat sets `data-inline-controls~='history'` exactly when it
+         renders the trigger, so keying on it means the footer never offers a
+         drawer that is not there -- the presence rule stays shinychat's. */
+      .asst-history-btn {
+        display: none;
+      }
+      .asst-panel:has(shiny-chat-container[data-inline-controls~='history'])
+        .asst-history-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: var(--blockr-color-text-subtle, #9ca3af);
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .asst-history-btn:hover {
+        background: var(--blockr-color-bg-hover, #f3f4f6);
+        color: var(--blockr-color-text-secondary, #374151);
+      }
+      .asst-history-btn:focus-visible {
+        outline: none;
+        box-shadow:
+          var(--blockr-focus-ring, 0 0 0 3px rgba(37, 99, 235, 0.12));
+      }
+      .asst-history-btn svg {
+        width: 13px;
+        height: 13px;
+      }
+      /* A collapsed dock panel is a ~30px sliver, and the chat keeps
+         painting into it: a transcript one character wide. Blank the panel
+         rather than leave a smear of itself. The threshold sits well below
+         any panel a chat is readable in, so narrowing one still gives a
+         cramped chat rather than nothing. Last in the sheet because it
+         overrides the display the slots are given above. */
       @container (max-width: 140px) {
         .asst-chat-slot,
         .asst-footer {
