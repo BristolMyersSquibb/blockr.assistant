@@ -1,6 +1,7 @@
 # Mirrors how shinychat groups turns into record nodes: a node is a run of
 # consecutive same-role turns, so the tree alternates user and assistant.
-fake_thread <- function(turns, id = "c_1", updated = "2026-08-27T10:00:00Z") {
+fake_thread <- function(turns, id = "c_1", updated = "2026-08-27T10:00:00Z",
+                        values = list()) {
 
   recs   <- lapply(turns, ellmer::contents_record)
   groups <- split(recs, cumsum(role_runs(turns)))
@@ -30,7 +31,7 @@ fake_thread <- function(turns, id = "c_1", updated = "2026-08-27T10:00:00Z") {
     title_source = NULL, response_count = length(groups),
     created_at = "2026-08-27T09:00:00Z", updated_at = updated,
     client_info = list(), current_leaf = prev, nodes = nodes,
-    values = list(), bookmark_state_id = NULL
+    values = values, bookmark_state_id = NULL
   )
 }
 

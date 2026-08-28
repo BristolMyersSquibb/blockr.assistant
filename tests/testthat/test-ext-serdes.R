@@ -125,6 +125,36 @@ test_that("save_turns keeps the most recent turns of each thread", {
   )
 })
 
+test_that("the focus and the meter ride with the thread they belong to", {
+
+  turns <- unlst(
+    lapply(
+      1:4,
+      function(i) {
+        list(
+          ellmer::Turn("user", sprintf("question %d", i)),
+          ellmer::Turn("assistant", sprintf("answer %d", i))
+        )
+      }
+    ),
+    recursive = FALSE
+  )
+
+  vals <- list(focus = list("data", "filt"), spent = list(1200L, 88L))
+
+  store <- new_thread_store(list(c_1 = fake_thread(turns, values = vals)))
+
+  expect_identical(round_trip(store)[["c_1"]][["values"]], vals)
+
+  # Trimming rewrites the nodes, which is where the budget bites; what the
+  # conversation was pointed at and what it cost are not turns and survive a
+  # cut that drops most of them.
+  trimmed <- round_trip(store, 4L)[["c_1"]]
+
+  expect_length(thread_turns(trimmed), 4L)
+  expect_identical(trimmed[["values"]], vals)
+})
+
 test_that("a trimmed thread never opens on a reply", {
 
   turns <- list(
