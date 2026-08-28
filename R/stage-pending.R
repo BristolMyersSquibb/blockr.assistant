@@ -74,7 +74,7 @@ format_stage_error <- function(op, id, e) {
     as.character(e)
   }
 
-  sprintf("%s(%s) failed: %s", op, id, msg)
+  glue::glue("{op}({id}) failed: {msg}")
 }
 
 stage_abort <- function(op, id, reason) {

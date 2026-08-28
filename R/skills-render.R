@@ -35,7 +35,7 @@ skill_blurb <- function(skill) {
   truncate_chars(
     gsub("\\s+", " ", skill$description),
     skill_description_max_chars(),
-    sprintf("call read_skill(\"%s\") for the rest", skill$name)
+    glue::glue("call read_skill(\"{skill$name}\") for the rest")
   )
 }
 
@@ -66,7 +66,7 @@ skill_catalogue_preamble <- function() {
 }
 
 skill_entry <- function(skill) {
-  sprintf("- `%s`: %s", skill$name, skill_blurb(skill))
+  glue::glue("- `{skill$name}`: {skill_blurb(skill)}")
 }
 
 # The JSON shape scoped skills take in describe_block_type() and
@@ -101,5 +101,5 @@ skill_lines <- function(skills) {
 }
 
 skill_bullet <- function(skill) {
-  sprintf("  %s: %s", skill$name, skill_blurb(skill))
+  glue::glue("  {skill$name}: {skill_blurb(skill)}")
 }

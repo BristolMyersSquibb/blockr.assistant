@@ -269,15 +269,14 @@ unmet_summary <- function(skill) {
 
   unmet <- Filter(Negate(requirement_met), skill$requires)
 
-  sprintf(
-    "%s needs %s",
-    skill$name,
-    paste(chr_ply(unmet, requires_label), collapse = ", ")
+  glue::glue(
+    "{skill$name} needs ",
+    "{paste(chr_ply(unmet, requires_label), collapse = ', ')}"
   )
 }
 
 requires_label <- function(req) {
-  paste0(req$pkg, if (nzchar(req$op)) sprintf(" (%s %s)", req$op, req$version))
+  paste0(req$pkg, if (nzchar(req$op)) glue::glue(" ({req$op} {req$version})"))
 }
 
 read_skill_file <- function(skill, file) {

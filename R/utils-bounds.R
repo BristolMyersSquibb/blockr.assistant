@@ -11,7 +11,7 @@ truncate_chars <- function(txt, max_chars, hint = NULL) {
 
   suffix <- if (is.null(hint)) "" else paste0(" -- ", hint)
   marker <- function(omitted) {
-    sprintf("\n... [+%d chars truncated%s]", omitted, suffix)
+    paste0("\n", glue::glue("... [+{omitted} chars truncated{suffix}]"))
   }
 
   # Reserve room for the marker sized against the largest possible omitted

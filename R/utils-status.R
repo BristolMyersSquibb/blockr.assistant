@@ -44,7 +44,7 @@ eval_status_marker <- function(id, board) {
 
   status <- eval_status(id, board)
 
-  if (has_no_result(status)) sprintf("[%s]", status) else ""
+  if (has_no_result(status)) glue::glue("[{status}]") else ""
 }
 
 eval_status_line <- function(status) {
@@ -54,7 +54,7 @@ eval_status_line <- function(status) {
   }
 
   paste(
-    c(sprintf("Eval status: %s", status), eval_status_note(status)),
+    c(glue::glue("Eval status: {status}"), eval_status_note(status)),
     collapse = " -- "
   )
 }
@@ -81,16 +81,16 @@ no_result_message <- function(id, status, err = NULL) {
 
   if (not_null(note)) {
     return(
-      sprintf("Block %s has no result to read (`%s`): %s.", id, status, note)
+      glue::glue("Block {id} has no result to read (`{status}`): {note}.")
     )
   }
 
   msg <- if (is.null(err)) "" else conditionMessage(err)
 
   if (nzchar(msg)) {
-    sprintf("Block %s has not evaluated successfully: %s", id, msg)
+    glue::glue("Block {id} has not evaluated successfully: {msg}")
   } else {
-    sprintf("Block %s has not evaluated and reports no reason.", id)
+    glue::glue("Block {id} has not evaluated and reports no reason.")
   }
 }
 
@@ -109,14 +109,11 @@ deferred_conditions_caveat <- function(id, status) {
     "any edit made to it since is not reflected in them"
   }
 
-  sprintf(
-    paste(
-      "These are block %s's conditions as of its last evaluation. It is",
-      "`%s` -- off screen and not re-evaluating -- and %s. Read an empty",
-      "report as unknown rather than as an all-clear: a problem introduced",
-      "since will not surface until the block evaluates again."
-    ),
-    id, status, drift
+  glue::glue(
+    "These are block {id}'s conditions as of its last evaluation. It is ",
+    "`{status}` -- off screen and not re-evaluating -- and {drift}. Read ",
+    "an empty report as unknown rather than as an all-clear: a problem ",
+    "introduced since will not surface until the block evaluates again."
   )
 }
 
@@ -140,8 +137,8 @@ skipped_status_line <- function(ids, status) {
   blocks <- paste(ids, collapse = ", ")
 
   if (is.null(note)) {
-    return(sprintf("- %s: no result available", blocks))
+    return(glue::glue("- {blocks}: no result available"))
   }
 
-  sprintf("- %s (`%s`): %s", blocks, status, note)
+  glue::glue("- {blocks} (`{status}`): {note}")
 }

@@ -33,14 +33,14 @@ describe_block.block <- function(x, board, id, ...) {
   core <- format(x)
 
   ctrl <- external_ctrl_vars(x)
-  ctrl_line <- sprintf(
-    "Modifiable via modify_block: %s",
-    if (identical(ctrl, "block_name")) {
-      "block_name only"
-    } else {
-      paste(ctrl, collapse = ", ")
-    }
-  )
+
+  ctrl_desc <- if (identical(ctrl, "block_name")) {
+    "block_name only"
+  } else {
+    paste(ctrl, collapse = ", ")
+  }
+
+  ctrl_line <- glue::glue("Modifiable via modify_block: {ctrl_desc}")
 
   links <- board_links(board)
   inc <- links[links$to == id]
@@ -51,9 +51,8 @@ describe_block.block <- function(x, board, id, ...) {
       chr_ply(
         seq_along(inc),
         function(i) {
-          sprintf(
-            "  %s <- %s (input: %s)",
-            inc$id[[i]], inc$from[[i]], inc$input[[i]]
+          glue::glue(
+            "  {inc$id[[i]]} <- {inc$from[[i]]} (input: {inc$input[[i]]})"
           )
         }
       )
@@ -63,7 +62,7 @@ describe_block.block <- function(x, board, id, ...) {
   }
 
   c(
-    sprintf("Block id: %s", id),
+    glue::glue("Block id: {id}"),
     core,
     ctrl_line,
     inc_lines

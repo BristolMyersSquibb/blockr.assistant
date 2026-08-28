@@ -81,9 +81,7 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
 
         if (!id %in% names(blks)) {
           return(
-            sprintf(
-              "No block with id %s. Call list_blocks first.", id
-            )
+            glue::glue("No block with id {id}. Call list_blocks first.")
           )
         }
 
@@ -195,7 +193,7 @@ tool_describe_stack <- function(board, update, session) {
 
         if (!id %in% names(stks)) {
           return(
-            sprintf("No stack with id %s. Call list_stacks first.", id)
+            glue::glue("No stack with id {id}. Call list_stacks first.")
           )
         }
 
@@ -315,12 +313,9 @@ tool_describe_block_type <- function(board, update, session, pool = NULL) {
 
         if (!id %in% list_blocks()) {
           return(
-            sprintf(
-              paste(
-                "No registered block type '%s'.",
-                "Call list_block_types first."
-              ),
-              id
+            glue::glue(
+              "No registered block type '{id}'. ",
+              "Call list_block_types first."
             )
           )
         }
@@ -378,9 +373,7 @@ tool_get_block_result <- function(board, update, session) {
 
         if (!id %in% names(blks)) {
           return(
-            sprintf(
-              "No block with id %s. Call list_blocks first.", id
-            )
+            glue::glue("No block with id {id}. Call list_blocks first.")
           )
         }
 
@@ -413,9 +406,7 @@ tool_get_block_conditions <- function(board, update, session) {
 
         if (!id %in% names(blks)) {
           return(
-            sprintf(
-              "No block with id %s. Call list_blocks first.", id
-            )
+            glue::glue("No block with id {id}. Call list_blocks first.")
           )
         }
 
@@ -423,7 +414,7 @@ tool_get_block_conditions <- function(board, update, session) {
 
         if (is.null(conditions)) {
           return(
-            sprintf("Block %s has no condition state to report yet.", id)
+            glue::glue("Block {id} has no condition state to report yet.")
           )
         }
 
@@ -504,7 +495,7 @@ tool_query_data <- function(board, update, session) {
           hidden <- length(output) - 200L
           output <- c(
             output[seq_len(200L)],
-            sprintf("(output truncated; %d lines hidden)", hidden)
+            glue::glue("(output truncated; {hidden} lines hidden)")
           )
         }
 

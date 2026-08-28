@@ -5,12 +5,12 @@ with_tool_errors <- function(name, expr) {
     error = function(e) {
 
       msg <- conditionMessage(e)
-      pat <- sprintf("^%s\\([^)]*\\) failed:", name)
+      pat <- glue::glue("^{name}\\([^)]*\\) failed:")
 
       if (grepl(pat, msg)) {
         msg
       } else {
-        sprintf("%s failed: %s", name, msg)
+        glue::glue("{name} failed: {msg}")
       }
     }
   )
@@ -41,13 +41,10 @@ parse_args_json <- function(s, tool) {
   if (!is.list(parsed) ||
         (length(parsed) > 0L && is.null(names(parsed)))) {
     stop(
-      sprintf(
-        paste0(
-          "%s `args` must be a JSON object with named fields, e.g. ",
-          "'{\"n\": 10}'. Got a JSON %s."
-        ),
-        tool,
-        if (is.list(parsed)) "array" else "scalar or array"
+      glue::glue(
+        "{tool} `args` must be a JSON object with named fields, e.g. ",
+        "'{{\"n\": 10}}'. Got a JSON ",
+        "{if (is.list(parsed)) 'array' else 'scalar or array'}."
       ),
       call. = FALSE
     )

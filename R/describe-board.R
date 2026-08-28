@@ -43,9 +43,9 @@ describe_board.board <- function(b, markers, ...) {
   lnks <- board_links(b)
   stks <- board_stacks(b)
 
-  header <- sprintf(
-    "%d block(s), %d link(s), %d stack(s).",
-    length(blks), length(lnks), length(stks)
+  header <- glue::glue(
+    "{length(blks)} block(s), {length(lnks)} link(s), ",
+    "{length(stks)} stack(s)."
   )
 
   if (!length(blks) && !length(lnks) && !length(stks)) {
@@ -132,9 +132,8 @@ links_section <- function(lnks) {
     chr_ply(
       seq_len(nrow(df)),
       function(i) {
-        sprintf(
-          "- %s: %s -> %s$%s",
-          df$id[[i]], df$from[[i]], df$to[[i]], df$input[[i]]
+        glue::glue(
+          "- {df$id[[i]]}: {df$from[[i]]} -> {df$to[[i]]}${df$input[[i]]}"
         )
       }
     )
@@ -166,9 +165,9 @@ board_options_section <- function(opts) {
     chr_ply(names(opts), function(id) {
       category <- coal(board_option_category(opts[[id]]), NA_character_)
       if (is.na(category)) {
-        sprintf("- %s", id)
+        glue::glue("- {id}")
       } else {
-        sprintf("- %s (%s)", id, category)
+        glue::glue("- {id} ({category})")
       }
     }),
     "Current values via list_board_options; change with set_board_option."
@@ -190,9 +189,8 @@ views_section <- function(vws, b) {
     "### Views",
     chr_ply(names(vws), function(id) {
       marker <- if (identical(id, active)) " (active)" else ""
-      sprintf(
-        "- %s (id: %s)%s %s",
-        labels[[id]], id, marker, str_value(vws[[id]])
+      glue::glue(
+        "- {labels[[id]]} (id: {id}){marker} {str_value(vws[[id]])}"
       )
     })
   )
@@ -225,7 +223,7 @@ ext_summary_line <- function(ext, id) {
     return(NULL)
   }
 
-  line <- sprintf("- %s (id: %s)", extension_name(ext), id)
+  line <- glue::glue("- {extension_name(ext)} (id: {id})")
 
   if (length(vars)) {
     line <- paste0(line, " -- controllable: ", paste(vars, collapse = ", "))
