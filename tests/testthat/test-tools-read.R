@@ -109,6 +109,37 @@ test_that("tool_describe_block omits the status line without one", {
   expect_no_match(res, "Eval status", fixed = TRUE)
 })
 
+test_that("tool_describe_block reports live block state", {
+
+  board <- reactiveValues(
+    board  = make_iris_board(),
+    blocks = list(
+      head = list(
+        server = list(state = list(n = reactive(11L), direction = "head"))
+      )
+    )
+  )
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "Block state:", fixed = TRUE)
+  expect_match(res, "int 11", fixed = TRUE)
+})
+
+test_that("tool_describe_block falls back to constructor values", {
+
+  board <- reactiveValues(board = make_iris_board())
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "Initial block state:", fixed = TRUE)
+  expect_no_match(res, "int 11", fixed = TRUE)
+})
+
 test_that("tool_describe_block returns a recovery hint for unknown id", {
 
   brd <- make_iris_board()

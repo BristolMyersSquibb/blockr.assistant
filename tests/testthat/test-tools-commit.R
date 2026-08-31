@@ -7,8 +7,8 @@ commit_board_args <- function(brd, conds, blocks = list()) {
   )
 }
 
-result_block <- function(value) {
-  list(server = list(result = function() value))
+result_block <- function(value, state = NULL) {
+  list(server = list(result = function() value, state = state))
 }
 
 drain_promise <- function(p, session, tries = 60L) {
@@ -184,6 +184,43 @@ test_that("commit applies staged changes and returns the review in-band", {
       expect_match(res, "Result of your commit", fixed = TRUE)
       expect_match(res, "the staged changes are now applied", fixed = TRUE)
       expect_match(res, "- h:", fixed = TRUE)
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
+test_that("commit reads back the state of the blocks it changed", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+
+      p <- tools$commit()
+      session$flushReact()
+
+      board$blocks <- list(
+        h = result_block(
+          data.frame(x = 1:3),
+          list(n = function() 3L, direction = function() "head")
+        )
+      )
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_
+      )
+
+      res <- drain_promise(p, session)
+
+      expect_match(res, "Applied state:", fixed = TRUE)
+      expect_match(res, "int 3", fixed = TRUE)
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()

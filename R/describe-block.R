@@ -16,7 +16,13 @@
 #'   objects themselves do not carry an id because ids must be
 #'   unique while block-level fields are user-supplied and need not
 #'   be).
-#' @param ... For future use.
+#' @param ... Passed on to methods.
+#' @param state Live block state as a named list covering the block's
+#'   constructor inputs, rendered in place of the values the block was
+#'   constructed with. The block object carries only its constructor
+#'   frame, which is fixed at construction, so the `NULL` default
+#'   reports load-time values however long ago a commit or an edit in
+#'   the block's own UI moved them on.
 #'
 #' @return Character vector of lines (consistent with
 #'   `summarise_result()` and [describe_stack()]). The tool that
@@ -24,13 +30,15 @@
 #'   before returning to ellmer.
 #'
 #' @export
-describe_block <- function(x, board, id, ...) UseMethod("describe_block")
+describe_block <- function(x, board, id, ..., state = NULL) {
+  UseMethod("describe_block")
+}
 
 #' @rdname describe_block
 #' @export
-describe_block.block <- function(x, board, id, ...) {
+describe_block.block <- function(x, board, id, ..., state = NULL) {
 
-  core <- format(x)
+  core <- format(x, state = state)
 
   ctrl <- external_ctrl_vars(x)
 
@@ -67,4 +75,19 @@ describe_block.block <- function(x, board, id, ...) {
     ctrl_line,
     inc_lines
   )
+}
+
+# Core keys block state by exactly the constructor inputs, so what comes back
+# always covers what format() needs. A block that never constructed is absent
+# from `board$blocks` and chains to NULL; a `dormant` one still holds correct
+# state, its result being the part deferral makes unreadable.
+live_block_state <- function(id, board) {
+
+  state <- isolate(board$blocks[[id]]$server$state)
+
+  if (!length(state)) {
+    return(NULL)
+  }
+
+  isolate(lapply(state, reval_if))
 }

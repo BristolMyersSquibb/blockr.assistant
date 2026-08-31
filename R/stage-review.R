@@ -54,7 +54,11 @@ flush_check_header <- function() {
 review_invitation <- function() {
   paste(
     "Confirm each changed block matches what the user asked for, or correct",
-    "it. Inspect downstream results with get_block_result or query_data when:",
+    "it. The state reported under a block you changed is what the board holds",
+    "for it now -- read it back against what you meant to apply, since a",
+    "result summary on its own need not distinguish a change that landed from",
+    "one that did not. Inspect downstream results with get_block_result or",
+    "query_data when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -70,13 +74,22 @@ link_dests <- function(lnks) {
   as.data.frame(lnks)$to
 }
 
+changed_blocks <- function(upd) {
+
+  if (is.null(upd)) {
+    return(character())
+  }
+
+  c(names(upd$blocks$add), names(upd$blocks$mod))
+}
+
 touched_blocks <- function(upd, board) {
 
   if (is.null(upd)) {
     return(character())
   }
 
-  changed <- c(names(upd$blocks$add), names(upd$blocks$mod))
+  changed <- changed_blocks(upd)
 
   committed <- as.data.frame(board_links(board))
 
@@ -114,7 +127,7 @@ review_max_blocks <- function() {
   as.integer(blockr_option("assistant_review_max_blocks", 50L))
 }
 
-collect_touched_results <- function(touched, board,
+collect_touched_results <- function(touched, board, changed = character(),
                                     cap = review_max_blocks()) {
 
   blks <- isolate(board$blocks)
@@ -135,7 +148,9 @@ collect_touched_results <- function(touched, board,
 
   shown <- ids[seq_len(min(cap, length(ids)))]
 
-  lines <- chr_ply(shown, review_result_line, board, use_names = FALSE)
+  lines <- chr_ply(
+    shown, review_result_line, board, changed, use_names = FALSE
+  )
 
   if (length(ids) > length(shown)) {
     lines <- c(
@@ -150,8 +165,34 @@ collect_touched_results <- function(touched, board,
   c("Results of the blocks you changed and the blocks linked to them:", lines)
 }
 
-review_result_line <- function(id, board) {
-  glue::glue("- {id}:\n{block_result_summary(id, board)}")
+review_result_line <- function(id, board, changed) {
+
+  paste(
+    c(
+      glue::glue("- {id}:"),
+      if (id %in% changed) applied_state_lines(id, board),
+      block_result_summary(id, board)
+    ),
+    collapse = "\n"
+  )
+}
+
+applied_state_lines <- function(id, board) {
+
+  state <- live_block_state(id, board)
+
+  if (is.null(state)) {
+    return(NULL)
+  }
+
+  # Rendered as core renders block state for describe_block, so the model
+  # meets a block's arguments in one shape wherever it reads them.
+  rendered <- trimws(capture.output(str(state))[-1L], "right")
+
+  c(
+    "Applied state:",
+    truncate_chars(paste(rendered, collapse = "\n"), summary_max_chars())
+  )
 }
 
 neighbor_blocks <- function(ids, board) {
