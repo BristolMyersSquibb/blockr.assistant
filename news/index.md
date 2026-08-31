@@ -2,6 +2,26 @@
 
 ## blockr.assistant (development version)
 
+- Block state now reaches the model in two tiers, with a new
+  `get_block_state` tool behind the summary. State is rendered with
+  [`utils::str()`](https://rdrr.io/r/utils/str.html), which cuts a
+  character value at 128 characters and marks the cut with its own
+  `| __truncated__` – not this package’s marker vocabulary, and naming
+  no tool. A long argument such as a code block’s `script` or a filter
+  expression therefore arrived looking like a complete short value, and
+  since `modify_block` replaces the whole value, a model that read a
+  prefix wrote that prefix back and dropped the rest. A value the
+  summary cannot show in full is now omitted from it and marked with the
+  tool that has the text, rather than shown in part; `get_block_state`
+  returns a block’s live argument values as the board holds them,
+  bounded by one budget spent across them (`assistant_state_max_chars`,
+  20000 by default) instead of by
+  [`str()`](https://rdrr.io/r/utils/str.html). Both summary surfaces are
+  covered – the `describe_block` state section and the board check run
+  after a commit – and the system prompt now says of configuration what
+  it already said of results: read the full value before rewriting it
+  (#143).
+
 - The `describe_block` tool now reports a block’s live argument values
   rather than the ones it was constructed with. The description was
   rendered off the board’s block object, whose constructor frame is
