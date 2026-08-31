@@ -640,14 +640,21 @@ tool_rename_view <- function(board, pending, session) {
 
 # The wire format for view layouts at the assistant <-> tool boundary. The
 # model speaks a compact nested-layout JSON, owned here: an object with an
-# `orientation`, `children`, optional `sizes` and `focus`; each child is a
-# bare panel-id leaf, a `{panels, active}` tab group, or a nested
-# `{children, sizes}` split. Blocks and extensions are named by bare id
-# everywhere the model looks, so layouts use bare ids too. `layout_from_json()`
-# parses that into a blockr.dock `dock_grid`, resolving each bare id to its
-# canonical `block_panel-` / `ext_panel-` form; `layout_to_llm_spec()` is the
-# inverse, collapsing single-panel leaves and even splits back to the compact
-# form and stripping the prefixes with `panel_obj_ids()`.
+# `orientation`, `children`, optional `sizes`, `focus` and `rails`; each child
+# is a bare panel-id leaf, a `{panels, active}` tab group, or a nested
+# `{children, sizes}` split. Rails sit flat beside `focus` rather than in the
+# child recursion, mirroring the canonical `dock_grid`: a rail is pinned
+# outside the splitview, so it never counts towards `sizes` and a wire child
+# that has to be skipped when counting them would be a trap. A rail's pixel
+# `size` stays off the wire -- `sizes` and `resize_panel` already spend the
+# word "size" on split ratios, and one word carrying two incompatible meanings
+# is how it gets used wrong. Blocks and extensions are named by bare id
+# everywhere the model looks, so layouts use bare ids too. The
+# `layout_from_json()` parser turns that into a blockr.dock `dock_grid`,
+# resolving each bare id to its canonical `block_panel-` / `ext_panel-` form;
+# `layout_to_llm_spec()` is the inverse, collapsing single-panel leaves and
+# even splits back to the compact form and stripping the prefixes with
+# `panel_obj_ids()`.
 
 layout_from_json <- function(json, block_ids = character(),
                              ext_ids = character()) {
@@ -665,7 +672,71 @@ layout_from_json <- function(json, block_ids = character(),
         spec[["children"]], resolve_layout_node, block_ids, ext_ids
       ),
       sizes = as_grid_sizes(spec[["sizes"]]),
-      focus = resolve_panel_id(spec[["focus"]], block_ids, ext_ids)
+      focus = resolve_panel_id(spec[["focus"]], block_ids, ext_ids),
+      rails = resolve_layout_rails(spec[["rails"]], block_ids, ext_ids)
+    )
+  )
+}
+
+resolve_layout_rails <- function(rails, block_ids, ext_ids) {
+
+  if (is.null(rails)) {
+    return(NULL)
+  }
+
+  edges <- names(rails)
+
+  if (!is.list(rails) || length(edges) != length(rails) ||
+        !all(nzchar(edges))) {
+    stop(
+      glue::glue(
+        "`rails` must be an object keyed by edge: ",
+        "{paste(rail_edges(), collapse = ', ')}"
+      ),
+      call. = FALSE
+    )
+  }
+
+  bad <- setdiff(edges, rail_edges())
+
+  if (length(bad)) {
+    stop(
+      glue::glue(
+        "rail edge must be one of: {paste(rail_edges(), collapse = ', ')} ",
+        "(got {paste(bad, collapse = ', ')})"
+      ),
+      call. = FALSE
+    )
+  }
+
+  map(
+    resolve_layout_rail, rails, edges,
+    MoreArgs = list(block_ids = block_ids, ext_ids = ext_ids)
+  )
+}
+
+resolve_layout_rail <- function(spec, edge, block_ids, ext_ids) {
+
+  if (!is.list(spec)) {
+    stop(
+      glue::glue("rail {edge} must be an object with `panels`"),
+      call. = FALSE
+    )
+  }
+
+  ids <- lapply(
+    as.character(unlst(spec[["panels"]])), resolve_panel_id, block_ids, ext_ids
+  )
+
+  do.call(
+    rail,
+    c(
+      ids,
+      list(
+        position = edge,
+        active = resolve_panel_id(spec[["active"]], block_ids, ext_ids),
+        collapsed = isTRUE(spec[["collapsed"]])
+      )
     )
   )
 }
@@ -733,6 +804,31 @@ layout_to_llm_spec <- function(layout) {
   if (not_null(grid[["focus"]])) {
     spec[["focus"]] <- panel_obj_ids(grid[["focus"]])
   }
+
+  rails <- Filter(rail_holds_panels, grid[["rails"]])
+
+  if (length(rails)) {
+    spec[["rails"]] <- lapply(rails, rail_to_spec)
+  }
+
+  spec
+}
+
+rail_holds_panels <- function(rail) {
+  length(rail[["panels"]]) > 0L
+}
+
+rail_to_spec <- function(rail) {
+
+  ids <- panel_obj_ids(rail[["panels"]])
+
+  spec <- list(panels = as.list(ids))
+
+  if (length(ids) > 1L) {
+    spec[["active"]] <- panel_obj_ids(rail[["active"]])
+  }
+
+  spec[["collapsed"]] <- isTRUE(rail[["collapsed"]])
 
   spec
 }
@@ -804,4 +900,8 @@ panel_leaf <- function(id) {
 
 valid_panel_sides <- function() {
   c("within", "left", "right", "above", "below")
+}
+
+rail_edges <- function() {
+  c("left", "right")
 }
