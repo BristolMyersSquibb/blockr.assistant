@@ -1,5 +1,31 @@
 # blockr.assistant (development version)
 
+* The `describe_block` tool now reports a block's live argument values
+  rather than the ones it was constructed with. The description was
+  rendered off the board's block object, whose constructor frame is fixed
+  at construction, so a block the model had just modified -- or one the
+  user had edited in the block's own UI -- read back at its load-time
+  values, and a question about what a block filters on was answered from
+  a filter that had since been replaced. Live state is read from
+  `board$blocks[[id]]$server$state`, where a committed `blocks$mod` delta
+  and the block's own UI observers both write, and reaches core's
+  rendering through a `state` argument the `describe_block()` generic
+  grows. A block that never constructed holds no state and falls back to
+  the constructor values, the section label saying which of the two is
+  shown. Existing methods absorb the new argument through `...` and keep
+  today's behaviour (#133).
+
+* The board check the assistant runs itself after a commit now reports
+  the state of each block the model changed, alongside the results it
+  already carried. The read-back was results and conditions only, so a
+  change its result summary did not distinguish -- a renamed block, a
+  plot colour, a filter that happens to select the same rows -- read back
+  as though nothing had happened. State is the more dependable half of
+  the pair: a block that goes dormant after the change has no result to
+  report but still holds correct state. Only the blocks the model added
+  or modified carry it; the neighbours pulled in to show propagation
+  stay results-only (#133).
+
 * The chat's command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
   command runs the conversation through the same summarise-and-replace

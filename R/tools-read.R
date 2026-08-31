@@ -87,7 +87,10 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
 
         summary <- truncate_chars(
           paste(
-            describe_block(blks[[id]], board = brd, id = id),
+            describe_block(
+              blks[[id]], board = brd, id = id,
+              state = live_block_state(id, board)
+            ),
             collapse = "\n"
           ),
           summary_max_chars()
