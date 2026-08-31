@@ -2,10 +2,10 @@
 name: layout
 description: >-
   Arranging views and panels on a dock board: the JSON layout grammar
-  add_view takes, and the panel-op tools (add_panel_to_view,
-  remove_panel_from_view, move_panel, resize_panel, focus_panel) that
-  edit an existing view in place. Read before creating a view or
-  rearranging panels.
+  add_view takes, rails included (panels pinned to a view's edge), and
+  the panel-op tools (add_panel_to_view, remove_panel_from_view,
+  move_panel, resize_panel, focus_panel) that edit an existing view in
+  place. Read before creating a view or rearranging panels.
 ---
 
 # Layout
@@ -43,7 +43,9 @@ update when you commit:
 
 dock owns the live arrangement, so placement is a hint, not a
 guarantee of exact geometry. `near` must be a panel already in
-the view, not one you are adding in the same turn.
+the view, not one you are adding in the same turn. These verbs
+all work inside the split arrangement; none of them reaches a
+rail (see Rails below).
 
 Each view has a stable `id` and a display `name`. Address an
 existing view by its `id` (from list_views) in the panel-op
@@ -60,7 +62,8 @@ Top-level shape (object):
   {"orientation": "horizontal"|"vertical",
    "children": [<node>, ...],
    "sizes": [<num>, ...],            // optional, length == #children
-   "focus": "<panel id>"}            // optional, focused panel
+   "focus": "<panel id>",            // optional, focused panel
+   "rails": {<edge>: <rail>, ...}}   // optional, see Rails below
 
 Each <node> inside `children` is one of:
 
@@ -78,10 +81,55 @@ Sizes are positive numbers, one per child. They are ratios; their
 absolute scale does not matter (`[1, 2]`, `[0.33, 0.67]`, and
 `[33, 67]` are equivalent).
 
+## Rails
+
+A rail is a tab group pinned to an edge of the view itself, outside
+the split arrangement `children` describes -- where the default board
+parks its extensions. The optional `rails` key is an object keyed by
+edge, `"left"` or `"right"`, holding at most one rail per edge:
+
+  {"panels": [<id>, ...],    // the panels pinned there
+   "active": "<id>",         // optional open tab, first by default
+   "collapsed": true|false}  // optional, opens as a bare tab strip
+
+A rail is not a child: it never appears in `children` and never
+counts towards `sizes`, so a layout with two children and a rail
+carries two sizes, not three. Every panel is either in the tree or in
+one rail, never both. A rail's width is dock's to set -- there is no
+size to pass, and the `sizes` ratios do not apply to it.
+
+Do not confuse a rail's edge with the `side` argument of the panel-op
+tools. Both spell their values "left" and "right" and they mean
+different things: `side` is a direction relative to a `near` panel
+inside the split arrangement, while a rail's edge is a side of the
+whole view. There is also no verb that moves a panel into or out of a
+rail, so a view's rails are set once, by the add_view layout that
+creates it.
+
 Worked examples (blocks: data, head, scatter; extension:
 assistant_extension):
 
-  * Stack blocks vertically on the left, assistant on the right:
+  * The board's default arrangement -- extensions railed on the
+    left, blocks tabbed in the grid. Start here when a new view
+    should look like the rest of the board:
+    {"orientation": "horizontal",
+     "children": [{"panels": ["data", "head", "scatter"],
+                   "active": "data"}],
+     "rails": {"left": {"panels": ["assistant_extension"],
+                        "collapsed": false}}}
+
+  * Blocks split on the left, assistant railed on the right and
+    opening collapsed to its tab strip:
+    {"orientation": "horizontal",
+     "children": [{"children": ["data", "head"]}, "scatter"],
+     "sizes": [0.6, 0.4],
+     "rails": {"right": {"panels": ["assistant_extension"],
+                         "collapsed": true}}}
+    The rail is not a child, so `sizes` has one entry per element of
+    `children` -- two here, not three.
+
+  * Stack blocks vertically on the left, assistant beside them as an
+    ordinary panel in the tree rather than railed:
     {"orientation": "horizontal",
      "children": [
        {"children": ["data", "head", "scatter"]},
