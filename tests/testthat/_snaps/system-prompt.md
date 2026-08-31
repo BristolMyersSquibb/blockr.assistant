@@ -16,6 +16,13 @@
       (read-only R over any block's result). Do not build on a
       guess when you can look.
       
+      The same holds for a block's configuration. The state a block
+      description reports is bounded too, and an argument too long
+      to show is omitted there and marked, not shown in part. Read
+      it with `get_block_state` before you rewrite it: `modify_block`
+      replaces the whole value, so an edit made from a summary
+      silently drops what the summary left out.
+      
       A block in the Board section carries an eval-status marker
       whenever it holds no current result: `waiting` (a data input is
       missing), `unset` (a required argument is not set), `failed`
@@ -113,6 +120,13 @@
       that looks empty or `NULL` -- investigate it with `query_data`
       (read-only R over any block's result). Do not build on a
       guess when you can look.
+      
+      The same holds for a block's configuration. The state a block
+      description reports is bounded too, and an argument too long
+      to show is omitted there and marked, not shown in part. Read
+      it with `get_block_state` before you rewrite it: `modify_block`
+      replaces the whole value, so an edit made from a summary
+      silently drops what the summary left out.
       
       A block in the Board section carries an eval-status marker
       whenever it holds no current result: `waiting` (a data input is

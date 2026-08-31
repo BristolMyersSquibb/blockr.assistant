@@ -484,3 +484,24 @@ test_that("collect_touched_results reports state for a block with no result", {
   expect_true(any(grepl("int 3", out, fixed = TRUE)))
   expect_true(any(grepl("no result to read", out, fixed = TRUE)))
 })
+
+test_that("collect_touched_results omits a state value str() would cut", {
+
+  long  <- strrep("z", 300L)
+  board <- list(
+    blocks = list(
+      a = fake_block(
+        data.frame(x = 1:3), state = list(script = function() long)
+      )
+    )
+  )
+
+  out <- paste(
+    collect_touched_results("a", board, changed = "a"), collapse = "\n"
+  )
+
+  expect_match(out, "Applied state:", fixed = TRUE)
+  expect_match(out, "300 chars omitted", fixed = TRUE)
+  expect_match(out, "get_block_state", fixed = TRUE)
+  expect_no_match(out, "zzz", fixed = TRUE)
+})

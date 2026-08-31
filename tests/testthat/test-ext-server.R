@@ -327,14 +327,14 @@ test_that("server registers the read and mutation tools on the client", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 35L)
+      expect_length(tools, 36L)
       expect_setequal(
         names(tools),
         c(
           "list_blocks", "describe_block", "list_links",
           "list_stacks", "describe_stack",
           "list_block_types", "describe_block_type",
-          "get_block_result",
+          "get_block_result", "get_block_state",
           "get_block_conditions", "query_data",
           "add_block", "remove_block", "modify_block",
           "add_link", "remove_link", "modify_link",
@@ -431,7 +431,7 @@ test_that("a dock board additionally registers the extension tools", {
 
       tools <- client_r()$get_tools()
 
-      expect_length(tools, 38L)
+      expect_length(tools, 39L)
       expect_true(
         all(
           c("list_extensions", "describe_extension", "modify_extension") %in%
@@ -943,8 +943,8 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
       )
       expect_length(assistant_turns, 1L)
 
-      # Tools re-registered (34 surface-tools, same as initial mount)
-      expect_length(client_r()$get_tools(), 35L)
+      # Tools re-registered (36 surface tools, same as initial mount)
+      expect_length(client_r()$get_tools(), 36L)
     },
     args = list(
       board = reactiveValues(board = new_board()),

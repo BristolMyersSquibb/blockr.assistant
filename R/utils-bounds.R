@@ -2,7 +2,7 @@
 # hint -- never exceeds `max_chars`: the marker counts against the budget, it
 # is not added on top. Only the over-long case is touched; text within budget
 # is returned verbatim. The hint is the caller's: a result summary points at
-# query_data, a block or stack summary needs none.
+# query_data, a block summary at get_block_state, a stack summary needs none.
 truncate_chars <- function(txt, max_chars, hint = NULL) {
 
   if (nchar(txt) <= max_chars) {
@@ -28,6 +28,23 @@ is_whole_bound <- function(x, min) {
 
 summary_max_chars <- function() {
   as.integer(blockr_option("assistant_summary_max_chars", 2000L))
+}
+
+# The detail tier behind that summary: what get_block_state may spend across
+# one block's argument values. Deliberately far above summary_max_chars(),
+# because it is reached by a tool call the model makes when it is about to
+# rewrite an argument, and a generated script runs to several thousand
+# characters.
+state_max_chars <- function() {
+  as.integer(blockr_option("assistant_state_max_chars", 20000L))
+}
+
+# Per-value bound in a *summary* of block state, matching the `nchar.max` that
+# utils::str() cuts character values at -- core's format.block() calls str()
+# with the default and exposes no way to raise it. A value over this is elided
+# rather than shown in part; see elide_long_values().
+state_value_max_chars <- function() {
+  as.integer(blockr_option("assistant_state_value_max_chars", 128L))
 }
 
 board_section_max_chars <- function() {

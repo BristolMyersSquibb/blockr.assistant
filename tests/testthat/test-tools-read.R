@@ -488,7 +488,7 @@ test_that("register_read_tools wires every read tool onto a chat client", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
 
-  expect_equal(length(client$get_tools()) - before, 10L)
+  expect_equal(length(client$get_tools()) - before, 11L)
 })
 
 make_board <- function(results = list()) {
@@ -662,4 +662,106 @@ test_that("an unscoped skill stays out of the per-block responses", {
       tool_describe_block_type(board, NULL, NULL), id = "head_block"
     )$skills
   )
+})
+
+test_that("tool_describe_block omits a state value str() would cut", {
+
+  long  <- strrep("z", 300L)
+  board <- reactiveValues(
+    board  = make_iris_board(),
+    blocks = list(
+      head = list(
+        server = list(
+          state = list(n = reactive(11L), direction = reactive(long))
+        )
+      )
+    )
+  )
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "300 chars omitted", fixed = TRUE)
+  expect_match(res, "get_block_state", fixed = TRUE)
+  expect_no_match(res, "zzz", fixed = TRUE)
+  expect_no_match(res, "__truncated__", fixed = TRUE)
+})
+
+test_that("tool_describe_block points a cut summary at get_block_state", {
+
+  withr::local_options(blockr.assistant_summary_max_chars = 200L)
+
+  board <- reactiveValues(board = make_iris_board())
+
+  res <- isolate(
+    call_tool(tool_describe_block(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "get_block_state", fixed = TRUE)
+})
+
+test_that("tool_get_block_state returns live values in full", {
+
+  script <- strrep("x <- 1; ", 400L)
+  board  <- reactiveValues(
+    board  = make_iris_board(),
+    blocks = list(
+      head = list(
+        server = list(
+          state = list(n = reactive(11L), direction = reactive(script))
+        )
+      )
+    )
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_state(board, NULL, NULL), id = "head")
+  )
+
+  expect_identical(res$id, "head")
+  expect_identical(res$values$direction, script)
+  expect_identical(res$values$n, 11L)
+})
+
+test_that("tool_get_block_state bounds what it returns", {
+
+  withr::local_options(blockr.assistant_state_max_chars = 200L)
+
+  board <- reactiveValues(
+    board  = make_iris_board(),
+    blocks = list(
+      head = list(
+        server = list(state = list(direction = reactive(strrep("z", 5000L))))
+      )
+    )
+  )
+
+  res <- isolate(
+    call_tool(tool_get_block_state(board, NULL, NULL), id = "head")
+  )
+
+  expect_lte(nchar(res$values$direction), 200L)
+  expect_match(res$values$direction, "truncated", fixed = TRUE)
+})
+
+test_that("tool_get_block_state reports a block holding no live state", {
+
+  board <- reactiveValues(board = make_iris_board())
+
+  res <- isolate(
+    call_tool(tool_get_block_state(board, NULL, NULL), id = "head")
+  )
+
+  expect_match(res, "no live state", fixed = TRUE)
+  expect_match(res, "describe_block", fixed = TRUE)
+})
+
+test_that("tool_get_block_state returns a recovery hint for unknown id", {
+
+  board <- reactiveValues(board = make_iris_board())
+
+  res <- call_tool(tool_get_block_state(board, NULL, NULL), id = "bogus")
+
+  expect_match(res, "No block with id bogus", fixed = TRUE)
 })

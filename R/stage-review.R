@@ -179,7 +179,10 @@ review_result_line <- function(id, board, changed) {
 
 applied_state_lines <- function(id, board) {
 
-  state <- live_block_state(id, board)
+  # Elided as describe_block's state section is elided: this reads back a
+  # change the model is about to confirm or correct, so a value shown in part
+  # here is acted on exactly as one shown in part there.
+  state <- summary_block_state(id, board)
 
   if (is.null(state)) {
     return(NULL)
@@ -187,11 +190,14 @@ applied_state_lines <- function(id, board) {
 
   # Rendered as core renders block state for describe_block, so the model
   # meets a block's arguments in one shape wherever it reads them.
-  rendered <- trimws(capture.output(str(state))[-1L], "right")
+  rendered <- str_lines(state)[-1L]
 
   c(
     "Applied state:",
-    truncate_chars(paste(rendered, collapse = "\n"), summary_max_chars())
+    truncate_chars(
+      paste(rendered, collapse = "\n"), summary_max_chars(),
+      hint = state_tool_hint()
+    )
   )
 }
 

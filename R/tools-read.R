@@ -15,6 +15,9 @@ register_read_tools <- function(client, board, update, session, pool = NULL) {
     tool_get_block_result(board, update, session)
   )
   client$register_tool(
+    tool_get_block_state(board, update, session)
+  )
+  client$register_tool(
     tool_get_block_conditions(board, update, session)
   )
   client$register_tool(tool_query_data(board, update, session))
@@ -89,11 +92,12 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
           paste(
             describe_block(
               blks[[id]], board = brd, id = id,
-              state = live_block_state(id, board)
+              state = summary_block_state(id, board)
             ),
             collapse = "\n"
           ),
-          summary_max_chars()
+          summary_max_chars(),
+          hint = state_tool_hint()
         )
 
         type <- registry_id_from_block(blks[[id]])
@@ -115,7 +119,10 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
       "name, arguments and current values, external-control",
       "declaration, incoming links, eval status (whether it holds a",
       "current result, and if not why), and any deployment-authored",
-      "`skills` scoped to its type. Calling this also registers a",
+      "`skills` scoped to its type. The state section is a bounded",
+      "summary: an argument too long to show is omitted and marked",
+      "rather than shown in part, so read it with get_block_state",
+      "before rewriting it. Calling this also registers a",
       "typed modify_<type> tool where the block's type declares one,",
       "named on the last line; call that in preference to",
       "modify_block."
@@ -392,6 +399,54 @@ tool_get_block_result <- function(board, update, session) {
       "that status means instead -- an off-screen (`dormant` or",
       "`stale`) block is not a broken block and does not need",
       "reconfiguring."
+    ),
+    arguments   = list(
+      id = ellmer::type_string("Block id, as returned by list_blocks.")
+    )
+  )
+}
+
+tool_get_block_state <- function(board, update, session) {
+
+  ellmer::tool(
+    function(id) {
+      with_tool_errors("get_block_state", {
+
+        blks <- board_blocks(isolate(board$board))
+
+        if (!id %in% names(blks)) {
+          return(
+            glue::glue("No block with id {id}. Call list_blocks first.")
+          )
+        }
+
+        state <- live_block_state(id, board)
+
+        if (is.null(state)) {
+          return(
+            glue::glue(
+              "Block {id} holds no live state -- it has not been ",
+              "constructed on this board. Call describe_block for the ",
+              "values it was constructed with."
+            )
+          )
+        }
+
+        list(id = id, values = bound_state_values(state))
+      })
+    },
+    name        = "get_block_state",
+    description = paste(
+      "Return one block's argument values in full -- the detail tier",
+      "behind the bounded state section describe_block carries. Values",
+      "come back as the board holds them rather than through an R",
+      "structure summary, so a long argument (a code block's `script`,",
+      "a filter expression, a document's text) arrives whole where that",
+      "section omits it. Call this before rewriting any argument you",
+      "have only seen summarised: modify_block replaces the whole",
+      "value, so an edit made from a summary silently discards what the",
+      "summary left out. Configuration only -- use get_block_result or",
+      "query_data for a block's data."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
