@@ -712,6 +712,24 @@ asst_ext_srv <- function(system_prompt, messages) {
           intersect(input$focus, board_block_ids(board$board))
         )
 
+        # Clicking a block card fills the picker, so the click and the dropdown
+        # write one selection rather than competing for it. A click replaces
+        # what the picker holds: picking several blocks is what the dropdown is
+        # for, and a click that merely added to a set would have no way to
+        # narrow one.
+        clicked_r <- click_focus(view_data)
+
+        observeEvent(clicked_r(), {
+
+          id <- clicked_r()
+
+          if (!id %in% board_block_ids(board$board)) {
+            return()
+          }
+
+          updateSelectizeInput(session, "focus", selected = id)
+        })
+
         output$focus_picker <- renderUI({
 
           blk_ids <- names(focus_choices())
