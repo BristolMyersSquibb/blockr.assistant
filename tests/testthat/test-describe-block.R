@@ -259,3 +259,31 @@ test_that("summary_block_state elides, and keeps NULL for no live state", {
   )
   expect_null(isolate(summary_block_state("data", board)))
 })
+
+test_that("map_state_values recurses into bare lists only", {
+
+  seen <- list()
+  state <- list(
+    df     = head(iris, 2L),
+    nested = list(a = "x", b = list(c = "y")),
+    flat   = 1L
+  )
+
+  out <- map_state_values(state, function(x) {
+    seen[[length(seen) + 1L]] <<- x
+    x
+  })
+
+  # A classed list is a leaf: it reaches `f` whole rather than column by
+  # column, and comes back with its class intact. Base rapply() descends into
+  # it, which is why this walker exists.
+  expect_true(any(vapply(seen, is.data.frame, logical(1L))))
+  expect_s3_class(out$df, "data.frame")
+  expect_identical(out$df, head(iris, 2L))
+
+  # A bare list is a container, however deeply nested.
+  expect_identical(out$nested$b$c, "y")
+  expect_true("y" %in% seen)
+  expect_false(any(vapply(seen, is.list, logical(1L)) &
+                     !vapply(seen, is.object, logical(1L))))
+})

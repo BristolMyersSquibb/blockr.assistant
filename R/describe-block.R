@@ -126,11 +126,7 @@ state_tool_hint <- function() {
 elide_long_values <- function(state, hint = state_tool_hint(),
                               max_chars = state_value_max_chars()) {
 
-  elide <- function(x) {
-
-    if (is.list(x) && !is.object(x)) {
-      return(lapply(x, elide))
-    }
+  map_state_values(state, function(x) {
 
     if (!is.character(x)) {
       return(x)
@@ -141,9 +137,26 @@ elide_long_values <- function(state, hint = state_tool_hint(),
     x[long] <- paste0("[", nchar(x[long]), " chars omitted -- ", hint, "]")
 
     x
+  })
+}
+
+# The one traversal both tiers share. A bare list is a container to recurse
+# into; a classed one -- a data frame a static block was handed -- is a leaf,
+# because lapply()ing it would strip the class and rewrite its columns (which
+# is also why base rapply() cannot serve here). Written once so that rule
+# cannot be corrected in one tier and left wrong in the other.
+map_state_values <- function(state, f) {
+
+  walk <- function(x) {
+
+    if (is.list(x) && !is.object(x)) {
+      return(lapply(x, walk))
+    }
+
+    f(x)
   }
 
-  lapply(state, elide)
+  lapply(state, walk)
 }
 
 # The detail tier's rendering: values as the board holds them rather than as
@@ -164,10 +177,6 @@ bound_state_values <- function(state, max_chars = state_max_chars()) {
   }
 
   spend <- function(x) {
-
-    if (is.list(x) && !is.object(x)) {
-      return(lapply(x, spend))
-    }
 
     if (is.character(x)) {
 
@@ -194,7 +203,7 @@ bound_state_values <- function(state, max_chars = state_max_chars()) {
     charge(rendered)
   }
 
-  lapply(state, spend)
+  map_state_values(state, spend)
 }
 
 # Core renders block state with str(), so rendering it the same way anywhere
