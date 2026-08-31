@@ -11,10 +11,10 @@ Block authors override their class when the default isn't enough.
 ## Usage
 
 ``` r
-describe_block(x, board, id, ...)
+describe_block(x, board, id, ..., state = NULL)
 
 # S3 method for class 'block'
-describe_block(x, board, id, ...)
+describe_block(x, board, id, ..., state = NULL)
 ```
 
 ## Arguments
@@ -36,7 +36,16 @@ describe_block(x, board, id, ...)
 
 - ...:
 
-  For future use.
+  Passed on to methods.
+
+- state:
+
+  Live block state as a named list covering the block's constructor
+  inputs, rendered in place of the values the block was constructed
+  with. The block object carries only its constructor frame, which is
+  fixed at construction, so the `NULL` default reports load-time values
+  however long ago a commit or an edit in the block's own UI moved them
+  on.
 
 ## Value
 

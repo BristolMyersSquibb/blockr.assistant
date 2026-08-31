@@ -66,10 +66,10 @@ isn't enough.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">describe_block</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">describe_block</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span>, state <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'block'</span></span>
-<span><span class="fu">describe_block</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">describe_block</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span>, state <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -94,7 +94,16 @@ be).</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
-<dd><p>For future use.</p></dd>
+<dd><p>Passed on to methods.</p></dd>
+
+
+<dt id="arg-state">state<a class="anchor" aria-label="anchor" href="#arg-state"></a></dt>
+<dd><p>Live block state as a named list covering the block's
+constructor inputs, rendered in place of the values the block was
+constructed with. The block object carries only its constructor
+frame, which is fixed at construction, so the <code>NULL</code> default
+reports load-time values however long ago a commit or an edit in
+the block's own UI moved them on.</p></dd>
 
 </dl></div>
     <div class="section level2">
