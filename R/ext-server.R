@@ -145,6 +145,7 @@ asst_ext_ui <- function(id, board, ...) {
   tagList(
     asst_ext_styles(),
     asst_skin_styles(),
+    asst_click_focus_ui(id),
     div(
       class = "asst-panel",
       uiOutput(NS(id, "chat_panel"), container = function(...) {
@@ -712,23 +713,28 @@ asst_ext_srv <- function(system_prompt, messages) {
           intersect(input$focus, board_block_ids(board$board))
         )
 
-        # Clicking a block card fills the picker, so the click and the dropdown
-        # write one selection rather than competing for it. A click replaces
-        # what the picker holds: picking several blocks is what the dropdown is
-        # for, and a click that merely added to a set would have no way to
-        # narrow one.
-        clicked_r <- click_focus(view_data)
+        # Clicking a block fills the picker, so the click and the dropdown write
+        # one selection rather than competing for it. A click replaces what the
+        # picker holds: picking several blocks is what the dropdown is for, and
+        # a click that merely added to a set would have no way to narrow one.
+        focus_on <- function(id) {
 
-        observeEvent(clicked_r(), {
-
-          id <- clicked_r()
-
-          if (!id %in% board_block_ids(board$board)) {
-            return()
+          if (!length(id) || !id %in% board_block_ids(board$board)) {
+            return(invisible())
           }
 
           updateSelectizeInput(session, "focus", selected = id)
-        })
+
+          invisible()
+        }
+
+        # The click on the card itself, and the block dock reports fronted --
+        # a tab switch, which is a pick too. See R/focus-click.R.
+        observeEvent(input$card_click, focus_on(input$card_click))
+
+        clicked_r <- click_focus(view_data)
+
+        observeEvent(clicked_r(), focus_on(clicked_r()))
 
         output$focus_picker <- renderUI({
 

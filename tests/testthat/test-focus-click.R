@@ -160,3 +160,19 @@ test_that("a re-echo of the same layout does not fire again", {
     }
   )
 })
+
+test_that("the click listener carries the module's input id", {
+
+  ui <- asst_click_focus_ui("board-ext_assistant")
+
+  html <- as.character(htmltools::renderTags(ui)$html)
+
+  expect_match(html, "asst-card-click")
+  expect_match(html, 'data-input-id="board-ext_assistant-card_click"')
+
+  dep <- asst_click_focus_dep()
+
+  expect_identical(dep$name, "asst-click-focus")
+  expect_identical(dep$script, "click-focus.js")
+  expect_true(file.exists(file.path(dep$src$file, "click-focus.js")))
+})

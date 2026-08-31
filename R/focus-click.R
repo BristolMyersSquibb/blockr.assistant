@@ -1,35 +1,33 @@
-# Clicking a block fills the focus picker below the chat. The signal is already
-# published: dockView echoes its layout on every gesture, dock folds that into
-# the live grid of each view, and `view_data` is handed to every extension
-# server. So this reads what dock says rather than opening a channel of its
-# own, and needs nothing from blockr.dock.
+# Which block the assistant is scoped to follows the block the user clicks.
+# There are two signals, because neither covers the whole board on its own.
 #
-# What it reads is which block is *at the front*. A grid leaf is a tab group and
-# carries the panel it is showing (`active`); bringing a block to the front is
-# what a user does to work on it, whether by clicking its tab or by clicking the
-# card of a background panel. The grid's `focus` -- the panel of the group
-# dockView calls active -- would be the more direct signal, but dock drops it
-# for the load-default group id `"1"` (`focus_panel()`), which is the only group
-# a single-group board ever has. On the common board it is therefore never
-# reported, so it is used when present and the front-most block carries the
-# rest.
+# The click itself comes from the DOM (`inst/js/click-focus.js`), keyed on the
+# card's block handle id. It is the only one that fires for a click on a block
+# already on screen beside another, which is the common shape of a working
+# board.
 #
-# Two things stand between the signal and what the user means:
+# The other is what dock publishes. dockView echoes its layout on every
+# gesture, dock folds that into each view's live grid, and `view_data` reaches
+# every extension server, so bringing a block to the front by its tab shows up
+# there as a change in which panel each tab group is showing. It also carries
+# the grid's `focus` when dock reports one, which it does not on a single-group
+# board: dockView names the first group "1" and dock reads "1" as "no focus"
+# (`focus_panel()`), so the first group can never hold it.
 #
-#  * The chat panel is a dock panel too, so clicking into the message box makes
-#    the assistant's own panel active. Only block panels are recorded, so the
-#    block fronted on the way to the input box survives, which is the one that
-#    matters.
+# Two things stand between the dock signal and what the user means:
+#
+#  * The chat panel is a dock panel too, so clicking into the message box
+#    fronts the assistant's own panel. Only block panels are recorded, so the
+#    block fronted on the way to the input box survives.
 #  * A selection the user removed has to stay removed. Holding the pick in a
 #    `reactiveVal` gives that for free: dock re-echoes its layout on any change,
 #    and writing the same id back does not invalidate, so an emptied picker is
-#    not refilled behind the user's back. The cost is that re-picking the block
-#    just removed takes a visit to another block and back, since re-fronting the
-#    front-most block is not a change and echoes nothing.
+#    not refilled behind the user's back. Clicking the block again does refill
+#    it, which is the DOM signal, and is what the user just asked for.
 #
-# The first echo is recorded and not acted on. A board boots with a panel at the
-# front without anyone having clicked it, and scoping the assistant to whichever
-# block happened to open first would be a selection the user never made.
+# The first echo is recorded and not acted on. A board boots with a panel at
+# the front without anyone having clicked it, and scoping the assistant to
+# whichever block happened to open first would be a selection nobody made.
 click_focus <- function(view_data) {
 
   clicked <- reactiveVal(NULL)
@@ -137,4 +135,27 @@ as_block_ids <- function(ids) {
   }
 
   as.character(panel_obj_ids(ids))
+}
+
+# The click listener, and the element it reads the input id from. A marker in
+# the DOM rather than a namespace baked into the script, so the script is one
+# static asset however many boards a page carries.
+asst_click_focus_ui <- function(id) {
+  tagList(
+    asst_click_focus_dep(),
+    div(
+      class = "asst-card-click",
+      `data-input-id` = NS(id, "card_click"),
+      style = "display: none;"
+    )
+  )
+}
+
+asst_click_focus_dep <- function() {
+  htmltools::htmlDependency(
+    "asst-click-focus",
+    utils::packageVersion("blockr.assistant"),
+    src = system.file("js", package = "blockr.assistant"),
+    script = "click-focus.js"
+  )
 }

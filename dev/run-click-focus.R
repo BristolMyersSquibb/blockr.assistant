@@ -73,10 +73,11 @@ board <- new_dock_board(
       list(
         orientation = "horizontal",
         children = list(
-          list(panels = c("data", "filt", "head", "plot")),
+          list(panels = c("data", "filt")),
+          list(panels = c("head", "plot")),
           list(panels = "assistant")
         ),
-        sizes = c(0.68, 0.32)
+        sizes = c(0.34, 0.34, 0.32)
       )
     )
   )
