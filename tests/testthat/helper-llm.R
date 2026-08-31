@@ -49,11 +49,29 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
       client <<- new_client
       invisible()
     },
-    history = list(
-      save = function() FALSE,
-      on_save = function(fn) invisible(fn),
-      on_restore = function(fn) invisible(fn)
-    ),
+    # Holds on to the restore callback so a test can fire it. Restoring is
+    # what shinychat does when the browser names the thread it had open, and
+    # it is the trigger a conversation already over the compaction bound
+    # arrives through.
+    history = local({
+
+      restore_fn <- NULL
+
+      list(
+        save = function() FALSE,
+        on_save = function(fn) invisible(fn),
+        on_restore = function(fn) {
+          restore_fn <<- fn
+          invisible(fn)
+        },
+        restore = function(values = list()) {
+          if (!is.null(restore_fn)) {
+            restore_fn(values)
+          }
+          invisible()
+        }
+      )
+    }),
     slash_command = function(name, description, handler, ..., echo = NULL,
                              force = FALSE) {
       invisible()
@@ -111,7 +129,7 @@ priced_turns <- function(n, input, output) {
   turns <- alternating_turns(n)
   turns[[n]]@tokens <- c(input, output, NA)
 
-  lapply(turns, ellmer::contents_record)
+  turns
 }
 
 # The chat module advertises its slash commands to the browser through a

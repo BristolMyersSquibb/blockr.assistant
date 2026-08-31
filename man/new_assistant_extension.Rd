@@ -6,7 +6,6 @@
 \usage{
 new_assistant_extension(
   system_prompt = default_system_prompt,
-  messages = NULL,
   threads = NULL,
   ...
 )
@@ -16,11 +15,6 @@ new_assistant_extension(
 \verb{(board, client, ...)} to build the prompt) or a character
 scalar (used verbatim, no refresh). Defaults to the
 exported \link{default_system_prompt} function.}
-
-\item{messages}{Optional list of recorded turns (as produced by
-\code{\link[ellmer:contents_record]{ellmer::contents_record()}}) to seed the conversation with on
-server start. \code{NULL} starts with an empty conversation. This is
-how a board saved before threads existed seeds the chat.}
 
 \item{threads}{Optional named list of conversation records to seed
 the history with, keyed by conversation id. Defaults to no threads.
@@ -77,18 +71,12 @@ argument nor part of \code{state} -- restore reads whatever the file
 holds.
 
 Turns go in as they stand because blockr.core writes board files
-with typedjson, which carries what plain JSON cannot: before that,
-\code{ellmer::contents_replay()} rejected the \code{version} that came back an
-integer and typed props such as \code{tokens} returned as lists, and
-since the replay happens in a board-server observer, such a board
-took the whole session down on restore rather than just the chat
-panel. A board written then carries its conversation as a
-\code{serializeJSON()} string, which still reads: one saved with a single
-conversation opens with it on screen and records it as that board's
-first thread. The raw provider response is stripped before saving,
-and a thread trimmed to the budget is cut between exchanges rather
-than inside one, so it
-never opens on half of a tool call.
+with typedjson, which carries what plain JSON cannot. A board
+holding anything else under \code{history} opens without its
+conversation rather than on a guess at one. The raw provider
+response is stripped before saving, and a thread trimmed to the
+budget is cut between exchanges rather than inside one, so it never
+opens on half of a tool call.
 
 Which thread is open is remembered by the browser rather than in
 \code{state}, so a board reopened elsewhere lists its threads without

@@ -25,7 +25,7 @@ test_that("a response lands in this board's thread store", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -52,7 +52,7 @@ test_that("a response lands in this board's thread store", {
       )
 
       # And the same thread is what the board writes out.
-      saved <- deserialize_chat_history(session$returned$state$history())
+      saved <- session$returned$state$history()
 
       expect_true(is_thread_set(saved))
       expect_named(saved, names(threads))
@@ -70,7 +70,7 @@ test_that("a second thread is stored beside the first", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -116,7 +116,7 @@ test_that("switching threads restores the client and the focus selection", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -170,7 +170,7 @@ test_that("the meter counts the conversation, not the last exchange", {
   }
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 

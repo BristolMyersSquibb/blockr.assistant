@@ -5,18 +5,18 @@ blockr_deser.assistant_extension <- function(x, data, ...) {
 
   if (is.list(payload)) {
 
-    # Boards saved before the conversation moved into a `history` blob carry
-    # recorded turns here. Replaying those is what takes the board down, and
-    # they are mistyped beyond what is worth repairing, so they are discarded.
-    payload[["messages"]] <- NULL
+    # Cleared rather than trusted: the `threads` key is this method's to
+    # write, and `messages` is one older saves carried that no longer names a
+    # constructor argument -- left in place it reaches `do.call()` and takes
+    # the board down on an unused argument.
     payload[["threads"]]  <- NULL
+    payload[["messages"]] <- NULL
 
-    restored <- deserialize_chat_history(payload[["history"]])
-
-    if (is_thread_set(restored)) {
-      payload[["threads"]] <- restored
-    } else {
-      payload[["messages"]] <- restored
+    # Anything else was written by a shape this package no longer produces,
+    # and guessing at it buys nothing -- the board opens without its
+    # conversation rather than on a wrong one.
+    if (is_thread_set(payload[["history"]])) {
+      payload[["threads"]] <- payload[["history"]]
     }
 
     payload[["history"]] <- NULL
@@ -89,27 +89,6 @@ serialize_chat_threads <- function(store, save_turns, unrecorded = list()) {
   }
 
   threads
-}
-
-# Board state carries typed data faithfully since blockr.core moved its file
-# seam to typedjson, so threads go in as they stand. A board written before
-# that carries them as a `serializeJSON()` string instead, which is the one
-# shape still worth decoding here.
-deserialize_chat_history <- function(payload) {
-
-  if (is.list(payload)) {
-    return(payload)
-  }
-
-  blob <- unlst(payload)
-
-  if (!is_string(blob)) {
-    return(NULL)
-  }
-
-  # A board that cannot be read is worse than one that opens without its
-  # conversation, which is the whole point of this code path.
-  tryCatch(jsonlite::unserializeJSON(blob), error = function(e) NULL)
 }
 
 save_ready_thread <- function(record, save_turns) {

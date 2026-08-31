@@ -42,18 +42,12 @@
 #' holds.
 #'
 #' Turns go in as they stand because blockr.core writes board files
-#' with typedjson, which carries what plain JSON cannot: before that,
-#' `ellmer::contents_replay()` rejected the `version` that came back an
-#' integer and typed props such as `tokens` returned as lists, and
-#' since the replay happens in a board-server observer, such a board
-#' took the whole session down on restore rather than just the chat
-#' panel. A board written then carries its conversation as a
-#' `serializeJSON()` string, which still reads: one saved with a single
-#' conversation opens with it on screen and records it as that board's
-#' first thread. The raw provider response is stripped before saving,
-#' and a thread trimmed to the budget is cut between exchanges rather
-#' than inside one, so it
-#' never opens on half of a tool call.
+#' with typedjson, which carries what plain JSON cannot. A board
+#' holding anything else under `history` opens without its
+#' conversation rather than on a guess at one. The raw provider
+#' response is stripped before saving, and a thread trimmed to the
+#' budget is cut between exchanges rather than inside one, so it never
+#' opens on half of a tool call.
 #'
 #' Which thread is open is remembered by the browser rather than in
 #' `state`, so a board reopened elsewhere lists its threads without
@@ -122,10 +116,6 @@
 #'   `(board, client, ...)` to build the prompt) or a character
 #'   scalar (used verbatim, no refresh). Defaults to the
 #'   exported [default_system_prompt] function.
-#' @param messages Optional list of recorded turns (as produced by
-#'   [ellmer::contents_record()]) to seed the conversation with on
-#'   server start. `NULL` starts with an empty conversation. This is
-#'   how a board saved before threads existed seeds the chat.
 #' @param threads Optional named list of conversation records to seed
 #'   the history with, keyed by conversation id. Defaults to no threads.
 #'   This is how a restored board seeds the chats it was saved with.
@@ -140,11 +130,10 @@
 #'
 #' @export
 new_assistant_extension <- function(system_prompt = default_system_prompt,
-                                    messages = NULL,
                                     threads = NULL,
                                     ...) {
   new_dock_extension(
-    server = asst_ext_srv(system_prompt, messages, threads),
+    server = asst_ext_srv(system_prompt, threads),
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
@@ -423,7 +412,7 @@ asst_ext_styles <- function() {
   )
 }
 
-asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
+asst_ext_srv <- function(system_prompt, threads = NULL) {
 
   function(id, board, update, view_data = NULL, extensions = NULL, ...) {
 
@@ -581,13 +570,7 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
 
           seed_turns <- isolate({
             prev <- client_r()
-            if (!is.null(prev)) {
-              prev$get_turns()
-            } else if (length(messages)) {
-              lapply(messages, ellmer::contents_replay)
-            } else {
-              list()
-            }
+            if (is.null(prev)) list() else prev$get_turns()
           })
 
           new_client <- tryCatch(
@@ -687,24 +670,6 @@ asst_ext_srv <- function(system_prompt, messages, threads = NULL) {
             )
 
             mod_r(mod)
-          },
-          once = TRUE
-        )
-
-        # A board restored from the pre-threads payload arrives with its
-        # conversation on the client and nothing on screen, since the store
-        # has no record to replay from. Painting it here is what puts the two
-        # back in step; the first response then records it as a thread.
-        observeEvent(
-          mod_r(),
-          {
-            turns <- isolate(client_turns(client_r()))
-
-            if (length(turns)) {
-              replay_transcript(isolate(mod_r()), turns)
-            }
-
-            maybe_compact()
           },
           once = TRUE
         )

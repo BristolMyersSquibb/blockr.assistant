@@ -95,7 +95,7 @@ test_that("commit is a no-op when nothing is staged", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -116,7 +116,7 @@ test_that("discard drops staged changes and leaves the board unchanged", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -142,7 +142,7 @@ test_that("discard is a no-op when nothing is staged", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -162,7 +162,7 @@ test_that("commit applies staged changes and returns the review in-band", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -197,7 +197,7 @@ test_that("commit reads back the state of the blocks it changed", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -234,7 +234,7 @@ test_that("commit surfaces a clean apply that touched no block results", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -264,7 +264,7 @@ test_that("commit reports a rejected update in-band without falling through", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -303,7 +303,7 @@ test_that("commit resolves with a timeout note when the board never settles", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 

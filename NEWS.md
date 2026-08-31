@@ -43,15 +43,12 @@
   control in the footer, beside the token meter, opens a drawer listing
   every thread, with switching, renaming, deletion, search and
   model-written titles, and the whole set rides into board state as
-  recorded turns, which blockr.core's file seam now carries as they
-  stand. A board written before that holds its conversation as a
-  `serializeJSON()` string and still opens on it. The `chat_save_turns`
-  budget applies per thread and cuts between exchanges rather than inside
-  one, so a trimmed thread never opens on a reply or on a tool result
-  stranded from its request; `0` still writes nothing at all. A board
-  saved before threads existed opens with its conversation on screen and
-  is written back as that board's first thread, so reopening one and
-  saving it again no longer has anywhere to lose it (#127).
+  recorded turns, which blockr.core's file seam carries as they stand.
+  The `chat_save_turns` budget applies per thread and cuts between
+  exchanges rather than inside one, so a trimmed thread never opens on a
+  reply or on a tool result stranded from its request; `0` still writes
+  nothing at all. A board holding anything else under `history` opens
+  without its conversation rather than on a guess at one (#127).
 
 * Swapping the `llm_model` board option now hands the new client to the
   mounted chat instead of remounting it. A remount rendered a fresh chat

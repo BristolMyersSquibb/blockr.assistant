@@ -19,7 +19,7 @@ round_trip <- function(store, save_turns = Inf) {
     return(NULL)
   }
 
-  deserialize_chat_history(via_board_file(threads))
+  via_board_file(threads)
 }
 
 deser_with_history <- function(blob) {

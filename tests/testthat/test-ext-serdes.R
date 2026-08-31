@@ -188,42 +188,30 @@ test_that("a trimmed thread re-roots on the node it now starts at", {
   )
 })
 
-test_that("an unreadable legacy blob restores as no conversation", {
+test_that("a payload that is not a thread set opens without a conversation", {
 
-  expect_null(deserialize_chat_history("not json at all"))
-  expect_null(deserialize_chat_history(NULL))
-  expect_null(deserialize_chat_history(character()))
+  expect_false(is_thread_set("not a thread set"))
+  expect_false(is_thread_set(NULL))
+  expect_false(is_thread_set(character()))
+
+  # Recorded turns are a list too, and the schema version is what tells them
+  # apart from the conversation records a board save writes.
+  expect_false(
+    is_thread_set(
+      lapply(list(ellmer::Turn("user", "hi")), ellmer::contents_record)
+    )
+  )
+
+  expect_null(seeds("not a thread set")$threads)
 })
 
-test_that("threads seed the store and a legacy blob seeds the client", {
+test_that("a thread set seeds the store", {
 
   from_threads <- seeds(
     list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
   )
 
   expect_named(from_threads$threads, "c_1")
-  expect_null(from_threads$messages)
-
-  # A board written before core carried typed data holds its conversation as
-  # a `serializeJSON()` string, and still opens on it.
-  from_legacy <- seeds(
-    jsonlite::serializeJSON(
-      lapply(list(ellmer::Turn("user", "hi")), ellmer::contents_record)
-    )
-  )
-
-  expect_length(from_legacy$messages, 1L)
-  expect_null(from_legacy$threads)
-
-  # The same board, saved again, is written back as that board's first thread
-  # rather than as the string it arrived in.
-  from_legacy_threads <- seeds(
-    jsonlite::serializeJSON(
-      list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
-    )
-  )
-
-  expect_named(from_legacy_threads$threads, "c_1")
 })
 
 test_that("threads and recorded turns are told apart", {
