@@ -7,7 +7,7 @@ new_thread_store <- function(threads = list()) {
   thread_store_class$new(threads)
 }
 
-thread_store_class <- R6::R6Class(
+thread_store_class <- R6Class(
   "ThreadStore",
   inherit = shinychat::ConversationStore,
   private = list(
