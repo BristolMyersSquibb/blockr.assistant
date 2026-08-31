@@ -11,6 +11,11 @@
 #' @param x A `block`.
 #' @param board The current board snapshot, for resolving link
 #'   metadata.
+#' @param state The block's live state, as a named list of current
+#'   values, or `NULL` when the block holds none (never built, or
+#'   stateless). The tool supplies it from the block server; block
+#'   objects carry only the values they were constructed with, which
+#'   go stale the moment a user touches the gear.
 #' @param id The id under which the block lives on the board (the
 #'   name attribute of the enclosing `blocks` object -- block
 #'   objects themselves do not carry an id because ids must be
@@ -24,13 +29,19 @@
 #'   before returning to ellmer.
 #'
 #' @export
-describe_block <- function(x, board, id, ...) UseMethod("describe_block")
+describe_block <- function(x, board, id, state = NULL, ...) {
+  UseMethod("describe_block")
+}
 
 #' @rdname describe_block
 #' @export
-describe_block.block <- function(x, board, id, ...) {
+describe_block.block <- function(x, board, id, state = NULL, ...) {
 
   core <- format(x)
+
+  if (!is.null(state)) {
+    core <- splice_block_state(core, state)
+  }
 
   ctrl <- external_ctrl_vars(x)
 

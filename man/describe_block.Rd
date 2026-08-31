@@ -5,9 +5,9 @@
 \alias{describe_block.block}
 \title{Describe a block for the LLM}
 \usage{
-describe_block(x, board, id, ...)
+describe_block(x, board, id, state = NULL, ...)
 
-\method{describe_block}{block}(x, board, id, ...)
+\method{describe_block}{block}(x, board, id, state = NULL, ...)
 }
 \arguments{
 \item{x}{A \code{block}.}
@@ -20,6 +20,12 @@ name attribute of the enclosing \code{blocks} object -- block
 objects themselves do not carry an id because ids must be
 unique while block-level fields are user-supplied and need not
 be).}
+
+\item{state}{The block's live state, as a named list of current
+values, or \code{NULL} when the block holds none (never built, or
+stateless). The tool supplies it from the block server; block
+objects carry only the values they were constructed with, which
+go stale the moment a user touches the gear.}
 
 \item{...}{For future use.}
 }

@@ -1,5 +1,27 @@
 # blockr.assistant (development version)
 
+* `describe_block` now reports a block's live state rather than the values it
+  was constructed with. The block object on the board is written once, at
+  construction, and is never rebuilt: `apply_board_update()` handles blocks
+  `add` and `rm`, and the only field a `mod` copies back is `block_name`.
+  Everything else a user changes in the gear, and everything `modify_block`
+  writes, lands in the block server's `state` reactives, so the description
+  the model was reading dated from board load. It was reading a block that
+  had already changed, sometimes by its own hand a tool call earlier.
+
+  This bit hardest where the result does not reveal the configuration. A code
+  block whose script the user had edited was described with the script the
+  board was saved with, and since `script` is externally controllable, the
+  model then rewrote the block from that stale description and the user's
+  work was gone, silently, with the turn reported as a success. A chart block
+  has the same shape: its mappings and drill filter appear nowhere in the data
+  frame it returns.
+
+  State values are also no longer rendered through `utils::str()`, which cut a
+  long character value at about seventy characters. For a code block the one
+  value that matters is a long character value, and a truncated script is one
+  a model replaces rather than edits.
+
 * The chat's command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
   command runs the conversation through the same summarise-and-replace

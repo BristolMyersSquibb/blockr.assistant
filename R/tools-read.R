@@ -87,7 +87,10 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
 
         summary <- truncate_chars(
           paste(
-            describe_block(blks[[id]], board = brd, id = id),
+            describe_block(
+              blks[[id]], board = brd, id = id,
+              state = block_current_state(board, id)
+            ),
             collapse = "\n"
           ),
           summary_max_chars()
@@ -109,7 +112,9 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
     name        = "describe_block",
     description = paste(
       "Describe a block currently on the board: its class chain,",
-      "name, arguments and current values, external-control",
+      "name, and the current value of every argument (live, as the",
+      "block is configured right now, including anything the user",
+      "changed by hand), external-control",
       "declaration, incoming links, eval status (whether it holds a",
       "current result, and if not why), and any deployment-authored",
       "`skills` scoped to its type. Calling this also registers a",
