@@ -1,5 +1,26 @@
 # blockr.assistant (development version)
 
+* The board check run after a commit now reports a changed block's state
+  only where that state is not an echo of what the model just sent. Core
+  applies a `blocks$mod` delta by writing each field straight into the
+  block's state reactive value, with no validation and no revert, so on the
+  path a `modify_block` takes the read-back reported the delta back to its
+  own author, and the review invitation asked on every commit for a
+  comparison whose answer was fixed. A check that always confirms is worse
+  than no check: it costs a step each time and trains the model to skim a
+  section that also carries the result summaries and the new-condition
+  report. A block the model added still reports its state in full, the
+  constructor having resolved every argument the model did not name; a
+  block it modified now reports only the fields whose applied value differs
+  from the staged delta, which is where the news is -- a block whose own
+  client writes back over what the model set, or an apply that stopped
+  partway. Most commits therefore carry no state section at all, and one
+  that does is worth reading, so the invitation now explains what a
+  reported state means instead of asking for the comparison every time. The
+  commit tool's description and the system prompt, which both still
+  described the payload as results and problems, now say what a commit
+  hands back (#146).
+
 * Block state now reaches the model in two tiers, with a new
   `get_block_state` tool behind the summary. State is rendered with
   `utils::str()`, which cuts a character value at 128 characters and marks

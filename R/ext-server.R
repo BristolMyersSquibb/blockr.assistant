@@ -346,7 +346,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         pending_update <- reactiveVal(empty_pending())
         touched        <- reactiveVal(character())
-        changed        <- reactiveVal(character())
+        changed        <- reactiveVal(no_staged_changes())
 
         report <- reactiveValues(
           count     = 0L,
@@ -770,11 +770,13 @@ asst_ext_srv <- function(system_prompt, messages) {
         shown_turn <- reactiveVal(NULL)
 
         # Capture the blocks the model touched this turn off core's `update`
-        # reactiveVal. By the time a default-priority observer sees it,
-        # preprocess_board_update has expanded block removals into explicit
-        # link removals -- so we reuse core's cleanup instead of recomputing
-        # it. Gated on `awaiting`: only the model's own flush counts, not
-        # dock's background updates.
+        # reactiveVal, keeping the staged block deltas alongside the ids so
+        # the read-back can tell an applied value that echoes what the model
+        # sent from one that does not. By the time a default-priority
+        # observer sees it, preprocess_board_update has expanded block
+        # removals into explicit link removals -- so we reuse core's cleanup
+        # instead of recomputing it. Gated on `awaiting`: only the model's
+        # own flush counts, not dock's background updates.
         observeEvent(
           update(),
           {
@@ -789,7 +791,9 @@ asst_ext_srv <- function(system_prompt, messages) {
                 )
               )
 
-              changed(union(isolate(changed()), changed_blocks(upd)))
+              changed(
+                merge_staged_changes(isolate(changed()), staged_changes(upd))
+              )
             }
           }
         )
@@ -827,7 +831,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           }
 
           touched(character())
-          changed(character())
+          changed(no_staged_changes())
           report$awaiting <- TRUE
 
           promises::promise(
@@ -896,7 +900,7 @@ asst_ext_srv <- function(system_prompt, messages) {
           report$count <- 0L
           reset_pending(pending_update)
           touched(character())
-          changed(character())
+          changed(no_staged_changes())
 
           invisible()
         }

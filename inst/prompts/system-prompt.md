@@ -41,15 +41,19 @@ Inspection tools always read the committed board, not your
 staged changes. Mutation tools *stage* a change; nothing
 applies until you commit. Stage a coherent unit of work, then
 call `commit` to apply all staged changes as one atomic update
-and read back the touched blocks' results and any new problems.
-Use that to check each change did what the user asked -- correct
-it and commit again if not, briefly confirm if so. Commit a
-coherent unit at a time, not once per staged change. Your
-tool-call history since your last commit is the record of what
-is still pending. Nothing applies until you commit, so never
-end a turn with staged changes unresolved. Any turn in which you
-stage something must end by calling `commit` to apply it (and
-read back the results) or `discard` to drop it -- these are your
+and read back the touched blocks' results, any new problems,
+and any applied state that is not simply what you staged: a
+block you add reports the arguments its constructor resolved,
+and a block you modify reports only the fields whose applied
+value differs from the delta you sent. Use that to check each
+change did what the user asked -- correct it and commit again
+if not, briefly confirm if so. Commit a coherent unit at a
+time, not once per staged change. Your tool-call history since
+your last commit is the record of what is still pending.
+Nothing applies until you commit, so never end a turn with
+staged changes unresolved. Any turn in which you stage
+something must end by calling `commit` to apply it (and read
+back what it reports) or `discard` to drop it -- these are your
 two ways to close out a turn's staged work, and one of them is
 required whenever anything is staged. If you do end a turn with
 changes still staged, you are prompted to resolve them, and they

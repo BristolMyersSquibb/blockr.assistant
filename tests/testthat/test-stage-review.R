@@ -142,6 +142,10 @@ fake_block <- function(value = NULL, error = NULL, state = NULL) {
   )
 }
 
+staged_add <- function(...) list(add = c(...), mod = list())
+
+staged_mod <- function(...) list(add = character(), mod = list(...))
+
 test_that("collect_touched_results summarises each touched block", {
 
   board <- list(
@@ -403,6 +407,36 @@ test_that("the update listener captures touched blocks while awaiting", {
   )
 })
 
+test_that("the update listener keeps the deltas staged for the mods", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(a = new_dataset_block(), b = new_head_block()))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    {
+      session$flushReact()
+
+      report$awaiting <- TRUE
+      update(
+        list(
+          blocks = list(
+            add = list(b = "block"), mod = list(a = list(dataset = "iris"))
+          )
+        )
+      )
+      session$flushReact()
+
+      expect_identical(
+        changed(), list(add = "b", mod = list(a = list(dataset = "iris")))
+      )
+    },
+    args = board_with_links_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
 test_that("the update listener ignores updates when not awaiting", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -434,7 +468,32 @@ test_that("changed_blocks names the blocks added or modified", {
   expect_identical(changed_blocks(NULL), character())
 })
 
-test_that("collect_touched_results carries state for the changed blocks", {
+test_that("staged_changes splits the added ids from the deltas of the mods", {
+
+  upd <- list(
+    blocks = list(add = list(a = "block"), mod = list(b = list(n = 5L)))
+  )
+
+  expect_identical(
+    staged_changes(upd), list(add = "a", mod = list(b = list(n = 5L)))
+  )
+
+  expect_identical(staged_changes(NULL), no_staged_changes())
+  expect_identical(staged_changes(list(blocks = list())), no_staged_changes())
+})
+
+test_that("merge_staged_changes folds in a second update, the newer winning", {
+
+  expect_identical(
+    merge_staged_changes(
+      list(add = "a", mod = list(b = list(n = 1L), c = list(x = 1L))),
+      list(add = "d", mod = list(b = list(n = 2L)))
+    ),
+    list(add = c("a", "d"), mod = list(c = list(x = 1L), b = list(n = 2L)))
+  )
+})
+
+test_that("collect_touched_results carries full state for an added block", {
 
   board <- list(
     blocks = list(
@@ -443,7 +502,7 @@ test_that("collect_touched_results carries state for the changed blocks", {
     )
   )
 
-  out <- collect_touched_results(c("a", "b"), board, changed = "a")
+  out <- collect_touched_results(c("a", "b"), board, changed = staged_add("a"))
 
   expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
   expect_true(any(grepl("int 3", out, fixed = TRUE)))
@@ -458,17 +517,73 @@ test_that("collect_touched_results reports no state without a changed set", {
 
   out <- collect_touched_results("a", board)
 
-  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results stays quiet on a mod that applied as sent", {
+
+  board <- list(
+    blocks = list(
+      a = fake_block(data.frame(x = 1:3), state = list(n = function() 3L))
+    )
+  )
+
+  out <- collect_touched_results(
+    "a", board, changed = staged_mod(a = list(n = 3L))
+  )
+
+  expect_true(any(grepl("- a:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results reports only the mod fields that diverged", {
+
+  board <- list(
+    blocks = list(
+      a = fake_block(
+        data.frame(x = 1:3),
+        state = list(n = function() 3L, by = function() "grp")
+      )
+    )
+  )
+
+  out <- paste(
+    collect_touched_results(
+      "a", board, changed = staged_mod(a = list(n = 3L, by = "col"))
+    ),
+    collapse = "\n"
+  )
+
+  expect_match(
+    out, "Applied state (differs from what you staged):", fixed = TRUE
+  )
+  expect_match(out, "grp", fixed = TRUE)
+  expect_no_match(out, "int 3", fixed = TRUE)
+})
+
+test_that("collect_touched_results skips a delta field state does not hold", {
+
+  board <- list(
+    blocks = list(
+      a = fake_block(data.frame(x = 1:3), state = list(n = function() 3L))
+    )
+  )
+
+  out <- collect_touched_results(
+    "a", board, changed = staged_mod(a = list(block_name = "Top rows"))
+  )
+
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
 })
 
 test_that("collect_touched_results omits state for an unconstructed block", {
 
   board <- list(blocks = list(a = fake_block(data.frame(x = 1:3))))
 
-  out <- collect_touched_results("a", board, changed = "a")
+  out <- collect_touched_results("a", board, changed = staged_add("a"))
 
   expect_true(any(grepl("- a:", out, fixed = TRUE)))
-  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
 })
 
 test_that("collect_touched_results reports state for a block with no result", {
@@ -478,7 +593,7 @@ test_that("collect_touched_results reports state for a block with no result", {
     eval   = list(a = function() "dormant")
   )
 
-  out <- collect_touched_results("a", board, changed = "a")
+  out <- collect_touched_results("a", board, changed = staged_add("a"))
 
   expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
   expect_true(any(grepl("int 3", out, fixed = TRUE)))
@@ -497,11 +612,33 @@ test_that("collect_touched_results omits a state value str() would cut", {
   )
 
   out <- paste(
-    collect_touched_results("a", board, changed = "a"), collapse = "\n"
+    collect_touched_results("a", board, changed = staged_add("a")),
+    collapse = "\n"
   )
 
   expect_match(out, "Applied state:", fixed = TRUE)
   expect_match(out, "300 chars omitted", fixed = TRUE)
   expect_match(out, "get_block_state", fixed = TRUE)
   expect_no_match(out, "zzz", fixed = TRUE)
+})
+
+test_that("a long value equal to its delta is not reported as diverged", {
+
+  long  <- strrep("z", 300L)
+  board <- list(
+    blocks = list(
+      a = fake_block(
+        data.frame(x = 1:3), state = list(script = function() long)
+      )
+    )
+  )
+
+  out <- paste(
+    collect_touched_results(
+      "a", board, changed = staged_mod(a = list(script = long))
+    ),
+    collapse = "\n"
+  )
+
+  expect_no_match(out, "Applied state", fixed = TRUE)
 })

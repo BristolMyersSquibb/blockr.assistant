@@ -54,11 +54,13 @@ flush_check_header <- function() {
 review_invitation <- function() {
   paste(
     "Confirm each changed block matches what the user asked for, or correct",
-    "it. The state reported under a block you changed is what the board holds",
-    "for it now -- read it back against what you meant to apply, since a",
-    "result summary on its own need not distinguish a change that landed from",
-    "one that did not. Inspect downstream results with get_block_result or",
-    "query_data when:",
+    "it. State is reported only where it is not an echo of what you sent: a",
+    "block you added carries the full state its constructor resolved, and a",
+    "block you modified carries only the fields whose applied value differs",
+    "from what you staged. Read those closely, since a result summary on its",
+    "own need not distinguish a change that landed from one that did not.",
+    "Where no state is reported, the block holds exactly what you staged.",
+    "Inspect downstream results with get_block_result or query_data when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -74,13 +76,42 @@ link_dests <- function(lnks) {
   as.data.frame(lnks)$to
 }
 
-changed_blocks <- function(upd) {
+no_staged_changes <- function() {
+  list(add = character(), mod = list())
+}
+
+# What a commit staged for each block it changed, split by verb: the ids it
+# adds, and the deltas it stages for the ones it modifies. The read-back needs
+# the deltas and not merely the ids, because the two verbs carry different
+# news -- see applied_state_lines().
+staged_changes <- function(upd) {
 
   if (is.null(upd)) {
-    return(character())
+    return(no_staged_changes())
   }
 
-  c(names(upd$blocks$add), names(upd$blocks$mod))
+  list(
+    add = coal(names(upd$blocks$add), character()),
+    mod = coal(upd$blocks$mod, list())
+  )
+}
+
+# A commit is one atomic update, so this normally folds in a single set. It is
+# the counterpart of the union() the touched ids get, for a flush that arrives
+# in more than one piece; the newer delta wins, being the later staging.
+merge_staged_changes <- function(prev, new) {
+
+  list(
+    add = union(prev$add, new$add),
+    mod = c(prev$mod[setdiff(names(prev$mod), names(new$mod))], new$mod)
+  )
+}
+
+changed_blocks <- function(upd) {
+
+  chg <- staged_changes(upd)
+
+  c(chg$add, names(chg$mod))
 }
 
 touched_blocks <- function(upd, board) {
@@ -127,7 +158,8 @@ review_max_blocks <- function() {
   as.integer(blockr_option("assistant_review_max_blocks", 50L))
 }
 
-collect_touched_results <- function(touched, board, changed = character(),
+collect_touched_results <- function(touched, board,
+                                    changed = no_staged_changes(),
                                     cap = review_max_blocks()) {
 
   blks <- isolate(board$blocks)
@@ -170,35 +202,74 @@ review_result_line <- function(id, board, changed) {
   paste(
     c(
       glue::glue("- {id}:"),
-      if (id %in% changed) applied_state_lines(id, board),
+      applied_state_lines(id, board, changed),
       block_result_summary(id, board)
     ),
     collapse = "\n"
   )
 }
 
-applied_state_lines <- function(id, board) {
+# State is worth reading back only where it is not an echo of what the model
+# just sent. Core applies a `blocks$mod` delta by writing each field straight
+# into the block's state reactive value, with no validation and no revert, so
+# an applied value is the staged one unless something else moved it -- the
+# block's own client writing back over it, or an apply that stopped partway.
+# Those fields are the news, and a modification carrying none reports no state
+# at all. An addition is the opposite case: the constructor resolves every
+# argument the model did not name, so the whole state is news.
+applied_state_lines <- function(id, board, changed) {
 
-  # Elided as describe_block's state section is elided: this reads back a
-  # change the model is about to confirm or correct, so a value shown in part
-  # here is acted on exactly as one shown in part there.
-  state <- summary_block_state(id, board)
+  # Read live state rather than summary_block_state(), because divergence has
+  # to be judged on the values as the board holds them: an elided long value
+  # differs from every delta it could be compared against.
+  state <- live_block_state(id, board)
 
   if (is.null(state)) {
     return(NULL)
   }
 
-  # Rendered as core renders block state for describe_block, so the model
-  # meets a block's arguments in one shape wherever it reads them.
-  rendered <- str_lines(state)[-1L]
+  header <- "Applied state:"
+
+  if (id %in% names(changed$mod)) {
+
+    state  <- diverged_state(state, changed$mod[[id]])
+    header <- "Applied state (differs from what you staged):"
+
+  } else if (!id %in% changed$add) {
+
+    return(NULL)
+  }
+
+  if (!length(state)) {
+    return(NULL)
+  }
+
+  # Elided as describe_block's state section is elided: this reads back a
+  # change the model is about to confirm or correct, so a value shown in part
+  # here is acted on exactly as one shown in part there. Rendered as core
+  # renders block state for describe_block, so the model meets a block's
+  # arguments in one shape wherever it reads them.
+  rendered <- str_lines(elide_long_values(state))[-1L]
 
   c(
-    "Applied state:",
+    header,
     truncate_chars(
       paste(rendered, collapse = "\n"), summary_max_chars(),
       hint = state_tool_hint()
     )
   )
+}
+
+# Compared with identical() because that is how core decides whether to write
+# a delta field at all, so a field is reported exactly when core's write did
+# not stick. A field the delta names but state does not hold is skipped rather
+# than reported as diverged: `block_name` arrives that way, core applying it
+# to the board's block object rather than to state.
+diverged_state <- function(state, delta) {
+
+  nms <- intersect(names(delta), names(state))
+
+  state[nms[!lgl_mply(identical, state[nms], delta[nms])]]
 }
 
 neighbor_blocks <- function(ids, board) {
