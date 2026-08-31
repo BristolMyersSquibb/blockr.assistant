@@ -333,6 +333,60 @@ test_that("add_panel_to_view rejects a bad side keyword", {
   expect_match(res, "side must be one of")
 })
 
+test_that("add_panel_to_view stages a rail destination", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", rail = "left")
+
+  expect_match(
+    res, "Staged add_panel_to_view(v_over, b) (left rail)", fixed = TRUE
+  )
+
+  ref <- isolate(env$pending()$views$mod[["v_over"]]$add[["block_panel-b"]])
+  expect_identical(ref$rail, "left")
+  expect_null(ref$near)
+  expect_null(ref$side)
+})
+
+test_that("add_panel_to_view rejects a bad rail edge", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", rail = "top")
+
+  expect_match(res, "^add_panel_to_view failed:")
+  expect_match(res, "rail must be one of: left, right")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("add_panel_to_view rejects a rail combined with a tree placement", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", near = "a", side = "right",
+             rail = "left")
+
+  expect_match(res, "^add_panel_to_view failed:")
+  expect_match(res, "cannot combine with near, side")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("add_panel_to_view rejects a size alongside a rail", {
+
+  env <- new_view_tool_env()
+  apv <- tool_add_panel_to_view(env$board, env$pending, session = NULL)
+
+  res <- apv(view = "v_over", panel = "b", rail = "right", size = 0.3)
+
+  expect_match(res, "^add_panel_to_view failed:")
+  expect_match(res, "cannot combine with size")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
 test_that("add_panel_to_view rejects an add on a non-existent view", {
 
   env <- new_view_tool_env()
@@ -393,6 +447,65 @@ test_that("move_panel rejects a move onto a non-member anchor", {
 
   expect_match(res, "move_panel\\(v_over\\) failed:")
   expect_match(res, "not a view member")
+})
+
+test_that("move_panel stages a rail move without an anchor", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  res <- mp(view = "v_main", panel = "b", rail = "left")
+
+  expect_match(
+    res, "Staged move_panel(v_main, b) (left rail)", fixed = TRUE
+  )
+
+  ref <- isolate(env$pending()$views$mod[["v_main"]]$move[["block_panel-b"]])
+  expect_identical(as.character(ref), "block_panel-b")
+  expect_identical(ref$rail, "left")
+  expect_null(ref$near)
+})
+
+test_that("move_panel moves a panel back out of a rail via near / side", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  mp(view = "v_main", panel = "b", rail = "left")
+  res <- mp(view = "v_main", panel = "b", near = "a", side = "right")
+
+  expect_match(
+    res, "Staged move_panel(v_main, b) (right of a)", fixed = TRUE
+  )
+
+  ref <- isolate(env$pending()$views$mod[["v_main"]]$move[["block_panel-b"]])
+  expect_null(ref$rail)
+  expect_identical(ref$near, "a")
+  expect_identical(ref$side, "right")
+})
+
+test_that("move_panel rejects a rail combined with an anchor", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  res <- mp(view = "v_main", panel = "b", near = "a", rail = "left")
+
+  expect_match(res, "^move_panel failed:")
+  expect_match(res, "cannot combine with near")
+  expect_false(has_any_changes(isolate(env$pending())))
+})
+
+test_that("move_panel rejects a move naming no destination", {
+
+  env <- new_view_tool_env()
+  mp <- tool_move_panel(env$board, env$pending, session = NULL)
+
+  res <- mp(view = "v_main", panel = "b")
+
+  expect_match(res, "^move_panel failed:")
+  expect_match(res, "needs a destination")
+  expect_false(has_any_changes(isolate(env$pending())))
 })
 
 test_that("resize_panel stages a resize verb with a size hint", {

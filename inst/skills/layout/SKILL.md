@@ -20,18 +20,24 @@ To change an existing view, don't re-emit a layout -- edit it in
 place with the atomic panel-op tools, which compose into one
 update when you commit:
 
-- add_panel_to_view(view, panel, near, side, size): add a block or
-  extension to the view. `near` (a panel already in the view) and
-  `side` (within / left / right / above / below, relative to
-  near) are optional placement hints; omit both for a default
-  spot. `within` tabs the panel into near's group. An optional
-  `size` (a ratio in (0, 1)) records the panel's target size along
-  its split axis.
+- add_panel_to_view(view, panel, near, side, size, rail): add a
+  block or extension to the view. `near` (a panel already in the
+  view) and `side` (within / left / right / above / below,
+  relative to near) are optional placement hints; omit both for a
+  default spot. `within` tabs the panel into near's group. An
+  optional `size` (a ratio in (0, 1)) records the panel's target
+  size along its split axis. Pass `rail` ("left" or "right")
+  instead to park the panel on that edge of the view rather than
+  in the split arrangement; it excludes `near`, `side` and `size`
+  (see Rails below).
 - remove_panel_from_view(view, panel): drop a panel from the
   view. The block or extension stays on the board.
-- move_panel(view, panel, near, side): reposition a panel already
-  in the view next to `near` on the given `side`. Membership is
-  unchanged.
+- move_panel(view, panel, near, side, rail): reposition a panel
+  already in the view -- next to `near` on the given `side`, or,
+  with `rail` in place of both, onto that edge of the view. Give
+  exactly one of `near` or `rail`; the `near` form is also what
+  brings a railed panel back into the split arrangement.
+  Membership is unchanged.
 - resize_panel(view, panel, size): set the panel's group `size` (a
   ratio in (0, 1)) along its split axis, relative to its siblings.
   The panel must already be in the view; membership and
@@ -43,9 +49,10 @@ update when you commit:
 
 dock owns the live arrangement, so placement is a hint, not a
 guarantee of exact geometry. `near` must be a panel already in
-the view, not one you are adding in the same turn. These verbs
-all work inside the split arrangement; none of them reaches a
-rail (see Rails below).
+the view, not one you are adding in the same turn. Most of these
+verbs work inside the split arrangement only; add_panel_to_view
+and move_panel reach a view's rails as well, through `rail` (see
+Rails below).
 
 Each view has a stable `id` and a display `name`. Address an
 existing view by its `id` (from list_views) in the panel-op
@@ -102,9 +109,16 @@ Do not confuse a rail's edge with the `side` argument of the panel-op
 tools. Both spell their values "left" and "right" and they mean
 different things: `side` is a direction relative to a `near` panel
 inside the split arrangement, while a rail's edge is a side of the
-whole view. There is also no verb that moves a panel into or out of a
-rail, so a view's rails are set once, by the add_view layout that
-creates it.
+whole view. Naming both at once asks for two destinations, which is
+why `rail` excludes `near` and `side` rather than outranking them.
+
+A view's rails are not fixed at birth. Both add_panel_to_view and
+move_panel take a `rail` argument naming an edge, which parks the
+panel there instead of placing it in the split arrangement. Moving a
+railed panel back out is the ordinary move_panel(view, panel, near,
+side), with no `rail`. A rail's width stays dock's to set, so `size`
+never applies to one -- add_panel_to_view rejects a `size` passed
+alongside `rail`.
 
 Worked examples (blocks: data, head, scatter; extension:
 assistant_extension):
