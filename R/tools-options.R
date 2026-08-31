@@ -95,9 +95,8 @@ tool_set_board_option <- function(board, session) {
 
         if (!id %in% names(opts)) {
           return(
-            sprintf(
-              "No board option with id %s. Call list_board_options first.",
-              id
+            glue::glue(
+              "No board option with id {id}. Call list_board_options first."
             )
           )
         }
@@ -115,7 +114,7 @@ tool_set_board_option <- function(board, session) {
 
         set_board_option_value(id, coerced, isolate(board$board), session)
 
-        sprintf("Set board option %s to %s.", id, format_option_value(coerced))
+        glue::glue("Set board option {id} to {format_option_value(coerced)}.")
       })
     },
     name        = "set_board_option",

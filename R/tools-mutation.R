@@ -40,7 +40,10 @@ stage_added_block <- function(board, pending, id, type, args) {
     pending, board, id, do.call(create_block, c(list(type), args))
   )
 
-  sprintf("Staged add_block(%s) -- call commit to apply.", id)
+  glue::glue(
+    "Staged add_block({id}) -- call commit to apply. ",
+    "Use id `{id}` to link or modify this block."
+  )
 }
 
 stage_modified_block <- function(board, pending, id, delta) {
@@ -54,7 +57,7 @@ stage_modified_block <- function(board, pending, id, delta) {
 
   stage_block_mod(pending, board, id, delta)
 
-  sprintf("Staged modify_block(%s) -- call commit to apply.", id)
+  glue::glue("Staged modify_block({id}) -- call commit to apply.")
 }
 
 tool_add_block <- function(board, pending, session) {
@@ -65,12 +68,9 @@ tool_add_block <- function(board, pending, session) {
 
         if (!type %in% list_blocks()) {
           stop(
-            sprintf(
-              paste(
-                "unknown block type '%s'. Call list_block_types",
-                "to see registered types."
-              ),
-              type
+            glue::glue(
+              "unknown block type '{type}'. Call list_block_types ",
+              "to see registered types."
             ),
             call. = FALSE
           )
@@ -83,16 +83,14 @@ tool_add_block <- function(board, pending, session) {
 
         if (length(reg_args) && length(unknown)) {
           stop(
-            sprintf(
-              paste(
-                "add_block('%s') got unrecognized argument(s): %s.",
-                "Configurable arguments are: %s. Use exactly these names",
-                "(mirror the example from describe_block_type); if a listed",
-                "argument is itself an object, nest its fields under that",
-                "argument name rather than passing them at the top level."
-              ),
-              type, paste(unknown, collapse = ", "),
-              paste(reg_args, collapse = ", ")
+            glue::glue(
+              "add_block('{type}') got unrecognized argument(s): ",
+              "{paste(unknown, collapse = ', ')}. ",
+              "Configurable arguments are: ",
+              "{paste(reg_args, collapse = ', ')}. Use exactly these names ",
+              "(mirror the example from describe_block_type); if a listed ",
+              "argument is itself an object, nest its fields under that ",
+              "argument name rather than passing them at the top level."
             ),
             call. = FALSE
           )
@@ -139,12 +137,11 @@ tool_remove_block <- function(board, pending, session) {
         dropped <- stage_block_rm(pending, board, id)
 
         paste0(
-          sprintf("Staged remove_block(%s)", id),
+          glue::glue("Staged remove_block({id})"),
           if (length(dropped)) {
-            sprintf(
-              " together with the link%s you staged for it (%s)",
-              if (length(dropped) > 1L) "s" else "",
-              toString(dropped)
+            glue::glue(
+              " together with the link{if (length(dropped) > 1L) 's' else ''}",
+              " you staged for it ({toString(dropped)})"
             )
           },
           " -- call commit to apply."
@@ -212,9 +209,9 @@ tool_add_link <- function(board, pending, session) {
 
         stage_link_add(pending, board, id, link)
 
-        sprintf(
-          "Staged add_link(%s: %s -> %s$%s) -- call commit to apply.",
-          id, from, to, input
+        glue::glue(
+          "Staged add_link({id}: {from} -> {to}${input})",
+          " -- call commit to apply."
         )
       })
     },
@@ -246,9 +243,7 @@ tool_remove_link <- function(board, pending, session) {
 
         stage_link_rm(pending, board, id)
 
-        sprintf(
-          "Staged remove_link(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged remove_link({id}) -- call commit to apply.")
       })
     },
     name        = "remove_link",
@@ -276,9 +271,7 @@ tool_modify_link <- function(board, pending, session) {
 
         stage_link_mod(pending, board, id, delta)
 
-        sprintf(
-          "Staged modify_link(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged modify_link({id}) -- call commit to apply.")
       })
     },
     name        = "modify_link",
@@ -323,9 +316,7 @@ tool_add_stack <- function(board, pending, session) {
 
         stage_stack_add(pending, board, id, stack)
 
-        sprintf(
-          "Staged add_stack(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged add_stack({id}) -- call commit to apply.")
       })
     },
     name        = "add_stack",
@@ -359,9 +350,7 @@ tool_remove_stack <- function(board, pending, session) {
 
         stage_stack_rm(pending, board, id)
 
-        sprintf(
-          "Staged remove_stack(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged remove_stack({id}) -- call commit to apply.")
       })
     },
     name        = "remove_stack",
@@ -392,9 +381,7 @@ tool_modify_stack <- function(board, pending, session) {
 
         stage_stack_mod(pending, board, id, delta)
 
-        sprintf(
-          "Staged modify_stack(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged modify_stack({id}) -- call commit to apply.")
       })
     },
     name        = "modify_stack",

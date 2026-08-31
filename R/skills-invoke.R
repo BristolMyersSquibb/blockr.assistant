@@ -17,15 +17,12 @@ tool_read_skill <- function() {
 
         if (is.null(skill) || !is_model_invocable(skill)) {
           return(
-            sprintf(
-              paste(
-                "No skill named '%s' is available here. Global skills are",
-                "listed in the Skills section of the system prompt;",
-                "block- and extension-scoped ones are named by",
-                "describe_block_type, describe_block and",
-                "describe_extension."
-              ),
-              name
+            glue::glue(
+              "No skill named '{name}' is available here. Global skills ",
+              "are listed in the Skills section of the system prompt; ",
+              "block- and extension-scoped ones are named by ",
+              "describe_block_type, describe_block and ",
+              "describe_extension."
             )
           )
         }
@@ -38,9 +35,9 @@ tool_read_skill <- function() {
 
         if (!file %in% bundled) {
           return(
-            sprintf(
-              "Skill '%s' bundles no file '%s'. It bundles: %s.",
-              name, file, paste(bundled, collapse = ", ")
+            glue::glue(
+              "Skill '{name}' bundles no file '{file}'. It bundles: ",
+              "{paste(bundled, collapse = ', ')}."
             )
           )
         }

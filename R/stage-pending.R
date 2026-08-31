@@ -74,7 +74,7 @@ format_stage_error <- function(op, id, e) {
     as.character(e)
   }
 
-  sprintf("%s(%s) failed: %s", op, id, msg)
+  glue::glue("{op}({id}) failed: {msg}")
 }
 
 stage_abort <- function(op, id, reason) {
@@ -251,6 +251,37 @@ drop_staged_stack_member <- function(stks, id, board) {
   stks
 }
 
+linkable_block_ids <- function(board, pending) {
+
+  setdiff(
+    existing_ids(board, pending, "blocks"),
+    isolate(pending())$blocks$rm
+  )
+}
+
+check_link_endpoints <- function(ends, known) {
+
+  bad <- ends[nzchar(ends) & !ends %in% known]
+
+  if (!length(bad)) {
+    return(invisible())
+  }
+
+  unknown <- glue::glue_collapse(
+    glue::glue("no block `{bad}` to link {names(bad)}"),
+    sep = ", ",
+    last = " and "
+  )
+
+  stop(
+    glue::glue(
+      "{unknown}. Known block ids: ",
+      "{if (length(known)) toString(known) else 'none'}."
+    ),
+    call. = FALSE
+  )
+}
+
 stage_link_add <- function(pending, board, id, link) {
 
   cur <- isolate(pending())
@@ -272,6 +303,11 @@ stage_link_add <- function(pending, board, id, link) {
       "id is staged for removal; use modify_link instead"
     )
   }
+
+  check_link_endpoints(
+    c(from = link[["from"]], to = link[["to"]]),
+    linkable_block_ids(board, pending)
+  )
 
   new <- cur
   new$links$add <- c(new$links$add, set_names(links(link), id))
@@ -299,6 +335,11 @@ stage_link_mod <- function(pending, board, id, delta) {
       "id is staged for removal; mod has no effect"
     )
   }
+
+  check_link_endpoints(
+    c(from = delta[["from"]], to = delta[["to"]]),
+    linkable_block_ids(board, pending)
+  )
 
   new <- cur
 

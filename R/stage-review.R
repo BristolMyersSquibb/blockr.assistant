@@ -16,12 +16,9 @@ format_flush_feedback <- function(outcome, conditions = NULL, results = NULL,
   if (!is.null(outcome) && isFALSE(outcome$ok)) {
     parts <- c(
       parts,
-      sprintf(
-        paste(
-          "The board update was rejected during the %s phase and the board",
-          "was not changed: %s"
-        ),
-        outcome$phase, outcome$message
+      glue::glue(
+        "The board update was rejected during the {outcome$phase} phase ",
+        "and the board was not changed: {outcome$message}"
       )
     )
   }
@@ -143,12 +140,9 @@ collect_touched_results <- function(touched, board,
   if (length(ids) > length(shown)) {
     lines <- c(
       lines,
-      sprintf(
-        paste(
-          "(showing %d of %d blocks -- call get_block_result or",
-          "query_data for the rest)"
-        ),
-        length(shown), length(ids)
+      glue::glue(
+        "(showing {length(shown)} of {length(ids)} blocks -- call ",
+        "get_block_result or query_data for the rest)"
       )
     )
   }
@@ -157,7 +151,7 @@ collect_touched_results <- function(touched, board,
 }
 
 review_result_line <- function(id, board) {
-  sprintf("- %s:\n%s", id, block_result_summary(id, board))
+  glue::glue("- {id}:\n{block_result_summary(id, board)}")
 }
 
 neighbor_blocks <- function(ids, board) {

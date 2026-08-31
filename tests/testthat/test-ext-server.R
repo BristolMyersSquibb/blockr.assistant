@@ -1397,9 +1397,7 @@ test_that("user-invocable skills reach shinychat as slash commands", {
 
       commands <- rec$slash_commands()
 
-      expect_setequal(
-        chr_xtr(commands, "name"), c("compact", "layout", "drill")
-      )
+      expect_setequal(chr_xtr(commands, "name"), c("compact", "drill"))
       expect_true("A drill." %in% chr_xtr(commands, "description"))
     },
     args = list(

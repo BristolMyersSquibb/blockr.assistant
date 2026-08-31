@@ -1246,11 +1246,11 @@ format_token_telemetry <- function(spent) {
     class = "asst-meta",
     meta_item(
       "arrow-up-short", in_t,
-      sprintf("Input tokens (this conversation): %d", in_t)
+      glue::glue("Input tokens (this conversation): {in_t}")
     ),
     meta_item(
       "arrow-down-short", out_t,
-      sprintf("Output tokens (this conversation): %d", out_t)
+      glue::glue("Output tokens (this conversation): {out_t}")
     )
   )
 }

@@ -23,9 +23,8 @@ describe_stack.stack <- function(x, ...) {
 
   blocks <- stack_blocks(x)
 
-  sprintf(
-    "stack '%s' (blocks: %s)",
-    coal(stack_name(x), "<unnamed>"),
-    if (length(blocks)) paste(blocks, collapse = ", ") else "<empty>"
-  )
+  name   <- coal(stack_name(x), "<unnamed>")
+  listed <- if (length(blocks)) paste(blocks, collapse = ", ") else "<empty>"
+
+  glue::glue("stack '{name}' (blocks: {listed})")
 }

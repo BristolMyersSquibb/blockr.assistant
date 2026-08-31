@@ -94,9 +94,7 @@ tool_describe_extension <- function(board, extensions, session) {
 
         if (!id %in% names(exts)) {
           return(
-            sprintf(
-              "No extension with id %s. Call list_extensions first.", id
-            )
+            glue::glue("No extension with id {id}. Call list_extensions first.")
           )
         }
 
@@ -156,9 +154,7 @@ tool_modify_extension <- function(board, pending, session) {
 
         stage_extension_mod(pending, board, id, delta)
 
-        sprintf(
-          "Staged modify_extension(%s) -- call commit to apply.", id
-        )
+        glue::glue("Staged modify_extension({id}) -- call commit to apply.")
       })
     },
     name = "modify_extension",
