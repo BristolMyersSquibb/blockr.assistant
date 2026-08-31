@@ -33,6 +33,7 @@ test_that("the package ships the layout skill as a global skill", {
   expect_false(layout$user_invocable)
   expect_match(skill_body(layout), "Views are tabs")
   expect_match(skill_body(layout), "orientation")
+  expect_match(skill_body(layout), "rails")
 })
 
 test_that("a skill without frontmatter is skipped with a warning", {
