@@ -2,6 +2,21 @@
 
 ## blockr.assistant (development version)
 
+- The layout tools now speak the rails a view pins to its left or right
+  edge (blockr.dock’s
+  [`rail()`](https://bristolmyerssquibb.github.io/blockr.dock/reference/layout.html)).
+  Reporting a view read only its grid tree, so every panel a rail held
+  went missing from what `list_views` handed the model – on a stock
+  board that is the assistant’s own panel, which the default arrangement
+  rails on the left. Rails now ride the layout wire format as a
+  top-level `rails` key, sibling of `focus` and keyed by edge, carrying
+  each rail’s `panels`, open `active` tab and `collapsed` state. The
+  `add_view` tool reads the same key, so a view the model creates can be
+  arranged the way the board arranges its own rather than un-railing the
+  extensions on every new view. A rail’s width stays off the wire: grid
+  `sizes` are ratios while a rail’s size is absolute pixels, and one
+  word carrying two meanings is how it gets used wrong (#134).
+
 - The chat’s command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
   command runs the conversation through the same summarise-and-replace
