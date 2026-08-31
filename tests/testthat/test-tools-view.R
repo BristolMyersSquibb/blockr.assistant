@@ -87,6 +87,25 @@ test_that("list_views falls back to committed board when view_data is NULL", {
   expect_identical(active[ids == "v_over"], FALSE)
 })
 
+test_that("list_views reports the panels a view's rail holds", {
+
+  brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+    views = list(v_main = dock_view(c("a", "b"), name = "Analysis")),
+    grids = list(v_main = dock_grid("a", rail("b", position = "left")))
+  )
+
+  lv <- tool_list_views(
+    new_view_tool_env(brd)$board, view_data = NULL, session = NULL
+  )
+
+  layout <- lv()[[1L]]$layout
+
+  expect_identical(layout$children, list("a"))
+  expect_named(layout$rails, "left")
+  expect_identical(unlist(layout$rails$left$panels), "b")
+})
+
 test_that("validate_layout returns OK and the normalized layout", {
 
   env <- new_view_tool_env()
@@ -141,6 +160,26 @@ test_that("validate_layout accepts staged-add panel IDs", {
   expect_match(res, "^OK")
 })
 
+test_that("validate_layout normalizes and id-checks a railed panel", {
+
+  env <- new_view_tool_env()
+  vl <- tool_validate_layout(env$board, env$pending, session = NULL)
+
+  ok <- vl(
+    layout = '{"children": ["a"], "rails": {"left": {"panels": ["b"]}}}'
+  )
+
+  expect_match(ok, "^OK")
+  expect_match(ok, '"rails":\\{"left":\\{"panels":\\["b"\\]')
+
+  bad <- vl(
+    layout = '{"children": ["a"], "rails": {"left": {"panels": ["ghost"]}}}'
+  )
+
+  expect_match(bad, "^validate_layout failed:")
+  expect_match(bad, "ghost")
+})
+
 test_that("add_view stages a parsed layout under its display name", {
 
   env <- new_view_tool_env()
@@ -157,6 +196,25 @@ test_that("add_view stages a parsed layout under its display name", {
   expect_named(p$views$add, "Reports")
   expect_true(is_dock_grid(p$views$add[["Reports"]]))
   expect_null(p$views$active)
+})
+
+test_that("add_view stages a layout's rail onto the new view's grid", {
+
+  env <- new_view_tool_env()
+  av <- tool_add_view(env$board, env$pending, session = NULL)
+
+  res <- av(
+    name   = "Railed",
+    layout = '{"children": ["a"], "rails": {"left": {"panels": ["b"]}}}'
+  )
+
+  expect_match(res, "Staged add_view(Railed)", fixed = TRUE)
+
+  grid <- isolate(env$pending())$views$add[["Railed"]]
+
+  expect_true(is_dock_grid(grid))
+  expect_identical(grid[["rails"]][["left"]][["panels"]], "block_panel-b")
+  expect_identical(layout_panel_ids(grid), c("block_panel-a", "block_panel-b"))
 })
 
 test_that("add_view active=TRUE flags the new view active by its add key", {
@@ -609,6 +667,106 @@ test_that("layout_to_llm_spec emits empty children for an empty layout", {
   expect_identical(spec$orientation, "horizontal")
 })
 
+test_that("layout_to_llm_spec emits a rail keyed by the edge it pins to", {
+
+  spec <- layout_to_llm_spec(
+    dock_grid("a", "b", rail("ext_panel-assistant", position = "left"))
+  )
+
+  expect_identical(spec$children, list("a", "b"))
+  expect_named(spec$rails, "left")
+  expect_identical(unlist(spec$rails$left$panels), "assistant")
+  expect_false(spec$rails$left$collapsed)
+})
+
+test_that("layout_to_llm_spec names a rail's open tab only when it has tabs", {
+
+  one <- layout_to_llm_spec(dock_grid("a", rail("b", position = "right")))
+
+  expect_identical(unlist(one$rails$right$panels), "b")
+  expect_null(one$rails$right$active)
+
+  many <- layout_to_llm_spec(
+    dock_grid("a", rail("b", "c", position = "right", active = "c"))
+  )
+
+  expect_identical(unlist(many$rails$right$panels), c("b", "c"))
+  expect_identical(many$rails$right$active, "c")
+})
+
+test_that("layout_to_llm_spec carries a rail's collapsed state", {
+
+  spec <- layout_to_llm_spec(
+    dock_grid("a", rail("b", position = "left", collapsed = TRUE))
+  )
+
+  expect_true(spec$rails$left$collapsed)
+})
+
+test_that("layout_to_llm_spec omits a rail that holds no panels", {
+
+  spec <- layout_to_llm_spec(
+    dock_grid("a", rail(position = "left", collapsed = TRUE))
+  )
+
+  expect_null(spec$rails)
+})
+
+test_that("layout_from_json pins a rail's resolved panels to its edge", {
+
+  grid <- layout_from_json(
+    '{"orientation": "horizontal",
+      "children": ["a"],
+      "rails": {"right": {"panels": ["b", "d"], "active": "d",
+                          "collapsed": true}}}',
+    block_ids = c("a", "b"),
+    ext_ids = "d"
+  )
+
+  railed <- grid[["rails"]][["right"]]
+
+  expect_identical(railed[["position"]], "right")
+  expect_identical(railed[["panels"]], c("block_panel-b", "ext_panel-d"))
+  expect_identical(railed[["active"]], "ext_panel-d")
+  expect_true(railed[["collapsed"]])
+})
+
+test_that("a railed panel leaves the grid tree but stays a placed panel", {
+
+  grid <- layout_from_json(
+    '{"children": ["a", "b"], "rails": {"left": {"panels": ["b"]}}}',
+    block_ids = c("a", "b")
+  )
+
+  expect_identical(
+    layout_panel_ids(grid), c("block_panel-a", "block_panel-b")
+  )
+  expect_identical(layout_to_llm_spec(grid)$children, list("a"))
+})
+
+test_that("layout_from_json rejects a rail on an edge no dock offers", {
+
+  expect_error(
+    layout_from_json(
+      '{"children": ["a"], "rails": {"top": {"panels": ["b"]}}}'
+    ),
+    "rail edge must be one of"
+  )
+})
+
+test_that("layout_from_json rejects rails that are not keyed by edge", {
+
+  expect_error(
+    layout_from_json('{"children": ["a"], "rails": ["b"]}'),
+    "must be an object keyed by edge"
+  )
+
+  expect_error(
+    layout_from_json('{"children": ["a"], "rails": {"left": "b"}}'),
+    "rail left must be an object"
+  )
+})
+
 test_that("layout_from_json resolves bare ids to canonical panel ids", {
 
   grid <- layout_from_json(
@@ -633,7 +791,12 @@ test_that("the LLM spec round-trips through layout_from_json", {
     vertical = dock_grid("a", "b", orientation = "vertical"),
     tabbed   = dock_grid(panels("a", "b", "c")),
     tab_pick = dock_grid(panels("a", "b", active = "b")),
-    nested   = dock_grid("a", group("b", "c", sizes = c(0.4, 0.6)))
+    nested   = dock_grid("a", group("b", "c", sizes = c(0.4, 0.6))),
+    railed   = dock_grid("a", rail("b", position = "left")),
+    rail_tab = dock_grid(
+      "a",
+      rail("b", "c", position = "right", active = "c", collapsed = TRUE)
+    )
   )
 
   for (nm in names(layouts)) {

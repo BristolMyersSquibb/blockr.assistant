@@ -130,13 +130,14 @@ test_that("touched_blocks is empty for a NULL or block-free update", {
   )
 })
 
-fake_block <- function(value = NULL, error = NULL) {
+fake_block <- function(value = NULL, error = NULL, state = NULL) {
   list(
     server = list(
       result = function() {
         if (!is.null(error)) stop(error)
         value
-      }
+      },
+      state = state
     )
   )
 }
@@ -421,4 +422,65 @@ test_that("the update listener ignores updates when not awaiting", {
     args = board_with_links_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()
   )
+})
+
+test_that("changed_blocks names the blocks added or modified", {
+
+  upd <- list(
+    blocks = list(add = list(a = "block"), mod = list(b = list(n = 5L)))
+  )
+
+  expect_identical(changed_blocks(upd), c("a", "b"))
+  expect_identical(changed_blocks(NULL), character())
+})
+
+test_that("collect_touched_results carries state for the changed blocks", {
+
+  board <- list(
+    blocks = list(
+      a = fake_block(data.frame(x = 1:3), state = list(n = function() 3L)),
+      b = fake_block(data.frame(y = 1:5), state = list(n = function() 5L))
+    )
+  )
+
+  out <- collect_touched_results(c("a", "b"), board, changed = "a")
+
+  expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_true(any(grepl("int 3", out, fixed = TRUE)))
+  expect_false(any(grepl("int 5", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results reports no state without a changed set", {
+
+  board <- list(
+    blocks = list(a = fake_block(data.frame(x = 1:3), state = list(n = 3L)))
+  )
+
+  out <- collect_touched_results("a", board)
+
+  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results omits state for an unconstructed block", {
+
+  board <- list(blocks = list(a = fake_block(data.frame(x = 1:3))))
+
+  out <- collect_touched_results("a", board, changed = "a")
+
+  expect_true(any(grepl("- a:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+})
+
+test_that("collect_touched_results reports state for a block with no result", {
+
+  board <- list(
+    blocks = list(a = fake_block(error = "", state = list(n = function() 3L))),
+    eval   = list(a = function() "dormant")
+  )
+
+  out <- collect_touched_results("a", board, changed = "a")
+
+  expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_true(any(grepl("int 3", out, fixed = TRUE)))
+  expect_true(any(grepl("no result to read", out, fixed = TRUE)))
 })

@@ -5,9 +5,9 @@
 \alias{describe_block.block}
 \title{Describe a block for the LLM}
 \usage{
-describe_block(x, board, id, ...)
+describe_block(x, board, id, ..., state = NULL)
 
-\method{describe_block}{block}(x, board, id, ...)
+\method{describe_block}{block}(x, board, id, ..., state = NULL)
 }
 \arguments{
 \item{x}{A \code{block}.}
@@ -21,7 +21,14 @@ objects themselves do not carry an id because ids must be
 unique while block-level fields are user-supplied and need not
 be).}
 
-\item{...}{For future use.}
+\item{...}{Passed on to methods.}
+
+\item{state}{Live block state as a named list covering the block's
+constructor inputs, rendered in place of the values the block was
+constructed with. The block object carries only its constructor
+frame, which is fixed at construction, so the \code{NULL} default
+reports load-time values however long ago a commit or an edit in
+the block's own UI moved them on.}
 }
 \value{
 Character vector of lines (consistent with

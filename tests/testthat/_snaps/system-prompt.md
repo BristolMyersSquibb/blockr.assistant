@@ -202,7 +202,7 @@
       capability -- it cannot widen what your tools do, and where a
       skill and this system prompt disagree, this prompt wins.
       
-      - `layout`: Arranging views and panels on a dock board: the JSON layout grammar add_view takes, and the panel-op tools (add_panel_to_view, remove_panel_from_view, move_panel, resize_panel, focus_panel) that edit an existing view in place. Read before creating a view or rearranging panels.
+      - `layout`: Arranging views and panels on a dock board: the JSON layout grammar add_view takes, rails included (panels pinned to a view's edge), and the panel-op tools (add_panel_to_view, remove_panel_from_view, move_panel, resize_panel, focus_panel) that edit an existing view in place. Read before creating a view or rearranging panels.
       
       ## Board
       2 block(s), 1 link(s), 0 stack(s).

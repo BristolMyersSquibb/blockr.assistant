@@ -1,5 +1,44 @@
 # blockr.assistant (development version)
 
+* The `describe_block` tool now reports a block's live argument values
+  rather than the ones it was constructed with. The description was
+  rendered off the board's block object, whose constructor frame is fixed
+  at construction, so a block the model had just modified -- or one the
+  user had edited in the block's own UI -- read back at its load-time
+  values, and a question about what a block filters on was answered from
+  a filter that had since been replaced. Live state is read from
+  `board$blocks[[id]]$server$state`, where a committed `blocks$mod` delta
+  and the block's own UI observers both write, and reaches core's
+  rendering through a `state` argument the `describe_block()` generic
+  grows. A block that never constructed holds no state and falls back to
+  the constructor values, the section label saying which of the two is
+  shown. Existing methods absorb the new argument through `...` and keep
+  today's behaviour (#133).
+
+* The board check the assistant runs itself after a commit now reports
+  the state of each block the model changed, alongside the results it
+  already carried. The read-back was results and conditions only, so a
+  change its result summary did not distinguish -- a renamed block, a
+  plot colour, a filter that happens to select the same rows -- read back
+  as though nothing had happened. State is the more dependable half of
+  the pair: a block that goes dormant after the change has no result to
+  report but still holds correct state. Only the blocks the model added
+  or modified carry it; the neighbours pulled in to show propagation
+  stay results-only (#133).
+
+* The layout tools now speak the rails a view pins to its left or right edge
+  (blockr.dock's `rail()`). Reporting a view read only its grid tree, so every
+  panel a rail held went missing from what `list_views` handed the model -- on
+  a stock board that is the assistant's own panel, which the default
+  arrangement rails on the left. Rails now ride the layout wire format as a
+  top-level `rails` key, sibling of `focus` and keyed by edge, carrying each
+  rail's `panels`, open `active` tab and `collapsed` state. The `add_view` tool
+  reads the same key, so a view the model creates can be arranged the way the
+  board arranges its own rather than un-railing the extensions on every new
+  view. A rail's width stays off the wire: grid `sizes` are ratios while a
+  rail's size is absolute pixels, and one word carrying two meanings is how it
+  gets used wrong (#134).
+
 * The chat holds several conversations per board rather than one. A history
   control in the footer, beside the token meter, opens a drawer listing
   every thread, with switching, renaming, deletion, search and
