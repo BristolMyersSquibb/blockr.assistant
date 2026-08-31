@@ -1,3 +1,41 @@
+# What a board actually does: the writer hands back a string that is written
+# to a file, and the reader takes that path. Reaching for core's seam rather
+# than naming the encoder keeps this honest if core swaps it again.
+via_board_file <- function(x) {
+
+  path <- tempfile(fileext = ".json")
+  on.exit(unlink(path), add = TRUE)
+
+  writeLines(blockr.core:::write_json(x), path)
+
+  blockr.core:::read_json(path)
+}
+
+round_trip <- function(store, save_turns = Inf) {
+
+  threads <- serialize_chat_threads(store, save_turns)
+
+  if (is.null(threads)) {
+    return(NULL)
+  }
+
+  deserialize_chat_history(via_board_file(threads))
+}
+
+deser_with_history <- function(blob) {
+
+  ser <- blockr.core::blockr_ser(
+    new_assistant_extension(),
+    data = list(history = blob)
+  )
+
+  blockr.core::blockr_deser(via_board_file(ser))
+}
+
+seeds <- function(blob) {
+  environment(blockr.dock::extension_server(deser_with_history(blob)))
+}
+
 # Mirrors how shinychat groups turns into record nodes: a node is a run of
 # consecutive same-role turns, so the tree alternates user and assistant.
 fake_thread <- function(turns, id = "c_1", updated = "2026-08-27T10:00:00Z",

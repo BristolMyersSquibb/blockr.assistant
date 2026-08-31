@@ -88,12 +88,20 @@ serialize_chat_threads <- function(store, save_turns, unrecorded = list()) {
     return(NULL)
   }
 
-  jsonlite::serializeJSON(threads)
+  threads
 }
 
-deserialize_chat_history <- function(blob) {
+# Board state carries typed data faithfully since blockr.core moved its file
+# seam to typedjson, so threads go in as they stand. A board written before
+# that carries them as a `serializeJSON()` string instead, which is the one
+# shape still worth decoding here.
+deserialize_chat_history <- function(payload) {
 
-  blob <- unlst(blob)
+  if (is.list(payload)) {
+    return(payload)
+  }
+
+  blob <- unlst(payload)
 
   if (!is_string(blob)) {
     return(NULL)

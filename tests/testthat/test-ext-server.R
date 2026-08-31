@@ -124,11 +124,11 @@ test_that("the conversation is written to state", {
 
       expect_length(client_r()$get_turns(), 2L)
 
-      blob <- session$returned$state$history()
+      saved <- session$returned$state$history()
 
-      expect_type(blob, "character")
+      expect_type(saved, "list")
 
-      threads <- deserialize_chat_history(blob)
+      threads <- deserialize_chat_history(saved)
 
       expect_true(is_thread_set(threads))
       expect_length(threads, 1L)
@@ -235,13 +235,7 @@ test_that("a saved conversation survives the board round trip", {
     )
   )
 
-  ext <- blockr.core::blockr_deser(
-    jsonlite::fromJSON(
-      jsonlite::toJSON(ser, auto_unbox = TRUE, null = "null"),
-      simplifyDataFrame = FALSE,
-      simplifyMatrix = FALSE
-    )
-  )
+  ext <- blockr.core::blockr_deser(via_board_file(ser))
 
   testServer(
     blockr.dock::extension_server(ext),

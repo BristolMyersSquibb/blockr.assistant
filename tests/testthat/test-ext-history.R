@@ -214,3 +214,36 @@ test_that("the meter counts the conversation, not the last exchange", {
     session = with_llm_session()
   )
 })
+
+test_that("a board rename does not strand the threads recorded before it", {
+
+  # shinychat partitions on the chat element id, which carries the board id,
+  # so a rename hands the store a different partition. Ours serves one board
+  # and ignores it -- the board's own state is where these threads live, not
+  # a partitioned store shared with anyone else. A future store that honoured
+  # the partition would strand every thread on rename, which is what this
+  # pins down.
+  store <- new_thread_store(
+    list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
+  )
+
+  before <- shinychat:::conversation_partition("board-alpha-chat", "board")
+  after  <- shinychat:::conversation_partition("board-renamed-chat", "board")
+
+  expect_false(
+    identical(
+      shinychat:::partition_key(before),
+      shinychat:::partition_key(after)
+    )
+  )
+
+  expect_length(store$list(after), 1L)
+  expect_identical(
+    store$get(after, "c_1"),
+    store$get(before, "c_1")
+  )
+
+  store$put(after, fake_thread(list(ellmer::Turn("user", "two")), id = "c_2"))
+
+  expect_length(store$list(before), 2L)
+})

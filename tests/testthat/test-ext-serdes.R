@@ -27,10 +27,6 @@ tool_result_turn <- function(id = "c1") {
   )
 }
 
-round_trip <- function(store, save_turns = Inf) {
-  deserialize_chat_history(serialize_chat_threads(store, save_turns))
-}
-
 test_that("a serialized thread replays as the turns it came from", {
 
   turns <- list(
@@ -192,44 +188,24 @@ test_that("a trimmed thread re-roots on the node it now starts at", {
   )
 })
 
-test_that("an unreadable blob restores as no conversation", {
+test_that("an unreadable legacy blob restores as no conversation", {
 
   expect_null(deserialize_chat_history("not json at all"))
   expect_null(deserialize_chat_history(NULL))
   expect_null(deserialize_chat_history(character()))
 })
 
-deser_with_history <- function(blob) {
-
-  ser <- blockr.core::blockr_ser(
-    new_assistant_extension(),
-    data = list(history = blob)
-  )
-
-  blockr.core::blockr_deser(
-    jsonlite::fromJSON(
-      jsonlite::toJSON(ser, auto_unbox = TRUE, null = "null"),
-      simplifyDataFrame = FALSE,
-      simplifyMatrix = FALSE
-    )
-  )
-}
-
-seeds <- function(blob) {
-  environment(blockr.dock::extension_server(deser_with_history(blob)))
-}
-
-test_that("a thread blob seeds the store and a legacy one seeds the client", {
+test_that("threads seed the store and a legacy blob seeds the client", {
 
   from_threads <- seeds(
-    jsonlite::serializeJSON(
-      list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
-    )
+    list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
   )
 
   expect_named(from_threads$threads, "c_1")
   expect_null(from_threads$messages)
 
+  # A board written before core carried typed data holds its conversation as
+  # a `serializeJSON()` string, and still opens on it.
   from_legacy <- seeds(
     jsonlite::serializeJSON(
       lapply(list(ellmer::Turn("user", "hi")), ellmer::contents_record)
@@ -238,6 +214,16 @@ test_that("a thread blob seeds the store and a legacy one seeds the client", {
 
   expect_length(from_legacy$messages, 1L)
   expect_null(from_legacy$threads)
+
+  # The same board, saved again, is written back as that board's first thread
+  # rather than as the string it arrived in.
+  from_legacy_threads <- seeds(
+    jsonlite::serializeJSON(
+      list(c_1 = fake_thread(list(ellmer::Turn("user", "hi"))))
+    )
+  )
+
+  expect_named(from_legacy_threads$threads, "c_1")
 })
 
 test_that("threads and recorded turns are told apart", {

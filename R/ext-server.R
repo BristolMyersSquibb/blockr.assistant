@@ -27,12 +27,12 @@
 #'
 #' Conversations are saved alongside it and restored into the chat when
 #' the board is reopened. The chat holds several of them: the history
-#' control above the transcript opens a drawer listing every thread on
-#' this board, with switching, renaming, deletion and model-written
-#' titles, and the whole set rides into `state` as one
-#' [jsonlite::serializeJSON()] blob. How many of the most recent turns
-#' are written **per thread** is read at save time from the
-#' `blockr.chat_save_turns` option (or the `BLOCKR_CHAT_SAVE_TURNS`
+#' control in the footer opens a drawer listing every thread on this
+#' board, with switching, renaming, deletion and model-written titles,
+#' and the whole set rides into `state` as recorded turns. How many of
+#' the most recent turns are written **per thread** is read at save
+#' time from the `blockr.chat_save_turns` option (or the
+#' `BLOCKR_CHAT_SAVE_TURNS`
 #' environment variable), which takes `0` for none, a positive whole
 #' number, or `Inf` for all, and defaults to 50. Setting it to `0` is
 #' worth considering where boards are shared, since the file otherwise
@@ -41,17 +41,18 @@
 #' argument nor part of `state` -- restore reads whatever the file
 #' holds.
 #'
-#' The blob is opaque on purpose. Recorded turns written into `state`
-#' directly do not survive the board's JSON round trip --
-#' `ellmer::contents_replay()` rejects the integer `version` that comes
-#' back, and typed props such as `tokens` return as lists -- and since
-#' the replay happens in a board-server observer, such a board took the
-#' whole session down on restore rather than just the chat panel.
-#' Payloads written in that earlier shape are dropped on
-#' deserialisation; a board saved with a single conversation opens with
-#' it on screen and records it as that board's first thread. The raw
-#' provider response is stripped before saving, and a thread trimmed to
-#' the budget is cut between exchanges rather than inside one, so it
+#' Turns go in as they stand because blockr.core writes board files
+#' with typedjson, which carries what plain JSON cannot: before that,
+#' `ellmer::contents_replay()` rejected the `version` that came back an
+#' integer and typed props such as `tokens` returned as lists, and
+#' since the replay happens in a board-server observer, such a board
+#' took the whole session down on restore rather than just the chat
+#' panel. A board written then carries its conversation as a
+#' `serializeJSON()` string, which still reads: one saved with a single
+#' conversation opens with it on screen and records it as that board's
+#' first thread. The raw provider response is stripped before saving,
+#' and a thread trimmed to the budget is cut between exchanges rather
+#' than inside one, so it
 #' never opens on half of a tool call.
 #'
 #' Which thread is open is remembered by the browser rather than in
