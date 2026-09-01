@@ -435,7 +435,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
         pending_update <- reactiveVal(empty_pending())
         touched        <- reactiveVal(character())
-        changed        <- reactiveVal(character())
+        added          <- reactiveVal(character())
 
         report <- reactiveValues(
           count     = 0L,
@@ -889,7 +889,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
                 )
               )
 
-              changed(union(isolate(changed()), changed_blocks(upd)))
+              added(union(isolate(added()), added_blocks(upd)))
             }
           }
         )
@@ -900,7 +900,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             list(ok = TRUE),
             added_conditions(baseline, isolate(board$conditions())),
             collect_touched_results(
-              isolate(touched()), board, isolate(changed())
+              isolate(touched()), board, isolate(added())
             ),
             header = header
           )
@@ -927,7 +927,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           }
 
           touched(character())
-          changed(character())
+          added(character())
           report$awaiting <- TRUE
 
           promises::promise(
@@ -1014,7 +1014,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           report$count <- 0L
           reset_pending(pending_update)
           touched(character())
-          changed(character())
+          added(character())
 
           invisible()
         }

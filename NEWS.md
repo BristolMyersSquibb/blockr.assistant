@@ -42,16 +42,30 @@
   states one rule that always holds: only base R is attached, so prefix
   everything else. A "could not find function" error names the package
   that exports the missing function (`graphics::hist()`), and prefixed
-  code stays valid in a code block too.
+  code stays valid in a code block too. There is no capability gating on
+  images: rendering is model-initiated, and a model that cannot see them
+  has no reason to ask (#153).
 
 * The `inspect_results` tool now respects invisibility when it
   auto-prints, as an R REPL does, so an assignment or an `invisible()`
   result prints nothing. This was cosmetic while results were text, and
   stopped being so once printing could draw: `evaluate::replay()` returns
   its plots invisibly, so printing the return value replayed every page a
-  second time and returned each image twice (#153). There is no capability
-  gating on images: rendering is model-initiated, and a model that cannot
-  see them has no reason to ask (#153).
+  second time and returned each image twice (#153).
+
+* The board check run after a commit no longer reports the state of a block
+  the model merely modified. Core applies a `blocks$mod` delta by writing
+  each field straight into the block's state reactive value, with no
+  validation and no revert, so that read-back handed the model back the
+  delta it had just sent, and the review invitation asked on every commit
+  for a comparison whose answer was fixed. A check that always confirms is
+  worse than no check: it costs a step each time and trains the model to
+  skim a section that also carries the result summaries and the
+  new-condition report. A block the model added still reports its state in
+  full, its constructor having resolved every argument the model never
+  named -- that is the case where the read-back carries news. The commit
+  tool's description and the system prompt, which both described the
+  payload as results and problems, now say what a commit hands back (#146).
 
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes

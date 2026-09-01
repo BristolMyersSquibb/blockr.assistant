@@ -13,13 +13,14 @@ tool_commit <- function(perform) {
     description = paste(
       "Apply everything you have staged this turn to the board as one",
       "atomic update, wait for the touched blocks to re-evaluate, and",
-      "return their results together with any new problems. This is your",
-      "read-act-observe step: stage a coherent unit of work with the",
-      "mutation tools, then commit to see what it produced and correct it",
-      "if needed. Call it as a separate step after staging, once per",
-      "coherent unit -- not after every single change. Always resolve a",
-      "turn's staged changes before ending the turn: commit them here, or",
-      "discard to drop them. A no-op if nothing is staged."
+      "return their results, any new problems, and the resolved state of",
+      "any block you added. This is your read-act-observe step: stage a",
+      "coherent unit of work with the mutation tools, then commit to see",
+      "what it produced and correct it if needed. Call it as a separate",
+      "step after staging, once per coherent unit -- not after every",
+      "single change. Always resolve a turn's staged changes before ending",
+      "the turn: commit them here, or discard to drop them. A no-op if",
+      "nothing is staged."
     )
   )
 }

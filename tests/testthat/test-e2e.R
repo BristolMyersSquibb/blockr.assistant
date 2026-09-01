@@ -38,13 +38,6 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     file.path(app_dir, "app.R")
   )
 
-  # Page.navigate uses chromote's per-command timeout, a hardcoded 10s
-  # (ChromoteSession$default_timeout) that the chromote.timeout launch option
-  # does not cover. A loaded Windows runner can take longer to acknowledge the
-  # navigate, so raise it on the shared browser shinytest2 reuses.
-  chromote_obj <- chromote::default_chromote_object()
-  chromote_obj$default_timeout <- 30
-
   app <- asst_app_driver(
     app_dir,
     name = "demo",
@@ -207,9 +200,6 @@ test_that("the browser's command palette lists built-ins and skills", {
     file.path(app_dir, "app.R")
   )
 
-  chromote_obj <- chromote::default_chromote_object()
-  chromote_obj$default_timeout <- 30
-
   app <- asst_app_driver(
     app_dir,
     name = "skills",
@@ -259,9 +249,6 @@ test_that("a rejected turn surfaces the error and releases the chat", {
   skip_on_cran()
   skip_if_not_installed("shinytest2")
   skip_if_not_installed("chromote")
-
-  chromote_obj <- chromote::default_chromote_object()
-  chromote_obj$default_timeout <- 30
 
   skills_dir <- withr::local_tempdir()
 
