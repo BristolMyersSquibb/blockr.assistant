@@ -858,22 +858,29 @@ test_that("tool_get_block_state returns a recovery hint for unknown id", {
   expect_match(res, "No block with id bogus", fixed = TRUE)
 })
 
-test_that("inspect_results reaches the graphics package to draw with", {
+test_that("inspect_results draws through a namespace-prefixed call", {
 
-  # eval_env() parents on baseenv() unless the board opts in, which leaves
-  # hist() and friends out of scope -- the tool attaches them regardless.
-  res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
+  res <- isolate(call_query("graphics::hist(data$Sepal.Length)",
+                            list(data = iris)))
 
   is_image <- function(x) inherits(x, "ellmer::ContentImageInline")
 
   expect_true(any(vapply(res, is_image, logical(1L))))
 })
 
-test_that("inspect_results leaves the board's own eval scope untouched", {
+test_that("inspect_results names the prefix fix on a scope miss", {
 
-  before <- getOption("blockr.attach_default_packages")
+  res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
 
-  isolate(call_query("nrow(data)", list(data = iris)))
+  expect_match(res, "could not find function", fixed = TRUE)
+  expect_match(res, "prefix the package", fixed = TRUE)
+  expect_match(res, "graphics::hist()", fixed = TRUE)
+})
 
-  expect_identical(getOption("blockr.attach_default_packages"), before)
+test_that("inspect_results leaves an unrelated error message alone", {
+
+  res <- isolate(call_query("stop('boom')", list(data = iris)))
+
+  expect_match(res, "boom", fixed = TRUE)
+  expect_no_match(res, "prefix the package", fixed = TRUE)
 })

@@ -90,6 +90,11 @@ ggplot or lattice object, or an auto-printed plot recording all return
 the rendering alongside the text output -- one image per page drawn,
 sized by the `width` and `height` the model asks for.
 
+Code is evaluated in the board's scope, which need not have anything
+beyond base R attached, so the model prefixes calls from other packages
+(`graphics::hist()`, `ggplot2::ggplot()`) -- the same thing it would
+write inside a code block.
+
 Mutations stage across the turn and flush atomically when the
 assistant finishes:
 

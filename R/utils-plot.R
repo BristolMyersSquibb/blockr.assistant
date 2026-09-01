@@ -48,22 +48,6 @@ dropped_drawings_line <- function(n, max_plots) {
   glue::glue("Returned {max_plots} of {n} drawn plots; the rest are omitted.")
 }
 
-# Model-supplied inspection code is evaluated with the default packages
-# attached, whatever the board's `attach_default_packages` setting says. That
-# option governs BLOCK evaluation, where a narrow scope keeps generated code
-# explicit and portable; this tool is a read-only escape hatch, and a scope
-# reaching base alone can barely draw -- hist(), boxplot(), barplot() and
-# image() all live in graphics. It grants no capability the model did not
-# have, since `::` reaches every installed namespace from baseenv() anyway;
-# it only removes the need to spell out a prefix on every call.
-inspect_env <- function(data) {
-
-  old <- options(blockr.attach_default_packages = TRUE)
-  on.exit(options(old), add = TRUE)
-
-  eval_env(data)
-}
-
 # A display-list recording, which grid and lattice produce as readily as base
 # graphics -- the class says a plot was recorded, not which engine drew it.
 is_recorded_plot <- function(x) {

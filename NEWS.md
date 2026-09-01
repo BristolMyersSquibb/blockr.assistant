@@ -34,14 +34,15 @@
   that draws nothing returns text exactly as before. The model sets
   `width` and `height` per call (defaulting to `assistant_plot_render_px`,
   clamped to a usable range), since it is the one that knows whether it
-  is reading a dense scatter or checking a colour. Model-supplied code is
-  also evaluated with the default packages attached regardless of the
-  board's `attach_default_packages` setting, which governs block
-  evaluation: a scope reaching `base` alone cannot call `hist()`,
-  `boxplot()` or `barplot()`, and `::` reached those namespaces anyway.
-  There is no capability gating on images -- rendering is
-  model-initiated, and a model that cannot see them has no reason to ask
-  (#153).
+  is reading a dense scatter or checking a colour. The evaluation scope is
+  unchanged and still the board's: `eval_env()` parents on `baseenv()`
+  unless `attach_default_packages` says otherwise, so `hist()` resolves
+  only when prefixed. The tool now says so, and a "could not find
+  function" error names the prefix as the fix rather than leaving the
+  model to infer it -- which also keeps the code it writes here valid in
+  a code block, where the same scope applies. There is no capability
+  gating on images: rendering is model-initiated, and a model that cannot
+  see them has no reason to ask (#153).
 
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes

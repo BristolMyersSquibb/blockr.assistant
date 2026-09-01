@@ -504,6 +504,32 @@ tool_get_block_conditions <- function(board, update, session) {
   )
 }
 
+# A scope miss is the one error the model can fix unaided, so the fix is named
+# on the error rather than only in the tool description -- which it has already
+# read by the time it gets this wrong. The board's eval_env() parents on
+# baseenv() unless it opts in, so an unprefixed hist() fails where
+# graphics::hist() does not, and the message alone does not say why.
+with_scope_hint <- function(expr) {
+
+  tryCatch(
+    expr,
+    error = function(e) {
+
+      msg <- conditionMessage(e)
+
+      if (grepl("could not find function", msg, fixed = TRUE)) {
+        msg <- paste0(
+          msg,
+          " -- only the board's evaluation scope is attached; prefix the ",
+          "package, e.g. graphics::hist() or stats::median()"
+        )
+      }
+
+      stop(msg, call. = FALSE)
+    }
+  )
+}
+
 tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
@@ -536,14 +562,14 @@ tool_inspect_results <- function(board, update, session) {
           }
         }
 
-        env <- inspect_env(data)
+        env <- eval_env(data)
         parsed <- parse(text = code)
 
         # REPL semantics, unchanged: stdout is captured and the last value is
         # auto-printed. The device is simply open while that happens, so a
         # value whose print method draws (a ggplot, a recordedplot) draws onto
         # it, exactly as the same code would at a console.
-        drawn <- capture_drawings(
+        drawn <- with_scope_hint(capture_drawings(
           function() {
             capture.output({
               val <- NULL
@@ -557,7 +583,7 @@ tool_inspect_results <- function(board, update, session) {
           },
           width  = device_px(width),
           height = device_px(height)
-        )
+        ))
 
         on.exit(unlink(drawn$dir, recursive = TRUE), add = TRUE)
 
@@ -609,6 +635,12 @@ tool_inspect_results <- function(board, update, session) {
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
+      "Code runs in the board's evaluation scope, which need not have",
+      "anything beyond base R attached, so prefix every function from",
+      "another package -- graphics::hist(), stats::median(),",
+      "ggplot2::ggplot(). A prefixed call resolves whatever the board",
+      "is configured to attach, and is what you would write in a code",
+      "block anyway.",
       "The call runs with a graphics device open, so whatever the code",
       "draws comes back as an image beside the text -- a plot() call,",
       "an auto-printed ggplot or lattice object, grid output, or an",
