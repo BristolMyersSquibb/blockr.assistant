@@ -2,6 +2,21 @@
 
 ## blockr.assistant (development version)
 
+- The board check run after a commit no longer reports the state of a
+  block the model merely modified. Core applies a `blocks$mod` delta by
+  writing each field straight into the block’s state reactive value,
+  with no validation and no revert, so that read-back handed the model
+  back the delta it had just sent, and the review invitation asked on
+  every commit for a comparison whose answer was fixed. A check that
+  always confirms is worse than no check: it costs a step each time and
+  trains the model to skim a section that also carries the result
+  summaries and the new-condition report. A block the model added still
+  reports its state in full, its constructor having resolved every
+  argument the model never named – that is the case where the read-back
+  carries news. The commit tool’s description and the system prompt,
+  which both described the payload as results and problems, now say what
+  a commit hands back (#146).
+
 - The `add_panel_to_view` and `move_panel` tools now reach a view’s
   rails. A view could be born with a rail – its `add_view` layout takes
   one, and `list_views` reports it – but nothing edited one afterwards:
