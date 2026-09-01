@@ -54,11 +54,10 @@ flush_check_header <- function() {
 review_invitation <- function() {
   paste(
     "Confirm each changed block matches what the user asked for, or correct",
-    "it. The state reported under a block you changed is what the board holds",
-    "for it now -- read it back against what you meant to apply, since a",
-    "result summary on its own need not distinguish a change that landed from",
-    "one that did not. Inspect downstream results with get_block_result or",
-    "query_data when:",
+    "it. State is reported for a block you added, whose constructor resolves",
+    "every argument you did not name; a block you modified holds what you",
+    "staged, so it carries no state section. Inspect downstream results with",
+    "get_block_result or query_data when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -81,6 +80,22 @@ changed_blocks <- function(upd) {
   }
 
   c(names(upd$blocks$add), names(upd$blocks$mod))
+}
+
+# The blocks whose state a commit reads back: the added ones only. Core applies
+# a `blocks$mod` delta by writing each field straight into the block's state
+# reactive value, with no validation and no revert, and nothing that could move
+# it back is observable by the time the read-back is taken -- so reporting a
+# modification would hand the model the delta it had just sent. An addition is
+# the case that carries news, its constructor resolving every argument the
+# model did not name.
+added_blocks <- function(upd) {
+
+  if (is.null(upd)) {
+    return(character())
+  }
+
+  coal(names(upd$blocks$add), character())
 }
 
 touched_blocks <- function(upd, board) {
@@ -127,7 +142,7 @@ review_max_blocks <- function() {
   as.integer(blockr_option("assistant_review_max_blocks", 50L))
 }
 
-collect_touched_results <- function(touched, board, changed = character(),
+collect_touched_results <- function(touched, board, added = character(),
                                     cap = review_max_blocks()) {
 
   blks <- isolate(board$blocks)
@@ -149,7 +164,7 @@ collect_touched_results <- function(touched, board, changed = character(),
   shown <- ids[seq_len(min(cap, length(ids)))]
 
   lines <- chr_ply(
-    shown, review_result_line, board, changed, use_names = FALSE
+    shown, review_result_line, board, added, use_names = FALSE
   )
 
   if (length(ids) > length(shown)) {
@@ -165,12 +180,12 @@ collect_touched_results <- function(touched, board, changed = character(),
   c("Results of the blocks you changed and the blocks linked to them:", lines)
 }
 
-review_result_line <- function(id, board, changed) {
+review_result_line <- function(id, board, added) {
 
   paste(
     c(
       glue::glue("- {id}:"),
-      if (id %in% changed) applied_state_lines(id, board),
+      if (id %in% added) applied_state_lines(id, board),
       block_result_summary(id, board)
     ),
     collapse = "\n"

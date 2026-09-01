@@ -403,6 +403,34 @@ test_that("the update listener captures touched blocks while awaiting", {
   )
 })
 
+test_that("the update listener records only the blocks a commit adds", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(a = new_dataset_block(), b = new_head_block()))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      report$awaiting <- TRUE
+      update(
+        list(
+          blocks = list(
+            add = list(b = "block"), mod = list(a = list(dataset = "iris"))
+          )
+        )
+      )
+      session$flushReact()
+
+      expect_identical(added(), "b")
+    },
+    args = board_with_links_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
 test_that("the update listener ignores updates when not awaiting", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -434,7 +462,18 @@ test_that("changed_blocks names the blocks added or modified", {
   expect_identical(changed_blocks(NULL), character())
 })
 
-test_that("collect_touched_results carries state for the changed blocks", {
+test_that("added_blocks names only the blocks a commit adds", {
+
+  upd <- list(
+    blocks = list(add = list(a = "block"), mod = list(b = list(n = 5L)))
+  )
+
+  expect_identical(added_blocks(upd), "a")
+  expect_identical(added_blocks(NULL), character())
+  expect_identical(added_blocks(list(blocks = list())), character())
+})
+
+test_that("collect_touched_results carries state for an added block", {
 
   board <- list(
     blocks = list(
@@ -443,14 +482,14 @@ test_that("collect_touched_results carries state for the changed blocks", {
     )
   )
 
-  out <- collect_touched_results(c("a", "b"), board, changed = "a")
+  out <- collect_touched_results(c("a", "b"), board, added = "a")
 
   expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
   expect_true(any(grepl("int 3", out, fixed = TRUE)))
   expect_false(any(grepl("int 5", out, fixed = TRUE)))
 })
 
-test_that("collect_touched_results reports no state without a changed set", {
+test_that("collect_touched_results reports no state without an added set", {
 
   board <- list(
     blocks = list(a = fake_block(data.frame(x = 1:3), state = list(n = 3L)))
@@ -458,17 +497,33 @@ test_that("collect_touched_results reports no state without a changed set", {
 
   out <- collect_touched_results("a", board)
 
-  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
+})
+
+# A modification writes the delta straight into the block's state, so its
+# state read back is the delta -- an echo the model gains nothing from.
+test_that("collect_touched_results reports no state for a modified block", {
+
+  board <- list(
+    blocks = list(
+      a = fake_block(data.frame(x = 1:3), state = list(n = function() 3L))
+    )
+  )
+
+  out <- collect_touched_results("a", board, added = character())
+
+  expect_true(any(grepl("- a:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
 })
 
 test_that("collect_touched_results omits state for an unconstructed block", {
 
   board <- list(blocks = list(a = fake_block(data.frame(x = 1:3))))
 
-  out <- collect_touched_results("a", board, changed = "a")
+  out <- collect_touched_results("a", board, added = "a")
 
   expect_true(any(grepl("- a:", out, fixed = TRUE)))
-  expect_false(any(grepl("Applied state:", out, fixed = TRUE)))
+  expect_false(any(grepl("Applied state", out, fixed = TRUE)))
 })
 
 test_that("collect_touched_results reports state for a block with no result", {
@@ -478,7 +533,7 @@ test_that("collect_touched_results reports state for a block with no result", {
     eval   = list(a = function() "dormant")
   )
 
-  out <- collect_touched_results("a", board, changed = "a")
+  out <- collect_touched_results("a", board, added = "a")
 
   expect_true(any(grepl("Applied state:", out, fixed = TRUE)))
   expect_true(any(grepl("int 3", out, fixed = TRUE)))
@@ -497,7 +552,7 @@ test_that("collect_touched_results omits a state value str() would cut", {
   )
 
   out <- paste(
-    collect_touched_results("a", board, changed = "a"), collapse = "\n"
+    collect_touched_results("a", board, added = "a"), collapse = "\n"
   )
 
   expect_match(out, "Applied state:", fixed = TRUE)
