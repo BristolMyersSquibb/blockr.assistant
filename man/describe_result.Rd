@@ -32,13 +32,12 @@ unusual result type can add a method to describe it directly, in blockr
 terms, instead of supplying a \code{\link[btw:btw_this]{btw::btw_this()}} method.
 }
 \details{
-Methods for base-graphics results ship here, since a plot block built on
-\code{\link[blockr.core:new_plot_block]{blockr.core::new_plot_block()}} evaluates to recorded plots and the default
-renders their display list -- a list of C entry points, not a description
-of the chart. They name the class and count the recordings, and say when a
-block evaluated without drawing. Neither describes the chart itself: the
-rendered image is what the \code{inspect_results} tool returns for a plot
-result.
+Methods for recorded plots ship here, since a plot block built on
+\code{\link[blockr.core:new_plot_block]{blockr.core::new_plot_block()}} evaluates to recordings and the default
+renders their display list -- a list of graphics primitives, not a
+description of the chart. They name the class and count the recordings, and
+say when a block evaluated without drawing. Neither describes the chart
+itself: \code{inspect_results} renders it, by drawing it on a device.
 
 Methods need not bound their output or guard their own errors: the internal
 \code{summarise_result()} wrapper caps the text before it reaches the prompt and

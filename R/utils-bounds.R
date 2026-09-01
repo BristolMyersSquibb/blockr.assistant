@@ -48,15 +48,39 @@ state_value_max_chars <- function() {
   as.integer(blockr_option("assistant_state_value_max_chars", 128L))
 }
 
-# Render size for a recorded plot returned by inspect_results, in pixels
-# square. A 768px render of core's scatter block measures 23 KB, which both a
-# frontier and a small model read correctly. The cap is what stops a block
-# that draws in a loop from turning one tool call into a hundred images, each
-# re-transmitted on every later request in the window.
+# Device size for inspect_results, in pixels -- the default only. The model
+# sets `width` / `height` per call, since it is the one that knows whether it
+# is reading a dense scatter or checking a colour, and a fixed size here would
+# be us guessing on its behalf. A 768px render of core's scatter block
+# measures 23 KB, which both a frontier and a small model read correctly.
 plot_render_px <- function() {
   as.integer(blockr_option("assistant_plot_render_px", 768L))
 }
 
+# Clamp on what the model may ask for. Not a disagreement with its judgement --
+# just the range outside which a device is useless (too small to lay out
+# margins) or reckless (a 10000px render is tens of MB, re-transmitted on every
+# later request in the window).
+plot_render_range <- function() {
+  as.integer(blockr_option("assistant_plot_render_range", c(200L, 2000L)))
+}
+
+# Resolve a model-supplied device dimension: fall back to the default when it
+# is absent, and clamp rather than refuse -- a value out of range is a bad
+# guess, not a reason to fail the call.
+device_px <- function(px) {
+
+  if (!is_whole_bound(px, 1L)) {
+    return(plot_render_px())
+  }
+
+  rng <- plot_render_range()
+
+  as.integer(min(max(px, rng[[1L]]), rng[[2L]]))
+}
+
+# The model does not get to raise this one: it bounds a loop that draws, where
+# the count is a property of the code rather than of anyone's intent.
 plot_render_max <- function() {
   as.integer(blockr_option("assistant_plot_render_max", 4L))
 }

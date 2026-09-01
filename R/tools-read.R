@@ -507,7 +507,7 @@ tool_get_block_conditions <- function(board, update, session) {
 tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
-    function(code) {
+    function(code, width = NULL, height = NULL) {
       with_tool_errors("inspect_results", {
 
         blks <- isolate(board$blocks)
@@ -536,23 +536,32 @@ tool_inspect_results <- function(board, update, session) {
           }
         }
 
-        env <- eval_env(data)
+        env <- inspect_env(data)
         parsed <- parse(text = code)
 
-        val <- NULL
+        # REPL semantics, unchanged: stdout is captured and the last value is
+        # auto-printed. The device is simply open while that happens, so a
+        # value whose print method draws (a ggplot, a recordedplot) draws onto
+        # it, exactly as the same code would at a console.
+        drawn <- capture_drawings(
+          function() {
+            capture.output({
+              val <- NULL
+              for (e in parsed) {
+                val <- eval(e, envir = env)
+              }
+              if (!is.null(val)) {
+                print(val)
+              }
+            })
+          },
+          width  = device_px(width),
+          height = device_px(height)
+        )
 
-        # A recorded plot is not printed: print.recordedplot() replays it onto
-        # whatever device happens to be current, which off-screen means either
-        # nothing the model can see or a stray Rplots.pdf. It is rendered
-        # below instead, and the display list is no use as text either way.
-        output <- capture.output({
-          for (e in parsed) {
-            val <- eval(e, envir = env)
-          }
-          if (!is.null(val) && !length(plot_recordings(val))) {
-            print(val)
-          }
-        })
+        on.exit(unlink(drawn$dir, recursive = TRUE), add = TRUE)
+
+        output <- drawn$value
 
         if (length(output) > 200L) {
           hidden <- length(output) - 200L
@@ -562,10 +571,13 @@ tool_inspect_results <- function(board, update, session) {
           )
         }
 
-        images <- render_recordings(val)
+        max_plots <- plot_render_max()
+        shown <- head(drawn$files, max_plots)
 
-        if (length(images)) {
-          output <- c(output, dropped_plots_line(val))
+        if (length(shown)) {
+          output <- c(
+            output, dropped_drawings_line(length(drawn$files), max_plots)
+          )
         }
 
         if (length(skipped)) {
@@ -574,7 +586,7 @@ tool_inspect_results <- function(board, update, session) {
 
         text <- paste(output, collapse = "\n")
 
-        if (!length(images)) {
+        if (!length(shown)) {
           return(text)
         }
 
@@ -583,7 +595,7 @@ tool_inspect_results <- function(board, update, session) {
         # a bare string beside the images.
         c(
           if (nzchar(trimws(text))) list(ellmer::ContentText(text)),
-          images
+          drawing_contents(shown)
         )
       })
     },
@@ -597,14 +609,17 @@ tool_inspect_results <- function(board, update, session) {
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
-      "When the last expression is a recorded base plot -- what a plot",
-      "block evaluates to -- it is rendered and returned as an image",
-      "rather than printed, so naming such a block's id is how you see",
-      "the chart itself.",
-      "Use this for questions the Board section doesn't carry:",
-      "unique values, group counts, ad-hoc filters, joins across",
-      "blocks, and what a plot actually drew. Read-only; the board is",
-      "not modified."
+      "The call runs with a graphics device open, so whatever the code",
+      "draws comes back as an image beside the text -- a plot() call,",
+      "an auto-printed ggplot or lattice object, grid output, or an",
+      "auto-printed plot recording. Drawing is the whole mechanism;",
+      "there is no separate argument asking for a picture. Note that a",
+      "plot block evaluates to a list of recordings rather than to one,",
+      "so auto-print an element of it (`chart[[1]]`) to see the chart.",
+      "Use this for questions the Board section doesn't carry: unique",
+      "values, group counts, ad-hoc filters, joins across blocks, and",
+      "anything you need to see drawn rather than described.",
+      "Read-only; the board is not modified."
     ),
     arguments = list(
       code = ellmer::type_string(
@@ -612,6 +627,22 @@ tool_inspect_results <- function(board, update, session) {
           "R code to evaluate. Multiple statements allowed; the",
           "last expression's value is auto-printed."
         )
+      ),
+      width = ellmer::type_integer(
+        paste(
+          "Width in pixels of the device the code draws on. Optional;",
+          "defaults to 768, clamped to 200-2000. Raise it for a dense",
+          "plot you need to read values off, lower it when the shape is",
+          "all you need."
+        ),
+        required = FALSE
+      ),
+      height = ellmer::type_integer(
+        paste(
+          "Height in pixels of the device the code draws on. Optional;",
+          "defaults to 768, clamped to 200-2000."
+        ),
+        required = FALSE
       )
     )
   )

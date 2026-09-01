@@ -6,13 +6,12 @@
 #' unusual result type can add a method to describe it directly, in blockr
 #' terms, instead of supplying a [btw::btw_this()] method.
 #'
-#' Methods for base-graphics results ship here, since a plot block built on
-#' [blockr.core::new_plot_block()] evaluates to recorded plots and the default
-#' renders their display list -- a list of C entry points, not a description
-#' of the chart. They name the class and count the recordings, and say when a
-#' block evaluated without drawing. Neither describes the chart itself: the
-#' rendered image is what the `inspect_results` tool returns for a plot
-#' result.
+#' Methods for recorded plots ship here, since a plot block built on
+#' [blockr.core::new_plot_block()] evaluates to recordings and the default
+#' renders their display list -- a list of graphics primitives, not a
+#' description of the chart. They name the class and count the recordings, and
+#' say when a block evaluated without drawing. Neither describes the chart
+#' itself: `inspect_results` renders it, by drawing it on a device.
 #'
 #' Methods need not bound their output or guard their own errors: the internal
 #' `summarise_result()` wrapper caps the text before it reaches the prompt and
@@ -51,14 +50,16 @@ describe_result.recordedplot <- function(x, ...) {
   describe_plot_result(1L)
 }
 
-# What a base-graphics result is worth saying, and no more. The default
-# renders the display list -- eight C entry points for core's scatter block --
-# which tells a model reviewing the block that eight primitives were drawn.
-# The recording does carry real content (C_plot_window holds the axis ranges,
-# C_plotXY the data), but reading it means parsing undocumented C entry points
-# positionally against R's graphics internals, which is not a cost worth
-# carrying. Naming the class is enough: a model given only that reaches for
-# inspect_results unprompted, and that is where the chart itself is rendered.
+# What a recorded plot is worth saying, and no more. The default renders the
+# display list -- eight C entry points for core's scatter block -- which tells
+# a model reviewing the block only that eight primitives were drawn. The
+# recording does carry real content (for that block, C_plot_window holds the
+# axis ranges and C_plotXY the data), but reading it means parsing
+# undocumented entry points positionally against R's graphics internals, and
+# they differ per engine: `recordedplot` is a display list, which grid and
+# lattice produce as readily as base graphics, so there is no one grammar to
+# parse. Naming the class is enough -- a model given only that reaches for
+# inspect_results unprompted, and drawing it there is what renders the chart.
 describe_plot_result <- function(n_plot, n_other = 0L) {
 
   plots <- if (n_plot) {
@@ -70,11 +71,11 @@ describe_plot_result <- function(n_plot, n_other = 0L) {
   }
 
   if (!n_other) {
-    return(glue::glue("Base graphics result: {plots}."))
+    return(glue::glue("Graphics result: {plots}."))
   }
 
   glue::glue(
-    "Base graphics result: {plots}, alongside {n_other} non-plot ",
+    "Graphics result: {plots}, alongside {n_other} non-plot ",
     "element{if (n_other > 1L) 's' else ''}."
   )
 }

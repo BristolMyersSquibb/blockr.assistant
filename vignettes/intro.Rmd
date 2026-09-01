@@ -84,9 +84,11 @@ block result bound by id:
 > **Assistant**: \[calls `inspect_results(code = "unique(data$Species)")`\]
 > Three: setosa, versicolor, virginica.
 
-Naming a plot block there returns the chart itself: a recorded base
-plot is replayed onto an off-screen device and comes back as an image
-rather than as text.
+Anything the code draws comes back as an image. The call runs with an
+off-screen graphics device open, so a `plot()` call, an auto-printed
+ggplot or lattice object, or an auto-printed plot recording all return
+the rendering alongside the text output -- one image per page drawn,
+sized by the `width` and `height` the model asks for.
 
 Mutations stage across the turn and flush atomically when the
 assistant finishes:

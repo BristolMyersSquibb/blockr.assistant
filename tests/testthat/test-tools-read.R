@@ -504,9 +504,9 @@ make_board <- function(results = list()) {
   )
 }
 
-call_query <- function(code, results = list()) {
+call_query <- function(code, results = list(), ...) {
   tool <- tool_inspect_results(make_board(results), NULL, NULL)
-  tool(code = code)
+  tool(code = code, ...)
 }
 
 test_that("inspect_results evaluates one expression against a bound block", {
@@ -601,28 +601,66 @@ test_that("inspect_results truncates output over 200 lines", {
   expect_match(res, "output truncated", fixed = TRUE)
 })
 
-test_that("inspect_results renders a plot result as image content", {
+test_that("inspect_results returns whatever the code draws as an image", {
 
-  res <- isolate(
-    call_query("chart", list(chart = record_plots("plot(1:10)")))
-  )
+  res <- isolate(call_query("plot(1:10)"))
 
   expect_type(res, "list")
   expect_length(res, 1L)
   expect_s7_class(res[[1L]], ellmer::ContentImageInline)
   expect_identical(res[[1L]]@type, "image/png")
-  expect_gt(nchar(res[[1L]]@data), 0L)
 })
 
-test_that("inspect_results does not print a plot's display list", {
+test_that("inspect_results captures a non-base engine the same way", {
 
-  res <- isolate(
-    call_query("chart", list(chart = record_plots("plot(1:10)")))
-  )
+  # grid.rect() also returns a grob, which auto-prints as text -- so this
+  # covers the mixed case too: the text and the drawing both come back.
+  res <- isolate(call_query("grid::grid.newpage(); grid::grid.rect()"))
 
-  is_text <- function(x) inherits(x, "ellmer::ContentText")
+  is_image <- function(x) inherits(x, "ellmer::ContentImageInline")
 
-  expect_false(any(vapply(res, is_text, logical(1L))))
+  expect_true(any(vapply(res, is_image, logical(1L))))
+  expect_s7_class(res[[1L]], ellmer::ContentText)
+})
+
+test_that("inspect_results draws an auto-printed plot recording", {
+
+  chart <- record_plots("plot(1:10)")
+
+  res <- isolate(call_query("chart[[1]]", list(chart = chart)))
+
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results returns one image per page drawn", {
+
+  res <- isolate(call_query("plot(1:10); plot(1:5)"))
+
+  expect_length(res, 2L)
+})
+
+test_that("inspect_results returns no image when nothing is drawn", {
+
+  res <- isolate(call_query("nrow(data)", list(data = iris)))
+
+  expect_type(res, "character")
+  expect_match(res, "150", fixed = TRUE)
+})
+
+test_that("inspect_results takes the device size from the model", {
+
+  small <- isolate(call_query("plot(1:10)", width = 240L, height = 240L))
+  large <- isolate(call_query("plot(1:10)", width = 900L, height = 900L))
+
+  expect_lt(nchar(small[[1L]]@data), nchar(large[[1L]]@data))
+})
+
+test_that("inspect_results clamps a device size out of range", {
+
+  huge <- isolate(call_query("plot(1:10)", width = 99999L, height = 99999L))
+  top  <- isolate(call_query("plot(1:10)", width = 2000L, height = 2000L))
+
+  expect_identical(nchar(huge[[1L]]@data), nchar(top[[1L]]@data))
 })
 
 test_that("inspect_results keeps the skipped-block report beside an image", {
@@ -630,17 +668,13 @@ test_that("inspect_results keeps the skipped-block report beside an image", {
   brd <- reactiveValues(
     board = new_board(),
     blocks = list(
-      chart = list(
-        server = list(result = reactive(record_plots("plot(1:10)")))
-      ),
+      ok  = list(server = list(result = reactive(1:3))),
       off = list(server = list(result = reactive(req(FALSE))))
     ),
-    eval = reactiveValues(
-      chart = reactive("ready"), off = reactive("dormant")
-    )
+    eval = reactiveValues(ok = reactive("ready"), off = reactive("dormant"))
   )
 
-  res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "chart"))
+  res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "plot(ok)"))
 
   expect_length(res, 2L)
   expect_s7_class(res[[1L]], ellmer::ContentText)
@@ -648,23 +682,15 @@ test_that("inspect_results keeps the skipped-block report beside an image", {
   expect_s7_class(res[[2L]], ellmer::ContentImageInline)
 })
 
-test_that("inspect_results caps the images it renders and says it did", {
+test_that("inspect_results caps the images it returns and says it did", {
 
   withr::local_options(blockr.assistant_plot_render_max = 2L)
 
-  chart <- record_plots("plot(1:10); plot(1:5); plot(1:3)")
-  res <- isolate(call_query("chart", list(chart = chart)))
+  res <- isolate(call_query("plot(1:10); plot(1:5); plot(1:3)"))
 
   expect_length(res, 3L)
   expect_s7_class(res[[1L]], ellmer::ContentText)
-  expect_match(res[[1L]]@text, "Rendered 2 of 3 recorded plots", fixed = TRUE)
-})
-
-test_that("inspect_results still answers a non-plot result in text", {
-
-  res <- isolate(call_query("nrow(data)", list(data = iris)))
-
-  expect_type(res, "character")
+  expect_match(res[[1L]]@text, "Returned 2 of 3 drawn plots", fixed = TRUE)
 })
 
 test_that("tool_describe_block names the skills scoped to its type", {
@@ -830,4 +856,24 @@ test_that("tool_get_block_state returns a recovery hint for unknown id", {
   res <- call_tool(tool_get_block_state(board, NULL, NULL), id = "bogus")
 
   expect_match(res, "No block with id bogus", fixed = TRUE)
+})
+
+test_that("inspect_results reaches the graphics package to draw with", {
+
+  # eval_env() parents on baseenv() unless the board opts in, which leaves
+  # hist() and friends out of scope -- the tool attaches them regardless.
+  res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
+
+  is_image <- function(x) inherits(x, "ellmer::ContentImageInline")
+
+  expect_true(any(vapply(res, is_image, logical(1L))))
+})
+
+test_that("inspect_results leaves the board's own eval scope untouched", {
+
+  before <- getOption("blockr.attach_default_packages")
+
+  isolate(call_query("nrow(data)", list(data = iris)))
+
+  expect_identical(getOption("blockr.attach_default_packages"), before)
 })

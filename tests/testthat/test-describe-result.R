@@ -72,7 +72,7 @@ test_that("summarise_result caps a method that does not bound itself", {
   expect_match(res, "truncated", fixed = TRUE)
 })
 
-test_that("a base plot result names its class and counts the recordings", {
+test_that("a plot result names its class and counts the recordings", {
 
   res <- summarise_result(record_plots("plot(1:10)"))
 
@@ -81,7 +81,7 @@ test_that("a base plot result names its class and counts the recordings", {
   expect_no_match(res, "C_plot_new", fixed = TRUE)
 })
 
-test_that("a base plot result pluralises several recordings", {
+test_that("a plot result pluralises several recordings", {
 
   res <- summarise_result(record_plots("plot(1:10); plot(1:5)"))
 
@@ -123,4 +123,14 @@ test_that("a result summary carries no tool hint when truncated", {
   expect_match(res, "truncated", fixed = TRUE)
   expect_no_match(res, "inspect_results", fixed = TRUE)
   expect_no_match(res, " -- use ", fixed = TRUE)
+})
+
+test_that("a recording is described without claiming a graphics engine", {
+
+  code <- "grid::grid.newpage(); grid::grid.rect()"
+
+  res <- summarise_result(record_plots(code))
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_no_match(res, "[Bb]ase")
 })

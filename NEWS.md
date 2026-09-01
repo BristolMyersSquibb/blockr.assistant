@@ -1,39 +1,47 @@
 # blockr.assistant (development version)
 
-* Base plot results are now described rather than dumped, and the
-  drill-down tool can answer with the chart itself. A block built on
+* Plot results are now described rather than dumped. A block built on
   `blockr.core::new_plot_block()` evaluates to recorded plots, which the
-  default summary rendered as a graphics display list -- core's scatter
-  block reported eight C entry points and nothing about what was drawn,
+  default summary rendered as a display list -- core's scatter block
+  reported eight graphics primitives and nothing about what was drawn,
   through the result tool and again through every post-apply review. New
   `describe_result()` methods name the class and count the recordings
   instead, and say when a block evaluated without drawing at all, a case
   previously indistinguishable from any other plot. They deliberately do
-  not describe the chart: the recording does carry the axis ranges and
-  the data, but reading it means parsing undocumented C entry points
-  positionally against R's graphics internals. A truncated result
-  summary no longer appends the fixed "use query_data to fetch specific
-  rows or columns" hint either: it was passed for every result type, so
-  a plot block was told to fetch rows and columns from a graphics
-  recording, and a summary that names what the result is leaves the
-  hint nothing to do (#153).
+  not describe the chart, and deliberately do not name a graphics
+  engine: `recordedplot` is a display list, which grid and lattice
+  produce as readily as base graphics, and reading one means parsing
+  undocumented entry points positionally against R's graphics internals.
+  A truncated result summary no longer appends the fixed "use query_data
+  to fetch specific rows or columns" hint either: it was passed for every
+  result type, so a plot block was told to fetch rows and columns from a
+  graphics recording, and a summary that names what the result is leaves
+  the hint nothing to do (#153).
 
-* The `query_data` tool is now called `inspect_results`. It was never a
-  data-frame tool -- it evaluates R with every committed block's result
-  bound by its block id -- so the old name promised data at a tool that
-  binds every result, and suggested SQL at a tool that takes R. The
-  language stays out of the name because the argument schema already
-  carries it. Naming a plot block's id now returns the chart as an
-  image: the recording is replayed onto an off-screen PNG (768px square
-  by default, `assistant_plot_render_px`) and returned as ellmer image
-  content rather than printed, since a display list is no use as text.
-  Theming rides along without extra work, because thematic's hooks fire
-  while the block evaluates, so the recording already carries the
-  board's colours and replaying reproduces them on any device. A result
-  holding more recordings than `assistant_plot_render_max` renders the
-  first few and says how many it omitted. There is no capability gating:
-  rendering is model-initiated, and a model that cannot see images has
-  no reason to ask for one (#153).
+* The `query_data` tool is now called `inspect_results`, and returns
+  whatever the code draws. It was never a data-frame tool -- it evaluates
+  R with every committed block's result bound by its block id -- so the
+  old name promised data at a tool that binds every result, and suggested
+  SQL at a tool that takes R. The language stays out of the name because
+  the argument schema already carries it.
+
+  Drawing is now captured generically: the call runs with an off-screen
+  device open, so a `plot()` call, an auto-printed ggplot or lattice
+  object, grid output, or an auto-printed plot recording all come back as
+  images beside the text, one per page drawn. Nothing in the tool
+  inspects the value's class -- capture is a property of the device, so
+  the tool stays general rather than special-casing a result shape. Code
+  that draws nothing returns text exactly as before. The model sets
+  `width` and `height` per call (defaulting to `assistant_plot_render_px`,
+  clamped to a usable range), since it is the one that knows whether it
+  is reading a dense scatter or checking a colour. Model-supplied code is
+  also evaluated with the default packages attached regardless of the
+  board's `attach_default_packages` setting, which governs block
+  evaluation: a scope reaching `base` alone cannot call `hist()`,
+  `boxplot()` or `barplot()`, and `::` reached those namespaces anyway.
+  There is no capability gating on images -- rendering is
+  model-initiated, and a model that cannot see them has no reason to ask
+  (#153).
 
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes
