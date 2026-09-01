@@ -504,19 +504,19 @@ make_board <- function(results = list()) {
   )
 }
 
-call_query <- function(code, results = list()) {
-  tool <- tool_query_data(make_board(results), NULL, NULL)
-  tool(code = code)
+call_query <- function(code, results = list(), ...) {
+  tool <- tool_inspect_results(make_board(results), NULL, NULL)
+  tool(code = code, ...)
 }
 
-test_that("query_data evaluates a single expression against a bound block", {
+test_that("inspect_results evaluates one expression against a bound block", {
 
   res <- isolate(call_query("nrow(data)", list(data = iris)))
 
   expect_match(res, "150", fixed = TRUE)
 })
 
-test_that("query_data auto-prints the last expression value", {
+test_that("inspect_results auto-prints the last expression value", {
 
   res <- isolate(
     call_query("length(unique(data$Species))", list(data = iris))
@@ -525,7 +525,7 @@ test_that("query_data auto-prints the last expression value", {
   expect_match(res, "3", fixed = TRUE)
 })
 
-test_that("query_data captures stdout from intermediate print calls", {
+test_that("inspect_results captures stdout from intermediate print calls", {
 
   res <- isolate(
     call_query("print('hello'); 42", list(data = iris))
@@ -535,22 +535,22 @@ test_that("query_data captures stdout from intermediate print calls", {
   expect_match(res, "42", fixed = TRUE)
 })
 
-test_that("query_data with no arg returns the failed-envelope on parse error", {
+test_that("inspect_results returns the failed-envelope on a parse error", {
 
   res <- isolate(call_query("nrow(data", list(data = iris)))
 
-  expect_match(res, "^query_data failed:")
+  expect_match(res, "^inspect_results failed:")
 })
 
-test_that("query_data returns the failed-envelope on runtime error", {
+test_that("inspect_results returns the failed-envelope on runtime error", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "^query_data failed:")
+  expect_match(res, "^inspect_results failed:")
   expect_match(res, "boom", fixed = TRUE)
 })
 
-test_that("query_data skips blocks whose result errors", {
+test_that("inspect_results skips blocks whose result errors", {
 
   brd <- reactiveValues(
     board = new_board(),
@@ -563,7 +563,7 @@ test_that("query_data skips blocks whose result errors", {
       )
     )
   )
-  tool <- tool_query_data(brd, NULL, NULL)
+  tool <- tool_inspect_results(brd, NULL, NULL)
 
   res <- isolate(tool(code = "sum(ok)"))
 
@@ -572,7 +572,7 @@ test_that("query_data skips blocks whose result errors", {
   expect_match(res, "6", fixed = TRUE)
 })
 
-test_that("query_data names the eval status of each skipped block", {
+test_that("inspect_results names the eval status of each skipped block", {
 
   brd <- reactiveValues(
     board = new_board(),
@@ -586,7 +586,7 @@ test_that("query_data names the eval status of each skipped block", {
     )
   )
 
-  res <- isolate(tool_query_data(brd, NULL, NULL)(code = "sum(ok)"))
+  res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "sum(ok)"))
 
   expect_match(res, "- off (`dormant`):", fixed = TRUE)
   expect_match(res, "- old (`stale`):", fixed = TRUE)
@@ -594,11 +594,112 @@ test_that("query_data names the eval status of each skipped block", {
   expect_match(res, "6", fixed = TRUE)
 })
 
-test_that("query_data truncates output over 200 lines", {
+test_that("inspect_results truncates output over 200 lines", {
 
   res <- isolate(call_query("seq_len(5000)", list(data = iris)))
 
   expect_match(res, "output truncated", fixed = TRUE)
+})
+
+test_that("inspect_results returns whatever the code draws as an image", {
+
+  res <- isolate(call_query("plot(1:10)"))
+
+  expect_type(res, "list")
+  expect_length(res, 1L)
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+  expect_identical(res[[1L]]@type, "image/png")
+})
+
+test_that("inspect_results captures a non-base engine the same way", {
+
+  # grid.rect() returns its grob invisibly, so a REPL shows the drawing
+  # alone -- no text element, exactly as at a console.
+  res <- isolate(call_query("grid::grid.newpage(); grid::grid.rect()"))
+
+  expect_length(res, 1L)
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results draws an auto-printed plot recording", {
+
+  chart <- record_plots("plot(1:10)")
+
+  res <- isolate(call_query("chart[[1]]", list(chart = chart)))
+
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results draws every page evaluate::replay() emits", {
+
+  chart <- record_plots("plot(1:10); plot(1:5)")
+
+  res <- isolate(call_query("evaluate::replay(chart)", list(chart = chart)))
+
+  expect_length(res, 2L)
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+  expect_s7_class(res[[2L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results returns one image per page drawn", {
+
+  res <- isolate(call_query("plot(1:10); plot(1:5)"))
+
+  expect_length(res, 2L)
+})
+
+test_that("inspect_results returns no image when nothing is drawn", {
+
+  res <- isolate(call_query("nrow(data)", list(data = iris)))
+
+  expect_type(res, "character")
+  expect_match(res, "150", fixed = TRUE)
+})
+
+test_that("inspect_results takes the device size from the model", {
+
+  small <- isolate(call_query("plot(1:10)", width = 240L, height = 240L))
+  large <- isolate(call_query("plot(1:10)", width = 900L, height = 900L))
+
+  expect_lt(nchar(small[[1L]]@data), nchar(large[[1L]]@data))
+})
+
+test_that("inspect_results clamps a device size out of range", {
+
+  huge <- isolate(call_query("plot(1:10)", width = 99999L, height = 99999L))
+  top  <- isolate(call_query("plot(1:10)", width = 2000L, height = 2000L))
+
+  expect_identical(nchar(huge[[1L]]@data), nchar(top[[1L]]@data))
+})
+
+test_that("inspect_results keeps the skipped-block report beside an image", {
+
+  brd <- reactiveValues(
+    board = new_board(),
+    blocks = list(
+      ok  = list(server = list(result = reactive(1:3))),
+      off = list(server = list(result = reactive(req(FALSE))))
+    ),
+    eval = reactiveValues(ok = reactive("ready"), off = reactive("dormant"))
+  )
+
+  res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "plot(ok)"))
+
+  expect_length(res, 2L)
+  expect_s7_class(res[[1L]], ellmer::ContentText)
+  expect_match(res[[1L]]@text, "- off (`dormant`):", fixed = TRUE)
+  expect_s7_class(res[[2L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results caps the images it returns and says it did", {
+
+  withr::local_options(blockr.assistant_plot_render_max = 2L)
+
+  res <- isolate(call_query("plot(1:10); plot(1:5); plot(1:3)"))
+
+  expect_length(res, 3L)
+  expect_s7_class(res[[1L]], ellmer::ContentText)
+  expect_match(res[[1L]]@text, "Returned 2 of 3 drawn plots", fixed = TRUE)
 })
 
 test_that("tool_describe_block names the skills scoped to its type", {
@@ -764,4 +865,64 @@ test_that("tool_get_block_state returns a recovery hint for unknown id", {
   res <- call_tool(tool_get_block_state(board, NULL, NULL), id = "bogus")
 
   expect_match(res, "No block with id bogus", fixed = TRUE)
+})
+
+test_that("inspect_results draws through a namespace-prefixed call", {
+
+  res <- isolate(call_query("graphics::hist(data$Sepal.Length)",
+                            list(data = iris)))
+
+  is_image <- function(x) inherits(x, "ellmer::ContentImageInline")
+
+  expect_true(any(vapply(res, is_image, logical(1L))))
+})
+
+test_that("inspect_results names the missing package on a scope miss", {
+
+  res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
+
+  expect_match(res, "could not find function", fixed = TRUE)
+  expect_match(res, "graphics::hist()", fixed = TRUE)
+})
+
+test_that("the eval scope is base R on every board", {
+
+  # pinned, not inherited: a board opting into attached defaults must not
+  # change what the tool description promises the model.
+  withr::local_options(blockr.attach_default_packages = TRUE)
+
+  res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
+
+  expect_match(res, "stats::median()", fixed = TRUE)
+})
+
+test_that("an unresolvable function still gets the generic prefix hint", {
+
+  res <- isolate(call_query("no_such_fun_anywhere(1)"))
+
+  expect_match(res, "only base R is attached", fixed = TRUE)
+})
+
+test_that("inspect_results leaves an unrelated error message alone", {
+
+  res <- isolate(call_query("stop('boom')", list(data = iris)))
+
+  expect_match(res, "boom", fixed = TRUE)
+  expect_no_match(res, "prefix", fixed = TRUE)
+})
+
+test_that("inspect_results respects invisibility, as a REPL does", {
+
+  res <- isolate(call_query("x <- 42", list(data = iris)))
+
+  expect_identical(res, "")
+})
+
+test_that("an invisible drawing is not replayed a second time by printing", {
+
+  chart <- record_plots("plot(1:10); plot(1:5)")
+
+  res <- isolate(call_query("evaluate::replay(chart)", list(chart = chart)))
+
+  expect_length(res, 2L)
 })

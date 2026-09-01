@@ -79,7 +79,7 @@ review_invitation <- function() {
     "it. State is reported for a block you added, whose constructor resolves",
     "every argument you did not name; a block you modified holds what you",
     "staged, so it carries no state section. Inspect downstream results with",
-    "get_block_result or query_data when:",
+    "get_block_result or inspect_results when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -194,7 +194,7 @@ collect_touched_results <- function(touched, board, added = character(),
       lines,
       glue::glue(
         "(showing {length(shown)} of {length(ids)} blocks -- call ",
-        "get_block_result or query_data for the rest)"
+        "get_block_result or inspect_results for the rest)"
       )
     )
   }

@@ -11,12 +11,10 @@ test_that("truncate_chars appends a hint only when one is given", {
 test_that("truncate_chars counts the marker and hint against max_chars", {
 
   long <- strrep("z", 5000L)
+  hint <- "use get_block_state for the whole value"
 
   expect_lte(nchar(truncate_chars(long, 200L)), 200L)
-  expect_lte(
-    nchar(truncate_chars(long, 200L, hint = "use query_data to fetch rows")),
-    200L
-  )
+  expect_lte(nchar(truncate_chars(long, 200L, hint = hint)), 200L)
 })
 
 test_that("the char cap is option-driven, defaulting to 2000", {

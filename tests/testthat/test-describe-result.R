@@ -71,3 +71,94 @@ test_that("summarise_result caps a method that does not bound itself", {
   expect_lt(nchar(res), 400L)
   expect_match(res, "truncated", fixed = TRUE)
 })
+
+test_that("a plot result names its class and counts the recordings", {
+
+  res <- summarise_result(record_plots("plot(1:10)"))
+
+  expect_match(res, "recordedplot", fixed = TRUE)
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_no_match(res, "C_plot_new", fixed = TRUE)
+})
+
+test_that("a plot result pluralises several recordings", {
+
+  res <- summarise_result(record_plots("plot(1:10); plot(1:5)"))
+
+  expect_match(res, "2 recorded plots", fixed = TRUE)
+})
+
+test_that("a plot block that drew nothing is distinguishable", {
+
+  res <- summarise_result(record_plots("1 + 1"))
+
+  expect_match(res, "without drawing", fixed = TRUE)
+  expect_no_match(res, "recorded plot (", fixed = TRUE)
+})
+
+test_that("an evaluation carrying no recording is left to the default", {
+
+  # `evaluate_evaluation` is a general container this package does not own,
+  # so a result of another shape must not be described as a plot that is
+  # missing -- it gets the description it would have had.
+  res <- summarise_result(evaluate::evaluate("cat('hi'); warning('careful')"))
+
+  expect_no_match(res, "Graphics result", fixed = TRUE)
+  expect_no_match(res, "without drawing", fixed = TRUE)
+  expect_match(res, "evaluation", ignore.case = TRUE)
+})
+
+test_that("an evaluation mixing plots with other parts counts them all", {
+
+  res <- summarise_result(
+    evaluate::evaluate("cat('note'); plot(1:10); warning('hm')")
+  )
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_match(res, "1 warning", fixed = TRUE)
+  expect_match(res, "1 output", fixed = TRUE)
+})
+
+test_that("a subclassed result takes precedence over the shipped methods", {
+
+  registerS3method(
+    "describe_result", "assistant_custom_eval",
+    function(x, ...) "custom evaluation summary"
+  )
+
+  res <- describe_result(
+    structure(
+      record_plots("plot(1:10)"),
+      class = c("assistant_custom_eval", "evaluate_evaluation", "list")
+    )
+  )
+
+  expect_identical(res, "custom evaluation summary")
+})
+
+
+test_that("a bare recordedplot is described like a one-plot evaluation", {
+
+  res <- describe_result(record_plots("plot(1:10)")[[1L]])
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+})
+
+test_that("a result summary carries no tool hint when truncated", {
+
+  res <- summarise_result(strrep("z", 5000L), max_chars = 200L)
+
+  expect_match(res, "truncated", fixed = TRUE)
+  expect_no_match(res, "inspect_results", fixed = TRUE)
+  expect_no_match(res, " -- use ", fixed = TRUE)
+})
+
+test_that("a recording is described without claiming a graphics engine", {
+
+  code <- "grid::grid.newpage(); grid::grid.rect()"
+
+  res <- summarise_result(record_plots(code))
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_no_match(res, "[Bb]ase")
+})

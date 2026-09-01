@@ -7,14 +7,14 @@
       board. The Board section below is the current shape of the
       board.
       
-      A result summary is a bounded overview, never the object
-      itself -- and a block's result is any R object, not
-      necessarily a data frame. Never guess at what it contains.
-      The moment you need a specific value, name, or piece of its
-      structure the overview doesn't show -- or need to confirm one
-      that looks empty or `NULL` -- investigate it with `query_data`
-      (read-only R over any block's result). Do not build on a
-      guess when you can look.
+      A result summary is a bounded overview, never the object itself
+      -- and a block's result is any R object, not necessarily a data
+      frame. Never guess at what it contains. The moment you need a
+      specific value, name, or piece of its structure the overview
+      doesn't show -- or need to confirm one that looks empty or
+      `NULL` -- investigate it with `inspect_results` (read-only R
+      over any block's result). Do not build on a guess when you can
+      look.
       
       The same holds for a block's configuration. The state a block
       description reports is bounded too, and an argument too long
@@ -32,10 +32,10 @@
       last result is out of date). An unmarked block is evaluated and
       current. A dormant or stale block is not re-evaluating at all,
       which cuts both ways. It has no result for get_block_result or
-      query_data to read, and that is the board deferring work the
-      user cannot see rather than a fault -- never reconfigure a block
-      merely because you cannot read its result. But it is no evidence
-      of health either: everything such a block reports, its
+      inspect_results to read, and that is the board deferring work
+      the user cannot see rather than a fault -- never reconfigure a
+      block merely because you cannot read its result. But it is no
+      evidence of health either: everything such a block reports, its
       conditions included, is a snapshot from its last evaluation, so
       a break your own change just introduced downstream will not
       surface there. When you change a block, say so plainly if a
@@ -113,14 +113,14 @@
       board. The Board section below is the current shape of the
       board.
       
-      A result summary is a bounded overview, never the object
-      itself -- and a block's result is any R object, not
-      necessarily a data frame. Never guess at what it contains.
-      The moment you need a specific value, name, or piece of its
-      structure the overview doesn't show -- or need to confirm one
-      that looks empty or `NULL` -- investigate it with `query_data`
-      (read-only R over any block's result). Do not build on a
-      guess when you can look.
+      A result summary is a bounded overview, never the object itself
+      -- and a block's result is any R object, not necessarily a data
+      frame. Never guess at what it contains. The moment you need a
+      specific value, name, or piece of its structure the overview
+      doesn't show -- or need to confirm one that looks empty or
+      `NULL` -- investigate it with `inspect_results` (read-only R
+      over any block's result). Do not build on a guess when you can
+      look.
       
       The same holds for a block's configuration. The state a block
       description reports is bounded too, and an argument too long
@@ -138,10 +138,10 @@
       last result is out of date). An unmarked block is evaluated and
       current. A dormant or stale block is not re-evaluating at all,
       which cuts both ways. It has no result for get_block_result or
-      query_data to read, and that is the board deferring work the
-      user cannot see rather than a fault -- never reconfigure a block
-      merely because you cannot read its result. But it is no evidence
-      of health either: everything such a block reports, its
+      inspect_results to read, and that is the board deferring work
+      the user cannot see rather than a fault -- never reconfigure a
+      block merely because you cannot read its result. But it is no
+      evidence of health either: everything such a block reports, its
       conditions included, is a snapshot from its last evaluation, so
       a break your own change just introduced downstream will not
       surface there. When you change a block, say so plainly if a

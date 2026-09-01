@@ -1,5 +1,66 @@
 # blockr.assistant (development version)
 
+* Plot results are now described rather than dumped. A block built on
+  `blockr.core::new_plot_block()` evaluates to recorded plots, which the
+  default summary rendered as a display list -- core's scatter block
+  reported eight graphics primitives and nothing about what was drawn,
+  through the result tool and again through every post-apply review. New
+  `describe_result()` methods name the class and count the recordings
+  instead, and say when a block evaluated without drawing at all, a case
+  previously indistinguishable from any other plot. They deliberately do
+  not describe the chart, and deliberately do not name a graphics
+  engine: `recordedplot` is a display list, which grid and lattice
+  produce as readily as base graphics, and reading one means parsing
+  undocumented entry points positionally against R's graphics internals.
+  The `evaluate_evaluation` method claims only evaluations that carry a
+  recording, deferring to the default otherwise: the class belongs to
+  `evaluate` rather than to this package, and an evaluation of another
+  shape must keep the description it would have had rather than be told
+  it is a plot that is missing. What it does claim it counts by kind, so
+  a warning or an error accompanying the plot is reported rather than
+  dropped, and a result needing a different description can take one by
+  carrying a class of its own.
+  A truncated result summary no longer appends the fixed "use query_data
+  to fetch specific rows or columns" hint either: it was passed for every
+  result type, so a plot block was told to fetch rows and columns from a
+  graphics recording, and a summary that names what the result is leaves
+  the hint nothing to do (#153).
+
+* The `query_data` tool is now called `inspect_results`, and returns
+  whatever the code draws. It was never a data-frame tool -- it evaluates
+  R with every committed block's result bound by its block id -- so the
+  old name promised data at a tool that binds every result, and suggested
+  SQL at a tool that takes R. The language stays out of the name because
+  the argument schema already carries it.
+
+  Drawing is now captured generically: the call runs with an off-screen
+  device open, so a `plot()` call, an auto-printed ggplot or lattice
+  object, grid output, or an auto-printed plot recording all come back as
+  images beside the text, one per page drawn. Nothing in the tool
+  inspects the value's class -- capture is a property of the device, so
+  the tool stays general rather than special-casing a result shape. Code
+  that draws nothing returns text exactly as before. The model sets
+  `width` and `height` per call (defaulting to `assistant_plot_render_px`,
+  clamped to a usable range), since it is the one that knows whether it
+  is reading a dense scatter or checking a colour. The evaluation scope is
+  pinned to `baseenv()` rather than taken from the board, whose
+  `attach_default_packages` option would otherwise make it vary per
+  deployment -- the tool description is baked into the system prompt, so a
+  varying scope leaves it either hedged or wrong somewhere. Pinned, it
+  states one rule that always holds: only base R is attached, so prefix
+  everything else. A "could not find function" error names the package
+  that exports the missing function (`graphics::hist()`), and prefixed
+  code stays valid in a code block too. There is no capability gating on
+  images: rendering is model-initiated, and a model that cannot see them
+  has no reason to ask (#153).
+
+* The `inspect_results` tool now respects invisibility when it
+  auto-prints, as an R REPL does, so an assignment or an `invisible()`
+  result prints nothing. This was cosmetic while results were text, and
+  stopped being so once printing could draw: `evaluate::replay()` returns
+  its plots invisibly, so printing the return value replayed every page a
+  second time and returned each image twice (#153).
+
 * A commit whose board update fails partway through the apply phase no
   longer tells the model the board was unchanged. Core records the two
   rejection outcomes from different observers: a `validate` failure is

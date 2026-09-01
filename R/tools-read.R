@@ -20,7 +20,7 @@ register_read_tools <- function(client, board, update, session, pool = NULL) {
   client$register_tool(
     tool_get_block_conditions(board, update, session)
   )
-  client$register_tool(tool_query_data(board, update, session))
+  client$register_tool(tool_inspect_results(board, update, session))
 
   invisible(client)
 }
@@ -446,7 +446,7 @@ tool_get_block_state <- function(board, update, session) {
       "have only seen summarised: modify_block replaces the whole",
       "value, so an edit made from a summary silently discards what the",
       "summary left out. Configuration only -- use get_block_result or",
-      "query_data for a block's data."
+      "inspect_results for a block's data."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
@@ -504,11 +504,52 @@ tool_get_block_conditions <- function(board, update, session) {
   )
 }
 
-tool_query_data <- function(board, update, session) {
+# A scope miss is the one error the model can fix unaided, so the fix is named
+# on the error rather than only in the tool description -- which it has already
+# read by the time it gets this wrong.
+with_scope_hint <- function(expr) {
+
+  tryCatch(
+    expr,
+    error = function(e) {
+
+      msg <- conditionMessage(e)
+
+      stop(paste(c(msg, scope_hint(msg)), collapse = " -- "), call. = FALSE)
+    }
+  )
+}
+
+# Safe to state the scope now that inspect_env() pins it: base R and nothing
+# else, on every board. Naming the package that exports the missing function
+# is the actionable half, and R's own defaultPackages are where a miss almost
+# always lands, since anything further afield needs a prefix to be written at
+# all.
+scope_hint <- function(msg) {
+
+  fun <- sub('.*could not find function "([^"]+)".*', "\\1", msg)
+
+  if (identical(fun, msg)) {
+    return(NULL)
+  }
+
+  pkg <- Find(
+    function(p) fun %in% getNamespaceExports(asNamespace(p)),
+    intersect(getOption("defaultPackages"), loadedNamespaces())
+  )
+
+  if (is.null(pkg)) {
+    return("only base R is attached here; other packages need a prefix")
+  }
+
+  glue::glue("only base R is attached here; write {pkg}::{fun}()")
+}
+
+tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
-    function(code) {
-      with_tool_errors("query_data", {
+    function(code, width = NULL, height = NULL) {
+      with_tool_errors("inspect_results", {
 
         blks <- isolate(board$blocks)
 
@@ -536,18 +577,36 @@ tool_query_data <- function(board, update, session) {
           }
         }
 
-        env <- eval_env(data)
+        env <- inspect_env(data)
         parsed <- parse(text = code)
 
-        output <- capture.output({
-          val <- NULL
-          for (e in parsed) {
-            val <- eval(e, envir = env)
-          }
-          if (!is.null(val)) {
-            print(val)
-          }
-        })
+        # REPL semantics, unchanged: stdout is captured and the last value is
+        # auto-printed. The device is simply open while that happens, so a
+        # value whose print method draws (a ggplot, a recordedplot) draws onto
+        # it, exactly as the same code would at a console.
+        drawn <- with_scope_hint(capture_drawings(
+          function() {
+            capture.output({
+              last <- list(value = NULL, visible = FALSE)
+              for (e in parsed) {
+                last <- withVisible(eval(e, envir = env))
+              }
+              # Visibility is half of what auto-printing means, and ignoring
+              # it stopped being cosmetic once printing could draw: replay()
+              # returns its plots invisibly, so printing the return value
+              # replayed every page a second time.
+              if (last$visible && !is.null(last$value)) {
+                print(last$value)
+              }
+            })
+          },
+          width  = device_px(width),
+          height = device_px(height)
+        ))
+
+        on.exit(unlink(drawn$dir, recursive = TRUE), add = TRUE)
+
+        output <- drawn$value
 
         if (length(output) > 200L) {
           hidden <- length(output) - 200L
@@ -557,26 +616,61 @@ tool_query_data <- function(board, update, session) {
           )
         }
 
+        max_plots <- plot_render_max()
+        shown <- head(drawn$files, max_plots)
+
+        if (length(shown)) {
+          output <- c(
+            output, dropped_drawings_line(length(drawn$files), max_plots)
+          )
+        }
+
         if (length(skipped)) {
           output <- c(skipped_block_lines(skipped), "", output)
         }
 
-        paste(output, collapse = "\n")
+        text <- paste(output, collapse = "\n")
+
+        if (!length(shown)) {
+          return(text)
+        }
+
+        # A tool result expands into content only when EVERY element of it is
+        # a Content object, so the text travels as ContentText rather than as
+        # a bare string beside the images.
+        c(
+          if (nzchar(trimws(text))) list(ellmer::ContentText(text)),
+          drawing_contents(shown)
+        )
       })
     },
-    name        = "query_data",
+    name        = "inspect_results",
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
       "block id (e.g. for a block with id `data` write `head(data)`).",
-      "Returns captured stdout plus the auto-printed value of the",
-      "last expression -- the same shape an R REPL would produce.",
+      "Returns captured stdout plus the last expression's value if it",
+      "is visible -- the same shape an R REPL would produce, so an",
+      "assignment or an invisible() result prints nothing.",
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
-      "Use this for questions the Board section doesn't carry:",
-      "unique values, group counts, ad-hoc filters, joins across",
-      "blocks. Read-only; the board is not modified."
+      "Only base R is attached, so every function from another package",
+      "needs its namespace prefix -- graphics::hist(), stats::median(),",
+      "ggplot2::ggplot(). A prefixed call always resolves, and is what",
+      "you would write in a code block anyway.",
+      "The call runs with a graphics device open, so whatever the code",
+      "draws comes back as an image beside the text -- a plot() call,",
+      "an auto-printed ggplot or lattice object, grid output, or an",
+      "auto-printed plot recording. Drawing is the whole mechanism;",
+      "there is no separate argument asking for a picture. A plot block",
+      "evaluates to a list of recordings rather than to one, so draw it",
+      "with evaluate::replay(chart) -- the same call the board renders",
+      "it with, and it covers every page the block drew.",
+      "Use this for questions the Board section doesn't carry: unique",
+      "values, group counts, ad-hoc filters, joins across blocks, and",
+      "anything you need to see drawn rather than described.",
+      "Read-only; the board is not modified."
     ),
     arguments = list(
       code = ellmer::type_string(
@@ -584,6 +678,22 @@ tool_query_data <- function(board, update, session) {
           "R code to evaluate. Multiple statements allowed; the",
           "last expression's value is auto-printed."
         )
+      ),
+      width = ellmer::type_integer(
+        paste(
+          "Width in pixels of the device the code draws on. Optional;",
+          "defaults to 768, clamped to 200-2000. Raise it for a dense",
+          "plot you need to read values off, lower it when the shape is",
+          "all you need."
+        ),
+        required = FALSE
+      ),
+      height = ellmer::type_integer(
+        paste(
+          "Height in pixels of the device the code draws on. Optional;",
+          "defaults to 768, clamped to 200-2000."
+        ),
+        required = FALSE
       )
     )
   )

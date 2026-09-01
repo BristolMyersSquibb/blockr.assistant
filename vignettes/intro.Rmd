@@ -75,14 +75,26 @@ Richer questions about a specific block trigger one drill-down call:
 > **Assistant**: \[calls `describe_block(id = "head")`\] `n_rows` is
 > currently 10.
 
-Questions about a block's data go through the `query_data` tool,
-which evaluates R against an environment with every committed block
-result bound by id:
+Questions about what a block holds go through the `inspect_results`
+tool, which evaluates R against an environment with every committed
+block result bound by id:
 
 > **You**: What are the unique species in the data block?
 >
-> **Assistant**: \[calls `query_data(code = "unique(data$Species)")`\]
+> **Assistant**: \[calls `inspect_results(code = "unique(data$Species)")`\]
 > Three: setosa, versicolor, virginica.
+
+Anything the code draws comes back as an image. The call runs with an
+off-screen graphics device open, so a `plot()` call, an auto-printed
+ggplot or lattice object, or an auto-printed plot recording all return
+the rendering alongside the text output -- one image per page drawn,
+sized by the `width` and `height` the model asks for.
+
+Only base R is attached, so the model prefixes calls from other packages
+(`graphics::hist()`, `ggplot2::ggplot()`) -- the same thing it would
+write inside a code block. A plot block's result is a list of
+recordings, drawn with `evaluate::replay()`, which is the call the board
+renders it with.
 
 Mutations stage across the turn and flush atomically when the
 assistant finishes:
