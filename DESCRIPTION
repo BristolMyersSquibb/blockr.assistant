@@ -23,6 +23,7 @@ Imports:
     bsicons,
     btw,
     ellmer,
+    evaluate,
     glue,
     grDevices,
     jsonlite,
@@ -35,7 +36,6 @@ Imports:
     yaml
 Suggests:
     chromote,
-    evaluate,
     knitr,
     rmarkdown,
     shinytest2,

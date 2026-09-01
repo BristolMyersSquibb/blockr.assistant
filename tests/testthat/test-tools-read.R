@@ -613,14 +613,12 @@ test_that("inspect_results returns whatever the code draws as an image", {
 
 test_that("inspect_results captures a non-base engine the same way", {
 
-  # grid.rect() also returns a grob, which auto-prints as text -- so this
-  # covers the mixed case too: the text and the drawing both come back.
+  # grid.rect() returns its grob invisibly, so a REPL shows the drawing
+  # alone -- no text element, exactly as at a console.
   res <- isolate(call_query("grid::grid.newpage(); grid::grid.rect()"))
 
-  is_image <- function(x) inherits(x, "ellmer::ContentImageInline")
-
-  expect_true(any(vapply(res, is_image, logical(1L))))
-  expect_s7_class(res[[1L]], ellmer::ContentText)
+  expect_length(res, 1L)
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
 })
 
 test_that("inspect_results draws an auto-printed plot recording", {
@@ -630,6 +628,17 @@ test_that("inspect_results draws an auto-printed plot recording", {
   res <- isolate(call_query("chart[[1]]", list(chart = chart)))
 
   expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+})
+
+test_that("inspect_results draws every page evaluate::replay() emits", {
+
+  chart <- record_plots("plot(1:10); plot(1:5)")
+
+  res <- isolate(call_query("evaluate::replay(chart)", list(chart = chart)))
+
+  expect_length(res, 2L)
+  expect_s7_class(res[[1L]], ellmer::ContentImageInline)
+  expect_s7_class(res[[2L]], ellmer::ContentImageInline)
 })
 
 test_that("inspect_results returns one image per page drawn", {
@@ -876,20 +885,22 @@ test_that("inspect_results names the missing package on a scope miss", {
   expect_match(res, "graphics::hist()", fixed = TRUE)
 })
 
-test_that("a scope miss claims nothing about what is in scope", {
+test_that("the eval scope is base R on every board", {
+
+  # pinned, not inherited: a board opting into attached defaults must not
+  # change what the tool description promises the model.
+  withr::local_options(blockr.attach_default_packages = TRUE)
 
   res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
 
   expect_match(res, "stats::median()", fixed = TRUE)
-  expect_no_match(res, "only the board", fixed = TRUE)
-  expect_no_match(res, "attached", fixed = TRUE)
 })
 
 test_that("an unresolvable function still gets the generic prefix hint", {
 
   res <- isolate(call_query("no_such_fun_anywhere(1)"))
 
-  expect_match(res, "needs its namespace prefix", fixed = TRUE)
+  expect_match(res, "only base R is attached", fixed = TRUE)
 })
 
 test_that("inspect_results leaves an unrelated error message alone", {
@@ -898,4 +909,20 @@ test_that("inspect_results leaves an unrelated error message alone", {
 
   expect_match(res, "boom", fixed = TRUE)
   expect_no_match(res, "prefix", fixed = TRUE)
+})
+
+test_that("inspect_results respects invisibility, as a REPL does", {
+
+  res <- isolate(call_query("x <- 42", list(data = iris)))
+
+  expect_identical(res, "")
+})
+
+test_that("an invisible drawing is not replayed a second time by printing", {
+
+  chart <- record_plots("plot(1:10); plot(1:5)")
+
+  res <- isolate(call_query("evaluate::replay(chart)", list(chart = chart)))
+
+  expect_length(res, 2L)
 })

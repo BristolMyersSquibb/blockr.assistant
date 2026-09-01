@@ -39,7 +39,7 @@ describe_result.default <- function(x, ...) {
 #' @export
 describe_result.evaluate_evaluation <- function(x, ...) {
 
-  plots <- Filter(is_recorded_plot, x)
+  plots <- Filter(evaluate::is.recordedplot, x)
 
   describe_plot_result(length(plots), length(x) - length(plots))
 }

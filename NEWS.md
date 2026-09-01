@@ -35,13 +35,21 @@
   `width` and `height` per call (defaulting to `assistant_plot_render_px`,
   clamped to a usable range), since it is the one that knows whether it
   is reading a dense scatter or checking a colour. The evaluation scope is
-  unchanged and still the board's: `eval_env()` parents on `baseenv()`
-  unless `attach_default_packages` says otherwise, so `hist()` may resolve
-  only when prefixed. The tool asks for the prefix, and a "could not find
-  function" error now names the package that exports the missing function
-  (`graphics::hist()`) rather than asserting what the scope contains,
-  which is the board's business and is not read here. Prefixed code also
-  stays valid in a code block, where the same scope applies. There is no capability
+  pinned to `baseenv()` rather than taken from the board, whose
+  `attach_default_packages` option would otherwise make it vary per
+  deployment -- the tool description is baked into the system prompt, so a
+  varying scope leaves it either hedged or wrong somewhere. Pinned, it
+  states one rule that always holds: only base R is attached, so prefix
+  everything else. A "could not find function" error names the package
+  that exports the missing function (`graphics::hist()`), and prefixed
+  code stays valid in a code block too.
+
+* The `inspect_results` tool now respects invisibility when it
+  auto-prints, as an R REPL does, so an assignment or an `invisible()`
+  result prints nothing. This was cosmetic while results were text, and
+  stopped being so once printing could draw: `evaluate::replay()` returns
+  its plots invisibly, so printing the return value replayed every page a
+  second time and returned each image twice (#153). There is no capability
   gating on images: rendering is model-initiated, and a model that cannot
   see them has no reason to ask (#153).
 

@@ -48,8 +48,13 @@ dropped_drawings_line <- function(n, max_plots) {
   glue::glue("Returned {max_plots} of {n} drawn plots; the rest are omitted.")
 }
 
-# A display-list recording, which grid and lattice produce as readily as base
-# graphics -- the class says a plot was recorded, not which engine drew it.
-is_recorded_plot <- function(x) {
-  inherits(x, "recordedplot")
+# Pinned to baseenv() rather than taken from the board's eval_env(), which
+# attaches the default packages or not by its own option. The tool description
+# is baked into the system prompt, so a scope that varies per deployment makes
+# it either hedged or wrong somewhere; pinned, it states one rule that is
+# always true and that the scope hint can then assert. This is the floor
+# eval_env() already returns by default, and it grants nothing: prefixed code
+# resolves any installed namespace and works in a code block too.
+inspect_env <- function(data) {
+  list2env(data, parent = baseenv())
 }

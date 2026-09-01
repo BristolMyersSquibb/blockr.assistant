@@ -520,12 +520,11 @@ with_scope_hint <- function(expr) {
   )
 }
 
-# Deliberately says nothing about what IS in scope. The board's eval_env()
-# attaches the default packages or not according to its own option, which we
-# do not read here, so any claim about the scope's contents would be a guess.
-# The name of the package exporting the missing function is both narrower and
-# more useful, and it is knowable: R's own defaultPackages are exactly the set
-# `attach_default_packages` governs, so a miss is almost always one of them.
+# Safe to state the scope now that inspect_env() pins it: base R and nothing
+# else, on every board. Naming the package that exports the missing function
+# is the actionable half, and R's own defaultPackages are where a miss almost
+# always lands, since anything further afield needs a prefix to be written at
+# all.
 scope_hint <- function(msg) {
 
   fun <- sub('.*could not find function "([^"]+)".*', "\\1", msg)
@@ -540,10 +539,10 @@ scope_hint <- function(msg) {
   )
 
   if (is.null(pkg)) {
-    return("a function from another package needs its namespace prefix here")
+    return("only base R is attached here; other packages need a prefix")
   }
 
-  glue::glue("prefix the package it comes from: {pkg}::{fun}()")
+  glue::glue("only base R is attached here; write {pkg}::{fun}()")
 }
 
 tool_inspect_results <- function(board, update, session) {
@@ -578,7 +577,7 @@ tool_inspect_results <- function(board, update, session) {
           }
         }
 
-        env <- eval_env(data)
+        env <- inspect_env(data)
         parsed <- parse(text = code)
 
         # REPL semantics, unchanged: stdout is captured and the last value is
@@ -588,12 +587,16 @@ tool_inspect_results <- function(board, update, session) {
         drawn <- with_scope_hint(capture_drawings(
           function() {
             capture.output({
-              val <- NULL
+              last <- list(value = NULL, visible = FALSE)
               for (e in parsed) {
-                val <- eval(e, envir = env)
+                last <- withVisible(eval(e, envir = env))
               }
-              if (!is.null(val)) {
-                print(val)
+              # Visibility is half of what auto-printing means, and ignoring
+              # it stopped being cosmetic once printing could draw: replay()
+              # returns its plots invisibly, so printing the return value
+              # replayed every page a second time.
+              if (last$visible && !is.null(last$value)) {
+                print(last$value)
               }
             })
           },
@@ -646,24 +649,24 @@ tool_inspect_results <- function(board, update, session) {
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
       "block id (e.g. for a block with id `data` write `head(data)`).",
-      "Returns captured stdout plus the auto-printed value of the",
-      "last expression -- the same shape an R REPL would produce.",
+      "Returns captured stdout plus the last expression's value if it",
+      "is visible -- the same shape an R REPL would produce, so an",
+      "assignment or an invisible() result prints nothing.",
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
-      "Code runs in the board's evaluation scope, which need not have",
-      "anything beyond base R attached, so prefix every function from",
-      "another package -- graphics::hist(), stats::median(),",
-      "ggplot2::ggplot(). A prefixed call resolves whatever the board",
-      "is configured to attach, and is what you would write in a code",
-      "block anyway.",
+      "Only base R is attached, so every function from another package",
+      "needs its namespace prefix -- graphics::hist(), stats::median(),",
+      "ggplot2::ggplot(). A prefixed call always resolves, and is what",
+      "you would write in a code block anyway.",
       "The call runs with a graphics device open, so whatever the code",
       "draws comes back as an image beside the text -- a plot() call,",
       "an auto-printed ggplot or lattice object, grid output, or an",
       "auto-printed plot recording. Drawing is the whole mechanism;",
-      "there is no separate argument asking for a picture. Note that a",
-      "plot block evaluates to a list of recordings rather than to one,",
-      "so auto-print an element of it (`chart[[1]]`) to see the chart.",
+      "there is no separate argument asking for a picture. A plot block",
+      "evaluates to a list of recordings rather than to one, so draw it",
+      "with evaluate::replay(chart) -- the same call the board renders",
+      "it with, and it covers every page the block drew.",
       "Use this for questions the Board section doesn't carry: unique",
       "values, group counts, ad-hoc filters, joins across blocks, and",
       "anything you need to see drawn rather than described.",
