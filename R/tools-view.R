@@ -20,7 +20,7 @@ register_view_tools <- function(client, board, pending, view_data, session) {
 # `near` anchor -- names a current or staged-this-turn block or extension. dock
 # re-checks membership and anchor validity for the whole batch at commit.
 resolve_panel_op_ref <- function(panel, near, side, board, pending,
-                                 size = NULL) {
+                                 size = NULL, rail = NULL) {
 
   sets  <- panel_id_sets(board, pending)
   valid <- c(sets$blocks, sets$exts)
@@ -33,6 +33,40 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
       ),
       call. = FALSE
     )
+  }
+
+  # A rail is an edge of the view itself, while `near` / `side` name a spot
+  # inside its splitview -- two destinations at once, which is why dock keeps
+  # the keys exclusive rather than ranking them. A rail's width is dock's to
+  # set, so `size` has no axis to apply to either; dock allows that pairing on
+  # an `add`, and refusing it here keeps the tool from taking a hint it cannot
+  # honour.
+  if (not_null(rail)) {
+
+    if (!rail %in% rail_edges()) {
+      stop(
+        glue::glue(
+          "rail must be one of: {paste(rail_edges(), collapse = ', ')}"
+        ),
+        call. = FALSE
+      )
+    }
+
+    clash <- c(
+      if (not_null(near)) "near",
+      if (not_null(side)) "side",
+      if (not_null(size)) "size"
+    )
+
+    if (length(clash)) {
+      stop(
+        glue::glue(
+          "rail parks the panel on an edge of the view and cannot combine ",
+          "with {paste(clash, collapse = ', ')}"
+        ),
+        call. = FALSE
+      )
+    }
   }
 
   if (not_null(near) && !near %in% valid) {
@@ -61,11 +95,16 @@ resolve_panel_op_ref <- function(panel, near, side, board, pending,
   }
 
   as_panel_ref(
-    panel, sets$blocks, sets$exts, near = near, side = side, size = size
+    panel, sets$blocks, sets$exts, near = near, side = side, size = size,
+    rail = rail
   )
 }
 
-placement_suffix <- function(near, side) {
+placement_suffix <- function(near, side, rail = NULL) {
+
+  if (not_null(rail)) {
+    return(glue::glue(" ({rail} rail)"))
+  }
 
   if (is.null(near) && is.null(side)) {
     return("")
@@ -340,11 +379,12 @@ tool_remove_view <- function(board, pending, session) {
 tool_add_panel_to_view <- function(board, pending, session) {
 
   ellmer::tool(
-    function(view, panel, near = NULL, side = NULL, size = NULL) {
+    function(view, panel, near = NULL, side = NULL, size = NULL,
+             rail = NULL) {
       with_tool_errors("add_panel_to_view", {
 
         ref <- resolve_panel_op_ref(
-          panel, near, side, board, pending, size = size
+          panel, near, side, board, pending, size = size, rail = rail
         )
 
         stage_view_panel_op(
@@ -353,7 +393,7 @@ tool_add_panel_to_view <- function(board, pending, session) {
 
         glue::glue(
           "Staged add_panel_to_view({view}, {panel})",
-          "{placement_suffix(near, side)} -- call commit to apply."
+          "{placement_suffix(near, side, rail)} -- call commit to apply."
         )
       })
     },
@@ -366,9 +406,12 @@ tool_add_panel_to_view <- function(board, pending, session) {
       "and `side` (which side of `near` -- within tabs it into that",
       "group); omit both to let dock pick a default spot. Optionally",
       "give `size` (a ratio in (0, 1)) to record the panel's target",
-      "size along its split axis for when it lands. Adding a panel",
-      "already in the view is an error -- reposition it with",
-      "move_panel, or resize it with resize_panel, instead."
+      "size along its split axis for when it lands. Pass `rail`",
+      "instead to park the panel on an edge of the view rather than",
+      "in its split arrangement; a rail's width is dock's to set, so",
+      "`rail` combines with neither `near` / `side` nor `size`.",
+      "Adding a panel already in the view is an error -- reposition",
+      "it with move_panel, or resize it with resize_panel, instead."
     ),
     arguments = list(
       view = ellmer::type_string(
@@ -388,6 +431,15 @@ tool_add_panel_to_view <- function(board, pending, session) {
       ),
       size = ellmer::type_number(
         "Optional target size ratio in (0, 1) for the panel's group.",
+        required = FALSE
+      ),
+      rail = ellmer::type_enum(
+        rail_edges(),
+        paste(
+          "Optional edge of the view to park the panel on, instead of",
+          "placing it in the split arrangement. Excludes `near`,",
+          "`side` and `size`."
+        ),
         required = FALSE
       )
     )
@@ -435,16 +487,28 @@ tool_remove_panel_from_view <- function(board, pending, session) {
 tool_move_panel <- function(board, pending, session) {
 
   ellmer::tool(
-    function(view, panel, near, side = NULL) {
+    function(view, panel, near = NULL, side = NULL, rail = NULL) {
       with_tool_errors("move_panel", {
 
-        ref <- resolve_panel_op_ref(panel, near, side, board, pending)
+        # A rail move has no anchor, so `near` cannot stay required -- but a
+        # move with neither key names no destination at all.
+        if (is.null(near) && is.null(rail)) {
+          stop(
+            "move_panel needs a destination: `near` (a panel in the view) ",
+            "or `rail` (an edge of it)",
+            call. = FALSE
+          )
+        }
+
+        ref <- resolve_panel_op_ref(
+          panel, near, side, board, pending, rail = rail
+        )
 
         stage_view_panel_op(pending, board, "move_panel", view, "move", ref)
 
         glue::glue(
           "Staged move_panel({view}, {panel})",
-          "{placement_suffix(near, side)} -- call commit to apply."
+          "{placement_suffix(near, side, rail)} -- call commit to apply."
         )
       })
     },
@@ -453,8 +517,12 @@ tool_move_panel <- function(board, pending, session) {
       "Reposition a panel already in a view, addressed by view id (see",
       "list_views). Moves `panel` next to `near` (another panel in the",
       "same view), on the given `side` (within tabs it into `near`'s",
-      "group). Both must be current members of the view; membership is",
-      "unchanged -- only the arrangement moves."
+      "group). Pass `rail` instead of `near` / `side` to park the panel",
+      "on an edge of the view; passing no `rail` moves it back out of a",
+      "rail into the split arrangement. Give either `near` or `rail` --",
+      "never both, and never neither. The panel (and any `near`) must be",
+      "a current member of the view; membership is unchanged -- only the",
+      "arrangement moves."
     ),
     arguments = list(
       view = ellmer::type_string("Id of the view whose panel moves."),
@@ -462,11 +530,23 @@ tool_move_panel <- function(board, pending, session) {
         "Block or extension id of the panel to move."
       ),
       near = ellmer::type_string(
-        "Panel already in the view to move `panel` next to."
+        paste(
+          "Panel already in the view to move `panel` next to. Required",
+          "unless `rail` is given."
+        ),
+        required = FALSE
       ),
       side = ellmer::type_enum(
         valid_panel_sides(),
         "Which side of `near` the panel moves to.",
+        required = FALSE
+      ),
+      rail = ellmer::type_enum(
+        rail_edges(),
+        paste(
+          "Edge of the view to park the panel on, instead of a spot in",
+          "the split arrangement. Excludes `near` and `side`."
+        ),
         required = FALSE
       )
     )

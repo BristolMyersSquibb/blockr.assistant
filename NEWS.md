@@ -1,5 +1,22 @@
 # blockr.assistant (development version)
 
+* The `add_panel_to_view` and `move_panel` tools now reach a view's
+  rails. A view could be born with a rail -- its `add_view` layout takes
+  one, and `list_views` reports it -- but nothing edited one afterwards:
+  the panel-op tools addressed the splitview alone, so "park the
+  assistant on the left edge" of a view already on screen had no verb
+  behind it, and the model was shown a rail it could not touch. Both
+  tools gain a `rail` argument naming an edge, threaded into the panel
+  ref as blockr.dock's fourth placement hint. A rail is an edge of the
+  whole view where `near` / `side` name a spot inside its splitview, and
+  both vocabularies spell "left" and "right", so `rail` combines with
+  neither -- nor with `size`, a ratio along a split axis a rail does not
+  have. Moving a panel back out of a rail needs no new key: it is a
+  `move_panel()` call carrying `near` / `side` and no `rail`. A rail move
+  has no anchor, so `near` becomes optional on `move_panel`, which now
+  rejects a call naming neither destination. The `layout` skill dropped
+  two sentences stating that no verb reaches a rail (#137).
+
 * Block state now reaches the model in two tiers, with a new
   `get_block_state` tool behind the summary. State is rendered with
   `utils::str()`, which cuts a character value at 128 characters and marks
