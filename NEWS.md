@@ -1,5 +1,22 @@
 # blockr.assistant (development version)
 
+* A commit whose board update fails partway through the apply phase no
+  longer tells the model the board was unchanged. Core records the two
+  rejection outcomes from different observers: a `validate` failure is
+  recorded before `apply_core_board_update()` is called, so nothing has
+  moved, while an `apply` failure comes from the error handler wrapping
+  that call -- and the apply it wraps is a sequence of separate mutations
+  with no rollback, tearing down removed blocks, rewriting the board, then
+  writing each block delta one at a time. A commit that modifies five
+  blocks and throws on the third leaves the first two written, and the
+  rejection path answers before it collects any results, so the model was
+  told nothing had changed and handed nothing to inspect. Both the
+  rejection header and the rejection sentence now key on the phase the
+  outcome already carries: the unchanged-board claim is made for
+  `validate` alone, and any other phase reports that the update stopped
+  partway, naming `get_block_state` and `get_block_result` as the way to
+  find out what landed (#156).
+
 * The board check run after a commit no longer reports the state of a block
   the model merely modified. Core applies a `blocks$mod` delta by writing
   each field straight into the block's state reactive value, with no
