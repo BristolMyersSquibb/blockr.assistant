@@ -400,18 +400,8 @@ asst_ext_styles <- function() {
          rather than leave a smear of itself. The threshold sits well below
          any panel a chat is readable in, so narrowing one still gives a
          cramped chat rather than nothing. Last in the sheet because it
-         overrides the display the slots are given above.
-
-         The `min-width` floor separates collapsed from not-yet-measured.
-         A panel the dock has not laid out yet computes an inline-size of
-         zero, and `max-width: 140px` matches that on its own, so without
-         the floor the chat is blanked while the panel is still being
-         sized -- and a blanked composer sits in the DOM unable to take
-         focus, which surfaces as a timed-out wait rather than as a
-         visible defect (#151). Painting at zero width costs nothing,
-         since there is no sliver to smear at that size, and a genuinely
-         collapsed panel is far wider than the floor. */
-      @container (min-width: 1px) and (max-width: 140px) {
+         overrides the display the slots are given above. */
+      @container (max-width: 140px) {
         .asst-chat-slot,
         .asst-footer {
           display: none;

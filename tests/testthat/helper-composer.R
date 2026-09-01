@@ -55,11 +55,11 @@ wait_for_composer <- function(app, script, timeout, what) {
   )
 }
 
-# Whether the slot was blanked is the evidence behind the container-query
-# floor in `asst_ext_styles()`, and it can only be sampled in the failing
-# window itself -- a panel measured after the wait returns is already laid
-# out. Reporting must not itself throw, or the diagnostic replaces the
-# failure it was meant to explain.
+# Whether the container query in `asst_ext_styles()` blanked the slot is the
+# one thing a failed wait cannot report on its own, and it can only be
+# sampled in the failing window itself -- a panel measured after the wait
+# returns is already laid out. Reporting must not itself throw, or the
+# diagnostic replaces the failure it was meant to explain.
 composer_state <- function(app) {
 
   tryCatch(
