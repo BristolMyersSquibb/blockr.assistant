@@ -506,9 +506,7 @@ tool_get_block_conditions <- function(board, update, session) {
 
 # A scope miss is the one error the model can fix unaided, so the fix is named
 # on the error rather than only in the tool description -- which it has already
-# read by the time it gets this wrong. The board's eval_env() parents on
-# baseenv() unless it opts in, so an unprefixed hist() fails where
-# graphics::hist() does not, and the message alone does not say why.
+# read by the time it gets this wrong.
 with_scope_hint <- function(expr) {
 
   tryCatch(
@@ -517,17 +515,35 @@ with_scope_hint <- function(expr) {
 
       msg <- conditionMessage(e)
 
-      if (grepl("could not find function", msg, fixed = TRUE)) {
-        msg <- paste0(
-          msg,
-          " -- only the board's evaluation scope is attached; prefix the ",
-          "package, e.g. graphics::hist() or stats::median()"
-        )
-      }
-
-      stop(msg, call. = FALSE)
+      stop(paste(c(msg, scope_hint(msg)), collapse = " -- "), call. = FALSE)
     }
   )
+}
+
+# Deliberately says nothing about what IS in scope. The board's eval_env()
+# attaches the default packages or not according to its own option, which we
+# do not read here, so any claim about the scope's contents would be a guess.
+# The name of the package exporting the missing function is both narrower and
+# more useful, and it is knowable: R's own defaultPackages are exactly the set
+# `attach_default_packages` governs, so a miss is almost always one of them.
+scope_hint <- function(msg) {
+
+  fun <- sub('.*could not find function "([^"]+)".*', "\\1", msg)
+
+  if (identical(fun, msg)) {
+    return(NULL)
+  }
+
+  pkg <- Find(
+    function(p) fun %in% getNamespaceExports(asNamespace(p)),
+    intersect(getOption("defaultPackages"), loadedNamespaces())
+  )
+
+  if (is.null(pkg)) {
+    return("a function from another package needs its namespace prefix here")
+  }
+
+  glue::glue("prefix the package it comes from: {pkg}::{fun}()")
 }
 
 tool_inspect_results <- function(board, update, session) {

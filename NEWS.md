@@ -36,11 +36,12 @@
   clamped to a usable range), since it is the one that knows whether it
   is reading a dense scatter or checking a colour. The evaluation scope is
   unchanged and still the board's: `eval_env()` parents on `baseenv()`
-  unless `attach_default_packages` says otherwise, so `hist()` resolves
-  only when prefixed. The tool now says so, and a "could not find
-  function" error names the prefix as the fix rather than leaving the
-  model to infer it -- which also keeps the code it writes here valid in
-  a code block, where the same scope applies. There is no capability
+  unless `attach_default_packages` says otherwise, so `hist()` may resolve
+  only when prefixed. The tool asks for the prefix, and a "could not find
+  function" error now names the package that exports the missing function
+  (`graphics::hist()`) rather than asserting what the scope contains,
+  which is the board's business and is not read here. Prefixed code also
+  stays valid in a code block, where the same scope applies. There is no capability
   gating on images: rendering is model-initiated, and a model that cannot
   see them has no reason to ask (#153).
 

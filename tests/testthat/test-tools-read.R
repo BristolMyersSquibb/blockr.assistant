@@ -868,13 +868,28 @@ test_that("inspect_results draws through a namespace-prefixed call", {
   expect_true(any(vapply(res, is_image, logical(1L))))
 })
 
-test_that("inspect_results names the prefix fix on a scope miss", {
+test_that("inspect_results names the missing package on a scope miss", {
 
   res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
 
   expect_match(res, "could not find function", fixed = TRUE)
-  expect_match(res, "prefix the package", fixed = TRUE)
   expect_match(res, "graphics::hist()", fixed = TRUE)
+})
+
+test_that("a scope miss claims nothing about what is in scope", {
+
+  res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
+
+  expect_match(res, "stats::median()", fixed = TRUE)
+  expect_no_match(res, "only the board", fixed = TRUE)
+  expect_no_match(res, "attached", fixed = TRUE)
+})
+
+test_that("an unresolvable function still gets the generic prefix hint", {
+
+  res <- isolate(call_query("no_such_fun_anywhere(1)"))
+
+  expect_match(res, "needs its namespace prefix", fixed = TRUE)
 })
 
 test_that("inspect_results leaves an unrelated error message alone", {
@@ -882,5 +897,5 @@ test_that("inspect_results leaves an unrelated error message alone", {
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
   expect_match(res, "boom", fixed = TRUE)
-  expect_no_match(res, "prefix the package", fixed = TRUE)
+  expect_no_match(res, "prefix", fixed = TRUE)
 })
