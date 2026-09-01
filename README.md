@@ -40,7 +40,7 @@ providers.
 # - "What is on the board?" -- the answer should come from the prompt's
 #   Board section, no tool call required.
 # - "What is the unique value of `Species` in the data block?" -- the
-#   model should call `query_data(code = "unique(data$Species)")`.
+#   model should call `inspect_results(code = "unique(data$Species)")`.
 # - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by
 #   Species" -- the model stages add_block (and add_link) calls; flush
 #   happens at turn end.
@@ -88,7 +88,7 @@ alt="Assistant panel mounted next to a small blockr.dock board." />
 ## Status
 
 The assistant is feature-complete for the initial roadmap: read tools
-(`list_blocks`, `describe_block`, `query_data`, …), mutation tools
+(`list_blocks`, `describe_block`, `inspect_results`, …), mutation tools
 (`add_block`, `modify_block`, …) flushed atomically per turn, and a
 system prompt refreshed on every materialized board change so the model
 always sees the current shape of the board.

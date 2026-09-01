@@ -48,6 +48,19 @@ state_value_max_chars <- function() {
   as.integer(blockr_option("assistant_state_value_max_chars", 128L))
 }
 
+# Render size for a recorded plot returned by inspect_results, in pixels
+# square. A 768px render of core's scatter block measures 23 KB, which both a
+# frontier and a small model read correctly. The cap is what stops a block
+# that draws in a loop from turning one tool call into a hundred images, each
+# re-transmitted on every later request in the window.
+plot_render_px <- function() {
+  as.integer(blockr_option("assistant_plot_render_px", 768L))
+}
+
+plot_render_max <- function() {
+  as.integer(blockr_option("assistant_plot_render_max", 4L))
+}
+
 board_section_max_chars <- function() {
   as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
 }

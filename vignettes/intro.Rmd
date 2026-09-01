@@ -75,14 +75,18 @@ Richer questions about a specific block trigger one drill-down call:
 > **Assistant**: \[calls `describe_block(id = "head")`\] `n_rows` is
 > currently 10.
 
-Questions about a block's data go through the `query_data` tool,
-which evaluates R against an environment with every committed block
-result bound by id:
+Questions about what a block holds go through the `inspect_results`
+tool, which evaluates R against an environment with every committed
+block result bound by id:
 
 > **You**: What are the unique species in the data block?
 >
-> **Assistant**: \[calls `query_data(code = "unique(data$Species)")`\]
+> **Assistant**: \[calls `inspect_results(code = "unique(data$Species)")`\]
 > Three: setosa, versicolor, virginica.
+
+Naming a plot block there returns the chart itself: a recorded base
+plot is replayed onto an off-screen device and comes back as an image
+rather than as text.
 
 Mutations stage across the turn and flush atomically when the
 assistant finishes:

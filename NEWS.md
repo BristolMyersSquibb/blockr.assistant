@@ -18,6 +18,23 @@
   recording, and a summary that names what the result is leaves the
   hint nothing to do (#153).
 
+* The `query_data` tool is now called `inspect_results`. It was never a
+  data-frame tool -- it evaluates R with every committed block's result
+  bound by its block id -- so the old name promised data at a tool that
+  binds every result, and suggested SQL at a tool that takes R. The
+  language stays out of the name because the argument schema already
+  carries it. Naming a plot block's id now returns the chart as an
+  image: the recording is replayed onto an off-screen PNG (768px square
+  by default, `assistant_plot_render_px`) and returned as ellmer image
+  content rather than printed, since a display list is no use as text.
+  Theming rides along without extra work, because thematic's hooks fire
+  while the block evaluates, so the recording already carries the
+  board's colours and replaying reproduces them on any device. A result
+  holding more recordings than `assistant_plot_render_max` renders the
+  first few and says how many it omitted. There is no capability gating:
+  rendering is model-initiated, and a model that cannot see images has
+  no reason to ask for one (#153).
+
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes
   one, and `list_views` reports it -- but nothing edited one afterwards:

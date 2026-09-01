@@ -97,6 +97,6 @@ commit_timeout_note <- function() {
     "[Result of your commit -- the changes were applied.] The touched",
     "blocks did not finish evaluating within the time limit; they may still",
     "be computing. Check a specific block with get_block_result or",
-    "query_data, or continue and re-check shortly."
+    "inspect_results, or continue and re-check shortly."
   )
 }

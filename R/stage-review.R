@@ -58,7 +58,7 @@ review_invitation <- function() {
     "for it now -- read it back against what you meant to apply, since a",
     "result summary on its own need not distinguish a change that landed from",
     "one that did not. Inspect downstream results with get_block_result or",
-    "query_data when:",
+    "inspect_results when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -157,7 +157,7 @@ collect_touched_results <- function(touched, board, changed = character(),
       lines,
       glue::glue(
         "(showing {length(shown)} of {length(ids)} blocks -- call ",
-        "get_block_result or query_data for the rest)"
+        "get_block_result or inspect_results for the rest)"
       )
     )
   }

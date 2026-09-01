@@ -20,7 +20,7 @@ register_read_tools <- function(client, board, update, session, pool = NULL) {
   client$register_tool(
     tool_get_block_conditions(board, update, session)
   )
-  client$register_tool(tool_query_data(board, update, session))
+  client$register_tool(tool_inspect_results(board, update, session))
 
   invisible(client)
 }
@@ -446,7 +446,7 @@ tool_get_block_state <- function(board, update, session) {
       "have only seen summarised: modify_block replaces the whole",
       "value, so an edit made from a summary silently discards what the",
       "summary left out. Configuration only -- use get_block_result or",
-      "query_data for a block's data."
+      "inspect_results for a block's data."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")
@@ -504,11 +504,11 @@ tool_get_block_conditions <- function(board, update, session) {
   )
 }
 
-tool_query_data <- function(board, update, session) {
+tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
     function(code) {
-      with_tool_errors("query_data", {
+      with_tool_errors("inspect_results", {
 
         blks <- isolate(board$blocks)
 
@@ -539,12 +539,17 @@ tool_query_data <- function(board, update, session) {
         env <- eval_env(data)
         parsed <- parse(text = code)
 
+        val <- NULL
+
+        # A recorded plot is not printed: print.recordedplot() replays it onto
+        # whatever device happens to be current, which off-screen means either
+        # nothing the model can see or a stray Rplots.pdf. It is rendered
+        # below instead, and the display list is no use as text either way.
         output <- capture.output({
-          val <- NULL
           for (e in parsed) {
             val <- eval(e, envir = env)
           }
-          if (!is.null(val)) {
+          if (!is.null(val) && !length(plot_recordings(val))) {
             print(val)
           }
         })
@@ -557,14 +562,32 @@ tool_query_data <- function(board, update, session) {
           )
         }
 
+        images <- render_recordings(val)
+
+        if (length(images)) {
+          output <- c(output, dropped_plots_line(val))
+        }
+
         if (length(skipped)) {
           output <- c(skipped_block_lines(skipped), "", output)
         }
 
-        paste(output, collapse = "\n")
+        text <- paste(output, collapse = "\n")
+
+        if (!length(images)) {
+          return(text)
+        }
+
+        # A tool result expands into content only when EVERY element of it is
+        # a Content object, so the text travels as ContentText rather than as
+        # a bare string beside the images.
+        c(
+          if (nzchar(trimws(text))) list(ellmer::ContentText(text)),
+          images
+        )
       })
     },
-    name        = "query_data",
+    name        = "inspect_results",
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
@@ -574,9 +597,14 @@ tool_query_data <- function(board, update, session) {
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
+      "When the last expression is a recorded base plot -- what a plot",
+      "block evaluates to -- it is rendered and returned as an image",
+      "rather than printed, so naming such a block's id is how you see",
+      "the chart itself.",
       "Use this for questions the Board section doesn't carry:",
       "unique values, group counts, ad-hoc filters, joins across",
-      "blocks. Read-only; the board is not modified."
+      "blocks, and what a plot actually drew. Read-only; the board is",
+      "not modified."
     ),
     arguments = list(
       code = ellmer::type_string(
