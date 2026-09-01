@@ -1104,7 +1104,10 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             # collecting the touched results.
             if (isFALSE(outcome$ok)) {
               settle_commit(
-                format_flush_feedback(outcome, header = commit_reject_header())
+                format_flush_feedback(
+                  outcome,
+                  header = commit_reject_header(outcome$phase)
+                )
               )
               return()
             }
