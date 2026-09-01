@@ -6,6 +6,14 @@
 #' unusual result type can add a method to describe it directly, in blockr
 #' terms, instead of supplying a [btw::btw_this()] method.
 #'
+#' Methods for base-graphics results ship here, since a plot block built on
+#' [blockr.core::new_plot_block()] evaluates to recorded plots and the default
+#' renders their display list -- a list of C entry points, not a description
+#' of the chart. They name the class and count the recordings, and say when a
+#' block evaluated without drawing. Neither describes the chart itself: the
+#' rendered image is what the `inspect_results` tool returns for a plot
+#' result.
+#'
 #' Methods need not bound their output or guard their own errors: the internal
 #' `summarise_result()` wrapper caps the text before it reaches the prompt and
 #' turns a failed description into a surfaced error message. It is what the
@@ -28,6 +36,49 @@ describe_result.default <- function(x, ...) {
   btw::btw_this(x, ...)
 }
 
+#' @rdname describe_result
+#' @export
+describe_result.evaluate_evaluation <- function(x, ...) {
+
+  plots <- Filter(is_recorded_plot, x)
+
+  describe_plot_result(length(plots), length(x) - length(plots))
+}
+
+#' @rdname describe_result
+#' @export
+describe_result.recordedplot <- function(x, ...) {
+  describe_plot_result(1L)
+}
+
+# What a base-graphics result is worth saying, and no more. The default
+# renders the display list -- eight C entry points for core's scatter block --
+# which tells a model reviewing the block that eight primitives were drawn.
+# The recording does carry real content (C_plot_window holds the axis ranges,
+# C_plotXY the data), but reading it means parsing undocumented C entry points
+# positionally against R's graphics internals, which is not a cost worth
+# carrying. Naming the class is enough: a model given only that reaches for
+# inspect_results unprompted, and that is where the chart itself is rendered.
+describe_plot_result <- function(n_plot, n_other = 0L) {
+
+  plots <- if (n_plot) {
+    glue::glue(
+      "{n_plot} recorded plot{if (n_plot > 1L) 's' else ''} (`recordedplot`)"
+    )
+  } else {
+    "no recorded plot -- the block evaluated without drawing anything"
+  }
+
+  if (!n_other) {
+    return(glue::glue("Base graphics result: {plots}."))
+  }
+
+  glue::glue(
+    "Base graphics result: {plots}, alongside {n_other} non-plot ",
+    "element{if (n_other > 1L) 's' else ''}."
+  )
+}
+
 # Bounded, error-guarding wrapper around describe_result(): a method is trusted
 # neither to bound its output nor to catch its own failures, so both happen
 # here -- the single path the get_block_result tool and the post-apply review
@@ -45,10 +96,7 @@ summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
     }
   )
 
-  truncate_chars(
-    paste(text, collapse = "\n"), max_chars,
-    hint = "use query_data to fetch specific rows or columns"
-  )
+  truncate_chars(paste(text, collapse = "\n"), max_chars)
 }
 
 # The eval status is consulted BEFORE the result: a block holding none answers

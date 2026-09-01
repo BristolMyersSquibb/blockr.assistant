@@ -1,5 +1,23 @@
 # blockr.assistant (development version)
 
+* Base plot results are now described rather than dumped, and the
+  drill-down tool can answer with the chart itself. A block built on
+  `blockr.core::new_plot_block()` evaluates to recorded plots, which the
+  default summary rendered as a graphics display list -- core's scatter
+  block reported eight C entry points and nothing about what was drawn,
+  through the result tool and again through every post-apply review. New
+  `describe_result()` methods name the class and count the recordings
+  instead, and say when a block evaluated without drawing at all, a case
+  previously indistinguishable from any other plot. They deliberately do
+  not describe the chart: the recording does carry the axis ranges and
+  the data, but reading it means parsing undocumented C entry points
+  positionally against R's graphics internals. A truncated result
+  summary no longer appends the fixed "use query_data to fetch specific
+  rows or columns" hint either: it was passed for every result type, so
+  a plot block was told to fetch rows and columns from a graphics
+  recording, and a summary that names what the result is leaves the
+  hint nothing to do (#153).
+
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes
   one, and `list_views` reports it -- but nothing edited one afterwards:

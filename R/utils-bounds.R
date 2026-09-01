@@ -1,8 +1,9 @@
 # Cap `txt` so the returned string -- truncated text plus the marker and any
 # hint -- never exceeds `max_chars`: the marker counts against the budget, it
 # is not added on top. Only the over-long case is touched; text within budget
-# is returned verbatim. The hint is the caller's: a result summary points at
-# query_data, a block summary at get_block_state, a stack summary needs none.
+# is returned verbatim. The hint is the caller's: a block summary points at
+# get_block_state, while a result and a stack summary need none -- a result
+# summary names what the result is, which is the pointer.
 truncate_chars <- function(txt, max_chars, hint = NULL) {
 
   if (nchar(txt) <= max_chars) {

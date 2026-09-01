@@ -71,3 +71,56 @@ test_that("summarise_result caps a method that does not bound itself", {
   expect_lt(nchar(res), 400L)
   expect_match(res, "truncated", fixed = TRUE)
 })
+
+test_that("a base plot result names its class and counts the recordings", {
+
+  res <- summarise_result(record_plots("plot(1:10)"))
+
+  expect_match(res, "recordedplot", fixed = TRUE)
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_no_match(res, "C_plot_new", fixed = TRUE)
+})
+
+test_that("a base plot result pluralises several recordings", {
+
+  res <- summarise_result(record_plots("plot(1:10); plot(1:5)"))
+
+  expect_match(res, "2 recorded plots", fixed = TRUE)
+})
+
+test_that("a plot block that drew nothing is distinguishable", {
+
+  res <- summarise_result(record_plots("1 + 1"))
+
+  expect_match(res, "without drawing anything", fixed = TRUE)
+  expect_no_match(res, "recorded plot (", fixed = TRUE)
+})
+
+test_that("an evaluation holding non-plot entries says so", {
+
+  res <- describe_result(
+    structure(
+      c(record_plots("plot(1:10)"), list("stray output")),
+      class = c("evaluate_evaluation", "list")
+    )
+  )
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_match(res, "1 non-plot element", fixed = TRUE)
+})
+
+test_that("a bare recordedplot is described like a one-plot evaluation", {
+
+  res <- describe_result(record_plots("plot(1:10)")[[1L]])
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+})
+
+test_that("a result summary carries no tool hint when truncated", {
+
+  res <- summarise_result(strrep("z", 5000L), max_chars = 200L)
+
+  expect_match(res, "truncated", fixed = TRUE)
+  expect_no_match(res, "inspect_results", fixed = TRUE)
+  expect_no_match(res, " -- use ", fixed = TRUE)
+})

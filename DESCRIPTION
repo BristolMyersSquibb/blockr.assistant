@@ -34,6 +34,7 @@ Imports:
     yaml
 Suggests:
     chromote,
+    evaluate,
     knitr,
     rmarkdown,
     shinytest2,
