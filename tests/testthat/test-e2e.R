@@ -45,7 +45,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   chromote_obj <- chromote::default_chromote_object()
   chromote_obj$default_timeout <- 30
 
-  app <- shinytest2::AppDriver$new(
+  app <- asst_app_driver(
     app_dir,
     name = "demo",
     seed = 42,
@@ -210,7 +210,7 @@ test_that("the browser's command palette lists built-ins and skills", {
   chromote_obj <- chromote::default_chromote_object()
   chromote_obj$default_timeout <- 30
 
-  app <- shinytest2::AppDriver$new(
+  app <- asst_app_driver(
     app_dir,
     name = "skills",
     seed = 42,
@@ -274,7 +274,7 @@ test_that("a rejected turn surfaces the error and releases the chat", {
   # streams anything -- the shape a quota or context-length rejection
   # arrives in. Injected as an option rather than baked into a fixture app,
   # so the shipped example carries no deliberately broken provider.
-  app <- shinytest2::AppDriver$new(
+  app <- asst_app_driver(
     system.file("examples", "empty-board", package = "blockr.assistant"),
     name = "stream-failure",
     seed = 42,

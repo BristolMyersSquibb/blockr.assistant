@@ -71,6 +71,7 @@ composer_state <- function(app) {
          const panel = document.querySelector('.asst-panel');
          const active = document.activeElement;
          return JSON.stringify({
+           viewport: window.innerWidth,
            panelWidth: panel && panel.getBoundingClientRect().width,
            panel: show(panel),
            slot: show(document.querySelector('.asst-chat-slot')),
