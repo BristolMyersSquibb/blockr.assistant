@@ -1,5 +1,17 @@
 # blockr.assistant (development version)
 
+* An assistant panel the dock has not sized yet no longer blanks its own
+  composer. The rule that hides a collapsed panel's chat is a container
+  query on `max-width: 140px`, and a panel awaiting layout computes an
+  inline-size of zero, which that query matches just as a 30px sliver
+  does -- so the chat slot computed `display: none` for the window
+  before the dock sized the panel. A composer inside a blanked subtree
+  stays in the DOM but cannot take focus, which surfaces as a timed-out
+  wait rather than as anything visible. A floor of `min-width: 1px` on
+  the query separates unmeasured from collapsed at no cost: there is no
+  sliver to smear at zero width, and a genuinely collapsed panel is far
+  wider than the floor (#151).
+
 * The `add_panel_to_view` and `move_panel` tools now reach a view's
   rails. A view could be born with a rail -- its `add_view` layout takes
   one, and `list_views` reports it -- but nothing edited one afterwards:
