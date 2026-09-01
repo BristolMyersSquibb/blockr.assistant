@@ -25,27 +25,33 @@
 #' restore falls back to the constructor default (functions don't
 #' serialise robustly across sessions).
 #'
-#' The conversation is saved alongside it and restored into the chat
-#' when the board is reopened. How many of the most recent turns are
-#' written is read at save time from the `blockr.chat_save_turns`
-#' option (or the `BLOCKR_CHAT_SAVE_TURNS` environment variable),
-#' which takes `0` for none, a positive whole number, or `Inf` for
-#' all, and defaults to 50. Setting it to `0` is worth considering
-#' where boards are shared, since the file otherwise carries whatever
-#' was typed into the chat. It describes the deployment rather than
-#' the board, so it is neither a constructor argument nor part of
-#' `state` -- restore reads whatever the file holds.
+#' Conversations are saved alongside it and restored into the chat when
+#' the board is reopened. The chat holds several of them: the history
+#' control in the footer opens a drawer listing every thread on this
+#' board, with switching, renaming, deletion and model-written titles,
+#' and the whole set rides into `state` as recorded turns. How many of
+#' the most recent turns are written **per thread** is read at save
+#' time from the `blockr.chat_save_turns` option (or the
+#' `BLOCKR_CHAT_SAVE_TURNS`
+#' environment variable), which takes `0` for none, a positive whole
+#' number, or `Inf` for all, and defaults to 50. Setting it to `0` is
+#' worth considering where boards are shared, since the file otherwise
+#' carries whatever was typed into every thread. It describes the
+#' deployment rather than the board, so it is neither a constructor
+#' argument nor part of `state` -- restore reads whatever the file
+#' holds.
 #'
-#' Turns are stored as an opaque [jsonlite::serializeJSON()] blob.
-#' Recorded turns written into `state` directly do not survive the
-#' board's JSON round trip -- `ellmer::contents_replay()` rejects the
-#' integer `version` that comes back, and typed props such as `tokens`
-#' return as lists -- and since the replay happens in a board-server
-#' observer, such a board took the whole session down on restore
-#' rather than just the chat panel. Payloads written in that earlier
-#' shape are dropped on deserialisation. The raw provider response is
-#' stripped before saving, and the saved window is trimmed to whole
-#' exchanges so it never opens or closes on half of a tool call.
+#' Turns go in as they stand because blockr.core writes board files
+#' with typedjson, which carries what plain JSON cannot. A board
+#' holding anything else under `history` opens without its
+#' conversation rather than on a guess at one. The raw provider
+#' response is stripped before saving, and a thread trimmed to the
+#' budget is cut between exchanges rather than inside one, so it never
+#' opens on half of a tool call.
+#'
+#' Which thread is open is remembered by the browser rather than in
+#' `state`, so a board reopened elsewhere lists its threads without
+#' selecting one.
 #'
 #' The live conversation is bounded separately, since saving bounds
 #' only the file: every turn is re-sent on every request, so an
@@ -92,28 +98,27 @@
 #' keeps the two honest. `shinychat` appends each turn to the DOM as it
 #' arrives and never reads the client back, so turns dropped from the
 #' client would otherwise stay on screen unremembered. The same replay
-#' fills in a transcript that a restore or a provider swap leaves
-#' empty; tool traffic carries no text and is not replayed.
+#' fills in a transcript that a board saved before threads existed
+#' leaves empty; tool traffic carries no text and is not replayed.
 #'
-#' Both the conversation and its size are reachable from the chat's
-#' command palette, which lists two built-in commands alongside the
-#' user-invocable skills. The `/compact` command runs the same
-#' summarise-and-replace on demand, without waiting for the threshold
-#' -- for a thread that has gone stale rather than large, where a long
-#' build has finished and the next question is unrelated to it. The
-#' `/clear` command drops the conversation outright: the browser
-#' transcript, the turns the model is sent, and any changes staged but
-#' never committed go together, and the emptied chat reopens on a
-#' greeting read off the board as it now stands.
+#' Conversation size is reachable from the chat's command palette,
+#' which lists one built-in command alongside the user-invocable
+#' skills. The `/compact` command runs the same summarise-and-replace
+#' on demand, without waiting for the threshold -- for a thread that
+#' has gone stale rather than large, where a long build has finished
+#' and the next question is unrelated to it. Opening a fresh thread is
+#' the history drawer's own affordance rather than a command, because
+#' nothing in `shinychat`'s server API starts one: a command that
+#' emptied the transcript would leave the stored thread behind for the
+#' next response to extend.
 #'
 #' @param system_prompt Either a function (called each refresh with
 #'   `(board, client, ...)` to build the prompt) or a character
 #'   scalar (used verbatim, no refresh). Defaults to the
 #'   exported [default_system_prompt] function.
-#' @param messages Optional list of recorded turns (as produced by
-#'   [ellmer::contents_record()]) to seed the conversation with on
-#'   server start. `NULL` starts with an empty conversation. This is
-#'   also how a restored board seeds the chat it was saved with.
+#' @param threads Optional named list of conversation records to seed
+#'   the history with, keyed by conversation id. Defaults to no threads.
+#'   This is how a restored board seeds the chats it was saved with.
 #' @param ... Forwarded to [blockr.dock::new_dock_extension()].
 #'
 #' @return A `dock_extension` object additionally inheriting from
@@ -125,10 +130,10 @@
 #'
 #' @export
 new_assistant_extension <- function(system_prompt = default_system_prompt,
-                                    messages = NULL,
+                                    threads = NULL,
                                     ...) {
   new_dock_extension(
-    server = asst_ext_srv(system_prompt, messages),
+    server = asst_ext_srv(system_prompt, threads),
     ui = asst_ext_ui,
     name = "Assistant",
     class = "assistant_extension",
@@ -147,9 +152,13 @@ asst_ext_ui <- function(id, board, ...) {
     asst_skin_styles(),
     div(
       class = "asst-panel",
-      uiOutput(NS(id, "chat_panel"), container = function(...) {
-        div(class = "asst-chat-slot", ...)
-      }),
+      div(
+        class = "asst-chat-slot",
+        shinychat::chat_ui(
+          NS(id, "chat"),
+          placeholder = "Ask about your board"
+        )
+      ),
       div(
         class = "asst-footer",
         uiOutput(NS(id, "focus_picker"), container = function(...) {
@@ -157,9 +166,27 @@ asst_ext_ui <- function(id, board, ...) {
         }),
         uiOutput(NS(id, "tokens"), container = function(...) {
           div(class = "asst-token-slot", ...)
-        })
+        }),
+        asst_history_button()
       )
     )
+  )
+}
+
+# React binds the trigger's click at the `shiny-chat-container` root and
+# re-renders the button, so the node cannot be moved into the footer -- this
+# one forwards to it instead, and the original stays in the DOM, hidden.
+asst_history_button <- function() {
+  tags$button(
+    class = "asst-history-btn",
+    type = "button",
+    title = "Conversation history",
+    `aria-label` = "Conversation history",
+    onclick = paste0(
+      "this.closest('.asst-panel')",
+      ".querySelector('.shiny-chat-history-trigger').click()"
+    ),
+    bsicons::bs_icon("clock-history")
   )
 }
 
@@ -232,11 +259,14 @@ asst_ext_styles <- function() {
         display: flex;
         flex-direction: column;
       }
-      .asst-chat-slot.shiny-html-output {
+      .asst-chat-slot {
         flex: 1 1 0;
         min-height: 0;
         display: flex;
         flex-direction: column;
+      }
+      .asst-panel {
+        container-type: inline-size;
       }
       .asst-chat-slot shiny-chat-container {
         flex: 1 1 0;
@@ -318,12 +348,71 @@ asst_ext_styles <- function() {
       .asst-meta-num {
         font-weight: 500;
       }
+      /* shinychat floats its history trigger over the top-left of the
+         transcript, where it reads as loose in the prose. The footer control
+         replaces it: hidden here, the original still owns the drawer, and
+         `asst_history_button()` forwards to it. */
+      .asst-chat-slot .shiny-chat-history-trigger {
+        display: none;
+      }
+      /* The band shinychat reserves at the top of the transcript is for the
+         floating button that is no longer painted there. */
+      .asst-chat-slot shiny-chat-container[data-inline-controls] {
+        --_chat-inline-controls-inset: 0px;
+      }
+      /* shinychat sets `data-inline-controls~='history'` exactly when it
+         renders the trigger, so keying on it means the footer never offers a
+         drawer that is not there -- the presence rule stays shinychat's. */
+      .asst-history-btn {
+        display: none;
+      }
+      .asst-panel:has(shiny-chat-container[data-inline-controls~='history'])
+        .asst-history-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: var(--blockr-color-text-subtle, #9ca3af);
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .asst-history-btn:hover {
+        background: var(--blockr-color-bg-hover, #f3f4f6);
+        color: var(--blockr-color-text-secondary, #374151);
+      }
+      .asst-history-btn:focus-visible {
+        outline: none;
+        box-shadow:
+          var(--blockr-focus-ring, 0 0 0 3px rgba(37, 99, 235, 0.12));
+      }
+      .asst-history-btn svg {
+        width: 13px;
+        height: 13px;
+      }
+      /* A collapsed dock panel is a ~30px sliver, and the chat keeps
+         painting into it: a transcript one character wide. Blank the panel
+         rather than leave a smear of itself. The threshold sits well below
+         any panel a chat is readable in, so narrowing one still gives a
+         cramped chat rather than nothing. Last in the sheet because it
+         overrides the display the slots are given above. */
+      @container (max-width: 140px) {
+        .asst-chat-slot,
+        .asst-footer {
+          display: none;
+        }
+      }
       "
     )
   )
 }
 
-asst_ext_srv <- function(system_prompt, messages) {
+asst_ext_srv <- function(system_prompt, threads = NULL) {
 
   function(id, board, update, view_data = NULL, extensions = NULL, ...) {
 
@@ -390,10 +479,13 @@ asst_ext_srv <- function(system_prompt, messages) {
           )
         })
 
-        client_r   <- reactiveVal(NULL)
-        pool_r     <- reactiveVal(NULL)
-        mod_r      <- reactiveVal(NULL)
-        mount_idx  <- reactiveVal(0L)
+        client_r <- reactiveVal(NULL)
+        pool_r   <- reactiveVal(NULL)
+        mod_r    <- reactiveVal(NULL)
+
+        thread_store <- new_thread_store(
+          coal(threads, list(), fail_all = FALSE)
+        )
 
         chat_ctor_r <- reactive(
           get_board_option_value("llm_model", session)
@@ -459,26 +551,26 @@ asst_ext_srv <- function(system_prompt, messages) {
           list(client = cl, pool = pool)
         }
 
-        # When the chat constructor changes (initial mount or after a
-        # user-driven option swap), build a fresh client, migrate the
-        # prior conversation, and bump mount_idx so the UI re-renders.
-        # The whole build is wrapped: if the chat ctor errors (bad
-        # API key check, provider construction failure) we surface
-        # the error to the user rather than letting the observer
-        # propagate it.
+        # When the chat constructor changes (initial build or after a
+        # user-driven option swap), build a fresh client and migrate the
+        # prior conversation onto it. The whole build is wrapped: if the
+        # chat ctor errors (bad API key check, provider construction
+        # failure) we surface the error to the user rather than letting
+        # the observer propagate it.
+        #
+        # A swap hands the new client to the mounted module rather than
+        # remounting it. Remounting would render a fresh chat element, and
+        # the conversation store partitions on that element's id, so every
+        # thread recorded before the swap would be stranded under the old
+        # one. Turns are carried here already and the tools belong to the
+        # client they were registered against, so the hand-over does not sync.
         observe({
 
           ctor <- chat_ctor_r()
 
           seed_turns <- isolate({
             prev <- client_r()
-            if (!is.null(prev)) {
-              prev$get_turns()
-            } else if (length(messages)) {
-              lapply(messages, ellmer::contents_replay)
-            } else {
-              list()
-            }
+            if (is.null(prev)) list() else prev$get_turns()
           })
 
           new_client <- tryCatch(
@@ -503,92 +595,84 @@ asst_ext_srv <- function(system_prompt, messages) {
 
           client_r(new_client$client)
           pool_r(new_client$pool)
-          mount_idx(isolate(mount_idx()) + 1L)
+
+          mod <- isolate(mod_r())
+
+          if (!is.null(mod)) {
+            mod$set_client(new_client$client, sync = FALSE)
+          }
         })
 
-        output$chat_panel <- renderUI({
-          shinychat::chat_mod_ui(
-            session$ns(chat_sub_id(mount_idx())),
-            placeholder = "Ask about your board"
-          )
-        })
-
-        # Mount the chat module against the current client. Every mount
-        # renders a fresh, empty container -- chat_sub_id() changes with
-        # mount_idx, and shinychat's own replay hook is out of reach here:
-        # client_set_ui() is called only from chat_restore(), which
-        # chat_server() reaches only when `history` is not FALSE. So the
-        # transcript is ours to populate, via replay_transcript() below.
-        #
-        # history = FALSE is load-bearing. It defaults to TRUE, which opts
-        # into shinychat's on-disk conversation store -- and that store
-        # persists turns through the same ellmer record/replay pair that is
-        # not JSON-safe: `version` is written as a double and read back as an
-        # integer, `tokens` as a list where a numeric vector is demanded, and
-        # `cost` as the string "NA". The replay aborts inside a restore
-        # observer, so the session dies -- and because the store is scoped per
-        # user and survives redeploys, one poisoned record keeps killing that
-        # user's sessions with nothing in the UI to clear it.
-        #
-        # Turning it on means owning that round trip: writing each turn as an
-        # opaque serializeJSON() blob, the way this package already stores
-        # turns in board state, and following shinychat's restore rather than
-        # replaying here. That is done and parked on the
-        # `assistant-history-experiment` branch, held back because it is
-        # untested and because the store partitions on the chat element id --
-        # which carries the board id, so conversations do not survive a
-        # restart that renames the board.
-        observe({
-
-          idx <- mount_idx()
-          cl  <- client_r()
-
-          req(cl)
-
-          # A function greeting is resolved on `greeting_requested`, which
-          # fires once the empty chat is on screen, so it reads the board as
-          # the user sees it. Passing one to chat_mod_ui() as well would set
-          # a greeting up front and that input would never fire.
-          mod <- shinychat::chat_mod_server(
-            chat_sub_id(idx), cl,
-            greeting = function() asst_greeting(board),
-            history = FALSE
-          )
-
-          # Advertising the slash commands is a one-shot push to the chat
-          # element, so it has to wait for the flush that carries that
-          # element's UI: registering in-line here sends it a flush early,
-          # and the browser drops what it cannot yet address.
-          #
-          # The built-ins go first so that a deployment skill named after one
-          # of them is the registration that collides and is logged, rather
-          # than the one that silently takes the name.
-          session$onFlushed(
-            function() {
-              register_builtin_commands(
-                mod, compact_conversation, clear_conversation
+        # Mounted once, against the first client that builds. The store keeps
+        # every thread for this board and rides into board state at save time,
+        # so `max_store_mb` is left off: the save budget is what bounds the
+        # file, and evicting a thread the user is still reading would be a
+        # surprise. Our store ignores the partition -- one store serves one
+        # board -- so `scope` only has to be a constant the history controller
+        # can resolve without waiting on an authenticated user.
+        observeEvent(
+          client_r(),
+          {
+            # Resolving the greeting is shinychat's only public signal that a
+            # fresh thread has opened: it fires on the initial settle when
+            # nothing was restored, and again on every new conversation.
+            # Changes staged but never committed belong to the thread they
+            # were staged in, so they go when it does.
+            mod <- shinychat::chat_server(
+              "chat", isolate(client_r()),
+              greeting = function() {
+                restore_thread_state(list())
+                reset_staging()
+                asst_greeting(board)
+              },
+              history = shinychat::history_options(
+                store = thread_store,
+                scope = "board",
+                max_store_mb = NULL
               )
-              register_skill_commands(mod, run_skill_command)
-            },
-            once = TRUE
-          )
+            )
 
-          mod_r(mod)
-        })
+            # Focus is per conversation: a switch that leaves it pointing at
+            # the thread the user just left is worse than not switching at
+            # all. The list round trip is deliberate -- board state carries
+            # `values` as plain JSON, which returns a character vector as a
+            # list, so saving one keeps both paths the same shape.
+            mod$history$on_save(
+              function(values) {
+                values[["focus"]] <- as.list(isolate(focus_r()))
+                values[["spent"]] <- as.list(isolate(spent()))
+                values
+              }
+            )
 
-        # The client carries the conversation across a mount; the browser does
-        # not. Restoring a saved board and swapping provider both land here
-        # with turns the user never sees, so each fresh mount replays what the
-        # client holds, then checks whether what it holds is already too big.
-        observe({
+            mod$history$on_restore(
+              function(values) {
+                restore_thread_state(values)
+                reset_staging()
+                maybe_compact()
+              }
+            )
 
-          mod <- mod_r()
+            # Advertising the slash commands is a one-shot push to the chat
+            # element, so it has to wait for the flush that carries that
+            # element's UI: registering in-line here sends it a flush early,
+            # and the browser drops what it cannot yet address.
+            #
+            # The built-ins go first so that a deployment skill named after
+            # one of them is the registration that collides and is logged,
+            # rather than the one that silently takes the name.
+            session$onFlushed(
+              function() {
+                register_builtin_commands(mod, compact_conversation)
+                register_skill_commands(mod, run_skill_command)
+              },
+              once = TRUE
+            )
 
-          req(mod)
-
-          replay_transcript(mod, isolate(client_turns(client_r())))
-          maybe_compact()
-        })
+            mod_r(mod)
+          },
+          once = TRUE
+        )
 
         compacting <- local({
 
@@ -764,10 +848,26 @@ asst_ext_srv <- function(system_prompt, messages) {
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
 
-        # The turn to report telemetry for. A typed message settles through
-        # shinychat's own stream task and shows up on last_turn_r(); a slash
-        # command streams outside it and reports its turn here directly.
-        shown_turn <- reactiveVal(NULL)
+        # What the conversation has cost so far, not what the last exchange
+        # did: the meter belongs to the thread, so it is carried in the
+        # thread's saved values, restored with it and reset when a fresh one
+        # opens. Accumulated rather than summed over the client's turns, which
+        # compaction and the save budget both shorten.
+        spent <- reactiveVal(c(0L, 0L))
+
+        account_turn <- function(turn) {
+
+          toks <- turn@tokens
+
+          spent(
+            isolate(spent()) + c(
+              if (is.na(toks[1])) 0L else as.integer(toks[1]),
+              if (is.na(toks[2])) 0L else as.integer(toks[2])
+            )
+          )
+
+          invisible()
+        }
 
         # Capture the blocks the model touched this turn off core's `update`
         # reactiveVal. By the time a default-priority observer sees it,
@@ -891,6 +991,24 @@ asst_ext_srv <- function(system_prompt, messages) {
           ignoreNULL = TRUE
         )
 
+        # Both of these belong to the conversation rather than the board, so a
+        # switch carries them over and a fresh thread opens without them. An
+        # absent value is the fresh case: no focus, nothing spent.
+        restore_thread_state <- function(values) {
+
+          focus <- unlst(values[["focus"]])
+          meter <- unlst(values[["spent"]])
+
+          updateSelectizeInput(
+            session, "focus",
+            selected = if (length(focus)) as.character(focus) else character()
+          )
+
+          spent(if (length(meter) == 2L) as.integer(meter) else c(0L, 0L))
+
+          invisible()
+        }
+
         reset_staging <- function() {
 
           report$count <- 0L
@@ -921,7 +1039,7 @@ asst_ext_srv <- function(system_prompt, messages) {
 
         on_model_turn <- function(turn) {
 
-          shown_turn(turn)
+          account_turn(turn)
 
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
@@ -958,26 +1076,6 @@ asst_ext_srv <- function(system_prompt, messages) {
               )
             }
           )
-
-          invisible()
-        }
-
-        # One call empties both copies of the conversation -- the browser
-        # transcript and the turns on the very client this extension holds --
-        # and asks for the greeting again, so the fresh chat opens on the board
-        # as it stands now. The staging slate goes with it: changes staged but
-        # never committed refer to a conversation nobody can read any more.
-        clear_conversation <- function() {
-
-          mod <- isolate(mod_r())
-
-          if (is.null(mod)) {
-            return(invisible())
-          }
-
-          mod$clear(greeting = TRUE, client_history = "clear")
-
-          reset_staging()
 
           invisible()
         }
@@ -1027,19 +1125,29 @@ asst_ext_srv <- function(system_prompt, messages) {
         )
 
         output$tokens <- renderUI(
-          format_token_telemetry(shown_turn())
+          format_token_telemetry(spent())
         )
 
         # Resolved by the board's serializer at save time, so the budget and
-        # the turns are both read as they stand then.
+        # the threads are both read as they stand then. The live thread is
+        # saved first: the store only sees it once shinychat writes a
+        # response, so an exchange in flight would otherwise be missing.
         state_payload <- list(
           history = function() {
-            isolate(
-              serialize_chat_history(
-                client_turns(client_r()),
-                chat_save_turns()
+            isolate({
+
+              mod <- mod_r()
+
+              if (!is.null(mod)) {
+                mod$history$save()
+              }
+
+              serialize_chat_threads(
+                thread_store,
+                chat_save_turns(),
+                client_turns(client_r())
               )
-            )
+            })
           }
         )
 
@@ -1053,10 +1161,6 @@ asst_ext_srv <- function(system_prompt, messages) {
   }
 }
 
-chat_sub_id <- function(idx) {
-  glue::glue("chat_{as.integer(idx)}")
-}
-
 # `keep` leaves the client alone -- the turns are set by the caller, which is
 # the point: this is what stops the transcript and the model's memory drifting
 # apart. Tool traffic carries no text and is not replayed.
@@ -1064,20 +1168,24 @@ replay_transcript <- function(mod, turns) {
 
   mod$clear(client_history = "keep")
 
-  for (turn in turns) {
-
-    if (!turn@role %in% c("user", "assistant")) {
-      next
-    }
-
-    txt <- turn_text(turn)
-
-    if (nzchar(txt)) {
-      mod$append(txt, role = turn@role)
-    }
+  for (turn in shown_turns(turns)) {
+    mod$append(turn_text(turn), role = turn@role)
   }
 
   invisible()
+}
+
+# What a transcript shows: the turns the user typed and the model's prose.
+# Tool traffic carries no text, and neither does an assistant turn that only
+# requested one.
+shown_turns <- function(turns) {
+
+  Filter(
+    function(turn) {
+      turn@role %in% c("user", "assistant") && nzchar(turn_text(turn))
+    },
+    turns
+  )
 }
 
 turn_text <- function(turn) {
@@ -1096,12 +1204,10 @@ turn_text <- function(turn) {
 # Rendered even before a turn has reported, as zeros. The meter shares its
 # row with the focus picker, so letting it appear only once it has numbers
 # would resize the picker out from under the user mid-conversation.
-format_token_telemetry <- function(turn) {
+format_token_telemetry <- function(spent) {
 
-  toks <- if (is.null(turn)) c(NA, NA) else turn@tokens
-
-  in_t  <- if (is.na(toks[1])) 0L else as.integer(toks[1])
-  out_t <- if (is.na(toks[2])) 0L else as.integer(toks[2])
+  in_t  <- spent[[1L]]
+  out_t <- spent[[2L]]
 
   meta_item <- function(icon, value, title) {
     span(
@@ -1116,11 +1222,11 @@ format_token_telemetry <- function(turn) {
     class = "asst-meta",
     meta_item(
       "arrow-up-short", in_t,
-      glue::glue("Input tokens (this turn): {in_t}")
+      glue::glue("Input tokens (this conversation): {in_t}")
     ),
     meta_item(
       "arrow-down-short", out_t,
-      glue::glue("Output tokens (this turn): {out_t}")
+      glue::glue("Output tokens (this conversation): {out_t}")
     )
   )
 }

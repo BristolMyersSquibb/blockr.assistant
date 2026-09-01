@@ -12,15 +12,13 @@ test_that("the built-ins register without echoing their invocation", {
     }
   )
 
-  register_builtin_commands(
-    mod, function() "compacted", function() "cleared"
-  )
+  register_builtin_commands(mod, function() "compacted")
 
-  expect_setequal(names(registered), c("compact", "clear"))
+  # Starting a fresh thread is the history drawer's own affordance: nothing in
+  # shinychat's server API opens one, so a `/clear` that emptied the
+  # transcript would leave the stored thread for the next response to extend.
+  expect_setequal(names(registered), "compact")
 
   expect_false(registered$compact$echo)
-  expect_false(registered$clear$echo)
-
   expect_identical(registered$compact$handler(), "compacted")
-  expect_identical(registered$clear$handler(), "cleared")
 })

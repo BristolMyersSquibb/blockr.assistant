@@ -27,6 +27,7 @@ Imports:
     jsonlite,
     later,
     promises,
+    R6,
     shiny,
     shinychat,
     shinyWidgets,

@@ -54,7 +54,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   withr::defer(app$stop())
 
   # The chat panel mounts via a deferred reactive cascade (build client ->
-  # mount_idx -> renderUI), which can land a flush or two after the initial
+  # chat_server -> renderUI), which can land a flush or two after the initial
   # load idle. Wait for shinychat's element before asserting on it.
   app$wait_for_js(
     "document.querySelector('shiny-chat-container') !== null",
@@ -92,9 +92,40 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     )
   )
 
-  expect_length(slots, 2L)
+  expect_length(slots, 3L)
   expect_match(slots[[1L]], "asst-focus-slot")
   expect_match(slots[[2L]], "asst-token-slot")
+  expect_match(slots[[3L]], "asst-history-btn")
+
+  # The seam no unit test reaches: the footer button is ours, the drawer it
+  # opens is shinychat's, and the click crosses into a React handler bound at
+  # the `shiny-chat-container` root.
+  expect_equal(
+    unlst(
+      app$get_js(
+        "getComputedStyle(
+           document.querySelector('.shiny-chat-history-trigger')
+         ).display"
+      )
+    ),
+    "none"
+  )
+
+  app$run_js("document.querySelector('.asst-history-btn').click()")
+
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-history') !== null",
+    timeout = 10 * 1000
+  )
+
+  expect_true(
+    unlst(
+      app$get_js(
+        "document.querySelector('.shiny-chat-history-trigger')
+           .getAttribute('aria-expanded') === 'true'"
+      )
+    )
+  )
 
   picker <- "document.querySelector('.asst-focus-slot select').selectize"
 
@@ -217,7 +248,10 @@ test_that("the browser's command palette lists built-ins and skills", {
 
   expect_match(palette, "exposure-check", fixed = TRUE)
   expect_match(palette, "/compact", fixed = TRUE)
-  expect_match(palette, "/clear", fixed = TRUE)
+  # Dropping `/clear` is deliberate: it leaves the stored thread for the next
+  # response to extend, and nothing in shinychat's server API opens a fresh
+  # conversation to replace it. Starting a thread is the drawer's job.
+  expect_no_match(palette, "/clear", fixed = TRUE)
 })
 
 test_that("a rejected turn surfaces the error and releases the chat", {
