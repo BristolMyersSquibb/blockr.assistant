@@ -4,7 +4,8 @@
 # 10s (`getOption("chromote.timeout", 10)` in launch_chrome_impl), too short on
 # loaded CI runners -- Windows especially -- where launch intermittently aborts
 # with "Chrome debugging port not open after 10 seconds". Scoped to the suite
-# so the option is restored when testing finishes.
+# so the option is restored when testing finishes. A launch that misses even
+# this window is retried by `retry_chrome_launch()`.
 withr::local_options(
   chromote.timeout = 30,
   .local_envir = testthat::teardown_env()
