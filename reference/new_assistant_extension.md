@@ -11,7 +11,7 @@ the board.
 ``` r
 new_assistant_extension(
   system_prompt = default_system_prompt,
-  messages = NULL,
+  threads = NULL,
   ...
 )
 ```
@@ -26,13 +26,11 @@ new_assistant_extension(
   [default_system_prompt](https://bristolmyerssquibb.github.io/blockr.assistant/reference/default_system_prompt.md)
   function.
 
-- messages:
+- threads:
 
-  Optional list of recorded turns (as produced by
-  [`ellmer::contents_record()`](https://ellmer.tidyverse.org/reference/contents_record.html))
-  to seed the conversation with on server start. `NULL` starts with an
-  empty conversation. This is also how a restored board seeds the chat
-  it was saved with.
+  Optional named list of conversation records to seed the history with,
+  keyed by conversation id. Defaults to no threads. This is how a
+  restored board seeds the chats it was saved with.
 
 - ...:
 
@@ -67,29 +65,30 @@ Function-valued `system_prompt` is omitted from `state` so restore falls
 back to the constructor default (functions don't serialise robustly
 across sessions).
 
-The conversation is saved alongside it and restored into the chat when
-the board is reopened. How many of the most recent turns are written is
-read at save time from the `blockr.chat_save_turns` option (or the
-`BLOCKR_CHAT_SAVE_TURNS` environment variable), which takes `0` for
-none, a positive whole number, or `Inf` for all, and defaults to 50.
-Setting it to `0` is worth considering where boards are shared, since
-the file otherwise carries whatever was typed into the chat. It
-describes the deployment rather than the board, so it is neither a
-constructor argument nor part of `state` – restore reads whatever the
-file holds.
+Conversations are saved alongside it and restored into the chat when the
+board is reopened. The chat holds several of them: the history control
+in the footer opens a drawer listing every thread on this board, with
+switching, renaming, deletion and model-written titles, and the whole
+set rides into `state` as recorded turns. How many of the most recent
+turns are written **per thread** is read at save time from the
+`blockr.chat_save_turns` option (or the `BLOCKR_CHAT_SAVE_TURNS`
+environment variable), which takes `0` for none, a positive whole
+number, or `Inf` for all, and defaults to 50. Setting it to `0` is worth
+considering where boards are shared, since the file otherwise carries
+whatever was typed into every thread. It describes the deployment rather
+than the board, so it is neither a constructor argument nor part of
+`state` – restore reads whatever the file holds.
 
-Turns are stored as an opaque
-[`jsonlite::serializeJSON()`](https://jeroen.r-universe.dev/jsonlite/reference/serializeJSON.html)
-blob. Recorded turns written into `state` directly do not survive the
-board's JSON round trip –
-[`ellmer::contents_replay()`](https://ellmer.tidyverse.org/reference/contents_record.html)
-rejects the integer `version` that comes back, and typed props such as
-`tokens` return as lists – and since the replay happens in a
-board-server observer, such a board took the whole session down on
-restore rather than just the chat panel. Payloads written in that
-earlier shape are dropped on deserialisation. The raw provider response
-is stripped before saving, and the saved window is trimmed to whole
-exchanges so it never opens or closes on half of a tool call.
+Turns go in as they stand because blockr.core writes board files with
+typedjson, which carries what plain JSON cannot. A board holding
+anything else under `history` opens without its conversation rather than
+on a guess at one. The raw provider response is stripped before saving,
+and a thread trimmed to the budget is cut between exchanges rather than
+inside one, so it never opens on half of a tool call.
+
+Which thread is open is remembered by the browser rather than in
+`state`, so a board reopened elsewhere lists its threads without
+selecting one.
 
 The live conversation is bounded separately, since saving bounds only
 the file: every turn is re-sent on every request, so an unbounded
@@ -133,18 +132,18 @@ Compaction rewrites the browser transcript to match, which is what keeps
 the two honest. `shinychat` appends each turn to the DOM as it arrives
 and never reads the client back, so turns dropped from the client would
 otherwise stay on screen unremembered. The same replay fills in a
-transcript that a restore or a provider swap leaves empty; tool traffic
-carries no text and is not replayed.
+transcript that a board saved before threads existed leaves empty; tool
+traffic carries no text and is not replayed.
 
-Both the conversation and its size are reachable from the chat's command
-palette, which lists two built-in commands alongside the user-invocable
-skills. The `/compact` command runs the same summarise-and-replace on
-demand, without waiting for the threshold – for a thread that has gone
-stale rather than large, where a long build has finished and the next
-question is unrelated to it. The `/clear` command drops the conversation
-outright: the browser transcript, the turns the model is sent, and any
-changes staged but never committed go together, and the emptied chat
-reopens on a greeting read off the board as it now stands.
+Conversation size is reachable from the chat's command palette, which
+lists one built-in command alongside the user-invocable skills. The
+`/compact` command runs the same summarise-and-replace on demand,
+without waiting for the threshold – for a thread that has gone stale
+rather than large, where a long build has finished and the next question
+is unrelated to it. Opening a fresh thread is the history drawer's own
+affordance rather than a command, because nothing in `shinychat`'s
+server API starts one: a command that emptied the transcript would leave
+the stored thread behind for the next response to extend.
 
 ## Examples
 
