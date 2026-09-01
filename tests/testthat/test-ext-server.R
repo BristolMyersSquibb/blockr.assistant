@@ -33,22 +33,16 @@ test_that("default_system_prompt returns a non-empty string", {
 
 test_that("format_token_telemetry reports zeros before a turn arrives", {
 
-  for (turn in list(NULL, ellmer::Turn("assistant", "hi"))) {
+  html <- as.character(format_token_telemetry(c(0L, 0L)))
 
-    html <- as.character(format_token_telemetry(turn))
-
-    expect_match(html, "asst-meta", fixed = TRUE)
-    expect_match(html, ">0<")
-    expect_match(html, "Input tokens (this turn): 0", fixed = TRUE)
-  }
+  expect_match(html, "asst-meta", fixed = TRUE)
+  expect_match(html, ">0<")
+  expect_match(html, "Input tokens (this conversation): 0", fixed = TRUE)
 })
 
-test_that("format_token_telemetry reports real tokens", {
+test_that("format_token_telemetry reports what the conversation has spent", {
 
-  real_turn <- ellmer::Turn("assistant", "hi")
-  real_turn@tokens <- c(312, 84, NA)
-
-  res <- format_token_telemetry(real_turn)
+  res <- format_token_telemetry(c(312L, 84L))
   expect_s3_class(res, "shiny.tag")
 
   html <- as.character(res)
@@ -57,14 +51,14 @@ test_that("format_token_telemetry reports real tokens", {
   expect_match(html, ">84<")
 })
 
-test_that("the chat module is mounted with history disabled", {
+test_that("the chat mounts history against this board's thread store", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   history_arg <- NULL
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) {
+    chat_server = function(id, client, history = TRUE, ...) {
       history_arg <<- history
       fake_chat_mod()
     },
@@ -72,11 +66,16 @@ test_that("the chat module is mounted with history disabled", {
   )
 
   testServer(
-    asst_ext_srv(default_system_prompt, NULL),
+    asst_ext_srv(default_system_prompt),
     {
       session$flushReact()
 
-      expect_false(history_arg)
+      expect_s3_class(history_arg, "chat_history_config")
+      expect_s3_class(history_arg$store, "ThreadStore")
+
+      # Evicting a thread the user is still reading would be a surprise; the
+      # save budget is what bounds the file.
+      expect_null(history_arg$max_store_mb)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -91,7 +90,7 @@ test_that("function-arg system_prompt is omitted from state", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -110,25 +109,31 @@ test_that("the conversation is written to state", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  seed <- lapply(
-    list(
-      ellmer::Turn("user", "load iris"),
-      ellmer::Turn("assistant", "loaded")
-    ),
-    ellmer::contents_record
+  seed <- list(
+    ellmer::Turn("user", "load iris"),
+    ellmer::Turn("assistant", "loaded")
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
+      # An exchange the store has not recorded yet: shinychat writes a thread
+      # once the model answers, and saving before that must not lose it.
+      client_r()$set_turns(seed)
+
       expect_length(client_r()$get_turns(), 2L)
 
-      blob <- session$returned$state$history()
+      saved <- session$returned$state$history()
 
-      expect_type(blob, "character")
-      expect_length(deserialize_chat_history(blob), 2L)
+      expect_type(saved, "list")
+
+      threads <- saved
+
+      expect_true(is_thread_set(threads))
+      expect_length(threads, 1L)
+      expect_length(thread_turns(threads[["c_restored"]]), 2L)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -145,15 +150,16 @@ test_that("chat_save_turns = 0 writes no conversation to state", {
     blockr.chat_save_turns = 0L
   )
 
-  seed <- lapply(
-    list(ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")),
-    ellmer::contents_record
+  seed <- list(
+    ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
+
+      client_r()$set_turns(seed)
 
       expect_length(client_r()$get_turns(), 2L)
       expect_null(session$returned$state$history())
@@ -173,25 +179,26 @@ test_that("chat_save_turns keeps only the most recent turns", {
     blockr.chat_save_turns = 2L
   )
 
-  seed <- lapply(
-    list(
-      ellmer::Turn("user", "question 1"),
-      ellmer::Turn("assistant", "answer 1"),
-      ellmer::Turn("user", "question 2"),
-      ellmer::Turn("assistant", "answer 2"),
-      ellmer::Turn("user", "question 3"),
-      ellmer::Turn("assistant", "answer 3")
-    ),
-    ellmer::contents_record
+  seed <- list(
+    ellmer::Turn("user", "question 1"),
+    ellmer::Turn("assistant", "answer 1"),
+    ellmer::Turn("user", "question 2"),
+    ellmer::Turn("assistant", "answer 2"),
+    ellmer::Turn("user", "question 3"),
+    ellmer::Turn("assistant", "answer 3")
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = seed),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
+      client_r()$set_turns(seed)
+
       kept <- lapply(
-        deserialize_chat_history(session$returned$state$history()),
+        thread_turns(
+          session$returned$state$history()[["c_restored"]]
+        ),
         ellmer::contents_replay
       )
 
@@ -220,27 +227,34 @@ test_that("a saved conversation survives the board round trip", {
 
   ser <- blockr.core::blockr_ser(
     new_assistant_extension(),
-    data = list(history = serialize_chat_history(turns, 50L))
-  )
-
-  ext <- blockr.core::blockr_deser(
-    jsonlite::fromJSON(
-      jsonlite::toJSON(ser, auto_unbox = TRUE, null = "null"),
-      simplifyDataFrame = FALSE,
-      simplifyMatrix = FALSE
+    data = list(
+      history = serialize_chat_threads(
+        new_thread_store(), 50L, unrecorded = turns
+      )
     )
   )
+
+  ext <- blockr.core::blockr_deser(via_board_file(ser))
 
   testServer(
     blockr.dock::extension_server(ext),
     {
       session$flushReact()
 
-      restored <- client_r()$get_turns()
+      # The store is what carries a thread now; shinychat puts its turns on
+      # the client when the browser says which thread was open, which no
+      # testServer ever does.
+      restored <- thread_store$threads()
 
-      expect_length(restored, 2L)
+      expect_named(restored, "c_restored")
       expect_identical(
-        lapply(restored, ellmer::contents_text),
+        lapply(
+          lapply(
+            thread_turns(restored[["c_restored"]]),
+            ellmer::contents_replay
+          ),
+          ellmer::contents_text
+        ),
         lapply(turns, ellmer::contents_text)
       )
     },
@@ -252,7 +266,7 @@ test_that("a saved conversation survives the board round trip", {
   )
 })
 
-test_that("deser drops a legacy messages payload", {
+test_that("deser drops a payload key that is no longer a constructor arg", {
 
   ser <- blockr.core::blockr_ser(
     new_assistant_extension(),
@@ -264,18 +278,12 @@ test_that("deser drops a legacy messages payload", {
     )
   )
 
-  json <- jsonlite::fromJSON(
-    jsonlite::toJSON(ser, null = "null"),
-    simplifyDataFrame = FALSE,
-    simplifyMatrix = FALSE
-  )
-
-  ext <- blockr.core::blockr_deser(json)
+  ext <- blockr.core::blockr_deser(via_board_file(ser))
 
   expect_s3_class(ext, "assistant_extension")
 
-  # Left in place, the legacy records reach contents_replay() in a board
-  # server observer and abort the whole board on mount.
+  # Left in place it reaches the constructor as an unused argument and takes
+  # the board down on mount.
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
@@ -298,7 +306,7 @@ test_that("string system_prompt is used verbatim and stored in state", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = "be terse", messages = NULL),
+    asst_ext_srv(system_prompt = "be terse"),
     {
       session$flushReact()
 
@@ -321,7 +329,7 @@ test_that("server registers the read and mutation tools on the client", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -362,7 +370,7 @@ test_that("describing a block type arms its typed tool on the client", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -391,7 +399,7 @@ test_that("a fresh user turn lets the pool reclaim an armed tool", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -425,7 +433,7 @@ test_that("a dock board additionally registers the extension tools", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -464,7 +472,7 @@ test_that("server threads view_data into the prompt and the view tools", {
   vd <- reactiveVal(list(views = live_views, grids = board_grids(brd)))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -498,7 +506,7 @@ test_that("registered list_blocks tool reflects the live board contents", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -538,7 +546,7 @@ test_that("registered describe_block tool dispatches on block class", {
   board_blocks(brd) <- blks
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -559,7 +567,7 @@ test_that("registered tool surfaces an error string instead of crashing", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -584,7 +592,7 @@ test_that("pending_update is initialised empty and survives a no-op flush", {
   fake_update <- recording_update(function(payload) calls <<- calls + 1L)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -621,7 +629,7 @@ test_that("staging across a turn flushes once and resets pending", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -656,7 +664,7 @@ test_that("reset_pending wipes a non-empty pending payload", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -686,7 +694,7 @@ test_that("recovery sequence flushes a single corrected add", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -765,7 +773,7 @@ test_that("initial refresh sets the composed prompt on the client", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -787,7 +795,7 @@ test_that("static string system_prompt is used verbatim each refresh", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = "STATIC", messages = NULL),
+    asst_ext_srv(system_prompt = "STATIC"),
     {
       session$flushReact()
 
@@ -812,7 +820,7 @@ test_that("board$board change triggers a fresh prompt", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -850,7 +858,7 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
   }
 
   testServer(
-    asst_ext_srv(system_prompt = flaky_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = flaky_prompt),
     {
       session$flushReact()
 
@@ -897,7 +905,7 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
   sess <- with_llm_session()
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -984,7 +992,7 @@ test_that("llm_model swap drops an empty assistant placeholder", {
   sess <- with_llm_session()
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1036,7 +1044,7 @@ test_that("llm_model swap drops a trailing user turn (no auto-submit)", {
   sess <- with_llm_session()
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1073,7 +1081,7 @@ test_that("uncommitted changes at turn end nudge the model, nothing applies", {
   fake_update <- recording_update(function(payload) calls <<- calls + 1L)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1106,7 +1114,7 @@ test_that("an unresolved nudge is bounded, then discards the staged changes", {
   fake_update <- recording_update(function(payload) calls <<- calls + 1L)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1135,7 +1143,7 @@ test_that("an injected turn keeps the pending; a real user turn resets it", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1169,7 +1177,7 @@ test_that("a repeated nudge re-fires the injection with a fresh sequence id", {
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1192,43 +1200,6 @@ test_that("a repeated nudge re-fires the injection with a fresh sequence id", {
   )
 })
 
-test_that("a restored conversation is replayed into the transcript", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  mod <- fake_chat_mod()
-
-  testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
-    .package = "shinychat"
-  )
-
-  seed <- lapply(
-    list(
-      ellmer::Turn("user", "load iris"),
-      ellmer::Turn("assistant", "loaded")
-    ),
-    ellmer::contents_record
-  )
-
-  testServer(
-    asst_ext_srv(default_system_prompt, seed),
-    {
-      session$flushReact()
-
-      expect_identical(
-        mod$transcript(),
-        c("user: load iris", "assistant: loaded")
-      )
-    },
-    args = list(
-      board = reactiveValues(board = blockr.core::new_board()),
-      update = reactiveVal()
-    ),
-    session = with_llm_session()
-  )
-})
-
 test_that("a conversation over the token bound is compacted", {
 
   withr::local_options(
@@ -1239,7 +1210,7 @@ test_that("a conversation over the token bound is compacted", {
   mod <- fake_chat_mod()
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    chat_server = function(id, client, history = TRUE, ...) mod,
     .package = "shinychat"
   )
 
@@ -1250,9 +1221,12 @@ test_that("a conversation over the token bound is compacted", {
   )
 
   testServer(
-    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    asst_ext_srv(default_system_prompt),
     {
       session$flushReact()
+
+      client_r()$set_turns(priced_turns(12L, 400, 50))
+      mod$history$restore()
       later::run_now()
       session$flushReact()
 
@@ -1285,7 +1259,7 @@ test_that("a conversation within the token bound is left alone", {
   mod <- fake_chat_mod()
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    chat_server = function(id, client, history = TRUE, ...) mod,
     .package = "shinychat"
   )
 
@@ -1296,9 +1270,12 @@ test_that("a conversation within the token bound is left alone", {
   )
 
   testServer(
-    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    asst_ext_srv(default_system_prompt),
     {
       session$flushReact()
+
+      client_r()$set_turns(priced_turns(12L, 400, 50))
+      mod$history$restore()
       later::run_now()
       session$flushReact()
 
@@ -1322,7 +1299,7 @@ test_that("compaction defers while a stream is in flight", {
   mod <- fake_chat_mod(status = "streaming")
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    chat_server = function(id, client, history = TRUE, ...) mod,
     .package = "shinychat"
   )
 
@@ -1333,9 +1310,12 @@ test_that("compaction defers while a stream is in flight", {
   )
 
   testServer(
-    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    asst_ext_srv(default_system_prompt),
     {
       session$flushReact()
+
+      client_r()$set_turns(priced_turns(12L, 400, 50))
+      mod$history$restore()
       later::run_now()
       session$flushReact()
 
@@ -1366,7 +1346,7 @@ test_that("user-invocable skills reach shinychat as slash commands", {
   rec <- recording_session()
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1376,7 +1356,7 @@ test_that("user-invocable skills reach shinychat as slash commands", {
 
       commands <- rec$slash_commands()
 
-      expect_setequal(chr_xtr(commands, "name"), c("compact", "clear", "drill"))
+      expect_setequal(chr_xtr(commands, "name"), c("compact", "drill"))
       expect_true("A drill." %in% chr_xtr(commands, "description"))
     },
     args = list(
@@ -1394,15 +1374,15 @@ test_that("the built-in commands are advertised without an echo", {
   rec <- recording_session()
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
       session$flushReact()
 
       commands <- rec$slash_commands()
-      builtin <- chr_xtr(commands, "name") %in% c("compact", "clear")
+      builtin <- chr_xtr(commands, "name") %in% "compact"
 
-      expect_length(which(builtin), 2L)
+      expect_length(which(builtin), 1L)
       expect_false(any(lgl_xtr(commands[builtin], "echo")))
 
       # A skill command echoes, so this is the built-ins being asked for
@@ -1435,7 +1415,7 @@ test_that("a skill cannot take a built-in command's name", {
 
   logs <- capture_logs(
     testServer(
-      asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+      asst_ext_srv(system_prompt = default_system_prompt),
       {
         session$flushReact()
         session$flushReact()
@@ -1469,7 +1449,7 @@ test_that("/compact summarises a conversation the bound leaves alone", {
   mod <- fake_chat_mod()
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    chat_server = function(id, client, history = TRUE, ...) mod,
     .package = "shinychat"
   )
 
@@ -1480,9 +1460,12 @@ test_that("/compact summarises a conversation the bound leaves alone", {
   )
 
   testServer(
-    asst_ext_srv(default_system_prompt, priced_turns(12L, 400, 50)),
+    asst_ext_srv(default_system_prompt),
     {
       session$flushReact()
+
+      client_r()$set_turns(priced_turns(12L, 400, 50))
+      mod$history$restore()
       later::run_now()
       session$flushReact()
 
@@ -1507,65 +1490,24 @@ test_that("/compact summarises a conversation the bound leaves alone", {
   )
 })
 
-test_that("/clear empties both copies of the conversation", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  mod <- NULL
-
-  testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) {
-      mod <<- fake_chat_mod(client = client)
-      mod
-    },
-    .package = "shinychat"
-  )
-
-  seed <- lapply(
-    list(
-      ellmer::Turn("user", "load iris"),
-      ellmer::Turn("assistant", "loaded")
-    ),
-    ellmer::contents_record
-  )
-
-  testServer(
-    asst_ext_srv(default_system_prompt, seed),
-    {
-      session$flushReact()
-
-      expect_length(mod$transcript(), 2L)
-      expect_length(client_r()$get_turns(), 2L)
-
-      clear_conversation()
-
-      expect_identical(mod$transcript(), character())
-      expect_identical(client_r()$get_turns(), list())
-      expect_true(mod$cleared()$greeting)
-    },
-    args = list(
-      board = reactiveValues(board = blockr.core::new_board()),
-      update = reactiveVal()
-    ),
-    session = with_llm_session()
-  )
-})
-
-test_that("/clear drops changes staged against the cleared conversation", {
+test_that("a fresh thread drops changes staged against the one before it", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
 
-  mod <- fake_chat_mod()
+  open_thread <- NULL
 
   testthat::local_mocked_bindings(
-    chat_mod_server = function(id, client, history = TRUE, ...) mod,
+    chat_server = function(id, client, greeting = NULL, history = TRUE, ...) {
+      open_thread <<- greeting
+      fake_chat_mod()
+    },
     .package = "shinychat"
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1575,7 +1517,9 @@ test_that("/clear drops changes staged against the cleared conversation", {
 
       expect_true(isolate(has_any_changes(pending_update())))
 
-      clear_conversation()
+      # Resolving the greeting is shinychat's only public signal that a fresh
+      # thread has opened -- on the initial settle, and on every new one.
+      open_thread()
 
       expect_false(isolate(has_any_changes(pending_update())))
       expect_identical(isolate(touched()), character())
@@ -1598,7 +1542,7 @@ test_that("a mistyped skills directory takes the mount down", {
 
   expect_error(
     testServer(
-      asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+      asst_ext_srv(system_prompt = default_system_prompt),
       session$flushReact(),
       args = list(
         board = reactiveValues(board = blockr.core::new_board()),
@@ -1634,7 +1578,7 @@ test_that("the focus picker offers the live board's blocks", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1658,7 +1602,7 @@ test_that("the picker is absent while the board holds no blocks", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1683,7 +1627,7 @@ test_that("a picker selection reaches the model's system prompt", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -1721,7 +1665,7 @@ test_that("removing a focused block drops it from the prompt", {
   )
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$setInputs(focus = c("a", "b"))
 
@@ -1739,6 +1683,163 @@ test_that("removing a focused block drops it from the prompt", {
       expect_no_match(prompt, "- b <head_block>", fixed = TRUE)
     },
     args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
+test_that("a provider swap hands the client over instead of remounting", {
+
+  fake_a <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-a",
+      credentials = function() list(Authorization = "Bearer a"),
+      echo = "none"
+    )
+  }
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_anthropic(
+      model = "claude-b",
+      credentials = function() list(`x-api-key` = "b"),
+      echo = "none"
+    )
+  }
+
+  withr::local_options(blockr.chat_function = list(A = fake_a, B = fake_b))
+
+  mounts <- 0L
+  handed <- NULL
+
+  testthat::local_mocked_bindings(
+    chat_server = function(id, client, ...) {
+
+      mounts <<- mounts + 1L
+
+      mod <- fake_chat_mod(client = client)
+      mod$set_client <- function(new_client, sync = TRUE) {
+        handed <<- list(client = new_client, sync = sync)
+        invisible()
+      }
+
+      mod
+    },
+    .package = "shinychat"
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      # A remount would render a fresh chat element, and the store partitions
+      # on that element's id, so every thread recorded before the swap would
+      # be stranded under the old one.
+      expect_identical(mounts, 1L)
+      expect_identical(handed$client, client_r())
+
+      # The turns are carried here already, and the tools belong to the
+      # client they were registered against.
+      expect_false(handed$sync)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("focus rides with the thread and a switch resets the slate", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  on_save <- NULL
+  on_restore <- NULL
+
+  testthat::local_mocked_bindings(
+    chat_server = function(id, client, ...) {
+
+      mod <- fake_chat_mod(client = client)
+      mod$history <- list(
+        save = function() FALSE,
+        on_save = function(fn) on_save <<- fn,
+        on_restore = function(fn) on_restore <<- fn
+      )
+
+      mod
+    },
+    .package = "shinychat"
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+      session$setInputs(focus = "d")
+
+      # Board state carries `values` as plain JSON, which returns a character
+      # vector as a list, so the saved shape is a list either way.
+      expect_identical(on_save(list())[["focus"]], list("d"))
+
+      stage_block_add(pending_update, board, "new", new_head_block())
+      expect_true(isolate(has_any_changes(pending_update())))
+
+      on_restore(list(focus = list("d")))
+
+      expect_false(isolate(has_any_changes(pending_update())))
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("saving state asks the module to record the live thread first", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  saves <- 0L
+
+  testthat::local_mocked_bindings(
+    chat_server = function(id, client, ...) {
+
+      mod <- fake_chat_mod(client = client)
+      mod$history <- list(
+        save = function() {
+          saves <<- saves + 1L
+          TRUE
+        },
+        on_save = function(fn) invisible(fn),
+        on_restore = function(fn) invisible(fn)
+      )
+
+      mod
+    },
+    .package = "shinychat"
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      # The store only sees the live thread once shinychat writes a response,
+      # so an exchange in flight would otherwise be missing from the file.
+      session$returned$state$history()
+
+      expect_identical(saves, 1L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
     session = with_llm_session()
   )
 })

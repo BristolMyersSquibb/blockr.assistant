@@ -346,7 +346,7 @@ test_that("a board update the model did not trigger is ignored", {
   withr::local_options(blockr.chat_function = fake_chat_function)
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -383,7 +383,7 @@ test_that("the update listener captures touched blocks while awaiting", {
   lid <- names(board_links(brd))[[1L]]
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -410,7 +410,7 @@ test_that("the update listener records only the blocks a commit adds", {
   brd <- new_board(blocks = c(a = new_dataset_block(), b = new_head_block()))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
@@ -438,7 +438,7 @@ test_that("the update listener ignores updates when not awaiting", {
   brd <- new_board(blocks = c(a = new_dataset_block(), b = new_head_block()))
 
   testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
+    asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
 
