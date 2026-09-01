@@ -38,10 +38,7 @@ describe_result.default <- function(x, ...) {
 #' @rdname describe_result
 #' @export
 describe_result.evaluate_evaluation <- function(x, ...) {
-
-  plots <- Filter(evaluate::is.recordedplot, x)
-
-  describe_plot_result(length(plots), length(x) - length(plots))
+  describe_plot_result(length(Filter(evaluate::is.recordedplot, x)))
 }
 
 #' @rdname describe_result
@@ -60,23 +57,20 @@ describe_result.recordedplot <- function(x, ...) {
 # lattice produce as readily as base graphics, so there is no one grammar to
 # parse. Naming the class is enough -- a model given only that reaches for
 # inspect_results unprompted, and drawing it there is what renders the chart.
-describe_plot_result <- function(n_plot, n_other = 0L) {
+describe_plot_result <- function(n_plot) {
 
-  plots <- if (n_plot) {
-    glue::glue(
-      "{n_plot} recorded plot{if (n_plot > 1L) 's' else ''} (`recordedplot`)"
+  if (!n_plot) {
+    return(
+      glue::glue(
+        "Graphics result: no recorded plot -- the block evaluated ",
+        "without drawing anything."
+      )
     )
-  } else {
-    "no recorded plot -- the block evaluated without drawing anything"
-  }
-
-  if (!n_other) {
-    return(glue::glue("Graphics result: {plots}."))
   }
 
   glue::glue(
-    "Graphics result: {plots}, alongside {n_other} non-plot ",
-    "element{if (n_other > 1L) 's' else ''}."
+    "Graphics result: {n_plot} recorded ",
+    "plot{if (n_plot > 1L) 's' else ''} (`recordedplot`)."
   )
 }
 

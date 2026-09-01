@@ -96,18 +96,6 @@ test_that("a plot block that drew nothing is distinguishable", {
   expect_no_match(res, "recorded plot (", fixed = TRUE)
 })
 
-test_that("an evaluation holding non-plot entries says so", {
-
-  res <- describe_result(
-    structure(
-      c(record_plots("plot(1:10)"), list("stray output")),
-      class = c("evaluate_evaluation", "list")
-    )
-  )
-
-  expect_match(res, "1 recorded plot", fixed = TRUE)
-  expect_match(res, "1 non-plot element", fixed = TRUE)
-})
 
 test_that("a bare recordedplot is described like a one-plot evaluation", {
 
