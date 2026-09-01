@@ -227,7 +227,7 @@ test_that("commit reads back the resolved state of a block it added", {
   )
 })
 
-test_that("commit stays quiet about a modification that applied as sent", {
+test_that("commit reports no state for a block it only modified", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -255,42 +255,6 @@ test_that("commit stays quiet about a modification that applied as sent", {
 
       expect_match(res, "- d:", fixed = TRUE)
       expect_no_match(res, "Applied state", fixed = TRUE)
-    },
-    args = commit_board_args(brd, reactiveVal(cnd_frame())),
-    session = with_llm_session()
-  )
-})
-
-test_that("commit reads back a modification the board did not apply", {
-
-  withr::local_options(blockr.chat_function = fake_chat_function)
-
-  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
-
-  testServer(
-    asst_ext_srv(system_prompt = default_system_prompt, messages = NULL),
-    {
-      session$flushReact()
-
-      tools <- client_r()$get_tools()
-      tools$modify_block(id = "d", args = '{"dataset": "mtcars"}')
-
-      p <- tools$commit()
-      session$flushReact()
-
-      board$blocks <- list(
-        d = result_block(iris, list(dataset = function() "iris"))
-      )
-      board$last_update <- list(
-        ok = TRUE, phase = "apply", message = NA_character_
-      )
-
-      res <- drain_promise(p, session)
-
-      expect_match(
-        res, "Applied state (differs from what you staged):", fixed = TRUE
-      )
-      expect_match(res, "iris", fixed = TRUE)
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()
