@@ -53,12 +53,25 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     # what shinychat does when the browser names the thread it had open, and
     # it is the trigger a conversation already over the compaction bound
     # arrives through.
+    #
+    # `on_save`, `on_restore` and NOTHING ELSE from shinychat. Its
+    # `chat_server()` builds `mod$history` as a locked environment carrying
+    # exactly those two, and `save_current()` sits on the history controller
+    # behind them rather than on the module. This double used to offer a
+    # `save()` as well, which no real session has, so production code calling
+    # `mod$history$save()` passed wherever the module was mocked while
+    # aborting every board save on prod with "attempt to apply
+    # non-function". Anything added here that shinychat does not carry buys
+    # back that blind spot.
+    #
+    # `restore()` is a test affordance, not a claim about shinychat: it fires
+    # the callback the module would have fired, and no production code reads
+    # it.
     history = local({
 
       restore_fn <- NULL
 
       list(
-        save = function() FALSE,
         on_save = function(fn) invisible(fn),
         on_restore = function(fn) {
           restore_fn <<- fn

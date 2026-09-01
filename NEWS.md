@@ -1,5 +1,23 @@
 # blockr.assistant (development version)
 
+* Saving a board no longer aborts on "attempt to apply non-function". Since
+  0.1.0 the extension asked the mounted chat module to flush its live thread
+  before reading the store, through `mod$history$save()`. `shinychat`'s
+  module object has never carried that: `chat_server()` builds `mod$history`
+  as a locked environment holding `on_save` and `on_restore`, and
+  `save_current()` sits on the history controller behind it. So the call
+  head evaluated to `NULL` and every save died, on any session that had
+  mounted the chat, whether or not the board had been touched. The flush is
+  gone rather than rewritten, which costs a question typed but not yet
+  answered when the save happens; shinychat records a thread once the model
+  replies, and everything it has recorded still saves. `chat_save_turns` is
+  now asked first, so a deployment that set it to `0` has its chat neither
+  written nor read at save time.
+
+* `fake_chat_mod()` no longer offers a `history$save()`. Inventing a member
+  the real module lacks is what let the call above pass wherever the module
+  was mocked, and one test asserted it.
+
 * The board check run after a commit no longer reports the state of a block
   the model merely modified. Core applies a `blocks$mod` delta by writing
   each field straight into the block's state reactive value, with no

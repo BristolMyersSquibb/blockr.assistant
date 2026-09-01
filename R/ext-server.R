@@ -36,8 +36,9 @@
 #' environment variable), which takes `0` for none, a positive whole
 #' number, or `Inf` for all, and defaults to 50. Setting it to `0` is
 #' worth considering where boards are shared, since the file otherwise
-#' carries whatever was typed into every thread. It describes the
-#' deployment rather than the board, so it is neither a constructor
+#' carries whatever was typed into every thread; at `0` the chat is not
+#' read at save time either, not read and then discarded. It describes
+#' the deployment rather than the board, so it is neither a constructor
 #' argument nor part of `state` -- restore reads whatever the file
 #' holds.
 #'
@@ -47,7 +48,10 @@
 #' conversation rather than on a guess at one. The raw provider
 #' response is stripped before saving, and a thread trimmed to the
 #' budget is cut between exchanges rather than inside one, so it never
-#' opens on half of a tool call.
+#' opens on half of a tool call. A thread reaches `state` once
+#' shinychat has recorded it, which is once the model has answered, so
+#' a question typed but not yet answered when the board is saved is not
+#' in the file.
 #'
 #' Which thread is open is remembered by the browser rather than in
 #' `state`, so a board reopened elsewhere lists its threads without
@@ -1129,22 +1133,45 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         )
 
         # Resolved by the board's serializer at save time, so the budget and
-        # the threads are both read as they stand then. The live thread is
-        # saved first: the store only sees it once shinychat writes a
-        # response, so an exchange in flight would otherwise be missing.
+        # the threads are both read as they stand then.
+        #
+        # `chat_save_turns` is asked FIRST and nothing else runs at 0. It is
+        # the deployment's answer to whether conversations may land in a
+        # shared file at all, so a deployment that said no should not have
+        # the chat read at save time, let alone written.
+        #
+        # There is no flush of the live thread here. shinychat's module
+        # object carries `on_save` and `on_restore` on `mod$history` and
+        # nothing else -- the environment is locked, and `save_current()`
+        # lives on the history controller behind it, not on the module. The
+        # `mod$history$save()` this used to call was therefore NULL, and
+        # since the call head is an expression rather than a symbol, every
+        # board save aborted on "attempt to apply non-function" from the
+        # first flush of any session that mounted the chat.
+        #
+        # `test-ext-server.R` reported that abort on four state tests and
+        # it stood, because the message names nothing and the same run
+        # carries unrelated failures from whatever ellmer and blockr.core
+        # the box has. What made it survivable was the other half: tests
+        # that mock the module used a double carrying a `save()` of its own
+        # invention, and one of them asserted the call.
+        #
+        # What that costs: an exchange the store has not recorded yet is not
+        # written. shinychat records a thread once the model answers, so this
+        # is the question typed but not yet answered when the save happens.
         state_payload <- list(
           history = function() {
             isolate({
 
-              mod <- mod_r()
+              save_turns <- chat_save_turns()
 
-              if (!is.null(mod)) {
-                mod$history$save()
+              if (save_turns <= 0) {
+                return(NULL)
               }
 
               serialize_chat_threads(
                 thread_store,
-                chat_save_turns(),
+                save_turns,
                 client_turns(client_r())
               )
             })
