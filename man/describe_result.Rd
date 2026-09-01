@@ -39,6 +39,14 @@ description of the chart. They name the class and count the recordings, and
 say when a block evaluated without drawing. Neither describes the chart
 itself: \code{inspect_results} renders it, by drawing it on a device.
 
+The \code{\link[evaluate:evaluate]{evaluate::evaluate()}} method claims only evaluations that carry a
+recording, and defers to the default otherwise, since \code{evaluate_evaluation}
+is a general container this package does not own -- a result of some other
+shape keeps the description it would have had. Anything it does claim is
+counted by kind rather than dropped. To describe a result differently, give
+it a class of its own and register a method on that: a method on a subclass
+takes precedence over both of these.
+
 Methods need not bound their output or guard their own errors: the internal
 \code{summarise_result()} wrapper caps the text before it reaches the prompt and
 turns a failed description into a surfaced error message. It is what the

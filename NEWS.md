@@ -12,6 +12,14 @@
   engine: `recordedplot` is a display list, which grid and lattice
   produce as readily as base graphics, and reading one means parsing
   undocumented entry points positionally against R's graphics internals.
+  The `evaluate_evaluation` method claims only evaluations that carry a
+  recording, deferring to the default otherwise: the class belongs to
+  `evaluate` rather than to this package, and an evaluation of another
+  shape must keep the description it would have had rather than be told
+  it is a plot that is missing. What it does claim it counts by kind, so
+  a warning or an error accompanying the plot is reported rather than
+  dropped, and a result needing a different description can take one by
+  carrying a class of its own.
   A truncated result summary no longer appends the fixed "use query_data
   to fetch specific rows or columns" hint either: it was passed for every
   result type, so a plot block was told to fetch rows and columns from a

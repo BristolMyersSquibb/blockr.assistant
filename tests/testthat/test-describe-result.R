@@ -92,8 +92,48 @@ test_that("a plot block that drew nothing is distinguishable", {
 
   res <- summarise_result(record_plots("1 + 1"))
 
-  expect_match(res, "without drawing anything", fixed = TRUE)
+  expect_match(res, "without drawing", fixed = TRUE)
   expect_no_match(res, "recorded plot (", fixed = TRUE)
+})
+
+test_that("an evaluation carrying no recording is left to the default", {
+
+  # `evaluate_evaluation` is a general container this package does not own,
+  # so a result of another shape must not be described as a plot that is
+  # missing -- it gets the description it would have had.
+  res <- summarise_result(evaluate::evaluate("cat('hi'); warning('careful')"))
+
+  expect_no_match(res, "Graphics result", fixed = TRUE)
+  expect_no_match(res, "without drawing", fixed = TRUE)
+  expect_match(res, "evaluation", ignore.case = TRUE)
+})
+
+test_that("an evaluation mixing plots with other parts counts them all", {
+
+  res <- summarise_result(
+    evaluate::evaluate("cat('note'); plot(1:10); warning('hm')")
+  )
+
+  expect_match(res, "1 recorded plot", fixed = TRUE)
+  expect_match(res, "1 warning", fixed = TRUE)
+  expect_match(res, "1 output", fixed = TRUE)
+})
+
+test_that("a subclassed result takes precedence over the shipped methods", {
+
+  registerS3method(
+    "describe_result", "assistant_custom_eval",
+    function(x, ...) "custom evaluation summary"
+  )
+
+  res <- describe_result(
+    structure(
+      record_plots("plot(1:10)"),
+      class = c("assistant_custom_eval", "evaluate_evaluation", "list")
+    )
+  )
+
+  expect_identical(res, "custom evaluation summary")
 })
 
 
