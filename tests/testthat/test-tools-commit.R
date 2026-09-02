@@ -1,7 +1,11 @@
-commit_board_args <- function(brd, conds, blocks = list()) {
+commit_board_args <- function(brd, conds, blocks = list(), eval = list()) {
   list(
     board = reactiveValues(
-      board = brd, last_update = NULL, blocks = blocks, conditions = conds
+      board = brd, last_update = NULL, blocks = blocks, conditions = conds,
+      # The commit claims the blocks it touched and waits for them to leave
+      # `dormant` before reviewing, so a mock board has to carry statuses the
+      # way core's rv does.
+      eval = eval
     ),
     update = reactiveVal()
   )
@@ -175,6 +179,7 @@ test_that("commit applies staged changes and returns the review in-band", {
       session$flushReact()
 
       board$blocks <- list(h = result_block(data.frame(x = 1:3)))
+      board$eval <- list(h = "ready")
       board$last_update <- list(
         ok = TRUE, phase = "apply", message = NA_character_
       )
@@ -213,6 +218,7 @@ test_that("commit reads back the resolved state of a block it added", {
           list(n = function() 3L, direction = function() "head")
         )
       )
+      board$eval <- list(h = "ready")
       board$last_update <- list(
         ok = TRUE, phase = "apply", message = NA_character_
       )
@@ -247,6 +253,7 @@ test_that("commit reports no state for a block it only modified", {
       board$blocks <- list(
         d = result_block(mtcars, list(dataset = function() "mtcars"))
       )
+      board$eval <- list(d = "ready")
       board$last_update <- list(
         ok = TRUE, phase = "apply", message = NA_character_
       )
@@ -261,11 +268,17 @@ test_that("commit reports no state for a block it only modified", {
   )
 })
 
+# A payload that touches no block. It claims nothing, so there is nothing to
+# wait for and nothing to report -- unlike a payload that adds or modifies a
+# block, which is now held open until that block has run.
 test_that("commit surfaces a clean apply that touched no block results", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris")),
+    stacks = stacks(s = new_stack("d"))
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt),
@@ -273,7 +286,7 @@ test_that("commit surfaces a clean apply that touched no block results", {
       session$flushReact()
 
       tools <- client_r()$get_tools()
-      tools$add_block(type = "head_block", args = "{}", id = "h")
+      tools$modify_stack(id = "s", name = "Renamed")
 
       p <- tools$commit()
       session$flushReact()
@@ -356,4 +369,119 @@ test_that("commit resolves with a timeout note when the board never settles", {
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()
   )
+})
+
+test_that("commit claims the blocks it touched, minus the ones it removes", {
+
+  brd <- new_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+    links  = c(l = new_link("a", "b", "data"))
+  )
+
+  payload <- empty_pending()
+  payload$blocks$mod <- list(b = list(n = 3L))
+
+  expect_identical(commit_claim_ids(payload, brd), "b")
+
+  payload$blocks$rm <- "b"
+  expect_identical(commit_claim_ids(payload, brd), character())
+
+  expect_identical(commit_claim_ids(empty_pending(), brd), character())
+  expect_identical(commit_claim_ids(NULL, brd), character())
+})
+
+test_that("the claim states the assistant's whole set, so it replaces", {
+
+  delta <- commit_claim_delta(c("a", "b"))
+
+  expect_named(delta, "blockr.assistant")
+  expect_identical(delta[["blockr.assistant"]], list(set = c("a", "b")))
+  expect_identical(
+    commit_claim_delta(character())[["blockr.assistant"]],
+    list(set = character())
+  )
+})
+
+test_that("a claimed block that has not run yet is not settled", {
+
+  board <- reactiveValues(eval = list(a = "dormant", b = "ready"))
+
+  isolate({
+    # This is the production failure: `a` is off screen, so it holds no result
+    # and reports no error, and reviewing now reads back a clean commit.
+    expect_false(commit_settled("a", board))
+    expect_false(commit_settled(c("a", "b"), board))
+
+    expect_true(commit_settled("b", board))
+    expect_true(commit_settled(character(), board))
+
+    # `stale` is dormant with an upstream change on top of it.
+    board$eval <- list(a = "stale")
+    expect_false(commit_settled("a", board))
+
+    # A block that raised HAS run; that is a verdict the review reports.
+    board$eval <- list(a = "failed")
+    expect_true(commit_settled("a", board))
+
+    # A claimed block with no status yet is still on its way in.
+    board$eval <- list()
+    expect_false(commit_settled("a", board))
+
+    # A board reporting no statuses at all cannot say, so do not hold the
+    # commit open to its timeout on every call.
+    board$eval <- NULL
+    expect_true(commit_settled("a", board))
+  })
+})
+
+test_that("the commit payload carries the claim over the touched blocks", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+
+      tools$commit()
+      session$flushReact()
+
+      expect_identical(
+        update()$sustain,
+        list(blockr.assistant = list(set = "h"))
+      )
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
+test_that("a changed block with no result is reported as unverified", {
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  board <- reactiveValues(
+    board = brd,
+    blocks = list(d = result_block(NULL)),
+    eval = list(d = "dormant"),
+    conditions = reactiveVal(cnd_frame())
+  )
+
+  isolate({
+    line <- review_result_line("d", board, character(), changed = "d")
+
+    expect_match(line, "UNVERIFIED", fixed = TRUE)
+    expect_match(line, "Do not report it as done", fixed = TRUE)
+
+    # A neighbour is not something the model changed, so it gets the browse
+    # gloss and no claim about what the model built.
+    expect_no_match(
+      review_result_line("d", board, character()), "UNVERIFIED", fixed = TRUE
+    )
+  })
 })
