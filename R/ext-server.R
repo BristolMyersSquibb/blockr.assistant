@@ -668,7 +668,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             # rather than the one that silently takes the name.
             session$onFlushed(
               function() {
-                register_builtin_commands(mod, compact_conversation)
+                register_builtin_commands(
+                  mod, compact_conversation, clear_conversation
+                )
                 register_skill_commands(mod, run_skill_command)
               },
               once = TRUE
@@ -764,6 +766,45 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             ),
             compacting$end
           )
+
+          invisible()
+        }
+
+        # The drawer's New button, reachable from the palette. It saves the
+        # thread on screen, empties the transcript and the turns the model is
+        # sent, and drops the active record so the next answer opens a thread
+        # of its own -- the conversation is reset without the one on screen
+        # being overwritten by what comes next. The controller is not on
+        # `mod$history`, which carries `on_save`/`on_restore` and nothing
+        # else, so it is read from where shinychat parks it. Where that lookup
+        # misses, emptying both copies of the conversation is still better
+        # than a command that does nothing.
+        clear_conversation <- function() {
+
+          mod <- isolate(mod_r())
+
+          if (is.null(mod)) {
+            return(invisible())
+          }
+
+          ctrl <- history_controller(session)
+
+          if (is.null(ctrl)) {
+            mod$clear(greeting = TRUE, client_history = "clear")
+            reset_staging()
+            return(invisible())
+          }
+
+          ctrl$new_chat()
+
+          # `new_chat()` empties the conversation without resolving a
+          # greeting, so the callback that carries the per-thread state does
+          # not run here: the focus pick and the token meter would survive
+          # into a thread they say nothing about. Both are what a fresh thread
+          # opens on, and a greeting that does fire later sets the same
+          # values.
+          restore_thread_state(list())
+          reset_staging()
 
           invisible()
         }

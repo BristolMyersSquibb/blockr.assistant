@@ -147,11 +147,17 @@
   trigger itself, which is the element the footer button forwards its click
   to.
 
-* The `/clear` command is gone. Starting a fresh thread is the history
-  drawer's own affordance, and nothing in `shinychat`'s server API opens
-  one, so a command that emptied the transcript would have left the stored
-  thread behind for the next response to extend. Opening a thread still
-  drops the changes staged against the one before it.
+* The `/clear` command opens a new thread rather than emptying the one on
+  screen. `mod$history` carries `on_save` and `on_restore` and nothing else,
+  which is why the command went when threads arrived; the controller behind
+  it has the `new_chat()` the drawer's own New button calls, and that is
+  reachable through `session$userData`. The thread on screen is saved, the
+  transcript, the turns the model is sent, the token meter, the focus pick
+  and the staged-changes slate all go, and the next answer opens a thread of
+  its own -- the drawer's affordance, without having to find the drawer.
+  Where the controller is not where this reads it, the command still empties
+  both copies of the conversation. Opening a thread still drops the changes
+  staged against the one before it.
 
 * The chat's command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
