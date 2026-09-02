@@ -60,9 +60,24 @@ test_that("tool_discard builds a no-argument tool named discard", {
 test_that("commit result headers carry the right framing", {
 
   expect_match(commit_header(), "now applied", fixed = TRUE)
-  expect_match(commit_reject_header(), "was not changed", fixed = TRUE)
+  expect_match(
+    commit_reject_header("validate"), "was not changed", fixed = TRUE
+  )
   expect_match(commit_clean_note(), "No block results", fixed = TRUE)
   expect_match(commit_timeout_note(), "did not finish evaluating", fixed = TRUE)
+})
+
+test_that("commit_reject_header claims an unchanged board for validate only", {
+
+  msg <- commit_reject_header("apply")
+
+  expect_match(msg, "may be partly updated", fixed = TRUE)
+  expect_match(msg, "Read back what landed", fixed = TRUE)
+  expect_no_match(msg, "was not changed", fixed = TRUE)
+
+  expect_no_match(
+    commit_reject_header("something-else"), "was not changed", fixed = TRUE
+  )
 })
 
 test_that("uncommitted_nudge offers commit or discard, not an auto-apply", {
@@ -321,6 +336,39 @@ test_that("commit reports a rejected update in-band without falling through", {
       expect_no_match(
         client_r()$get_system_prompt(), "previous turn", fixed = TRUE
       )
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
+test_that("a commit that fails to apply is not reported as a clean reject", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+
+      p <- tools$commit()
+      session$flushReact()
+
+      board$last_update <- list(
+        ok = FALSE, phase = "apply", message = "boom"
+      )
+
+      res <- drain_promise(p, session)
+
+      expect_match(res, "may be partly updated", fixed = TRUE)
+      expect_match(res, "get_block_state", fixed = TRUE)
+      expect_match(res, "boom", fixed = TRUE)
+      expect_no_match(res, "was not changed", fixed = TRUE)
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()

@@ -66,10 +66,25 @@ commit_header <- function() {
   )
 }
 
-commit_reject_header <- function() {
+# Only a `validate` rejection is recorded before core touches anything. An
+# `apply` one is thrown from partway through a sequence of separate mutations
+# that has no rollback, so the board may already carry part of the update --
+# and any phase that is not `validate` is treated that way.
+commit_reject_header <- function(phase) {
+
+  if (identical(phase, "validate")) {
+    return(
+      paste(
+        "[Your commit was rejected -- the board was not changed.] Fix the",
+        "problem and commit again."
+      )
+    )
+  }
+
   paste(
-    "[Your commit was rejected -- the board was not changed.] Fix the",
-    "problem and commit again."
+    "[Your commit stopped partway -- the board may be partly updated.] Read",
+    "back what landed before you commit again, so you neither re-apply a",
+    "change that already took nor leave a half-applied board alone."
   )
 }
 
