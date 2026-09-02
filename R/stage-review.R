@@ -181,12 +181,14 @@ collect_touched_results <- function(touched, board, added = character(),
   # consumers. Touched blocks lead so the cap spends its budget on them first;
   # per-result size is bounded in summarise_result(), so the worst-case review
   # is `cap` blocks times that per-result bound.
+  changed <- ids
+
   ids <- intersect(union(ids, neighbor_blocks(ids, board)), names(blks))
 
   shown <- ids[seq_len(min(cap, length(ids)))]
 
   lines <- chr_ply(
-    shown, review_result_line, board, added, use_names = FALSE
+    shown, review_result_line, board, added, changed, use_names = FALSE
   )
 
   if (length(ids) > length(shown)) {
@@ -202,15 +204,35 @@ collect_touched_results <- function(touched, board, added = character(),
   c("Results of the blocks you changed and the blocks linked to them:", lines)
 }
 
-review_result_line <- function(id, board, added) {
+review_result_line <- function(id, board, added, changed = character()) {
 
   paste(
     c(
       glue::glue("- {id}:"),
       if (id %in% added) applied_state_lines(id, board),
-      block_result_summary(id, board)
+      block_result_summary(id, board),
+      if (id %in% changed) unverified_note(id, board)
     ),
     collapse = "\n"
+  )
+}
+
+# The gloss no_result_message() puts on a status with no result -- `dormant` is
+# "the deferral, not a failure, and not something to reconfigure over" -- is
+# right when the model browses a block it had nothing to do with, and wrong
+# here. This block is one it just changed, and the commit claimed it, so if it
+# still has no result the change is unverified rather than fine. The model read
+# the browse gloss as an all-clear and reported a table it had never seen.
+unverified_note <- function(id, board) {
+
+  if (!has_no_result(eval_status(id, board))) {
+    return(NULL)
+  }
+
+  paste(
+    "You changed this block and it produced no result to check, so what you",
+    "built here is UNVERIFIED. Do not report it as done: say what is",
+    "unverified, or get the block into a state where it evaluates."
   )
 }
 
@@ -253,4 +275,77 @@ neighbor_blocks <- function(ids, board) {
   }
 
   unique(c(lnks$from[lnks$to %in% ids], lnks$to[lnks$from %in% ids]))
+}
+
+# --- the commit's claim over the blocks it touched ---------------------------
+
+# A block the model changed on a tab nobody is looking at is `dormant`: core
+# does not evaluate it, so it raises nothing, so the commit reads back clean
+# and the model reports a table it has never seen. Claiming the touched blocks
+# for the length of the read-back is what closes that gap -- see the Evaluation
+# requests section of blockr.core::board_server().
+#
+# `sustain`, not `evaluate`. Both put an off-screen block into the eval set,
+# but `evaluate` is a one-off core drops the moment the block has run, so the
+# block is back to `dormant` by the time the review reads it: an error survives
+# (conditions persist) while a result does not. A claim held across the
+# read-back gives the model both, and holding it past the review keeps a
+# follow-up get_block_result from answering `dormant` for a block the model
+# just built.
+commit_claim_ids <- function(payload, board) {
+
+  if (is.null(payload)) {
+    return(character())
+  }
+
+  # `sustain` `set` resolves against the POST-update block set, so a block this
+  # payload removes cannot be claimed -- core would reject the payload whole.
+  setdiff(touched_blocks(payload, board), coal(payload$blocks$rm, character()))
+}
+
+commit_claim_owner <- function() {
+  "blockr.assistant"
+}
+
+commit_claim <- function(ids) {
+  list(set = ids)
+}
+
+# Stating the owner's whole set, so each commit's claim replaces the one
+# before it rather than accumulating, and an empty set releases.
+commit_claim_delta <- function(ids) {
+  set_names(list(commit_claim(ids)), commit_claim_owner())
+}
+
+# Whether the claimed blocks have got far enough to be worth reading. A block
+# still `dormant` or `stale` has not run under the claim yet, and reading it
+# now returns the same nothing the single-flush review used to. Anything else
+# -- `ready`, `failed`, `waiting`, `unset` -- is a settled verdict the review
+# can report.
+commit_settled <- function(ids, board) {
+
+  if (!length(ids)) {
+    return(TRUE)
+  }
+
+  # eval_status() under a reactive read rather than an isolated one: the
+  # observer waiting on the claim has to re-run as each claimed block's status
+  # advances, and reading the container live is also what wakes it when a block
+  # the payload ADDED is constructed and gets a status for the first time.
+  status <- board$eval
+
+  # Nothing to wait on: a board that reports no statuses at all cannot say
+  # whether the claim ran, and holding the commit open to its timeout on every
+  # call would be worse than reviewing early. Core always has the container.
+  if (is.null(status)) {
+    return(TRUE)
+  }
+
+  !any(lgl_ply(ids, function(id) eval_deferred(claim_status(status, id))))
+}
+
+# A claimed block with no status yet reads as `dormant` -- unsettled, one still
+# on its way in -- and the commit timeout is what bounds that wait.
+claim_status <- function(status, id) {
+  coal(reval_if(status[[id]]), "dormant")
 }
