@@ -242,3 +242,25 @@ thread_path <- function(record) {
 
   ids
 }
+
+# shinychat parks its history controller in `session$userData`, keyed by the
+# namespaced chat id, and hands the module only `on_save`/`on_restore`. The
+# controller is what knows how to open a conversation, so `/clear` reads it
+# from there. NULL where the key is not what this shinychat uses, which the
+# caller treats as "no history wired".
+history_controller <- function(session, id = "chat") {
+
+  info <- session$userData$shinychat
+
+  if (!is.list(info)) {
+    return(NULL)
+  }
+
+  ctrl <- info[[session$ns(paste0(id, ".history-controller"))]]
+
+  if (!inherits(ctrl, "R6") || !is.function(ctrl[["new_chat"]])) {
+    return(NULL)
+  }
+
+  ctrl
+}
