@@ -453,19 +453,21 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         max_nudges <- 3L
 
         # The in-flight commit's state, bundled so only these methods touch it:
-        # perform_commit arms the bridge with the pre-flush baseline and the
-        # promise resolver; the board$last_update observer settles it a turn
-        # later. The generation fences a resolved commit's stale timeout off a
-        # subsequent commit.
+        # perform_commit arms the bridge with the pre-flush baseline, the blocks
+        # the payload claims and the promise resolver; the board$last_update
+        # observer settles it a turn later. The generation fences a resolved
+        # commit's stale timeout off a subsequent commit.
         commit_bridge <- local({
 
           resolve  <- NULL
           baseline <- NULL
+          claimed  <- character()
           gen      <- 0L
 
           list(
-            arm = function(conditions, resolver) {
+            arm = function(conditions, claim, resolver) {
               baseline <<- conditions
+              claimed  <<- claim
               resolve  <<- resolver
               gen      <<- gen + 1L
               gen
@@ -480,6 +482,12 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               TRUE
             },
             baseline   = function() baseline,
+            claimed    = function() claimed,
+            drop_claim = function() {
+              held <- claimed
+              claimed <<- character()
+              held
+            },
             is_current = function(g) identical(g, gen)
           )
         })
@@ -952,6 +960,37 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           )
         }
 
+        # Take the review once the blocks the commit claimed have run -- NOT on
+        # the flush that applies the update, which is what this replaces. Dock
+        # reports visibility from the client, so a block the model changed on a
+        # tab nobody is looking at needs several reactive cycles under its claim
+        # before it reaches a status worth reading. Reviewed at that first
+        # flush, every one of them still said `dormant`, the model was told
+        # `dormant` is "not a failure", and a block whose script raised came
+        # back as "no problems to report".
+        #
+        # An observer rather than a poll, so the wait advances with the reactive
+        # graph rather than racing it, and it destroys itself as it settles. The
+        # commit timeout stays the backstop: a claim that never settles resolves
+        # there, and settle_commit() is a no-op the second time round.
+        await_commit_review <- function(claimed) {
+
+          wait <- observe({
+
+            if (!commit_settled(claimed, board)) {
+              return()
+            }
+
+            review <- flush_review(commit_bridge$baseline(), commit_header())
+
+            settle_commit(coal(review, commit_clean_note(), fail_all = FALSE))
+
+            wait$destroy()
+          })
+
+          invisible(wait)
+        }
+
         settle_commit <- function(msg) {
 
           if (commit_bridge$settle(msg)) {
@@ -976,10 +1015,19 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           added(character())
           report$awaiting <- TRUE
 
+          # Read off the staged payload, not off `touched()`: that reactiveVal
+          # is filled by the update() observer, which runs after the flush this
+          # claim has to ride in on.
+          claim <- commit_claim_ids(
+            isolate(pending_update()), isolate(board$board)
+          )
+
           promises::promise(
             function(resolve, reject) {
 
-              gen <- commit_bridge$arm(isolate(board$conditions()), resolve)
+              gen <- commit_bridge$arm(
+                isolate(board$conditions()), claim, resolve
+              )
 
               later::later(
                 function() {
@@ -990,9 +1038,24 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
                 delay = commit_timeout_secs()
               )
 
-              flush_pending(pending_update, update)
+              flush_pending(pending_update, update, claim)
             }
           )
+        }
+
+        # Release the claim the last commit took. Held past the review on
+        # purpose -- a follow-up get_block_result on the block the model just
+        # built would otherwise answer `dormant` -- so the turn ending is what
+        # lets the board go back to evaluating only what is on screen. Each
+        # commit's claim states the owner's whole set, so it replaces rather
+        # than adds to this one in between.
+        release_commit_claim <- function() {
+
+          if (length(commit_bridge$drop_claim())) {
+            update(list(sustain = commit_claim_delta(character())))
+          }
+
+          invisible()
         }
 
         nudge_model <- function(msg) {
@@ -1087,6 +1150,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           account_turn(turn)
 
+          release_commit_claim()
+
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
           } else {
@@ -1158,17 +1223,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               return()
             }
 
-            session$onFlushed(
-              function() {
-                review <- flush_review(
-                  commit_bridge$baseline(), commit_header()
-                )
-                settle_commit(
-                  coal(review, commit_clean_note(), fail_all = FALSE)
-                )
-              },
-              once = TRUE
-            )
+            await_commit_review(commit_bridge$claimed())
           },
           ignoreNULL = TRUE
         )
