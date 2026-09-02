@@ -139,6 +139,14 @@
   overlapping the button's corner, and the button nudges away from it until it
   hits its travel limit.
 
+* The history control is on screen again. The footer button that opens the
+  drawer was gated on `data-inline-controls~='history'`, an attribute the
+  `shinychat` build in use never sets, and `shinychat`'s own trigger is
+  hidden in favour of that button -- so a board carried both and painted
+  neither, and nothing reached the thread list. The rule now keys on the
+  trigger itself, which is the element the footer button forwards its click
+  to.
+
 * The `/clear` command is gone. Starting a fresh thread is the history
   drawer's own affordance, and nothing in `shinychat`'s server API opens
   one, so a command that emptied the transcript would have left the stored

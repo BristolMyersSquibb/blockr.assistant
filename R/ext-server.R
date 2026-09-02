@@ -364,14 +364,15 @@ asst_ext_styles <- function() {
       .asst-chat-slot shiny-chat-container[data-inline-controls] {
         --_chat-inline-controls-inset: 0px;
       }
-      /* shinychat sets `data-inline-controls~='history'` exactly when it
-         renders the trigger, so keying on it means the footer never offers a
-         drawer that is not there -- the presence rule stays shinychat's. */
+      /* Keyed on the trigger the footer button forwards to, so the footer
+         never offers a drawer that is not there -- the presence rule stays
+         shinychat's. The `data-inline-controls` attribute this used to read
+         is not set by every shinychat build, and where it is missing the
+         button stayed hidden while the drawer was there all along. */
       .asst-history-btn {
         display: none;
       }
-      .asst-panel:has(shiny-chat-container[data-inline-controls~='history'])
-        .asst-history-btn {
+      .asst-panel:has(.shiny-chat-history-trigger) .asst-history-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
