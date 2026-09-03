@@ -36,8 +36,9 @@
 #' environment variable), which takes `0` for none, a positive whole
 #' number, or `Inf` for all, and defaults to 50. Setting it to `0` is
 #' worth considering where boards are shared, since the file otherwise
-#' carries whatever was typed into every thread. It describes the
-#' deployment rather than the board, so it is neither a constructor
+#' carries whatever was typed into every thread; at `0` the chat is not
+#' read at save time either, not read and then discarded. It describes
+#' the deployment rather than the board, so it is neither a constructor
 #' argument nor part of `state` -- restore reads whatever the file
 #' holds.
 #'
@@ -47,7 +48,10 @@
 #' conversation rather than on a guess at one. The raw provider
 #' response is stripped before saving, and a thread trimmed to the
 #' budget is cut between exchanges rather than inside one, so it never
-#' opens on half of a tool call.
+#' opens on half of a tool call. A thread reaches `state` once
+#' shinychat has recorded it, which is once the model has answered, so
+#' a question typed but not yet answered when the board is saved is not
+#' in the file.
 #'
 #' Which thread is open is remembered by the browser rather than in
 #' `state`, so a board reopened elsewhere lists its threads without
@@ -360,14 +364,15 @@ asst_ext_styles <- function() {
       .asst-chat-slot shiny-chat-container[data-inline-controls] {
         --_chat-inline-controls-inset: 0px;
       }
-      /* shinychat sets `data-inline-controls~='history'` exactly when it
-         renders the trigger, so keying on it means the footer never offers a
-         drawer that is not there -- the presence rule stays shinychat's. */
+      /* Keyed on the trigger the footer button forwards to, so the footer
+         never offers a drawer that is not there -- the presence rule stays
+         shinychat's. The `data-inline-controls` attribute this used to read
+         is not set by every shinychat build, and where it is missing the
+         button stayed hidden while the drawer was there all along. */
       .asst-history-btn {
         display: none;
       }
-      .asst-panel:has(shiny-chat-container[data-inline-controls~='history'])
-        .asst-history-btn {
+      .asst-panel:has(.shiny-chat-history-trigger) .asst-history-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -448,19 +453,21 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         max_nudges <- 3L
 
         # The in-flight commit's state, bundled so only these methods touch it:
-        # perform_commit arms the bridge with the pre-flush baseline and the
-        # promise resolver; the board$last_update observer settles it a turn
-        # later. The generation fences a resolved commit's stale timeout off a
-        # subsequent commit.
+        # perform_commit arms the bridge with the pre-flush baseline, the blocks
+        # the payload claims and the promise resolver; the board$last_update
+        # observer settles it a turn later. The generation fences a resolved
+        # commit's stale timeout off a subsequent commit.
         commit_bridge <- local({
 
           resolve  <- NULL
           baseline <- NULL
+          claimed  <- character()
           gen      <- 0L
 
           list(
-            arm = function(conditions, resolver) {
+            arm = function(conditions, claim, resolver) {
               baseline <<- conditions
+              claimed  <<- claim
               resolve  <<- resolver
               gen      <<- gen + 1L
               gen
@@ -475,6 +482,12 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               TRUE
             },
             baseline   = function() baseline,
+            claimed    = function() claimed,
+            drop_claim = function() {
+              held <- claimed
+              claimed <<- character()
+              held
+            },
             is_current = function(g) identical(g, gen)
           )
         })
@@ -663,7 +676,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             # rather than the one that silently takes the name.
             session$onFlushed(
               function() {
-                register_builtin_commands(mod, compact_conversation)
+                register_builtin_commands(
+                  mod, compact_conversation, clear_conversation
+                )
                 register_skill_commands(mod, run_skill_command)
               },
               once = TRUE
@@ -759,6 +774,45 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             ),
             compacting$end
           )
+
+          invisible()
+        }
+
+        # The drawer's New button, reachable from the palette. It saves the
+        # thread on screen, empties the transcript and the turns the model is
+        # sent, and drops the active record so the next answer opens a thread
+        # of its own -- the conversation is reset without the one on screen
+        # being overwritten by what comes next. The controller is not on
+        # `mod$history`, which carries `on_save`/`on_restore` and nothing
+        # else, so it is read from where shinychat parks it. Where that lookup
+        # misses, emptying both copies of the conversation is still better
+        # than a command that does nothing.
+        clear_conversation <- function() {
+
+          mod <- isolate(mod_r())
+
+          if (is.null(mod)) {
+            return(invisible())
+          }
+
+          ctrl <- history_controller(session)
+
+          if (is.null(ctrl)) {
+            mod$clear(greeting = TRUE, client_history = "clear")
+            reset_staging()
+            return(invisible())
+          }
+
+          ctrl$new_chat()
+
+          # `new_chat()` empties the conversation without resolving a
+          # greeting, so the callback that carries the per-thread state does
+          # not run here: the focus pick and the token meter would survive
+          # into a thread they say nothing about. Both are what a fresh thread
+          # opens on, and a greeting that does fire later sets the same
+          # values.
+          restore_thread_state(list())
+          reset_staging()
 
           invisible()
         }
@@ -906,6 +960,37 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           )
         }
 
+        # Take the review once the blocks the commit claimed have run -- NOT on
+        # the flush that applies the update, which is what this replaces. Dock
+        # reports visibility from the client, so a block the model changed on a
+        # tab nobody is looking at needs several reactive cycles under its claim
+        # before it reaches a status worth reading. Reviewed at that first
+        # flush, every one of them still said `dormant`, the model was told
+        # `dormant` is "not a failure", and a block whose script raised came
+        # back as "no problems to report".
+        #
+        # An observer rather than a poll, so the wait advances with the reactive
+        # graph rather than racing it, and it destroys itself as it settles. The
+        # commit timeout stays the backstop: a claim that never settles resolves
+        # there, and settle_commit() is a no-op the second time round.
+        await_commit_review <- function(claimed) {
+
+          wait <- observe({
+
+            if (!commit_settled(claimed, board)) {
+              return()
+            }
+
+            review <- flush_review(commit_bridge$baseline(), commit_header())
+
+            settle_commit(coal(review, commit_clean_note(), fail_all = FALSE))
+
+            wait$destroy()
+          })
+
+          invisible(wait)
+        }
+
         settle_commit <- function(msg) {
 
           if (commit_bridge$settle(msg)) {
@@ -930,10 +1015,19 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           added(character())
           report$awaiting <- TRUE
 
+          # Read off the staged payload, not off `touched()`: that reactiveVal
+          # is filled by the update() observer, which runs after the flush this
+          # claim has to ride in on.
+          claim <- commit_claim_ids(
+            isolate(pending_update()), isolate(board$board)
+          )
+
           promises::promise(
             function(resolve, reject) {
 
-              gen <- commit_bridge$arm(isolate(board$conditions()), resolve)
+              gen <- commit_bridge$arm(
+                isolate(board$conditions()), claim, resolve
+              )
 
               later::later(
                 function() {
@@ -944,9 +1038,24 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
                 delay = commit_timeout_secs()
               )
 
-              flush_pending(pending_update, update)
+              flush_pending(pending_update, update, claim)
             }
           )
+        }
+
+        # Release the claim the last commit took. Held past the review on
+        # purpose -- a follow-up get_block_result on the block the model just
+        # built would otherwise answer `dormant` -- so the turn ending is what
+        # lets the board go back to evaluating only what is on screen. Each
+        # commit's claim states the owner's whole set, so it replaces rather
+        # than adds to this one in between.
+        release_commit_claim <- function() {
+
+          if (length(commit_bridge$drop_claim())) {
+            update(list(sustain = commit_claim_delta(character())))
+          }
+
+          invisible()
         }
 
         nudge_model <- function(msg) {
@@ -1041,6 +1150,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           account_turn(turn)
 
+          release_commit_claim()
+
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
           } else {
@@ -1112,17 +1223,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               return()
             }
 
-            session$onFlushed(
-              function() {
-                review <- flush_review(
-                  commit_bridge$baseline(), commit_header()
-                )
-                settle_commit(
-                  coal(review, commit_clean_note(), fail_all = FALSE)
-                )
-              },
-              once = TRUE
-            )
+            await_commit_review(commit_bridge$claimed())
           },
           ignoreNULL = TRUE
         )
@@ -1132,22 +1233,45 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         )
 
         # Resolved by the board's serializer at save time, so the budget and
-        # the threads are both read as they stand then. The live thread is
-        # saved first: the store only sees it once shinychat writes a
-        # response, so an exchange in flight would otherwise be missing.
+        # the threads are both read as they stand then.
+        #
+        # `chat_save_turns` is asked FIRST and nothing else runs at 0. It is
+        # the deployment's answer to whether conversations may land in a
+        # shared file at all, so a deployment that said no should not have
+        # the chat read at save time, let alone written.
+        #
+        # There is no flush of the live thread here. shinychat's module
+        # object carries `on_save` and `on_restore` on `mod$history` and
+        # nothing else -- the environment is locked, and `save_current()`
+        # lives on the history controller behind it, not on the module. The
+        # `mod$history$save()` this used to call was therefore NULL, and
+        # since the call head is an expression rather than a symbol, every
+        # board save aborted on "attempt to apply non-function" from the
+        # first flush of any session that mounted the chat.
+        #
+        # `test-ext-server.R` reported that abort on four state tests and
+        # it stood, because the message names nothing and the same run
+        # carries unrelated failures from whatever ellmer and blockr.core
+        # the box has. What made it survivable was the other half: tests
+        # that mock the module used a double carrying a `save()` of its own
+        # invention, and one of them asserted the call.
+        #
+        # What that costs: an exchange the store has not recorded yet is not
+        # written. shinychat records a thread once the model answers, so this
+        # is the question typed but not yet answered when the save happens.
         state_payload <- list(
           history = function() {
             isolate({
 
-              mod <- mod_r()
+              save_turns <- chat_save_turns()
 
-              if (!is.null(mod)) {
-                mod$history$save()
+              if (save_turns <= 0) {
+                return(NULL)
               }
 
               serialize_chat_threads(
                 thread_store,
-                chat_save_turns(),
+                save_turns,
                 client_turns(client_r())
               )
             })

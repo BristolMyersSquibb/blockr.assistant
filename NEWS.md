@@ -1,5 +1,23 @@
 # blockr.assistant (development version)
 
+* Saving a board no longer aborts on "attempt to apply non-function". Since
+  0.1.0 the extension asked the mounted chat module to flush its live thread
+  before reading the store, through `mod$history$save()`. `shinychat`'s
+  module object has never carried that: `chat_server()` builds `mod$history`
+  as a locked environment holding `on_save` and `on_restore`, and
+  `save_current()` sits on the history controller behind it. So the call
+  head evaluated to `NULL` and every save died, on any session that had
+  mounted the chat, whether or not the board had been touched. The flush is
+  gone rather than rewritten, which costs a question typed but not yet
+  answered when the save happens; shinychat records a thread once the model
+  replies, and everything it has recorded still saves. `chat_save_turns` is
+  now asked first, so a deployment that set it to `0` has its chat neither
+  written nor read at save time.
+
+* `fake_chat_mod()` no longer offers a `history$save()`. Inventing a member
+  the real module lacks is what let the call above pass wherever the module
+  was mocked, and one test asserted it.
+
 * A commit whose board update fails partway through the apply phase no
   longer tells the model the board was unchanged. Core records the two
   rejection outcomes from different observers: a `validate` failure is
@@ -138,11 +156,25 @@
   overlapping the button's corner, and the button nudges away from it until it
   hits its travel limit.
 
-* The `/clear` command is gone. Starting a fresh thread is the history
-  drawer's own affordance, and nothing in `shinychat`'s server API opens
-  one, so a command that emptied the transcript would have left the stored
-  thread behind for the next response to extend. Opening a thread still
-  drops the changes staged against the one before it.
+* The history control is on screen again. The footer button that opens the
+  drawer was gated on `data-inline-controls~='history'`, an attribute the
+  `shinychat` build in use never sets, and `shinychat`'s own trigger is
+  hidden in favour of that button -- so a board carried both and painted
+  neither, and nothing reached the thread list. The rule now keys on the
+  trigger itself, which is the element the footer button forwards its click
+  to.
+
+* The `/clear` command opens a new thread rather than emptying the one on
+  screen. `mod$history` carries `on_save` and `on_restore` and nothing else,
+  which is why the command went when threads arrived; the controller behind
+  it has the `new_chat()` the drawer's own New button calls, and that is
+  reachable through `session$userData`. The thread on screen is saved, the
+  transcript, the turns the model is sent, the token meter, the focus pick
+  and the staged-changes slate all go, and the next answer opens a thread of
+  its own -- the drawer's affordance, without having to find the drawer.
+  Where the controller is not where this reads it, the command still empties
+  both copies of the conversation. Opening a thread still drops the changes
+  staged against the one before it.
 
 * The chat's command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`

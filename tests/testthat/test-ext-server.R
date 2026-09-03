@@ -1801,24 +1801,34 @@ test_that("focus rides with the thread and a switch resets the slate", {
   )
 })
 
-test_that("saving state asks the module to record the live thread first", {
+test_that("saving state survives the module shinychat really returns", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
-  saves <- 0L
+  seed <- list(
+    ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")
+  )
 
+  # The shape `shinychat::chat_server()` actually hands back: `mod$history`
+  # is a LOCKED environment carrying `on_save` and `on_restore`, and nothing
+  # else -- `save_current()` is on the history controller behind it, not on
+  # the module. Saving state used to ask this object for a `save()`, and
+  # since `mod$history$save` is NULL and the call head is an expression
+  # rather than a symbol, every board save on a session that had mounted the
+  # chat died on "attempt to apply non-function". The tests above, which let
+  # the real `chat_server()` mount, said so and were read as noise. This one
+  # mocks the module, which is where the miss was: the double used to carry
+  # a `save()` no real session has, and this test asserted the call.
   testthat::local_mocked_bindings(
     chat_server = function(id, client, ...) {
 
+      hist_env <- new.env(parent = emptyenv())
+      hist_env$on_save <- function(fn) invisible(fn)
+      hist_env$on_restore <- function(fn) invisible(fn)
+      lockEnvironment(hist_env, bindings = TRUE)
+
       mod <- fake_chat_mod(client = client)
-      mod$history <- list(
-        save = function() {
-          saves <<- saves + 1L
-          TRUE
-        },
-        on_save = function(fn) invisible(fn),
-        on_restore = function(fn) invisible(fn)
-      )
+      mod$history <- hist_env
 
       mod
     },
@@ -1830,11 +1840,14 @@ test_that("saving state asks the module to record the live thread first", {
     {
       session$flushReact()
 
-      # The store only sees the live thread once shinychat writes a response,
-      # so an exchange in flight would otherwise be missing from the file.
-      session$returned$state$history()
+      client_r()$set_turns(seed)
 
-      expect_identical(saves, 1L)
+      # Mounting reads `on_save` / `on_restore` off the same object, so this
+      # covers the whole lifecycle against the real shape, not just the save.
+      saved <- session$returned$state$history()
+
+      expect_true(is_thread_set(saved))
+      expect_length(thread_turns(saved[["c_restored"]]), 2L)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

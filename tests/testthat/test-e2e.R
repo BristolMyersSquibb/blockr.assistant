@@ -90,6 +90,20 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   expect_match(slots[[2L]], "asst-token-slot")
   expect_match(slots[[3L]], "asst-history-btn")
 
+  # In the DOM is not enough: the button is gated on a CSS rule that keys on
+  # shinychat's own trigger, and a build that renders the drawer under a
+  # different hook left the footer empty while every assertion here passed.
+  expect_false(
+    unlst(
+      app$get_js(
+        "getComputedStyle(
+           document.querySelector('.asst-history-btn')
+         ).display === 'none'"
+      )
+    ),
+    info = "the footer history button should be visible, not just present"
+  )
+
   # The seam no unit test reaches: the footer button is ours, the drawer it
   # opens is shinychat's, and the click crosses into a React handler bound at
   # the `shiny-chat-container` root.
