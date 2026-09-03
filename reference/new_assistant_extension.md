@@ -75,16 +75,20 @@ turns are written **per thread** is read at save time from the
 environment variable), which takes `0` for none, a positive whole
 number, or `Inf` for all, and defaults to 50. Setting it to `0` is worth
 considering where boards are shared, since the file otherwise carries
-whatever was typed into every thread. It describes the deployment rather
-than the board, so it is neither a constructor argument nor part of
-`state` – restore reads whatever the file holds.
+whatever was typed into every thread; at `0` the chat is not read at
+save time either, not read and then discarded. It describes the
+deployment rather than the board, so it is neither a constructor
+argument nor part of `state` – restore reads whatever the file holds.
 
 Turns go in as they stand because blockr.core writes board files with
 typedjson, which carries what plain JSON cannot. A board holding
 anything else under `history` opens without its conversation rather than
 on a guess at one. The raw provider response is stripped before saving,
 and a thread trimmed to the budget is cut between exchanges rather than
-inside one, so it never opens on half of a tool call.
+inside one, so it never opens on half of a tool call. A thread reaches
+`state` once shinychat has recorded it, which is once the model has
+answered, so a question typed but not yet answered when the board is
+saved is not in the file.
 
 Which thread is open is remembered by the browser rather than in
 `state`, so a board reopened elsewhere lists its threads without

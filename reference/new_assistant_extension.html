@@ -15,7 +15,7 @@ sees the current shape of the board."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">blockr.assistant</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -121,8 +121,9 @@ time from the <code>blockr.chat_save_turns</code> option (or the
 environment variable), which takes <code>0</code> for none, a positive whole
 number, or <code>Inf</code> for all, and defaults to 50. Setting it to <code>0</code> is
 worth considering where boards are shared, since the file otherwise
-carries whatever was typed into every thread. It describes the
-deployment rather than the board, so it is neither a constructor
+carries whatever was typed into every thread; at <code>0</code> the chat is not
+read at save time either, not read and then discarded. It describes
+the deployment rather than the board, so it is neither a constructor
 argument nor part of <code>state</code> – restore reads whatever the file
 holds.</p>
 <p>Turns go in as they stand because blockr.core writes board files
@@ -131,7 +132,10 @@ holding anything else under <code>history</code> opens without its
 conversation rather than on a guess at one. The raw provider
 response is stripped before saving, and a thread trimmed to the
 budget is cut between exchanges rather than inside one, so it never
-opens on half of a tool call.</p>
+opens on half of a tool call. A thread reaches <code>state</code> once
+shinychat has recorded it, which is once the model has answered, so
+a question typed but not yet answered when the board is saved is not
+in the file.</p>
 <p>Which thread is open is remembered by the browser rather than in
 <code>state</code>, so a board reopened elsewhere lists its threads without
 selecting one.</p>

@@ -2,22 +2,28 @@
 
 ## blockr.assistant (development version)
 
-- A commit whose board update fails partway through the apply phase no
-  longer tells the model the board was unchanged. Core records the two
-  rejection outcomes from different observers: a `validate` failure is
-  recorded before `apply_core_board_update()` is called, so nothing has
-  moved, while an `apply` failure comes from the error handler wrapping
-  that call – and the apply it wraps is a sequence of separate mutations
-  with no rollback, tearing down removed blocks, rewriting the board,
-  then writing each block delta one at a time. A commit that modifies
-  five blocks and throws on the third leaves the first two written, and
-  the rejection path answers before it collects any results, so the
-  model was told nothing had changed and handed nothing to inspect. Both
-  the rejection header and the rejection sentence now key on the phase
-  the outcome already carries: the unchanged-board claim is made for
-  `validate` alone, and any other phase reports that the update stopped
-  partway, naming `get_block_state` and `get_block_result` as the way to
-  find out what landed (#156).
+- Saving a board no longer aborts on “attempt to apply non-function”.
+  Since 0.1.0 the extension asked the mounted chat module to flush its
+  live thread before reading the store, through `mod$history$save()` – a
+  member the module object did not carry when that call was written. The
+  `chat_server()` function built `mod$history` as a locked environment
+  holding `on_save` and `on_restore`, with `save_current()` on the
+  history controller behind it, so the call head evaluated to `NULL` and
+  every save died, on any session that had mounted the chat and whether
+  or not the board had been touched. Upstream has since added the
+  member, in shinychat `7484ce6e` (2026-08-25), so the call does resolve
+  against a current build. The flush is dropped rather than rewired onto
+  it, which keeps the save path off an addition younger than the bug and
+  costs a question typed but not yet answered when the save happens;
+  shinychat records a thread once the model replies, and everything it
+  has recorded still saves. The `chat_save_turns` budget is now asked
+  first, so a deployment that set it to `0` has its chat neither written
+  nor read at save time.
+
+- The `fake_chat_mod()` double no longer offers a `history$save()` of
+  its own. Inventing a member the real module lacked is what let the
+  call above pass wherever the module was mocked, and one test asserted
+  it.
 
 - The board check run after a commit no longer reports the state of a
   block the model merely modified. Core applies a `blocks$mod` delta by
