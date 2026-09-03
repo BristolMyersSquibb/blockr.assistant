@@ -54,15 +54,15 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     # it is the trigger a conversation already over the compaction bound
     # arrives through.
     #
-    # Carries `on_save`, `on_restore` and NOTHING ELSE from shinychat. Its
-    # `chat_server()` builds `mod$history` as a locked environment carrying
-    # exactly those two, and `save_current()` sits on the history controller
-    # behind them rather than on the module. This double used to offer a
-    # `save()` as well, which no real session has, so production code calling
-    # `mod$history$save()` passed wherever the module was mocked while
-    # aborting every board save on prod with "attempt to apply
-    # non-function". Anything added here that shinychat does not carry buys
-    # back that blind spot.
+    # Carries `on_save` and `on_restore`, and no `save()`. This double used
+    # to offer one, which the module did not have when the production call
+    # was written, so `mod$history$save()` passed wherever the module was
+    # mocked while aborting every board save on prod with "attempt to apply
+    # non-function". Upstream has added a module-level `save()` since, in
+    # shinychat `7484ce6e` (2026-08-25), so a current session does carry
+    # one. Leaving it off here is deliberate rather than a fidelity claim:
+    # a double without `save()` is what stops this package's save path from
+    # quietly taking a dependency on it again.
     #
     # The `restore()` member is a test affordance, not a claim about
     # shinychat: it fires the callback the module would have fired, and no

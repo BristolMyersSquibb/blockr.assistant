@@ -1143,21 +1143,27 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # land in a shared file at all, so a deployment that said no should
         # not have the chat read at save time, let alone written.
         #
-        # There is no flush of the live thread here. The shinychat module
-        # object carries `on_save` and `on_restore` on `mod$history` and
+        # There is no flush of the live thread here. When this call was
+        # written, `mod$history` carried `on_save` and `on_restore` and
         # nothing else -- the environment is locked, and `save_current()`
         # lives on the history controller behind it, not on the module. The
-        # `mod$history$save()` this used to call was therefore NULL, and
-        # since the call head is an expression rather than a symbol, every
-        # board save aborted on "attempt to apply non-function" from the
-        # first flush of any session that mounted the chat.
+        # `mod$history$save()` it used was therefore NULL, and since the call
+        # head is an expression rather than a symbol, every board save
+        # aborted on "attempt to apply non-function" from the first flush of
+        # any session that mounted the chat.
         #
-        # The `test-ext-server.R` suite reported that abort on four state
-        # tests and it stood, because the message names nothing and the same run
-        # carries unrelated failures from whatever ellmer and blockr.core
-        # the box has. What made it survivable was the other half: tests
-        # that mock the module used a double carrying a `save()` of its own
-        # invention, and one of them asserted the call.
+        # Upstream added a `save()` on the module in shinychat `7484ce6e`
+        # (2026-08-25), so that call does resolve against a current build.
+        # Rewiring the flush onto it was still passed over: the member is
+        # younger than the bug, and a save path that reaches into the chat
+        # to make it write first is the coupling #130 is trying to remove.
+        #
+        # The `test-ext-server.R` suite reported the abort on four state
+        # tests and it stood, because the message names nothing and the same
+        # run carries unrelated failures from whatever ellmer and
+        # blockr.core the box has. What made it survivable was the other
+        # half: tests that mock the module used a double carrying a `save()`
+        # of its own invention, and one of them asserted the call.
         #
         # What that costs: an exchange the store has not recorded yet is not
         # written. Note that shinychat records a thread once the model

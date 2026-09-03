@@ -1801,7 +1801,7 @@ test_that("focus rides with the thread and a switch resets the slate", {
   )
 })
 
-test_that("saving state survives the module shinychat really returns", {
+test_that("saving state survives a module with no history save", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1809,16 +1809,21 @@ test_that("saving state survives the module shinychat really returns", {
     ellmer::Turn("user", "load iris"), ellmer::Turn("assistant", "ok")
   )
 
-  # The shape `shinychat::chat_server()` actually hands back: `mod$history`
-  # is a LOCKED environment carrying `on_save` and `on_restore`, and nothing
-  # else -- `save_current()` is on the history controller behind it, not on
-  # the module. Saving state used to ask this object for a `save()`, and
-  # since `mod$history$save` is NULL and the call head is an expression
+  # The shape `chat_server()` handed back when the save path was written:
+  # `mod$history` a LOCKED environment carrying `on_save` and `on_restore`,
+  # with `save_current()` on the history controller behind it rather than on
+  # the module. Saving state used to ask that object for a `save()`, and
+  # since `mod$history$save` was NULL and the call head is an expression
   # rather than a symbol, every board save on a session that had mounted the
   # chat died on "attempt to apply non-function". The tests above, which let
   # the real `chat_server()` mount, said so and were read as noise. This one
   # mocks the module, which is where the miss was: the double used to carry
-  # a `save()` no real session has, and this test asserted the call.
+  # a `save()` the module did not have, and this test asserted the call.
+  #
+  # Upstream added a module-level `save()` in shinychat `7484ce6e`
+  # (2026-08-25), so this is deliberately NOT the current shape. It is the
+  # shape that broke, kept as the guard: state has to serialize without
+  # reaching for a save the module may not offer.
   testthat::local_mocked_bindings(
     chat_server = function(id, client, ...) {
 
