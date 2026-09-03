@@ -54,7 +54,7 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     # it is the trigger a conversation already over the compaction bound
     # arrives through.
     #
-    # `on_save`, `on_restore` and NOTHING ELSE from shinychat. Its
+    # Carries `on_save`, `on_restore` and NOTHING ELSE from shinychat. Its
     # `chat_server()` builds `mod$history` as a locked environment carrying
     # exactly those two, and `save_current()` sits on the history controller
     # behind them rather than on the module. This double used to offer a
@@ -64,9 +64,9 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     # non-function". Anything added here that shinychat does not carry buys
     # back that blind spot.
     #
-    # `restore()` is a test affordance, not a claim about shinychat: it fires
-    # the callback the module would have fired, and no production code reads
-    # it.
+    # The `restore()` member is a test affordance, not a claim about
+    # shinychat: it fires the callback the module would have fired, and no
+    # production code reads it.
     history = local({
 
       restore_fn <- NULL

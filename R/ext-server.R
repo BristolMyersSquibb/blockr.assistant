@@ -1138,12 +1138,12 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # Resolved by the board's serializer at save time, so the budget and
         # the threads are both read as they stand then.
         #
-        # `chat_save_turns` is asked FIRST and nothing else runs at 0. It is
-        # the deployment's answer to whether conversations may land in a
-        # shared file at all, so a deployment that said no should not have
-        # the chat read at save time, let alone written.
+        # The `chat_save_turns` budget is asked FIRST, and nothing else runs
+        # at 0. It is the deployment's answer to whether conversations may
+        # land in a shared file at all, so a deployment that said no should
+        # not have the chat read at save time, let alone written.
         #
-        # There is no flush of the live thread here. shinychat's module
+        # There is no flush of the live thread here. The shinychat module
         # object carries `on_save` and `on_restore` on `mod$history` and
         # nothing else -- the environment is locked, and `save_current()`
         # lives on the history controller behind it, not on the module. The
@@ -1152,16 +1152,17 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # board save aborted on "attempt to apply non-function" from the
         # first flush of any session that mounted the chat.
         #
-        # `test-ext-server.R` reported that abort on four state tests and
-        # it stood, because the message names nothing and the same run
+        # The `test-ext-server.R` suite reported that abort on four state
+        # tests and it stood, because the message names nothing and the same run
         # carries unrelated failures from whatever ellmer and blockr.core
         # the box has. What made it survivable was the other half: tests
         # that mock the module used a double carrying a `save()` of its own
         # invention, and one of them asserted the call.
         #
         # What that costs: an exchange the store has not recorded yet is not
-        # written. shinychat records a thread once the model answers, so this
-        # is the question typed but not yet answered when the save happens.
+        # written. Note that shinychat records a thread once the model
+        # answers, so this is the question typed but not yet answered when
+        # the save happens.
         state_payload <- list(
           history = function() {
             isolate({
