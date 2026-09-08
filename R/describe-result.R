@@ -13,13 +13,13 @@
 #' say when a block evaluated without drawing. Neither describes the chart
 #' itself: `inspect_results` renders it, by drawing it on a device.
 #'
-#' The [evaluate::evaluate()] method claims only evaluations that carry a
-#' recording, and defers to the default otherwise, since `evaluate_evaluation`
-#' is a general container this package does not own -- a result of some other
-#' shape keeps the description it would have had. Anything it does claim is
-#' counted by kind rather than dropped. To describe a result differently, give
-#' it a class of its own and register a method on that: a method on a subclass
-#' takes precedence over both of these.
+#' The [evaluate::evaluate()] method describes each component through the
+#' generic rather than reading the container as one shape, so an evaluation
+#' mixing plots with output and conditions is handled by whatever methods
+#' exist for its parts -- including ones another package adds. That is what
+#' keeps a warning's message from being reduced to a count of warnings. To
+#' describe a whole result differently, give it a class of its own and
+#' register a method on that, which takes precedence over all of these.
 #'
 #' Methods need not bound their output or guard their own errors: the internal
 #' `summarise_result()` wrapper caps the text before it reaches the prompt and
@@ -60,69 +60,58 @@ describe_result.evaluate_evaluation <- function(x, ...) {
     )
   }
 
-  plots <- lgl_ply(x, evaluate::is.recordedplot)
+  # Describe each component through the generic rather than tallying the
+  # container by kind. A count is enough for a plot, whose content is the
+  # picture and not the text, but never for a condition: "1 warning" drops the
+  # message, which is the whole of what a warning carries. Recursing also
+  # means an evaluation of any shape is handled by whatever methods exist,
+  # including ones another package adds, instead of by a reading of the
+  # container written for one block type.
+  chr_ply(x, describe_component, ..., use_names = FALSE)
+}
 
-  # Claim only what this method improves on. An evaluation carrying no
-  # recording has no display list to render, so the default describes it
-  # better than a plot-shaped sentence can -- and a package whose results are
-  # evaluations of some other shape keeps the description it would otherwise
-  # have had, rather than one written for blockr.core's plot block.
-  if (!any(plots)) {
-    return(NextMethod())
+# Evaluate labels its text output by position rather than by class -- a plain
+# character vector, with nothing to dispatch on -- so the container names it.
+# Everything else carries a class and goes through the generic.
+describe_component <- function(x, ...) {
+
+  if (is.character(x)) {
+    return(paste("Output:", trimws(paste(x, collapse = "\n"))))
   }
 
-  describe_plot_result(sum(plots), evaluation_parts(x[!plots]))
+  paste(describe_result(x, ...), collapse = "\n")
 }
 
 #' @rdname describe_result
 #' @export
 describe_result.recordedplot <- function(x, ...) {
-  describe_plot_result(1L)
+  "Recorded plot (`recordedplot`)."
 }
 
-# What a recorded plot is worth saying, and no more. The default renders the
-# display list -- eight C entry points for core's scatter block -- which tells
-# a model reviewing the block only that eight primitives were drawn. The
-# recording does carry real content (for that block, C_plot_window holds the
-# axis ranges and C_plotXY the data), but reading it means parsing
-# undocumented entry points positionally against R's graphics internals, and
-# they differ per engine: `recordedplot` is a display list, which grid and
-# lattice produce as readily as base graphics, so there is no one grammar to
-# parse. Naming the class is enough -- a model given only that reaches for
-# inspect_results unprompted, and drawing it there is what renders the chart.
-describe_plot_result <- function(n_plot, parts = integer()) {
+#' @rdname describe_result
+#' @export
+describe_result.source <- function(x, ...) {
+  paste("Source:", trimws(x[["src"]]))
+}
 
-  plots <- glue::glue(
-    "{n_plot} recorded plot{if (n_plot > 1L) 's' else ''} (`recordedplot`)"
-  )
+#' @rdname describe_result
+#' @export
+describe_result.condition <- function(x, ...) {
 
-  if (!length(parts)) {
-    return(glue::glue("Graphics result: {plots}."))
+  # Read the kind off evaluate's own predicates rather than off a position in
+  # the class vector: a condition from rlang or vctrs carries several classes
+  # ahead of the one that says what it is.
+  kind <- if (evaluate::is.error(x)) {
+    "Error"
+  } else if (evaluate::is.warning(x)) {
+    "Warning"
+  } else if (evaluate::is.message(x)) {
+    "Message"
+  } else {
+    "Condition"
   }
 
-  rest <- paste0(parts, " ", names(parts), ifelse(parts > 1L, "s", ""))
-  rest <- paste_enum(rest, quotes = "")
-
-  glue::glue("Graphics result: {plots}, with {rest}.")
-}
-
-# What the evaluation carries besides its recordings, counted by kind. The
-# method claims the whole container, so anything it stays silent about is
-# something the model never learns the block produced.
-evaluation_parts <- function(x) {
-
-  kinds <- list(
-    source  = evaluate::is.source,
-    error   = evaluate::is.error,
-    warning = evaluate::is.warning,
-    message = evaluate::is.message
-  )
-
-  n <- int_ply(kinds, function(f) sum(lgl_ply(x, f)), use_names = TRUE)
-
-  n <- c(n, output = length(x) - sum(n))
-
-  n[n > 0L]
+  paste0(kind, ": ", trimws(conditionMessage(x)))
 }
 
 # Bounded, error-guarding wrapper around describe_result(): a method is trusted

@@ -5,6 +5,8 @@
 \alias{describe_result.default}
 \alias{describe_result.evaluate_evaluation}
 \alias{describe_result.recordedplot}
+\alias{describe_result.source}
+\alias{describe_result.condition}
 \title{Describe a block result for the LLM}
 \usage{
 describe_result(x, ...)
@@ -14,6 +16,10 @@ describe_result(x, ...)
 \method{describe_result}{evaluate_evaluation}(x, ...)
 
 \method{describe_result}{recordedplot}(x, ...)
+
+\method{describe_result}{source}(x, ...)
+
+\method{describe_result}{condition}(x, ...)
 }
 \arguments{
 \item{x}{A block result (any R object).}
@@ -39,13 +45,13 @@ description of the chart. They name the class and count the recordings, and
 say when a block evaluated without drawing. Neither describes the chart
 itself: \code{inspect_results} renders it, by drawing it on a device.
 
-The \code{\link[evaluate:evaluate]{evaluate::evaluate()}} method claims only evaluations that carry a
-recording, and defers to the default otherwise, since \code{evaluate_evaluation}
-is a general container this package does not own -- a result of some other
-shape keeps the description it would have had. Anything it does claim is
-counted by kind rather than dropped. To describe a result differently, give
-it a class of its own and register a method on that: a method on a subclass
-takes precedence over both of these.
+The \code{\link[evaluate:evaluate]{evaluate::evaluate()}} method describes each component through the
+generic rather than reading the container as one shape, so an evaluation
+mixing plots with output and conditions is handled by whatever methods
+exist for its parts -- including ones another package adds. That is what
+keeps a warning's message from being reduced to a count of warnings. To
+describe a whole result differently, give it a class of its own and
+register a method on that, which takes precedence over all of these.
 
 Methods need not bound their output or guard their own errors: the internal
 \code{summarise_result()} wrapper caps the text before it reaches the prompt and

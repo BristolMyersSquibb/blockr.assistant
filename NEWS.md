@@ -4,27 +4,28 @@
   `blockr.core::new_plot_block()` evaluates to recorded plots, which the
   default summary rendered as a display list -- core's scatter block
   reported eight graphics primitives and nothing about what was drawn,
-  through the result tool and again through every post-apply review. New
-  `describe_result()` methods name the class and count the recordings
-  instead, and say when a block evaluated without drawing at all, a case
-  previously indistinguishable from any other plot. They deliberately do
-  not describe the chart, and deliberately do not name a graphics
-  engine: `recordedplot` is a display list, which grid and lattice
-  produce as readily as base graphics, and reading one means parsing
-  undocumented entry points positionally against R's graphics internals.
-  The `evaluate_evaluation` method claims only evaluations that carry a
-  recording, deferring to the default otherwise: the class belongs to
-  `evaluate` rather than to this package, and an evaluation of another
-  shape must keep the description it would have had rather than be told
-  it is a plot that is missing. What it does claim it counts by kind, so
-  a warning or an error accompanying the plot is reported rather than
-  dropped, and a result needing a different description can take one by
-  carrying a class of its own.
-  A truncated result summary no longer appends the fixed "use query_data
-  to fetch specific rows or columns" hint either: it was passed for every
-  result type, so a plot block was told to fetch rows and columns from a
-  graphics recording, and a summary that names what the result is leaves
-  the hint nothing to do (#153).
+  through the result tool and again through every post-apply review. A
+  new `describe_result()` method names the class instead, and a block
+  that evaluated without drawing is now distinguishable from one that
+  drew, a case the display list could not separate. The method does not
+  describe the chart, and does not name a graphics engine:
+  `recordedplot` is a display list, which grid and lattice produce as
+  readily as base graphics, and reading one means parsing undocumented
+  entry points positionally against R's graphics internals.
+
+  An `evaluate_evaluation` result is described a component at a time,
+  each through the generic, rather than by reading the container as one
+  shape. A count suffices for a plot, whose content is the picture and
+  not the text, but never for a condition: "1 warning" drops the message,
+  which is the whole of what a warning carries. Methods ship for the
+  component types evaluate produces -- recordings, conditions and source
+  -- so an evaluation mixing plots with output and errors is reported in
+  full and in order, and a package adding a method for its own type has
+  it used here too. A truncated result summary no longer appends the
+  fixed "use query_data to fetch specific rows or columns" hint either:
+  it was passed for every result type, so a plot block was told to fetch
+  rows and columns from a graphics recording, and a summary that names
+  what the result is leaves the hint nothing to do (#153).
 
 * The `query_data` tool is now called `inspect_results`, and returns
   whatever the code draws. It was never a data-frame tool -- it evaluates
