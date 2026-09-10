@@ -504,63 +504,6 @@ tool_get_block_conditions <- function(board, update, session) {
   )
 }
 
-# A scope miss is the one error the model can fix unaided, so the fix is named
-# on the error rather than only in the tool description -- which it has already
-# read by the time it gets this wrong.
-with_scope_hint <- function(expr, env) {
-
-  tryCatch(
-    expr,
-    error = function(e) {
-
-      stop(
-        paste(c(conditionMessage(e), scope_hint(e, env)), collapse = " -- "),
-        call. = FALSE
-      )
-    }
-  )
-}
-
-# Read the missing name off the failed call, not out of the message. R
-# translates its errors -- "could not find function" is "konnte Funktion ...
-# nicht finden" under LANGUAGE=de -- so matching the English text means the
-# hint silently stops appearing on a translated session, a failure an English
-# test suite cannot see. The call is the same object in every locale, and
-# whether the name resolves to a function in `env` is the exact question the
-# message was being read for.
-#
-# Safe to state the scope, since inspect_env() pins it: base R and nothing
-# else, on every board. Naming the package that exports the name is the
-# actionable half, and R's own defaultPackages are where a miss almost always
-# lands, because anything further afield needs a prefix to be written at all.
-scope_hint <- function(cnd, env) {
-
-  call <- conditionCall(cnd)
-
-  if (!is.call(call) || !is.symbol(call[[1L]])) {
-    return(NULL)
-  }
-
-  fun <- as.character(call[[1L]])
-
-  # Resolved, so the error came from inside the function rather than from
-  # failing to find it.
-  if (exists(fun, envir = env, mode = "function")) {
-    return(NULL)
-  }
-
-  pkg <- Find(
-    function(p) fun %in% getNamespaceExports(asNamespace(p)),
-    intersect(getOption("defaultPackages"), loadedNamespaces())
-  )
-
-  if (is.null(pkg)) {
-    return("only base R is attached here; other packages need a prefix")
-  }
-
-  glue::glue("only base R is attached here; write {pkg}::{fun}()")
-}
-
 tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
@@ -600,7 +543,7 @@ tool_inspect_results <- function(board, update, session) {
         # auto-printed. The device is simply open while that happens, so a
         # value whose print method draws (a ggplot, a recordedplot) draws onto
         # it, exactly as the same code would at a console.
-        drawn <- with_scope_hint(capture_drawings(
+        drawn <- capture_drawings(
           function() {
             capture.output({
               last <- list(value = NULL, visible = FALSE)
@@ -618,7 +561,7 @@ tool_inspect_results <- function(board, update, session) {
           },
           width  = device_px(width),
           height = device_px(height)
-        ), env)
+        )
 
         on.exit(unlink(drawn$dir, recursive = TRUE), add = TRUE)
 

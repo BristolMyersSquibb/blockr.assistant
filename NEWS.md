@@ -49,9 +49,8 @@
   deployment -- the tool description is baked into the system prompt, so a
   varying scope leaves it either hedged or wrong somewhere. Pinned, it
   states one rule that always holds: only base R is attached, so prefix
-  everything else. A "could not find function" error names the package
-  that exports the missing function (`graphics::hist()`), and prefixed
-  code stays valid in a code block too. There is no capability gating on
+  everything else, which the tool description says once rather than the
+  error repeating it. Prefixed code stays valid in a code block too. There is no capability gating on
   images: rendering is model-initiated, and a model that cannot see them
   has no reason to ask (#153).
 

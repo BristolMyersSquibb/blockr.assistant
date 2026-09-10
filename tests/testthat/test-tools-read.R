@@ -877,14 +877,6 @@ test_that("inspect_results draws through a namespace-prefixed call", {
   expect_true(any(vapply(res, is_image, logical(1L))))
 })
 
-test_that("inspect_results names the missing package on a scope miss", {
-
-  res <- isolate(call_query("hist(data$Sepal.Length)", list(data = iris)))
-
-  expect_match(res, "could not find function", fixed = TRUE)
-  expect_match(res, "graphics::hist()", fixed = TRUE)
-})
-
 test_that("the eval scope is base R on every board", {
 
   # pinned, not inherited: a board opting into attached defaults must not
@@ -893,40 +885,7 @@ test_that("the eval scope is base R on every board", {
 
   res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
 
-  expect_match(res, "stats::median()", fixed = TRUE)
-})
-
-test_that("an unresolvable function still gets the generic prefix hint", {
-
-  res <- isolate(call_query("no_such_fun_anywhere(1)"))
-
-  expect_match(res, "only base R is attached", fixed = TRUE)
-})
-
-test_that("the scope hint survives a translated error message", {
-
-  # R translates "could not find function", so reading the name out of the
-  # message would leave the hint silently absent on a non-English session.
-  # The failed call carries it in every locale.
-  cnd <- simpleError("konnte Funktion \"hist\" nicht finden", quote(hist(1)))
-
-  expect_match(
-    scope_hint(cnd, baseenv()), "graphics::hist()", fixed = TRUE
-  )
-})
-
-test_that("the scope hint keeps out of an error raised inside a function", {
-
-  # `stop` resolves, so the error came from within it rather than from
-  # failing to find it -- there is no prefix that would have helped.
-  cnd <- simpleError("boom", quote(stop("boom")))
-
-  expect_null(scope_hint(cnd, baseenv()))
-})
-
-test_that("the scope hint tolerates an error carrying no call", {
-
-  expect_null(scope_hint(simpleError("bare"), baseenv()))
+  expect_match(res, "could not find function", fixed = TRUE)
 })
 
 test_that("inspect_results leaves an unrelated error message alone", {
