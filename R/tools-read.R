@@ -507,29 +507,45 @@ tool_get_block_conditions <- function(board, update, session) {
 # A scope miss is the one error the model can fix unaided, so the fix is named
 # on the error rather than only in the tool description -- which it has already
 # read by the time it gets this wrong.
-with_scope_hint <- function(expr) {
+with_scope_hint <- function(expr, env) {
 
   tryCatch(
     expr,
     error = function(e) {
 
-      msg <- conditionMessage(e)
-
-      stop(paste(c(msg, scope_hint(msg)), collapse = " -- "), call. = FALSE)
+      stop(
+        paste(c(conditionMessage(e), scope_hint(e, env)), collapse = " -- "),
+        call. = FALSE
+      )
     }
   )
 }
 
-# Safe to state the scope now that inspect_env() pins it: base R and nothing
-# else, on every board. Naming the package that exports the missing function
-# is the actionable half, and R's own defaultPackages are where a miss almost
-# always lands, since anything further afield needs a prefix to be written at
-# all.
-scope_hint <- function(msg) {
+# Read the missing name off the failed call, not out of the message. R
+# translates its errors -- "could not find function" is "konnte Funktion ...
+# nicht finden" under LANGUAGE=de -- so matching the English text means the
+# hint silently stops appearing on a translated session, a failure an English
+# test suite cannot see. The call is the same object in every locale, and
+# whether the name resolves to a function in `env` is the exact question the
+# message was being read for.
+#
+# Safe to state the scope, since inspect_env() pins it: base R and nothing
+# else, on every board. Naming the package that exports the name is the
+# actionable half, and R's own defaultPackages are where a miss almost always
+# lands, because anything further afield needs a prefix to be written at all.
+scope_hint <- function(cnd, env) {
 
-  fun <- sub('.*could not find function "([^"]+)".*', "\\1", msg)
+  call <- conditionCall(cnd)
 
-  if (identical(fun, msg)) {
+  if (!is.call(call) || !is.symbol(call[[1L]])) {
+    return(NULL)
+  }
+
+  fun <- as.character(call[[1L]])
+
+  # Resolved, so the error came from inside the function rather than from
+  # failing to find it.
+  if (exists(fun, envir = env, mode = "function")) {
     return(NULL)
   }
 
@@ -602,7 +618,7 @@ tool_inspect_results <- function(board, update, session) {
           },
           width  = device_px(width),
           height = device_px(height)
-        ))
+        ), env)
 
         on.exit(unlink(drawn$dir, recursive = TRUE), add = TRUE)
 

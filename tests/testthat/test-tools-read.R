@@ -903,6 +903,32 @@ test_that("an unresolvable function still gets the generic prefix hint", {
   expect_match(res, "only base R is attached", fixed = TRUE)
 })
 
+test_that("the scope hint survives a translated error message", {
+
+  # R translates "could not find function", so reading the name out of the
+  # message would leave the hint silently absent on a non-English session.
+  # The failed call carries it in every locale.
+  cnd <- simpleError("konnte Funktion \"hist\" nicht finden", quote(hist(1)))
+
+  expect_match(
+    scope_hint(cnd, baseenv()), "graphics::hist()", fixed = TRUE
+  )
+})
+
+test_that("the scope hint keeps out of an error raised inside a function", {
+
+  # `stop` resolves, so the error came from within it rather than from
+  # failing to find it -- there is no prefix that would have helped.
+  cnd <- simpleError("boom", quote(stop("boom")))
+
+  expect_null(scope_hint(cnd, baseenv()))
+})
+
+test_that("the scope hint tolerates an error carrying no call", {
+
+  expect_null(scope_hint(simpleError("bare"), baseenv()))
+})
+
 test_that("inspect_results leaves an unrelated error message alone", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
