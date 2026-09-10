@@ -8,6 +8,13 @@
 # The `%03d` in the filename is what splits pages: the device writes one file
 # per completed page, so a loop that draws N times yields N files, in order,
 # with no page counting on our side.
+#
+# What differs by platform is the page the device is sitting on when it
+# closes. Linux discards it if nothing was drawn; Windows and macOS write it,
+# so every text-only call came back with a blank image attached. The display
+# list settles it portably -- it is empty exactly when nothing has been drawn
+# on the current page -- so the trailing page is dropped on that evidence
+# rather than on the device's own habits.
 capture_drawings <- function(fn, width, height) {
 
   dir <- tempfile()
@@ -16,18 +23,38 @@ capture_drawings <- function(fn, width, height) {
   grDevices::png(file.path(dir, "p%03d.png"), width = width, height = height)
   dev <- grDevices::dev.cur()
 
+  grDevices::dev.control(displaylist = "enable")
+
+  blank <- TRUE
+
   # Close by number, and only if it is still open: model-supplied code is free
   # to open devices of its own, or to close ours.
   value <- tryCatch(
-    fn(),
+    {
+      out <- fn()
+      blank <- is_blank_page()
+      out
+    },
     finally = if (dev %in% grDevices::dev.list()) grDevices::dev.off(dev)
   )
 
-  list(
-    value = value,
-    dir   = dir,
-    files = sort(list.files(dir, full.names = TRUE))
-  )
+  files <- sort(list.files(dir, full.names = TRUE))
+
+  if (blank && length(files)) {
+    files <- files[-length(files)]
+  }
+
+  list(value = value, dir = dir, files = files)
+}
+
+# Empty display list means nothing has been drawn on the page the device is
+# on. A page opened deliberately and left empty -- a bare plot.new() -- does
+# record that call, and so counts as drawn.
+is_blank_page <- function() {
+
+  rec <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
+
+  is.null(rec) || !length(rec[[1L]])
 }
 
 # Read the drawn pages as ellmer image content. Sizing is ours, so

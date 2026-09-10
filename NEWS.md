@@ -40,7 +40,10 @@
   images beside the text, one per page drawn. Nothing in the tool
   inspects the value's class -- capture is a property of the device, so
   the tool stays general rather than special-casing a result shape. Code
-  that draws nothing returns text exactly as before. The model sets
+  that draws nothing returns text exactly as before, on every platform:
+  Linux discards the page a device is sitting on at close, while Windows
+  and macOS write it, so the page is kept or dropped on what the display
+  list says was drawn rather than on the device's own habits. The model sets
   `width` and `height` per call (defaulting to `assistant_plot_render_px`,
   clamped to a usable range), since it is the one that knows whether it
   is reading a dense scatter or checking a colour. The evaluation scope is
