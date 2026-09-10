@@ -609,6 +609,22 @@ test_that("inspect_results returns whatever the code draws as an image", {
   expect_length(res, 1L)
   expect_s7_class(res[[1L]], ellmer::ContentImageInline)
   expect_identical(res[[1L]]@type, "image/png")
+
+  # the payload decodes to a real PNG, not merely to a non-empty string
+  hdr <- png_header(res[[1L]])
+
+  expect_true(hdr$signature)
+  expect_identical(hdr$ihdr, "IHDR")
+})
+
+test_that("the returned image is of what the code drew", {
+
+  one <- isolate(call_query("plot(1:10)"))[[1L]]@data
+  again <- isolate(call_query("plot(1:10)"))[[1L]]@data
+  other <- isolate(call_query("plot(c(5, 1, 9))"))[[1L]]@data
+
+  expect_identical(one, again)
+  expect_false(identical(one, other))
 })
 
 test_that("inspect_results captures a non-base engine the same way", {
@@ -656,20 +672,37 @@ test_that("inspect_results returns no image when nothing is drawn", {
   expect_match(res, "150", fixed = TRUE)
 })
 
-test_that("inspect_results takes the device size from the model", {
+test_that("inspect_results renders at the size the model asked for", {
 
-  small <- isolate(call_query("plot(1:10)", width = 240L, height = 240L))
-  large <- isolate(call_query("plot(1:10)", width = 900L, height = 900L))
+  res <- isolate(call_query("plot(1:10)", width = 640L, height = 480L))
 
-  expect_lt(nchar(small[[1L]]@data), nchar(large[[1L]]@data))
+  hdr <- png_header(res[[1L]])
+
+  expect_identical(hdr$width, 640L)
+  expect_identical(hdr$height, 480L)
 })
 
-test_that("inspect_results clamps a device size out of range", {
+test_that("inspect_results renders at the default size when asked for none", {
 
-  huge <- isolate(call_query("plot(1:10)", width = 99999L, height = 99999L))
-  top  <- isolate(call_query("plot(1:10)", width = 2000L, height = 2000L))
+  hdr <- png_header(isolate(call_query("plot(1:10)"))[[1L]])
 
-  expect_identical(nchar(huge[[1L]]@data), nchar(top[[1L]]@data))
+  expect_identical(hdr$width, plot_render_px())
+  expect_identical(hdr$height, plot_render_px())
+})
+
+test_that("inspect_results clamps a device size to the usable range", {
+
+  rng <- plot_render_range()
+
+  over <- png_header(
+    isolate(call_query("plot(1:10)", width = 99999L, height = 99999L))[[1L]]
+  )
+  under <- png_header(
+    isolate(call_query("plot(1:10)", width = 1L, height = 1L))[[1L]]
+  )
+
+  expect_identical(over$width, rng[[2L]])
+  expect_identical(under$width, rng[[1L]])
 })
 
 test_that("inspect_results keeps the skipped-block report beside an image", {
