@@ -32,11 +32,7 @@ board <- new_dock_board(
     prep    = new_stack(c("data", "filt"), name = "Prep"),
     display = new_stack(c("head", "plot"), name = "Display")
   ),
-  extensions = list(assistant = new_assistant_extension()),
-  layout = list(
-    list("data", "filt", "head", "plot"),
-    "assistant"
-  )
+  extensions = list(assistant = new_assistant_extension())
 )
 
 serve(board)
