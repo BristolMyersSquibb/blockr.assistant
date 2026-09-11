@@ -125,7 +125,7 @@ including user extensions.</li>
 by Phase 3’s <code>flush_pending</code> on dispatch-time validator
 rejection. Surfaces in the prompt as a one-line “your previous changes
 were rejected because X” note, then clears once consumed.</li>
-<li>A new <code>query_data(code)</code> read tool: evaluates
+<li>A new <code>inspect_results(code)</code> read tool: evaluates
 model-supplied R against an environment built from
 <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_server.html" class="external-link">blockr.core::eval_env()</a></code> with every committed block’s result
 bound by id, captures stdout + the return value via
@@ -152,8 +152,8 @@ round-trip.</li>
 <p>Out (deferred to later phases or out of roadmap):</p>
 <ul>
 <li>New mutation tools. The Phase 4 surface is final for the initial
-roadmap. (One new <em>read</em> tool — <code>query_data</code> — lands
-in this phase; see scope above.)</li>
+roadmap. (One new <em>read</em> tool — <code>inspect_results</code> —
+lands in this phase; see scope above.)</li>
 <li>A <code>list_pending_changes()</code> tool. Phase 4 left it as a
 follow-up if empirical use shows the model is confused by committed-only
 reads during a turn. Phase 5’s compact board summary covers the read
@@ -643,9 +643,9 @@ custom function is at fault — the error notification points at the root
 cause either way.</p>
 </div>
 <div class="section level3">
-<h3 id="query_data-an-eval-escape-hatch-for-richer-inspection">
-<code>query_data</code>: an eval escape hatch for richer
-inspection<a class="anchor" aria-label="anchor" href="#query_data-an-eval-escape-hatch-for-richer-inspection"></a>
+<h3 id="inspect_results-an-eval-escape-hatch-for-richer-inspection">
+<code>inspect_results</code>: an eval escape hatch for richer
+inspection<a class="anchor" aria-label="anchor" href="#inspect_results-an-eval-escape-hatch-for-richer-inspection"></a>
 </h3>
 <p><code>get_block_result</code> returns a fixed
 <code>summarise_result()</code> projection of a single block — useful
@@ -655,8 +655,8 @@ grouped by Y”, “do rows from block A and block B match on id”. A static
 prompt can’t carry every such projection, and inflating the per-block
 summary to cover them would burn tokens on every turn for occasional
 value.</p>
-<p>The remedy: a <code>query_data(code)</code> read tool that evaluates
-model-supplied R against a scoping env built from
+<p>The remedy: a <code>inspect_results(code)</code> read tool that
+evaluates model-supplied R against a scoping env built from
 <code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/block_server.html" class="external-link">blockr.core::eval_env()</a></code> with every committed block’s result
 bound under its id. Captures stdout (any <code>print</code>s the code
 does) and auto-prints the last expression’s value via
@@ -681,7 +681,7 @@ would see.</li>
 Mid-script <code>print</code> calls land in the capture; the last
 expression’s value auto-prints (REPL semantics). Errors at parse or eval
 time route through <code>with_tool_errors</code> into the standard
-<code>query_data failed: &lt;reason&gt;</code> envelope.</li>
+<code>inspect_results failed: &lt;reason&gt;</code> envelope.</li>
 <li>Truncation: hard cap at ~200 lines of captured output. Over the cap,
 the tool result is the first N lines + a
 <code>(output truncated; %d lines hidden)</code> footer.</li>
@@ -690,13 +690,13 @@ the tool result is the first N lines + a
 app’s process. That sounds alarming until you notice the mutate-block
 class of attack surface is already reachable —
 <code>add_block("mutate_block", args = '{"expr": "system(...)"}')</code>
-gets the same code execution via the staging path.
-<code>query_data</code> doesn’t expand the attack surface, it just makes
-the same capability explicit and ergonomic for read-only inspection.
-Anyone deploying the assistant in a high-trust context (i.e. real user
-data, real R session) already needs to vet the model provider and the
-data sources for prompt-injection risk; adding <code>query_data</code>
-doesn’t change that calculus.</p>
+gets the same code execution via the staging path. The
+<code>inspect_results</code> tool doesn’t expand the attack surface, it
+just makes the same capability explicit and ergonomic for read-only
+inspection. Anyone deploying the assistant in a high-trust context (i.e.
+real user data, real R session) already needs to vet the model provider
+and the data sources for prompt-injection risk; adding
+<code>inspect_results</code> doesn’t change that calculus.</p>
 <p>What the tool is <em>not</em>: sandboxed (no callr subprocess, no
 allowlist), time-limited (no timeout — long-running queries block the
 chat module), memory-bounded (large intermediate values stay in the eval
@@ -1062,11 +1062,11 @@ comparison bookkeeping. The flush-rejection note covers the
 <code>R/tool-query-data.R</code> <em>(new)</em><a class="anchor" aria-label="anchor" href="#rtool-query-data-r-new"></a>
 </h3>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">tool_query_data</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">board</span>, <span class="va">update</span>, <span class="va">session</span><span class="op">)</span> <span class="op">{</span></span>
+<code class="sourceCode R"><span><span class="va">tool_inspect_results</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">board</span>, <span class="va">update</span>, <span class="va">session</span><span class="op">)</span> <span class="op">{</span></span>
 <span></span>
 <span>  <span class="fu">ellmer</span><span class="fu">::</span><span class="fu"><a href="https://ellmer.tidyverse.org/reference/tool.html" class="external-link">tool</a></span><span class="op">(</span></span>
 <span>    <span class="kw">function</span><span class="op">(</span><span class="va">code</span><span class="op">)</span> <span class="op">{</span></span>
-<span>      <span class="fu">with_tool_errors</span><span class="op">(</span><span class="st">"query_data"</span>, <span class="op">{</span></span>
+<span>      <span class="fu">with_tool_errors</span><span class="op">(</span><span class="st">"inspect_results"</span>, <span class="op">{</span></span>
 <span></span>
 <span>        <span class="va">blks</span> <span class="op">&lt;-</span> <span class="fu">isolate</span><span class="op">(</span><span class="va">board</span><span class="op">$</span><span class="va">blocks</span><span class="op">)</span></span>
 <span></span>
@@ -1118,7 +1118,7 @@ comparison bookkeeping. The flush-rejection note covers the
 <span>        <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">output</span>, collapse <span class="op">=</span> <span class="st">"\n"</span><span class="op">)</span></span>
 <span>      <span class="op">}</span><span class="op">)</span></span>
 <span>    <span class="op">}</span>,</span>
-<span>    name        <span class="op">=</span> <span class="st">"query_data"</span>,</span>
+<span>    name        <span class="op">=</span> <span class="st">"inspect_results"</span>,</span>
 <span>    description <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>      <span class="st">"Evaluate R code against the board's block results. Every"</span>,</span>
 <span>      <span class="st">"committed block's evaluated result is bound in scope by its"</span>,</span>
@@ -1426,7 +1426,7 @@ Gives the model something to navigate to (not just from). Comments at
 the top list manual scenarios (“ask what’s on the board without calling
 a tool”, “rename a block to observe the immutability nudge”, “ask ‘how
 many unique species in <code>data</code>?’ to exercise
-<code>query_data</code>”).</li>
+<code>inspect_results</code>”).</li>
 </ul>
 <p>Phase 5 consolidates the per-phase example directories
 (<code>01-shell/</code>, <code>02-read-tools/</code>) into
@@ -1500,15 +1500,15 @@ line.</li>
 line.</li>
 <li>
 <code>R/tool-query-data.R</code> <em>(new)</em> —
-<code>tool_query_data</code> factory; the read-eval-print escape hatch
-documented above.</li>
+<code>tool_inspect_results</code> factory; the read-eval-print escape
+hatch documented above.</li>
 <li>
-<code>R/tools-read.R</code> — register <code>tool_query_data</code>
-in <code>register_read_tools</code> alongside the Phase 2 read tools.
-<code>system_prompt</code> from <code>NULL</code> to
-<code>default_system_prompt</code>, accept function or string, wrap
-strings as <code>function(...) the_string</code> at server start, add
-<code>last_flush_error</code> reactiveVal, add the
+<code>R/tools-read.R</code> — register
+<code>tool_inspect_results</code> in <code>register_read_tools</code>
+alongside the Phase 2 read tools. <code>system_prompt</code> from
+<code>NULL</code> to <code>default_system_prompt</code>, accept function
+or string, wrap strings as <code>function(...) the_string</code> at
+server start, add <code>last_flush_error</code> reactiveVal, add the
 <code>refresh_prompt()</code> helper and its <code>last_input</code>
 call site, and switch <code>state</code> to conditionally include
 <code>system_prompt</code> only when it is a literal string.</li>
@@ -1617,7 +1617,7 @@ unchanged).</li>
 <code>summarise_stack</code> dispatches per class: same shape as the
 block test, against a fake stack class.</li>
 <li>
-<code>query_data</code> happy path: against a board with a
+<code>inspect_results</code> happy path: against a board with a
 <code>dataset_block</code> named <code>d</code> serving
 <code>iris</code>, calling the tool with <code>code = "nrow(d)"</code>
 returns <code>"[1] 150"</code>. With
@@ -1626,17 +1626,17 @@ returns <code>"[1] 150"</code>. With
 (<code>"x &lt;- table(d$Species); x"</code>) returns the auto-printed
 table.</li>
 <li>
-<code>query_data</code> error paths: parse error in
+<code>inspect_results</code> error paths: parse error in
 <code>code</code> returns a
-<code>"query_data failed: &lt;reason&gt;"</code> string (via
+<code>"inspect_results failed: &lt;reason&gt;"</code> string (via
 <code>with_tool_errors</code>); runtime error in <code>eval</code>
 returns the same envelope; a board with a failing block surfaces a
 <code>"(skipped blocks with errors: …)"</code> preface and the other
 blocks still resolve in scope.</li>
 <li>
-<code>query_data</code> truncation: a <code>code</code> argument
-that auto-prints a 10000-row data frame produces output capped at 200
-lines plus a <code>(output truncated; N lines hidden)</code>
+<code>inspect_results</code> truncation: a <code>code</code>
+argument that auto-prints a 10000-row data frame produces output capped
+at 200 lines plus a <code>(output truncated; N lines hidden)</code>
 footer.</li>
 <li>Refresh observer fires on board materialization: stage and flush a
 non-empty payload via <code><a href="https://rdrr.io/pkg/shiny/man/testServer.html" class="external-link">shiny::testServer()</a></code>, assert
@@ -1705,9 +1705,9 @@ to confirm no tool call fired.</li>
 <code>n_rows</code> on the head block.” Expected: one
 <code>describe_block</code> call, accurate answer.</li>
 <li>
-<em><code>query_data</code> drill-down.</em> “How many unique values
-of <code>Species</code> does the <code>data</code> block carry, and what
-are they?” Expected: one <code>query_data</code> call
+<em><code>inspect_results</code> drill-down.</em> “How many unique
+values of <code>Species</code> does the <code>data</code> block carry,
+and what are they?” Expected: one <code>inspect_results</code> call
 (e.g. <code>unique(data$Species)</code>), answer cites the three
 setosa/versicolor/virginica values from the captured output. Confirms
 the eval escape hatch is being used for questions the static summary
@@ -1774,7 +1774,7 @@ The catalogue lists every registered tool in registration order. For the
 current 16-tool surface this is readable; if per-block-type custom tools
 (#12) ever land, grouping by namespace might matter.</li>
 <li>
-<strong><code>query_data</code> runs unsandboxed
+<strong><code>inspect_results</code> runs unsandboxed
 in-process.</strong> Model-supplied code reaches
 <code>default_eval_parent()</code> (or <code><a href="https://rdrr.io/r/base/environment.html" class="external-link">baseenv()</a></code>), same
 scope as a <code>mutate_block</code> expression. No timeout, no memory

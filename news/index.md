@@ -2,6 +2,95 @@
 
 ## blockr.assistant (development version)
 
+- Plot results are now described rather than dumped. A block built on
+  [`blockr.core::new_plot_block()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_plot_block.html)
+  evaluates to recorded plots, which the default summary rendered as a
+  display list – core’s scatter block reported eight graphics primitives
+  and nothing about what was drawn, through the result tool and again
+  through every post-apply review. A new
+  [`describe_result()`](https://bristolmyerssquibb.github.io/blockr.assistant/reference/describe_result.md)
+  method names the class instead, and a block that evaluated without
+  drawing is now distinguishable from one that drew, a case the display
+  list could not separate. The method does not describe the chart, and
+  does not name a graphics engine: `recordedplot` is a display list,
+  which grid and lattice produce as readily as base graphics, and
+  reading one means parsing undocumented entry points positionally
+  against R’s graphics internals.
+
+  An `evaluate_evaluation` result is described a component at a time,
+  each through the generic, rather than by reading the container as one
+  shape. A count suffices for a plot, whose content is the picture and
+  not the text, but never for a condition: “1 warning” drops the
+  message, which is the whole of what a warning carries. Methods ship
+  for the component types evaluate produces – recordings, conditions and
+  source – so an evaluation mixing plots with output and errors is
+  reported in full and in order, and a package adding a method for its
+  own type has it used here too. A truncated result summary no longer
+  appends the fixed “use query_data to fetch specific rows or columns”
+  hint either: it was passed for every result type, so a plot block was
+  told to fetch rows and columns from a graphics recording, and a
+  summary that names what the result is leaves the hint nothing to do
+  (#153).
+
+- The `query_data` tool is now called `inspect_results`, and returns
+  whatever the code draws. It was never a data-frame tool – it evaluates
+  R with every committed block’s result bound by its block id – so the
+  old name promised data at a tool that binds every result, and
+  suggested SQL at a tool that takes R. The language stays out of the
+  name because the argument schema already carries it.
+
+  Drawing is now captured generically: the call runs with an off-screen
+  device open, so a
+  [`plot()`](https://rdrr.io/r/graphics/plot.default.html) call, an
+  auto-printed ggplot or lattice object, grid output, or an auto-printed
+  plot recording all come back as images beside the text, one per page
+  drawn. Nothing in the tool inspects the value’s class – capture is a
+  property of the device, so the tool stays general rather than
+  special-casing a result shape. Code that draws nothing returns text
+  exactly as before, on every platform: Linux discards the page a device
+  is sitting on at close, while Windows and macOS write it, so the page
+  is kept or dropped on what the display list says was drawn rather than
+  on the device’s own habits. The model sets `width` and `height` per
+  call (defaulting to `assistant_plot_render_px`, clamped to a usable
+  range), since it is the one that knows whether it is reading a dense
+  scatter or checking a colour. The evaluation scope is pinned to
+  [`baseenv()`](https://rdrr.io/r/base/environment.html) rather than
+  taken from the board, whose `attach_default_packages` option would
+  otherwise make it vary per deployment – the tool description is baked
+  into the system prompt, so a varying scope leaves it either hedged or
+  wrong somewhere. Pinned, it states one rule that always holds: only
+  base R is attached, so prefix everything else, which the tool
+  description says once rather than the error repeating it. Prefixed
+  code stays valid in a code block too. There is no capability gating on
+  images: rendering is model-initiated, and a model that cannot see them
+  has no reason to ask (#153).
+
+- The `inspect_results` tool now respects invisibility when it
+  auto-prints, as an R REPL does, so an assignment or an
+  [`invisible()`](https://rdrr.io/r/base/invisible.html) result prints
+  nothing. This was cosmetic while results were text, and stopped being
+  so once printing could draw:
+  [`evaluate::replay()`](https://bristolmyerssquibb.github.io/blockr.assistant/news/evaluate.r-lib.org/reference/replay.md)
+  returns its plots invisibly, so printing the return value replayed
+  every page a second time and returned each image twice (#153).
+
+- A commit whose board update fails partway through the apply phase no
+  longer tells the model the board was unchanged. Core records the two
+  rejection outcomes from different observers: a `validate` failure is
+  recorded before `apply_core_board_update()` is called, so nothing has
+  moved, while an `apply` failure comes from the error handler wrapping
+  that call – and the apply it wraps is a sequence of separate mutations
+  with no rollback, tearing down removed blocks, rewriting the board,
+  then writing each block delta one at a time. A commit that modifies
+  five blocks and throws on the third leaves the first two written, and
+  the rejection path answers before it collects any results, so the
+  model was told nothing had changed and handed nothing to inspect. Both
+  the rejection header and the rejection sentence now key on the phase
+  the outcome already carries: the unchanged-board claim is made for
+  `validate` alone, and any other phase reports that the update stopped
+  partway, naming `get_block_state` and `get_block_result` as the way to
+  find out what landed (#156).
+
 - Saving a board no longer aborts on “attempt to apply non-function”.
   Since 0.1.0 the extension asked the mounted chat module to flush its
   live thread before reading the store, through `mod$history$save()` – a

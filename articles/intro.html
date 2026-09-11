@@ -129,16 +129,28 @@ block?</p>
 `describe_block(id = "head")`$$</span> <code>n_rows</code> is currently
 10.</p>
 </blockquote>
-<p>Questions about a block’s data go through the <code>query_data</code>
-tool, which evaluates R against an environment with every committed
-block result bound by id:</p>
+<p>Questions about what a block holds go through the
+<code>inspect_results</code> tool, which evaluates R against an
+environment with every committed block result bound by id:</p>
 <blockquote>
 <p><strong>You</strong>: What are the unique species in the data
 block?</p>
 <p><strong>Assistant</strong>: <span class="math display">$$calls
-`query_data(code = "unique(data$Species)")`$$</span> Three: setosa,
+`inspect_results(code = "unique(data$Species)")`$$</span> Three: setosa,
 versicolor, virginica.</p>
 </blockquote>
+<p>Anything the code draws comes back as an image. The call runs with an
+off-screen graphics device open, so a <code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> call, an
+auto-printed ggplot or lattice object, or an auto-printed plot recording
+all return the rendering alongside the text output – one image per page
+drawn, sized by the <code>width</code> and <code>height</code> the model
+asks for.</p>
+<p>Only base R is attached, so the model prefixes calls from other
+packages (<code><a href="https://rdrr.io/r/graphics/hist.html" class="external-link">graphics::hist()</a></code>, <code>ggplot2::ggplot()</code>)
+– the same thing it would write inside a code block. A plot block’s
+result is a list of recordings, drawn with
+<code><a href="evaluate.r-lib.org/reference/replay.html">evaluate::replay()</a></code>, which is the call the board renders it
+with.</p>
 <p>Mutations stage across the turn and flush atomically when the
 assistant finishes:</p>
 <blockquote>

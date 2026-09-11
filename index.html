@@ -82,7 +82,7 @@
 <span><span class="co"># - "What is on the board?" -- the answer should come from the prompt's</span></span>
 <span><span class="co">#   Board section, no tool call required.</span></span>
 <span><span class="co"># - "What is the unique value of `Species` in the data block?" -- the</span></span>
-<span><span class="co">#   model should call `query_data(code = "unique(data$Species)")`.</span></span>
+<span><span class="co">#   model should call `inspect_results(code = "unique(data$Species)")`.</span></span>
 <span><span class="co"># - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by</span></span>
 <span><span class="co">#   Species" -- the model stages add_block (and add_link) calls; flush</span></span>
 <span><span class="co">#   happens at turn end.</span></span>
@@ -125,7 +125,7 @@ Assistant panel mounted next to a small <code>blockr.dock</code> board.
 <div class="section level2">
 <h2 id="status">Status<a class="anchor" aria-label="anchor" href="#status"></a>
 </h2>
-<p>The assistant is feature-complete for the initial roadmap: read tools (<code>list_blocks</code>, <code>describe_block</code>, <code>query_data</code>, …), mutation tools (<code>add_block</code>, <code>modify_block</code>, …) flushed atomically per turn, and a system prompt refreshed on every materialized board change so the model always sees the current shape of the board.</p>
+<p>The assistant is feature-complete for the initial roadmap: read tools (<code>list_blocks</code>, <code>describe_block</code>, <code>inspect_results</code>, …), mutation tools (<code>add_block</code>, <code>modify_block</code>, …) flushed atomically per turn, and a system prompt refreshed on every materialized board change so the model always sees the current shape of the board.</p>
 <p>See the <a href="https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html">roadmap</a> for the staged plan and the per-phase design notes for what was shipped in each phase.</p>
 </div>
 </div>

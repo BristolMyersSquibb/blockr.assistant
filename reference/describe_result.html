@@ -63,6 +63,18 @@ terms, instead of supplying a <code><a href="https://posit-dev.github.io/btw/ref
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Default S3 method</span></span>
+<span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'evaluate_evaluation'</span></span>
+<span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'recordedplot'</span></span>
+<span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'source'</span></span>
+<span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'condition'</span></span>
 <span><span class="fu">describe_result</span><span class="op">(</span><span class="va">x</span>, <span class="va">...</span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -85,7 +97,20 @@ terms, instead of supplying a <code><a href="https://posit-dev.github.io/btw/ref
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Methods need not bound their output or guard their own errors: the internal
+    <p>Methods for recorded plots ship here, since a plot block built on
+<code><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_plot_block.html" class="external-link">blockr.core::new_plot_block()</a></code> evaluates to recordings and the default
+renders their display list – a list of graphics primitives, not a
+description of the chart. They name the class and count the recordings, and
+say when a block evaluated without drawing. Neither describes the chart
+itself: <code>inspect_results</code> renders it, by drawing it on a device.</p>
+<p>The <code><a href="evaluate.r-lib.org/reference/evaluate.html">evaluate::evaluate()</a></code> method describes each component through the
+generic rather than reading the container as one shape, so an evaluation
+mixing plots with output and conditions is handled by whatever methods
+exist for its parts – including ones another package adds. That is what
+keeps a warning's message from being reduced to a count of warnings. To
+describe a whole result differently, give it a class of its own and
+register a method on that, which takes precedence over all of these.</p>
+<p>Methods need not bound their output or guard their own errors: the internal
 <code>summarise_result()</code> wrapper caps the text before it reaches the prompt and
 turns a failed description into a surfaced error message. It is what the
 tool and the review actually call.</p>

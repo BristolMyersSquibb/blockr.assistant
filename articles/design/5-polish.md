@@ -47,8 +47,8 @@ In:
   `flush_pending` on dispatch-time validator rejection. Surfaces in the
   prompt as a one-line “your previous changes were rejected because X”
   note, then clears once consumed.
-- A new `query_data(code)` read tool: evaluates model-supplied R against
-  an environment built from
+- A new `inspect_results(code)` read tool: evaluates model-supplied R
+  against an environment built from
   [`blockr.core::eval_env()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_server.html)
   with every committed block’s result bound by id, captures stdout + the
   return value via `capture.output`, returns the captured text. The
@@ -70,8 +70,8 @@ In:
 Out (deferred to later phases or out of roadmap):
 
 - New mutation tools. The Phase 4 surface is final for the initial
-  roadmap. (One new *read* tool — `query_data` — lands in this phase;
-  see scope above.)
+  roadmap. (One new *read* tool — `inspect_results` — lands in this
+  phase; see scope above.)
 - A `list_pending_changes()` tool. Phase 4 left it as a follow-up if
   empirical use shows the model is confused by committed-only reads
   during a turn. Phase 5’s compact board summary covers the read side of
@@ -503,7 +503,7 @@ any board context until the next refresh succeeds. That is a package bug
 if the default is at fault, and a caller bug if a custom function is at
 fault — the error notification points at the root cause either way.
 
-### `query_data`: an eval escape hatch for richer inspection
+### `inspect_results`: an eval escape hatch for richer inspection
 
 `get_block_result` returns a fixed `summarise_result()` projection of a
 single block — useful for “what does this look like” but inadequate for
@@ -513,8 +513,8 @@ A static prompt can’t carry every such projection, and inflating the
 per-block summary to cover them would burn tokens on every turn for
 occasional value.
 
-The remedy: a `query_data(code)` read tool that evaluates model-supplied
-R against a scoping env built from
+The remedy: a `inspect_results(code)` read tool that evaluates
+model-supplied R against a scoping env built from
 [`blockr.core::eval_env()`](https://bristolmyerssquibb.github.io/blockr.core/reference/block_server.html)
 with every committed block’s result bound under its id. Captures stdout
 (any `print`s the code does) and auto-prints the last expression’s value
@@ -540,7 +540,7 @@ Behavioural shape mirrors a one-shot R REPL evaluation:
   Mid-script `print` calls land in the capture; the last expression’s
   value auto-prints (REPL semantics). Errors at parse or eval time route
   through `with_tool_errors` into the standard
-  `query_data failed: <reason>` envelope.
+  `inspect_results failed: <reason>` envelope.
 - Truncation: hard cap at ~200 lines of captured output. Over the cap,
   the tool result is the first N lines + a
   `(output truncated; %d lines hidden)` footer.
@@ -549,12 +549,13 @@ Security and trust: this lets the model execute arbitrary R in the app’s
 process. That sounds alarming until you notice the mutate-block class of
 attack surface is already reachable —
 `add_block("mutate_block", args = '{"expr": "system(...)"}')` gets the
-same code execution via the staging path. `query_data` doesn’t expand
-the attack surface, it just makes the same capability explicit and
-ergonomic for read-only inspection. Anyone deploying the assistant in a
-high-trust context (i.e. real user data, real R session) already needs
-to vet the model provider and the data sources for prompt-injection
-risk; adding `query_data` doesn’t change that calculus.
+same code execution via the staging path. The `inspect_results` tool
+doesn’t expand the attack surface, it just makes the same capability
+explicit and ergonomic for read-only inspection. Anyone deploying the
+assistant in a high-trust context (i.e. real user data, real R session)
+already needs to vet the model provider and the data sources for
+prompt-injection risk; adding `inspect_results` doesn’t change that
+calculus.
 
 What the tool is *not*: sandboxed (no callr subprocess, no allowlist),
 time-limited (no timeout — long-running queries block the chat module),
@@ -912,11 +913,11 @@ summarise_stack.stack <- function(x, ...) {
 
 ``` r
 
-tool_query_data <- function(board, update, session) {
+tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
     function(code) {
-      with_tool_errors("query_data", {
+      with_tool_errors("inspect_results", {
 
         blks <- isolate(board$blocks)
 
@@ -968,7 +969,7 @@ tool_query_data <- function(board, update, session) {
         paste(output, collapse = "\n")
       })
     },
-    name        = "query_data",
+    name        = "inspect_results",
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
@@ -1258,7 +1259,7 @@ introduced them:
   the model something to navigate to (not just from). Comments at the
   top list manual scenarios (“ask what’s on the board without calling a
   tool”, “rename a block to observe the immutability nudge”, “ask ‘how
-  many unique species in `data`?’ to exercise `query_data`”).
+  many unique species in `data`?’ to exercise `inspect_results`”).
 
 Phase 5 consolidates the per-phase example directories (`01-shell/`,
 `02-read-tools/`) into `populated-board/` and renames
@@ -1313,15 +1314,16 @@ infra changes.
   `summarise_block.block` method emitting the compact per-block line.
 - `R/summarise-stack.R` *(new)* — `summarise_stack` S3 generic + default
   `summarise_stack.stack` method emitting the compact per-stack line.
-- `R/tool-query-data.R` *(new)* — `tool_query_data` factory; the
+- `R/tool-query-data.R` *(new)* — `tool_inspect_results` factory; the
   read-eval-print escape hatch documented above.
-- `R/tools-read.R` — register `tool_query_data` in `register_read_tools`
-  alongside the Phase 2 read tools. `system_prompt` from `NULL` to
-  `default_system_prompt`, accept function or string, wrap strings as
-  `function(...) the_string` at server start, add `last_flush_error`
-  reactiveVal, add the `refresh_prompt()` helper and its `last_input`
-  call site, and switch `state` to conditionally include `system_prompt`
-  only when it is a literal string.
+- `R/tools-read.R` — register `tool_inspect_results` in
+  `register_read_tools` alongside the Phase 2 read tools.
+  `system_prompt` from `NULL` to `default_system_prompt`, accept
+  function or string, wrap strings as `function(...) the_string` at
+  server start, add `last_flush_error` reactiveVal, add the
+  `refresh_prompt()` helper and its `last_input` call site, and switch
+  `state` to conditionally include `system_prompt` only when it is a
+  literal string.
 - `R/staging.R` — extend `flush_pending` with the optional
   `last_flush_error` reactiveVal write (success and no-op clear,
   rejection populates).
@@ -1396,17 +1398,17 @@ helpers are internal.
   are unchanged).
 - `summarise_stack` dispatches per class: same shape as the block test,
   against a fake stack class.
-- `query_data` happy path: against a board with a `dataset_block` named
-  `d` serving `iris`, calling the tool with `code = "nrow(d)"` returns
-  `"[1] 150"`. With `code = "length(unique(d$Species))"` returns
+- `inspect_results` happy path: against a board with a `dataset_block`
+  named `d` serving `iris`, calling the tool with `code = "nrow(d)"`
+  returns `"[1] 150"`. With `code = "length(unique(d$Species))"` returns
   `"[1] 3"`. With multiple statements (`"x <- table(d$Species); x"`)
   returns the auto-printed table.
-- `query_data` error paths: parse error in `code` returns a
-  `"query_data failed: <reason>"` string (via `with_tool_errors`);
+- `inspect_results` error paths: parse error in `code` returns a
+  `"inspect_results failed: <reason>"` string (via `with_tool_errors`);
   runtime error in `eval` returns the same envelope; a board with a
   failing block surfaces a `"(skipped blocks with errors: …)"` preface
   and the other blocks still resolve in scope.
-- `query_data` truncation: a `code` argument that auto-prints a
+- `inspect_results` truncation: a `code` argument that auto-prints a
   10000-row data frame produces output capped at 200 lines plus a
   `(output truncated; N lines hidden)` footer.
 - Refresh observer fires on board materialization: stage and flush a
@@ -1460,12 +1462,12 @@ Run the Phase 5 example app against a real provider and verify:
 - *Drill-down with a tool call.* “Show me the current value of `n_rows`
   on the head block.” Expected: one `describe_block` call, accurate
   answer.
-- *`query_data` drill-down.* “How many unique values of `Species` does
-  the `data` block carry, and what are they?” Expected: one `query_data`
-  call (e.g. `unique(data$Species)`), answer cites the three
-  setosa/versicolor/virginica values from the captured output. Confirms
-  the eval escape hatch is being used for questions the static summary
-  can’t answer.
+- *`inspect_results` drill-down.* “How many unique values of `Species`
+  does the `data` block carry, and what are they?” Expected: one
+  `inspect_results` call (e.g. `unique(data$Species)`), answer cites the
+  three setosa/versicolor/virginica values from the captured output.
+  Confirms the eval escape hatch is being used for questions the static
+  summary can’t answer.
 - *Pipeline build.* “Add a filter for `Sepal.Width > 3` after the head
   block and pipe the result into a new scatter plot.” Expected: the
   model stages the appropriate blocks and links in one turn; the flush
@@ -1514,7 +1516,7 @@ in the PR description.
   lists every registered tool in registration order. For the current
   16-tool surface this is readable; if per-block-type custom tools (#12)
   ever land, grouping by namespace might matter.
-- **`query_data` runs unsandboxed in-process.** Model-supplied code
+- **`inspect_results` runs unsandboxed in-process.** Model-supplied code
   reaches `default_eval_parent()` (or
   [`baseenv()`](https://rdrr.io/r/base/environment.html)), same scope as
   a `mutate_block` expression. No timeout, no memory cap, no
