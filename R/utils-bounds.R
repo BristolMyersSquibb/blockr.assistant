@@ -1,8 +1,9 @@
 # Cap `txt` so the returned string -- truncated text plus the marker and any
 # hint -- never exceeds `max_chars`: the marker counts against the budget, it
 # is not added on top. Only the over-long case is touched; text within budget
-# is returned verbatim. The hint is the caller's: a result summary points at
-# query_data, a block summary at get_block_state, a stack summary needs none.
+# is returned verbatim. The hint is the caller's: a block summary points at
+# get_block_state, while a result and a stack summary need none -- a result
+# summary names what the result is, which is the pointer.
 truncate_chars <- function(txt, max_chars, hint = NULL) {
 
   if (nchar(txt) <= max_chars) {
@@ -45,6 +46,43 @@ state_max_chars <- function() {
 # rather than shown in part; see elide_long_values().
 state_value_max_chars <- function() {
   as.integer(blockr_option("assistant_state_value_max_chars", 128L))
+}
+
+# Device size for inspect_results, in pixels -- the default only. The model
+# sets `width` / `height` per call, since it is the one that knows whether it
+# is reading a dense scatter or checking a colour, and a fixed size here would
+# be us guessing on its behalf. A 768px render of core's scatter block
+# measures 23 KB, which both a frontier and a small model read correctly.
+plot_render_px <- function() {
+  as.integer(blockr_option("assistant_plot_render_px", 768L))
+}
+
+# Clamp on what the model may ask for. Not a disagreement with its judgement --
+# just the range outside which a device is useless (too small to lay out
+# margins) or reckless (a 10000px render is tens of MB, re-transmitted on every
+# later request in the window).
+plot_render_range <- function() {
+  as.integer(blockr_option("assistant_plot_render_range", c(200L, 2000L)))
+}
+
+# Resolve a model-supplied device dimension: fall back to the default when it
+# is absent, and clamp rather than refuse -- a value out of range is a bad
+# guess, not a reason to fail the call.
+device_px <- function(px) {
+
+  if (!is_whole_bound(px, 1L)) {
+    return(plot_render_px())
+  }
+
+  rng <- plot_render_range()
+
+  as.integer(min(max(px, rng[[1L]]), rng[[2L]]))
+}
+
+# The model does not get to raise this one: it bounds a loop that draws, where
+# the count is a property of the code rather than of anyone's intent.
+plot_render_max <- function() {
+  as.integer(blockr_option("assistant_plot_render_max", 4L))
 }
 
 board_section_max_chars <- function() {

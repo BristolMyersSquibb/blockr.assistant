@@ -343,7 +343,7 @@ test_that("server registers the read and mutation tools on the client", {
           "list_stacks", "describe_stack",
           "list_block_types", "describe_block_type",
           "get_block_result", "get_block_state",
-          "get_block_conditions", "query_data",
+          "get_block_conditions", "inspect_results",
           "add_block", "remove_block", "modify_block",
           "add_link", "remove_link", "modify_link",
           "add_stack", "remove_stack", "modify_stack",

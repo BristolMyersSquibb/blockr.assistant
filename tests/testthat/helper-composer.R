@@ -47,10 +47,46 @@ wait_for_composer <- function(app, script, timeout, what) {
     app$wait_for_js(script, timeout = timeout),
     error = function(e) {
       stop(
-        what, "\n  state at timeout: ", composer_state(app),
-        "\n  ", conditionMessage(e),
+        paste(
+          c(
+            paste0(what, "\n  state at timeout: ", composer_state(app)),
+            composer_log(app),
+            paste0("  ", conditionMessage(e))
+          ),
+          collapse = "\n"
+        ),
         call. = FALSE
       )
+    }
+  )
+}
+
+# What the app process itself said, which is where blockr.dock's restore probe
+# reports the geometry the rail was sized against. Shinytest2 captures the app's
+# stdout and stderr into the driver rather than printing them -- `get_logs()` is
+# the documented way back to them -- so a CI log carries none of it unless the
+# failure path asks. Filtered to the app's own lines rather than to one message,
+# since the driver's and Chrome's own chatter is not what a failure here needs
+# and a probe that changes its wording should not go quiet.
+composer_log <- function(app, max_lines = 40L) {
+
+  log <- tryCatch(as.data.frame(app$get_logs()), error = function(e) NULL)
+
+  if (is.null(log) || !nrow(log)) {
+    return(NULL)
+  }
+
+  lines <- log[["message"]][log[["location"]] == "shiny"]
+
+  if (!length(lines)) {
+    return(NULL)
+  }
+
+  c(
+    "  app log:",
+    paste0("    ", utils::head(lines, max_lines)),
+    if (length(lines) > max_lines) {
+      paste0("    (", length(lines) - max_lines, " more lines)")
     }
   )
 }

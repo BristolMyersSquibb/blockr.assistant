@@ -3,11 +3,23 @@
 \name{describe_result}
 \alias{describe_result}
 \alias{describe_result.default}
+\alias{describe_result.evaluate_evaluation}
+\alias{describe_result.recordedplot}
+\alias{describe_result.source}
+\alias{describe_result.condition}
 \title{Describe a block result for the LLM}
 \usage{
 describe_result(x, ...)
 
 \method{describe_result}{default}(x, ...)
+
+\method{describe_result}{evaluate_evaluation}(x, ...)
+
+\method{describe_result}{recordedplot}(x, ...)
+
+\method{describe_result}{source}(x, ...)
+
+\method{describe_result}{condition}(x, ...)
 }
 \arguments{
 \item{x}{A block result (any R object).}
@@ -26,6 +38,21 @@ unusual result type can add a method to describe it directly, in blockr
 terms, instead of supplying a \code{\link[btw:btw_this]{btw::btw_this()}} method.
 }
 \details{
+Methods for recorded plots ship here, since a plot block built on
+\code{\link[blockr.core:new_plot_block]{blockr.core::new_plot_block()}} evaluates to recordings and the default
+renders their display list -- a list of graphics primitives, not a
+description of the chart. They name the class and count the recordings, and
+say when a block evaluated without drawing. Neither describes the chart
+itself: \code{inspect_results} renders it, by drawing it on a device.
+
+The \code{\link[evaluate:evaluate]{evaluate::evaluate()}} method describes each component through the
+generic rather than reading the container as one shape, so an evaluation
+mixing plots with output and conditions is handled by whatever methods
+exist for its parts -- including ones another package adds. That is what
+keeps a warning's message from being reduced to a count of warnings. To
+describe a whole result differently, give it a class of its own and
+register a method on that, which takes precedence over all of these.
+
 Methods need not bound their output or guard their own errors: the internal
 \code{summarise_result()} wrapper caps the text before it reaches the prompt and
 turns a failed description into a surfaced error message. It is what the

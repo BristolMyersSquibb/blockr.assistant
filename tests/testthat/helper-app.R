@@ -106,8 +106,19 @@ retry_chrome_launch <- function(attempts = 3L) {
 # object, and chromote's hardcoded 10s default is short for a loaded runner
 # binding the app's port (rstudio/shinytest2#448). Raise it on the object
 # `retry_chrome_launch()` returns -- the one AppDriver draws its session from.
-asst_app_driver <- function(app_dir, ...) {
+# Debug logging is on for every e2e app because blockr.dock gates its restore
+# probe on it at both ends -- `board_ui()` only attaches the client half under
+# it, and nothing is sent without it. The probe reports the dock container's
+# width at the moment the layout is restored, which is the reading that tells
+# the two candidate triggers for a ground-down rail apart, and it is worth
+# nothing if it only reports on a runner nobody is debugging on. A caller's
+# own options win, so a test injecting one (the dead chat function) keeps it.
+asst_app_driver <- function(app_dir, ..., options = list()) {
   chrome <- retry_chrome_launch()
   chrome$default_timeout <- 30
-  shinytest2::AppDriver$new(app_dir, ..., width = 1600, height = 1200)
+  shinytest2::AppDriver$new(
+    app_dir, ...,
+    width = 1600, height = 1200,
+    options = modifyList(list(blockr.log_level = "debug"), options)
+  )
 }
