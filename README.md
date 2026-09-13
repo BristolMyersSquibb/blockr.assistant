@@ -97,3 +97,54 @@ See the
 [roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
 for the staged plan and the per-phase design notes for what was shipped
 in each phase.
+
+## Driving a board from outside
+
+The chat panel is one way to reach a board's tools. The same tools are also
+reachable over HTTP, so a harness that is not this package -- Claude Code, an
+agent SDK, a chat application running beside the app -- can drive a board the
+way the panel does.
+
+Three pieces, all in this package:
+
+- **`agent_toolkit()`** is the half of the chat extension that is not about
+  being a chat: the tools, the staging payload, and the `commit` that flushes
+  it and answers with the board's re-evaluation report. The panel puts a model
+  in front of it; the access extension puts HTTP in front of it.
+- **`new_agent_access_extension()`** publishes that per session. `GET` returns
+  the tools with their schemas, the board summary and the instructions; `POST`
+  runs one. Each open board also announces itself in a registry directory
+  (`agent_registry_dir()`), refreshing while it lives and removing itself when
+  it ends, because nothing outside an app can enumerate its Shiny sessions.
+- **`inst/facade/server.py`** is a stateless Streamable HTTP MCP server. It
+  reads the registry, so one open board needs no configuration at all; with
+  several, `list_boards` names them and every tool takes a `board` argument.
+
+Local run:
+
+```sh
+Rscript dev/run-app.R > /tmp/app.log 2>&1 &   # open the printed URL
+PORT=8765 dev/facade.sh
+```
+
+```json
+{"mcpServers": {"blockr": {"type": "http", "url": "http://127.0.0.1:8765/mcp"}}}
+```
+
+Nothing in that config names a board. The agent calls `list_boards` and picks.
+
+Behind a server that runs the app as several R processes, the same code needs
+two things: the registry pointed at storage every process can read, and the
+stickiness cookie recorded in the entry, so a call lands in the process holding
+the board rather than a sibling.
+
+Which cookie that is depends on what sits in front of the app.
+`agent_affinity_cookies()` defaults to the names AWS and Azure fix; nginx,
+HAProxy and Traefik let the operator choose one, so there is nothing to
+default and `blockr.agent_affinity_cookies` has to be set. When nothing is
+recognised the Agent panel lists the cookie names the browser did send, which
+is where the right one will be.
+
+Only the named cookies travel. A stickiness cookie is a routing token with no
+identity in it; the rest of a browser's header is the user's session with the
+server, and does not belong in an agent's config.
