@@ -214,7 +214,13 @@ tool_run_block_script <- function(board, update, session) {
           return(paste(c(
             head_lines, "",
             "Ran to the end.", res$lines, "",
-            paste("Value:", value_line(res$value)),
+            # The VALUE gets the full description, not the one-line class:
+            # a candidate composer script evaluates to a composed_table, and
+            # "<composed_table>" says nothing about whether the rows asked
+            # for are in it. summarise_result() is the same path
+            # get_block_result reads a block through, so the table comes back
+            # with its columns and rows.
+            "Value:", summarise_result(res$value),
             "Nothing was staged and the board was not touched."
           ), collapse = "\n"))
         }
@@ -234,16 +240,20 @@ tool_run_block_script <- function(board, update, session) {
       "inputs (each upstream block's result, bound under the input's name --",
       "usually `data`), reporting what every statement produced and, if one",
       "raises, which one and its text.",
-      "Two cases, both before you edit and commit again:",
+      "Three cases:",
+      "BEFORE YOU STAGE A SCRIPT YOU HAVE WRITTEN -- pass it as `code` and",
+      "read the value it produces. A table comes back with its columns and",
+      "rows, so you can see whether what was asked for is in it before the",
+      "clinician does;",
       "a block that ERRORS -- a commit tells you only that it still fails,",
-      "this tells you where; and a block that RAN BUT PRODUCED THE WRONG",
-      "THING -- the readback does not show what was asked, nothing raised,",
-      "and the statement values say where the rows went.",
-      "Pass `code` to run a candidate against the same inputs and see its",
-      "result before you stage anything. That is the loop: change the code",
-      "here until the value is right, then modify the block once. Committing",
-      "to find out what a change does is the slow way round and it mutates",
-      "the board each time.",
+      "this tells you where;",
+      "and a block that RAN BUT PRODUCED THE WRONG THING -- the readback",
+      "does not show what was asked, nothing raised, and the statement",
+      "values say where the rows went.",
+      "That is the loop: change the code here until the value is right, then",
+      "modify the block once. Writing a script straight into a block and",
+      "committing to find out what it does is the slow way round, it mutates",
+      "the board each time, and the clinician watches it fail.",
       "Read-only: nothing is staged and no block is modified."
     ),
     arguments = list(
