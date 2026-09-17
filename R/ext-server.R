@@ -154,6 +154,7 @@ asst_ext_ui <- function(id, board, ...) {
   tagList(
     asst_ext_styles(),
     asst_skin_styles(),
+    look_at_dep(),
     div(
       class = "asst-panel",
       div(
@@ -495,6 +496,12 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           get_board_option_value("llm_model", session)
         )
 
+        # One per session, not per client: a model switch rebuilds the client
+        # and must not stack a second observer on the browser's reply.
+        look_at <- if (look_at_enabled()) {
+          new_look_at(board, pending_update, session)
+        }
+
         make_client <- function(ctor, seed_turns) {
 
           cl <- ctor(system_prompt = "")
@@ -509,6 +516,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             cl, board, pending_update, view_data, session
           )
           register_board_options_tools(cl, board, session)
+          register_look_tool(cl, look_at)
           register_skill_tools(cl)
           register_commit_tool(cl, perform_commit)
           register_discard_tool(cl, pending_update)

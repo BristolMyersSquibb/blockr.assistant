@@ -1,5 +1,17 @@
 # blockr.assistant (development version)
 
+* New opt-in tool `look_at(target)`: a picture of the board as the user's
+  browser shows it, for the whole view or for one panel with its tab strip.
+  The text tools report that blocks evaluate; they cannot show an empty
+  chart, a panel squeezed to a sliver, or plumbing controls stacked above a
+  table. The capture runs in the browser (vendored 'snapdom', `inst/js`)
+  because only that browser holds the board as drawn, and the tool waits for
+  it on a promise, the way `commit` waits for the board. Off unless the
+  deployment sets `options(blockr.assistant_look_at = TRUE)`; the timeout is
+  `blockr.assistant_look_at_timeout_secs` (15). A panel behind another tab
+  is reported as such, with a pointer to `focus_panel`. The assistant's own
+  chat is left blank in the picture.
+
 * Plot results are now described rather than dumped. A block built on
   `blockr.core::new_plot_block()` evaluates to recorded plots, which the
   default summary rendered as a display list -- core's scatter block

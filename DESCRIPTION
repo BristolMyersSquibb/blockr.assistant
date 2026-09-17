@@ -1,6 +1,6 @@
 Package: blockr.assistant
 Title: An LLM Assistant Extension for 'blockr'
-Version: 0.1.0.9000
+Version: 0.1.0.9001
 Authors@R:
     c(person(given = "Nicolas",
              family = "Bennett",
@@ -26,6 +26,7 @@ Imports:
     evaluate,
     glue,
     grDevices,
+    htmltools,
     jsonlite,
     later,
     promises,
