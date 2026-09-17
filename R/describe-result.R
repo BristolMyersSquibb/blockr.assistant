@@ -176,7 +176,13 @@ block_result_summary <- function(id, board) {
     return(no_result_message(id, status))
   }
 
-  entry <- board$blocks[[id]]
+  # isolate(): a tool call runs outside a reactive consumer, and `blocks` is a
+  # reactiveValues, so reading it bare throws "Can't access reactive value
+  # 'blocks' outside of reactive consumer" -- which reached the model as
+  # get_block_result's answer for every block that HAS a result. The early
+  # return above hides it for a block that has none, so the tool looked
+  # healthy exactly where it was useless.
+  entry <- isolate(board$blocks[[id]])
 
   res <- tryCatch(
     isolate(

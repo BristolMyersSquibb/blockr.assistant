@@ -207,3 +207,27 @@ test_that("a block can say what the model reads in place of its result", {
   expect_identical(block_result_summary("tbl", board), "drawn from 3 rows")
   expect_match(block_result_summary("plain", board), "plain result")
 })
+
+test_that("a block result is read outside a reactive consumer", {
+
+  # A tool call is not a reactive consumer. Reading `blocks` bare threw
+  # "Can't access reactive value 'blocks' outside of reactive consumer", and
+  # the model got that instead of the block's result -- for every block that
+  # had one, which is every block worth reading.
+  board <- shiny::reactiveValues(
+    blocks = list(
+      tbl = list(
+        block  = structure(list(), class = c("dummy_block", "block")),
+        server = list(state = list(), result = function() head(iris, 2))
+      )
+    )
+  )
+
+  local_mocked_bindings(
+    eval_status = function(...) "ready",
+    has_no_result = function(...) FALSE
+  )
+
+  expect_no_error(res <- block_result_summary("tbl", board))
+  expect_false(grepl("reactive consumer", res))
+})
