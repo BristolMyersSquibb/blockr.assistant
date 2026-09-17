@@ -1356,7 +1356,9 @@ test_that("user-invocable skills reach shinychat as slash commands", {
 
       commands <- rec$slash_commands()
 
-      expect_setequal(chr_xtr(commands, "name"), c("compact", "drill"))
+      expect_setequal(
+        chr_xtr(commands, "name"), c("compact", "clear", "drill")
+      )
       expect_true("A drill." %in% chr_xtr(commands, "description"))
     },
     args = list(
@@ -1380,9 +1382,9 @@ test_that("the built-in commands are advertised without an echo", {
       session$flushReact()
 
       commands <- rec$slash_commands()
-      builtin <- chr_xtr(commands, "name") %in% "compact"
+      builtin <- chr_xtr(commands, "name") %in% c("compact", "clear")
 
-      expect_length(which(builtin), 1L)
+      expect_length(which(builtin), 2L)
       expect_false(any(lgl_xtr(commands[builtin], "echo")))
 
       # A skill command echoes, so this is the built-ins being asked for
