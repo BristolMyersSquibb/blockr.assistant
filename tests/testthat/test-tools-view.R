@@ -217,6 +217,37 @@ test_that("add_view stages a layout's rail onto the new view's grid", {
   expect_identical(layout_panel_ids(grid), c("block_panel-a", "block_panel-b"))
 })
 
+test_that("add_view opens a rail at the width the board's rail on that edge has", {
+
+  brd <- new_dock_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+    views = list(v_main = dock_view(c("a", "b"), name = "Analysis")),
+    grids = list(
+      v_main = dock_grid("a", rail("b", position = "right", size = 600))
+    )
+  )
+  env <- new_view_tool_env(brd)
+  av <- tool_add_view(env$board, env$pending, session = NULL)
+
+  av(
+    name   = "Extra",
+    layout = '{"children": ["a"], "rails": {"right": {"panels": ["b"]}}}'
+  )
+  grid <- isolate(env$pending())$views$add[["Extra"]]
+  expect_identical(grid[["rails"]][["right"]][["size"]], 600)
+
+  # No rail on an edge anywhere on the board: dock's default stands.
+  plain <- new_view_tool_env()
+  av2 <- tool_add_view(plain$board, plain$pending, session = NULL)
+  av2(name = "Railed",
+      layout = '{"children": ["a"], "rails": {"left": {"panels": ["b"]}}}')
+  grid2 <- isolate(plain$pending())$views$add[["Railed"]]
+  expect_identical(
+    grid2[["rails"]][["left"]][["size"]],
+    formals(blockr.dock::rail)$size
+  )
+})
+
 test_that("add_view active=TRUE flags the new view active by its add key", {
 
   env <- new_view_tool_env()

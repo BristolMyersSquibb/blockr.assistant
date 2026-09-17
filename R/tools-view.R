@@ -304,7 +304,10 @@ tool_add_view <- function(board, pending, session) {
       with_tool_errors("add_view", {
 
         sets       <- panel_id_sets(board, pending)
-        layout_obj <- layout_from_json(layout, sets$blocks, sets$exts)
+        layout_obj <- layout_from_json(
+          layout, sets$blocks, sets$exts,
+          rail_sizes = board_rail_sizes(board)
+        )
 
         stage_view_add(
           pending, board, name, layout_obj, active = isTRUE(active)
@@ -737,7 +740,7 @@ tool_rename_view <- function(board, pending, session) {
 # `panel_obj_ids()`.
 
 layout_from_json <- function(json, block_ids = character(),
-                             ext_ids = character()) {
+                             ext_ids = character(), rail_sizes = list()) {
 
   spec <- if (is.character(json)) {
     jsonlite::fromJSON(json, simplifyVector = FALSE)
@@ -753,12 +756,15 @@ layout_from_json <- function(json, block_ids = character(),
       ),
       sizes = as_grid_sizes(spec[["sizes"]]),
       focus = resolve_panel_id(spec[["focus"]], block_ids, ext_ids),
-      rails = resolve_layout_rails(spec[["rails"]], block_ids, ext_ids)
+      rails = resolve_layout_rails(
+        spec[["rails"]], block_ids, ext_ids, rail_sizes
+      )
     )
   )
 }
 
-resolve_layout_rails <- function(rails, block_ids, ext_ids) {
+resolve_layout_rails <- function(rails, block_ids, ext_ids,
+                                 rail_sizes = list()) {
 
   if (is.null(rails)) {
     return(NULL)
@@ -790,12 +796,12 @@ resolve_layout_rails <- function(rails, block_ids, ext_ids) {
   }
 
   map(
-    resolve_layout_rail, rails, edges,
+    resolve_layout_rail, rails, edges, rail_sizes[edges],
     MoreArgs = list(block_ids = block_ids, ext_ids = ext_ids)
   )
 }
 
-resolve_layout_rail <- function(spec, edge, block_ids, ext_ids) {
+resolve_layout_rail <- function(spec, edge, size, block_ids, ext_ids) {
 
   if (!is.list(spec)) {
     stop(
@@ -816,9 +822,44 @@ resolve_layout_rail <- function(spec, edge, block_ids, ext_ids) {
         position = edge,
         active = resolve_panel_id(spec[["active"]], block_ids, ext_ids),
         collapsed = isTRUE(spec[["collapsed"]])
-      )
+      ),
+      if (is.numeric(size)) list(size = size)
     )
   )
+}
+
+# The width a new view's rail opens at, per edge. The wire carries no rail
+# width (see above), so a rail the model lays out would otherwise open at
+# dock's default, which on a board that sets its own is a rail visibly
+# narrower than the same rail one view over. The board already answers it:
+# the width of the rail on that edge in the active view, else in the first
+# view that has one. Read from the committed board, so a width the user
+# dragged counts too.
+board_rail_sizes <- function(board) {
+
+  brd <- isolate(board$board)
+
+  if (!inherits(brd, "dock_board")) {
+    return(list())
+  }
+
+  grids <- board_grids(brd)
+  active <- tryCatch(active_view(brd), error = function(e) NULL)
+  ids <- c(intersect(active, names(grids)), setdiff(names(grids), active))
+
+  out <- list()
+
+  for (edge in rail_edges()) {
+    for (id in ids) {
+      size <- grids[[id]][["rails"]][[edge]][["size"]]
+      if (is.numeric(size) && length(size) == 1L) {
+        out[[edge]] <- size
+        break
+      }
+    }
+  }
+
+  out
 }
 
 resolve_layout_node <- function(node, block_ids, ext_ids) {
