@@ -226,13 +226,21 @@ tool_look_at <- function(look) {
       "`{...}` or `@` slot, controls the user would never touch stacked",
       "above the output, a panel or side rail too narrow to read, a front",
       "tab that does not answer what the user asked. Fix what you find, or",
-      "name it in your reply. Do not read exact numbers from the picture",
-      "(use get_block_result), do not conclude anything about content below",
-      "the fold, ignore scrollbars, and note that the grey line under a",
-      "panel title is the block type, not a caption. Your own chat is left",
-      "blank in the picture. Only what is on screen",
-      "can be pictured: a panel behind another tab needs focus_panel and a",
-      "commit first. The user sees the picture you took."
+      "name it in your reply.",
+      "A thing you just added and cannot find in the picture is a FINDING,",
+      "not a cropping artefact: never tell the user it is there but below",
+      "the fold, behind a scroll, or hidden by a control. Either read it",
+      "back by name from the data -- get_block_result on the block, or",
+      "inspect_results searching its label -- and say where it is, or say",
+      "plainly that you could not confirm it. The same goes for a summary",
+      "that ends in \"N more rows\": that is not evidence your rows are in",
+      "it. This has already gone wrong on production twice.",
+      "Do not read exact numbers from the picture (use get_block_result),",
+      "ignore scrollbars, and note that the grey line under a panel title",
+      "is the block type, not a caption. Your own chat is left blank in the",
+      "picture. Only what is on screen can be pictured: a panel behind",
+      "another tab needs focus_panel and a commit first. The user sees the",
+      "picture you took."
     ),
     arguments = list(
       target = ellmer::type_string(
