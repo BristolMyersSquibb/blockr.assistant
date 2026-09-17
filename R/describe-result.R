@@ -114,6 +114,35 @@ describe_result.condition <- function(x, ...) {
   paste0(kind, ": ", trimws(conditionMessage(x)))
 }
 
+#' The result the assistant reads for a block
+#'
+#' What `get_block_result` and the post-commit review describe for a block.
+#' By default that is the block's evaluated result. A block whose evaluated
+#' result is not what it shows can say what the model should read instead:
+#' a display block that passes its input through and draws something else
+#' from it (a composer table, whose result is the data it was fed) would
+#' otherwise leave the model reading its input and unable to check what it
+#' built.
+#'
+#' @param x The block object.
+#' @param result The block's evaluated result.
+#' @param server The block's server object, whose `state` holds the block's
+#'   current settings as reactives.
+#' @param ... For methods.
+#'
+#' @return The object to describe with [describe_result()].
+#'
+#' @export
+llm_block_result <- function(x, result, server, ...) {
+  UseMethod("llm_block_result")
+}
+
+#' @rdname llm_block_result
+#' @export
+llm_block_result.default <- function(x, result, server, ...) {
+  result
+}
+
 # Bounded, error-guarding wrapper around describe_result(): a method is trusted
 # neither to bound its output nor to catch its own failures, so both happen
 # here -- the single path the get_block_result tool and the post-apply review
@@ -147,8 +176,12 @@ block_result_summary <- function(id, board) {
     return(no_result_message(id, status))
   }
 
+  entry <- board$blocks[[id]]
+
   res <- tryCatch(
-    isolate(board$blocks[[id]]$server$result()),
+    isolate(
+      llm_block_result(entry$block, entry$server$result(), entry$server)
+    ),
     error = function(e) e
   )
 

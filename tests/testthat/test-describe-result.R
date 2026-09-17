@@ -174,3 +174,36 @@ test_that("a result summary carries no tool hint when truncated", {
   expect_no_match(res, "inspect_results", fixed = TRUE)
   expect_no_match(res, " -- use ", fixed = TRUE)
 })
+
+test_that("a block can say what the model reads in place of its result", {
+
+  registerS3method(
+    "llm_block_result", "assistant_fake_display_block",
+    function(x, result, server, ...) {
+      structure(paste("drawn from", nrow(result), "rows"),
+                class = "assistant_fake_drawn")
+    }
+  )
+  registerS3method(
+    "describe_result", "assistant_fake_drawn",
+    function(x, ...) unclass(x)
+  )
+
+  board <- list(
+    eval = list(tbl = function() "ready", plain = function() "ready"),
+    blocks = list(
+      tbl = list(
+        block = structure(list(), class = c("assistant_fake_display_block",
+                                            "block")),
+        server = list(result = function() data.frame(x = 1:3))
+      ),
+      plain = list(
+        block = structure(list(), class = "block"),
+        server = list(result = function() "plain result")
+      )
+    )
+  )
+
+  expect_identical(block_result_summary("tbl", board), "drawn from 3 rows")
+  expect_match(block_result_summary("plain", board), "plain result")
+})
