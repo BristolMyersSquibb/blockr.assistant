@@ -21,6 +21,7 @@ register_read_tools <- function(client, board, update, session, pool = NULL) {
     tool_get_block_conditions(board, update, session)
   )
   client$register_tool(tool_inspect_results(board, update, session))
+  client$register_tool(tool_run_block_script(board, update, session))
 
   invisible(client)
 }

@@ -488,7 +488,17 @@ test_that("register_read_tools wires every read tool onto a chat client", {
 
   register_read_tools(client, board, reactiveVal(), NULL)
 
-  expect_equal(length(client$get_tools()) - before, 11L)
+  tools <- client$get_tools()
+  added <- vapply(utils::tail(tools, length(tools) - before),
+                  function(t) t@name, character(1L))
+
+  expect_setequal(
+    added,
+    c("list_blocks", "describe_block", "list_links", "list_stacks",
+      "describe_stack", "list_block_types", "describe_block_type",
+      "get_block_result", "get_block_state", "get_block_conditions",
+      "inspect_results", "run_block_script")
+  )
 })
 
 make_board <- function(results = list()) {

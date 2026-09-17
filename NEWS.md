@@ -1,5 +1,20 @@
 # blockr.assistant (development version)
 
+* New read tool `run_block_script()`: run a block's code off the board and
+  find out which statement fails. It evaluates the block's statements one at a
+  time against its real inputs and names the one that raised, with its text
+  and the shape each earlier statement produced. Until now a block that failed
+  left only a one-line condition, and the only way to narrow it was modify ->
+  commit -> get_block_conditions, three board mutations reporting the same
+  sentence. On production a composed table died with `incorrect number of
+  arguments to "<-"`, the assistant went round that loop three times and gave
+  up; the script was valid R and the malformed call came out of the block's own
+  rewriting of it. The tool runs what the block runs, placeholders resolved and
+  control values substituted the way `eval_impl()` does, so a failure that
+  lives in the rewriting shows up as a statement that raises on code that reads
+  correctly. Passing `code` runs a candidate fix against the same inputs
+  without touching the board. Repro: `dev/repro-run-block-script.R`.
+
 * Evaluated output that is cut now says so in a way that cannot be read as a
   footnote, and frames print at 200 columns instead of 80. On production the
   model asked a composed table for all of its rows, got the head of the frame
