@@ -7,12 +7,44 @@ with_tool_errors <- function(name, expr) {
       msg <- conditionMessage(e)
       pat <- glue::glue("^{name}\\([^)]*\\) failed:")
 
-      if (grepl(pat, msg)) {
+      out <- if (grepl(pat, msg)) {
         msg
       } else {
         glue::glue("{name} failed: {msg}")
       }
+
+      # Once per failure, not once per wrapper: a tool that re-throws an
+      # inner failure carries its message, note and all.
+      if (grepl(tool_failure_note(), out, fixed = TRUE)) {
+        out
+      } else {
+        paste0(out, "\n\n", tool_failure_note())
+      }
     }
+  )
+}
+
+# What a failed call MEANS for the turn, appended to every tool error.
+#
+# A condition message describes R, not the turn: "undefined columns selected"
+# is a true statement about `[` and says nothing about whether the block was
+# read. Measured on gpt-5.4 (_scratch/clinical-asks/error-channel/probe.R,
+# 6 runs an arm, the prod shape: edit a table, commit, the readback fails):
+# with the bare message the model told the user the table was updated and
+# checked in 5 of 6 runs; with this note appended it said it could not confirm
+# in 6 of 6. Marking the result as an error through ellmer instead -- which is
+# what `stop()` here would do -- moved it only to 2 of 6, so the sentence is
+# the part that works, not the flag.
+#
+# Kept generic because this wraps every tool: a read that failed read nothing,
+# a staging call that failed staged nothing.
+tool_failure_note <- function() {
+  paste(
+    "This call did not run: it returned nothing and changed nothing.",
+    "Nothing about the board follows from it -- in particular, a read that",
+    "failed is not evidence that what you were reading is fine, and it does",
+    "not verify anything you built. Correct the call and try again, or tell",
+    "the user plainly what you could not do."
   )
 }
 
