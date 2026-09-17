@@ -104,3 +104,17 @@ skill_catalogue_max_chars <- function() {
 block_tool_pool_size <- function() {
   as.integer(blockr_option("assistant_block_tool_pool", 20L))
 }
+
+# Lines of captured output inspect_results returns before it cuts. The cut is
+# announced loudly (tools-read.R): a model that reads a cut as a footnote
+# reports the part it was never shown.
+eval_max_lines <- function() {
+  as.integer(blockr_option("assistant_eval_max_lines", 200L))
+}
+
+# Print width during that evaluation. R's default 80 wraps a wide frame over
+# three or four lines per row, which is what pushes a readable table past the
+# line cap.
+eval_print_width <- function() {
+  as.integer(blockr_option("assistant_eval_print_width", 200L))
+}

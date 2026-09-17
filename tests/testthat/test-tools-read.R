@@ -594,11 +594,22 @@ test_that("inspect_results names the eval status of each skipped block", {
   expect_match(res, "6", fixed = TRUE)
 })
 
-test_that("inspect_results truncates output over 200 lines", {
+test_that("inspect_results cuts output over 200 lines", {
+
+  res <- isolate(
+    call_query("for (i in 1:300) cat(i, \"\\n\")", list(data = iris))
+  )
+
+  expect_match(res, "INCOMPLETE OUTPUT", fixed = TRUE)
+  expect_match(res, "100 lines were cut", fixed = TRUE)
+})
+
+test_that("a vector printed wide no longer reaches the cut", {
 
   res <- isolate(call_query("seq_len(5000)", list(data = iris)))
 
-  expect_match(res, "output truncated", fixed = TRUE)
+  expect_no_match(res, "INCOMPLETE OUTPUT", fixed = TRUE)
+  expect_match(res, "5000", fixed = TRUE)
 })
 
 test_that("inspect_results returns whatever the code draws as an image", {
@@ -943,4 +954,28 @@ test_that("an invisible drawing is not replayed a second time by printing", {
   res <- isolate(call_query("evaluate::replay(chart)", list(chart = chart)))
 
   expect_length(res, 2L)
+})
+
+test_that("a cut in evaluated output says it is a cut, not a footnote", {
+
+  withr::local_options(blockr.assistant_eval_max_lines = 5L)
+
+  res <- isolate(call_query("for (i in 1:20) cat(i, \"\\n\")"))
+
+  expect_match(res, "INCOMPLETE OUTPUT", fixed = TRUE)
+  expect_match(res, "15 lines were cut", fixed = TRUE)
+})
+
+test_that("a wide frame prints one row per line, so it survives the cut", {
+
+  withr::local_options(blockr.assistant_eval_max_lines = 30L)
+
+  wide <- as.data.frame(
+    matrix(1:200, nrow = 20, dimnames = list(NULL, paste0("col", 1:10)))
+  )
+
+  res <- isolate(call_query("wide", list(wide = wide)))
+
+  expect_no_match(res, "INCOMPLETE OUTPUT", fixed = TRUE)
+  expect_match(res, "col10", fixed = TRUE)
 })

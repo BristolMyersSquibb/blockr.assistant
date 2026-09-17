@@ -1,5 +1,15 @@
 # blockr.assistant (development version)
 
+* Evaluated output that is cut now says so in a way that cannot be read as a
+  footnote, and frames print at 200 columns instead of 80. On production the
+  model asked a composed table for all of its rows, got the head of the frame
+  and a quiet "(output truncated; 143 lines hidden)", and told the user the
+  rows it had just added were further down -- they were not in the table at
+  all. Wide print alone keeps most tables whole: 5000 integers went from over
+  200 lines to 132. Both bounds are options
+  (`blockr.assistant_eval_max_lines`, `blockr.assistant_eval_print_width`),
+  and `width`/`height` now say they size the plot device and nothing else.
+
 * New opt-in tool `look_at(target)`: a picture of the board as the user's
   browser shows it, for the whole view or for one panel with its tab strip.
   The text tools report that blocks evaluate; they cannot show an empty

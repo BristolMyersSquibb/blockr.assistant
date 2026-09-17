@@ -543,6 +543,12 @@ tool_inspect_results <- function(board, update, session) {
         # auto-printed. The device is simply open while that happens, so a
         # value whose print method draws (a ggplot, a recordedplot) draws onto
         # it, exactly as the same code would at a console.
+        # A data frame printed at R's default 80 columns wraps every row over
+        # several lines, so a table that would fit whole reaches the line cap
+        # and gets cut. Wide print, one row per line, more of the answer.
+        old_width <- options(width = eval_print_width())
+        on.exit(options(old_width), add = TRUE)
+
         drawn <- capture_drawings(
           function() {
             capture.output({
@@ -567,11 +573,23 @@ tool_inspect_results <- function(board, update, session) {
 
         output <- drawn$value
 
-        if (length(output) > 200L) {
-          hidden <- length(output) - 200L
+        # A cut that reads like a footnote gets treated as one. On production
+        # the model asked a composed table for all its rows, got the head of
+        # the frame and this marker, and told the user the rows it had added
+        # were further down -- they were not in the table at all. So the
+        # marker says what it is and what to do about it.
+        if (length(output) > eval_max_lines()) {
+          hidden <- length(output) - eval_max_lines()
           output <- c(
-            output[seq_len(200L)],
-            glue::glue("(output truncated; {hidden} lines hidden)")
+            output[seq_len(eval_max_lines())],
+            glue::glue(
+              "(INCOMPLETE OUTPUT: {hidden} lines were cut. What you see ",
+              "above is the beginning, not the whole result, and nothing ",
+              "below the cut has been shown to you. Do not draw a conclusion ",
+              "about what is or is not in it. Ask again for the part you ",
+              "need: select the columns that matter, subset the rows, or ",
+              "print in ranges.)"
+            )
           )
         }
 
@@ -640,10 +658,12 @@ tool_inspect_results <- function(board, update, session) {
       ),
       width = ellmer::type_integer(
         paste(
-          "Width in pixels of the device the code draws on. Optional;",
-          "defaults to 768, clamped to 200-2000. Raise it for a dense",
-          "plot you need to read values off, lower it when the shape is",
-          "all you need."
+          "Width in pixels of the device the code draws on -- for PLOTS",
+          "only. It does not widen printed text and it does not return",
+          "more rows; to see more of a frame, select columns or subset",
+          "rows in the code. Optional; defaults to 768, clamped to",
+          "200-2000. Raise it for a dense plot you need to read values",
+          "off, lower it when the shape is all you need."
         ),
         required = FALSE
       ),
