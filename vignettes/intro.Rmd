@@ -41,11 +41,7 @@ board <- new_dock_board(
     new_link("data", "head", "data"),
     new_link("head", "plot", "data")
   ),
-  extensions = list(assistant = new_assistant_extension()),
-  layout = list(
-    list("data", "head", "plot"),
-    "assistant"
-  )
+  extensions = list(assistant = new_assistant_extension())
 )
 
 serve(board)

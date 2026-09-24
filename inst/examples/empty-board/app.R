@@ -4,8 +4,7 @@ library(blockr.assistant)
 
 board <- new_dock_board(
   blocks = list(),
-  extensions = list(assistant = new_assistant_extension()),
-  layout = list("assistant")
+  extensions = list(assistant = new_assistant_extension())
 )
 
 serve(board)
