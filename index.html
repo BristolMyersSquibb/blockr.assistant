@@ -84,8 +84,8 @@
 <span><span class="co"># - "What is the unique value of `Species` in the data block?" -- the</span></span>
 <span><span class="co">#   model should call `inspect_results(code = "unique(data$Species)")`.</span></span>
 <span><span class="co"># - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by</span></span>
-<span><span class="co">#   Species" -- the model stages add_block (and add_link) calls; flush</span></span>
-<span><span class="co">#   happens at turn end.</span></span>
+<span><span class="co">#   Species" -- the model stages add_block (and add_link) calls, then</span></span>
+<span><span class="co">#   calls commit to apply them and read back the result.</span></span>
 <span><span class="co"># - "Rename `head` to `top_rows`" -- the model declines the in-place</span></span>
 <span><span class="co">#   rename and offers remove + add, triggered by the id-immutability</span></span>
 <span><span class="co">#   paragraph in the default prompt's intro (no tool call needed).</span></span>
@@ -110,11 +110,7 @@
 <span>    prep    <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_stack.html" class="external-link">new_stack</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"filt"</span><span class="op">)</span>, name <span class="op">=</span> <span class="st">"Prep"</span><span class="op">)</span>,</span>
 <span>    display <span class="op">=</span> <span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/new_stack.html" class="external-link">new_stack</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>, name <span class="op">=</span> <span class="st">"Display"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span>,</span>
-<span>  extensions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>assistant <span class="op">=</span> <span class="fu"><a href="reference/new_assistant_extension.html">new_assistant_extension</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  layout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"data"</span>, <span class="st">"filt"</span>, <span class="st">"head"</span>, <span class="st">"plot"</span><span class="op">)</span>,</span>
-<span>    <span class="st">"assistant"</span></span>
-<span>  <span class="op">)</span></span>
+<span>  extensions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>assistant <span class="op">=</span> <span class="fu"><a href="reference/new_assistant_extension.html">new_assistant_extension</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://bristolmyerssquibb.github.io/blockr.core/reference/serve.html" class="external-link">serve</a></span><span class="op">(</span><span class="va">board</span><span class="op">)</span></span></code></pre></div>
