@@ -9,31 +9,26 @@ fake_chat_function <- function(system_prompt = NULL, params = NULL) {
 # Stand-in for the shinychat module object. chat_append() is UI-only and
 # leaves nothing on the client to read back, so the browser transcript is
 # unobservable unless something records it -- which is why `transcript()` is
-# here. Mocking chat_server() to NULL, as the other tests do, makes
-# `mod_r` NULL and takes every mod-driven path out of reach.
+# here. It logs what was appended and nothing else: emptying the browser's
+# copy goes through `shinychat::chat_clear()` rather than the module, so a
+# test that needs the reset drives the real module instead. Mocking
+# chat_server() to NULL, as the other tests do, makes `mod_r` NULL and takes
+# every mod-driven path out of reach.
 #
-# `clear()` reaches through to the client the way the real one does, so a test
-# that drives it sees both copies of the conversation go. Pass the `client`
-# the mocked chat_server() was handed to wire that up.
-fake_chat_mod <- function(status = "idle", client = NULL) {
+# The `clear()` member refuses the way the real one does while conversation
+# history is enabled, which the panel always does. A double that cleared
+# instead is what kept compaction passing here while it aborted against a
+# real module.
+fake_chat_mod <- function(status = "idle") {
 
   log <- character()
-  cleared <- NULL
 
   list(
-    clear = function(messages = NULL, greeting = FALSE,
-                     client_history = c("clear", "set", "append", "keep")) {
-
-      client_history <- match.arg(client_history)
-
-      log <<- character()
-      cleared <<- list(greeting = greeting, client_history = client_history)
-
-      if (identical(client_history, "clear") && !is.null(client)) {
-        client$set_turns(list())
-      }
-
-      invisible()
+    clear = function(...) {
+      stop(
+        "Can't clear a chat with conversation history enabled. Use ",
+        "`chat$new_chat()` to start a new conversation."
+      )
     },
     append = function(response, role = "assistant", icon = NULL) {
       log <<- c(log, paste0(role, ": ", response))
@@ -41,14 +36,10 @@ fake_chat_mod <- function(status = "idle", client = NULL) {
     },
     status = shiny::reactive(status),
     transcript = function() log,
-    cleared = function() cleared,
     last_turn = shiny::reactiveVal(NULL),
     last_input = shiny::reactiveVal(NULL),
     update_user_input = function(...) invisible(),
-    set_client = function(new_client, sync = TRUE) {
-      client <<- new_client
-      invisible()
-    },
+    set_client = function(new_client, sync = TRUE) invisible(),
     # Holds on to the restore callback so a test can fire it. Restoring is
     # what shinychat does when the browser names the thread it had open, and
     # it is the trigger a conversation already over the compaction bound
@@ -145,9 +136,9 @@ priced_turns <- function(n, input, output) {
   turns
 }
 
-# The chat module advertises its slash commands to the browser through a
-# custom message; MockShinySession drops those, so tests that care swap in a
-# recorder and read the last advertisement back out.
+# The chat module talks to the browser through custom messages -- the slash
+# commands it advertises, the transcript it draws. MockShinySession drops
+# those, so tests that care swap in a recorder and read them back out.
 recording_session <- function() {
 
   sent <- list()
@@ -158,7 +149,38 @@ recording_session <- function() {
     invisible()
   }
 
-  list(session = sess, slash_commands = function() last_slash_commands(sent))
+  list(
+    session = sess,
+    slash_commands = function() last_slash_commands(sent),
+    transcript = function() transcript_since_clear(sent)
+  )
+}
+
+# What the browser was last told to show, in the `role: text` form that
+# `fake_chat_mod()` logs: everything after the most recent clear, where a
+# message opens on its role and its text follows in chunks. NULL if nothing
+# ever cleared it.
+transcript_since_clear <- function(messages) {
+
+  actions <- Filter(not_null, lst_xtr(Filter(is.list, messages), "action"))
+  cleared <- which(chr_xtr(actions, "type") == "clear")
+
+  if (!length(cleared)) {
+    return(NULL)
+  }
+
+  shown <- character()
+
+  for (action in actions[-seq_len(max(cleared))]) {
+
+    if (identical(action$type, "chunk_start")) {
+      shown <- c(shown, paste0(action$message$role, ": "))
+    } else if (identical(action$type, "chunk")) {
+      shown[length(shown)] <- paste0(shown[length(shown)], action$content)
+    }
+  }
+
+  shown
 }
 
 last_slash_commands <- function(messages) {
