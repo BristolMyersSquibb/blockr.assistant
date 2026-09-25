@@ -456,17 +456,24 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # the payload claims and the promise resolver; the board$last_update
         # observer settles it a turn later. The generation fences a resolved
         # commit's stale timeout off a subsequent commit.
+        #
+        # The `holding` flag outlives the commit. A commit that claims nothing
+        # leaves the previous claim in place rather than stating an empty set,
+        # and a rejected one never reaches core, so the claim a commit sent
+        # says nothing about what core still holds by the end of the turn.
         commit_bridge <- local({
 
           resolve  <- NULL
           baseline <- NULL
           claimed  <- character()
+          holding  <- FALSE
           gen      <- 0L
 
           list(
             arm = function(conditions, claim, resolver) {
               baseline <<- conditions
               claimed  <<- claim
+              holding  <<- holding || length(claim) > 0L
               resolve  <<- resolver
               gen      <<- gen + 1L
               gen
@@ -483,8 +490,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             baseline   = function() baseline,
             claimed    = function() claimed,
             drop_claim = function() {
-              held <- claimed
-              claimed <<- character()
+              held <- holding
+              holding <<- FALSE
               held
             },
             is_current = function(g) identical(g, gen)
@@ -1001,15 +1008,15 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           )
         }
 
-        # Release the claim the last commit took. Held past the review on
+        # Release the claim this turn's commits took. Held past the review on
         # purpose -- a follow-up get_block_result on the block the model just
         # built would otherwise answer `dormant` -- so the turn ending is what
-        # lets the board go back to evaluating only what is on screen. Each
-        # commit's claim states the owner's whole set, so it replaces rather
-        # than adds to this one in between.
+        # lets the board go back to evaluating only what is on screen. A commit
+        # that claims blocks states the owner's whole set, so it replaces rather
+        # than adds to the claim before it.
         release_commit_claim <- function() {
 
-          if (length(commit_bridge$drop_claim())) {
+          if (commit_bridge$drop_claim()) {
             update(list(sustain = commit_claim_delta(character())))
           }
 

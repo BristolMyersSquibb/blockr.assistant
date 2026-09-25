@@ -509,6 +509,63 @@ test_that("the commit payload carries the claim over the touched blocks", {
   )
 })
 
+test_that("the turn end releases a claim a later commit left in place", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris")),
+    stacks = stacks(s = new_stack("d"))
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      # Nothing was claimed, so there is nothing to release.
+      on_model_turn(ellmer::Turn("assistant", "nothing to do"))
+      session$flushReact()
+      expect_null(update())
+
+      tools <- client_r()$get_tools()
+
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+      p <- tools$commit()
+      session$flushReact()
+
+      board$eval <- list(h = "ready")
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_, seq = 1L
+      )
+      drain_promise(p, session)
+
+      # This commit touches no block, so it carries no claim and core keeps
+      # holding `h`.
+      tools$modify_stack(id = "s", name = "Renamed")
+      p <- tools$commit()
+      session$flushReact()
+
+      expect_null(update()$sustain)
+
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_, seq = 2L
+      )
+      drain_promise(p, session)
+
+      on_model_turn(ellmer::Turn("assistant", "done"))
+      session$flushReact()
+
+      expect_identical(
+        update(),
+        list(sustain = list(blockr.assistant = list(set = character())))
+      )
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
 test_that("a changed block with no result is reported as unverified", {
 
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
