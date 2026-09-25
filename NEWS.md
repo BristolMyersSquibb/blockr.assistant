@@ -1,5 +1,16 @@
 # blockr.assistant (development version)
 
+* A commit now reads back the blocks it changed even when they are off
+  screen. The board does not evaluate a block nothing is showing, so a
+  commit that changed one had nothing to read: the review reported no
+  problems, and the model told the user that a block whose code raised was
+  done. The commit now asks the board to keep the blocks it touched
+  evaluated until the model's turn ends, and reads them back once they have
+  run, so an error in a block on a tab nobody is looking at reaches the
+  model like any other. A changed block that still produces no result is
+  flagged as unverified rather than glossed as the usual off-screen
+  deferral (#165).
+
 * Plot results are now described rather than dumped. A block built on
   `blockr.core::new_plot_block()` evaluates to recorded plots, which the
   default summary rendered as a display list -- core's scatter block
