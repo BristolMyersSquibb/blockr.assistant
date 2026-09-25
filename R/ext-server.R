@@ -454,8 +454,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # The in-flight commit's state, bundled so only these methods touch it:
         # perform_commit arms the bridge with the pre-flush baseline, the blocks
         # the payload claims and the promise resolver; the board$last_update
-        # observer settles it a turn later. The generation fences a resolved
-        # commit's stale timeout off a subsequent commit.
+        # observer gives it the waiter on that claim, which settling the
+        # commit destroys. The generation fences a resolved commit's stale
+        # timeout off a subsequent commit.
         #
         # The `holding` flag outlives the commit. A commit that claims nothing
         # leaves the previous claim in place rather than stating an empty set,
@@ -467,10 +468,22 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           baseline <- NULL
           claimed  <- character()
           holding  <- FALSE
+          waiter   <- NULL
           gen      <- 0L
+
+          drop_waiter <- function() {
+
+            if (not_null(waiter)) {
+              waiter$destroy()
+              waiter <<- NULL
+            }
+
+            invisible()
+          }
 
           list(
             arm = function(conditions, claim, resolver) {
+              drop_waiter()
               baseline <<- conditions
               claimed  <<- claim
               holding  <<- holding || length(claim) > 0L
@@ -478,7 +491,13 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               gen      <<- gen + 1L
               gen
             },
+            watch = function(observer) {
+              drop_waiter()
+              waiter <<- observer
+              invisible(observer)
+            },
             settle = function(msg) {
+              drop_waiter()
               if (is.null(resolve)) {
                 return(FALSE)
               }
@@ -935,25 +954,26 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # back as "no problems to report".
         #
         # An observer rather than a poll, so the wait advances with the reactive
-        # graph rather than racing it, and it destroys itself as it settles. The
-        # commit timeout stays the backstop: a claim that never settles resolves
-        # there, and settle_commit() is a no-op the second time round.
+        # graph rather than racing it. The commit timeout stays the backstop: a
+        # claim that never settles resolves there. The bridge holds the observer
+        # and destroys it whichever way the commit settles, so a waiter that
+        # outlives its commit cannot settle the next one on its own claim.
         await_commit_review <- function(claimed) {
 
-          wait <- observe({
+          commit_bridge$watch(
+            observe({
 
-            if (!commit_settled(claimed, board)) {
-              return()
-            }
+              if (!commit_settled(claimed, board)) {
+                return()
+              }
 
-            review <- flush_review(commit_bridge$baseline(), commit_header())
+              review <- flush_review(commit_bridge$baseline(), commit_header())
 
-            settle_commit(coal(review, commit_clean_note(), fail_all = FALSE))
-
-            wait$destroy()
-          })
-
-          invisible(wait)
+              settle_commit(
+                coal(review, commit_clean_note(), fail_all = FALSE)
+              )
+            })
+          )
         }
 
         settle_commit <- function(msg) {

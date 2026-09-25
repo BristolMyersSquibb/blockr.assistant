@@ -566,6 +566,62 @@ test_that("the turn end releases a claim a later commit left in place", {
   )
 })
 
+test_that("a commit that timed out cannot settle the next one", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_commit_timeout_secs = 0
+  )
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+      p <- tools$commit()
+
+      board$eval <- list(h = "dormant")
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_, seq = 1L
+      )
+
+      expect_match(
+        drain_promise(p, session), "did not finish evaluating", fixed = TRUE
+      )
+
+      options(blockr.assistant_commit_timeout_secs = 60)
+
+      tools$add_block(type = "head_block", args = "{}", id = "g")
+      p <- tools$commit()
+      session$flushReact()
+
+      board$eval <- list(h = "dormant", g = "dormant")
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_, seq = 2L
+      )
+
+      expect_null(drain_promise(p, session, tries = 3L))
+
+      # The first commit's block runs at last. What this commit claimed has
+      # not, so it is still waiting.
+      board$eval <- list(h = "ready", g = "dormant")
+      expect_null(drain_promise(p, session, tries = 3L))
+
+      board$blocks <- list(g = result_block(data.frame(x = 1:3)))
+      board$eval <- list(h = "ready", g = "ready")
+
+      expect_match(drain_promise(p, session), "- g:", fixed = TRUE)
+    },
+    args = commit_board_args(brd, reactiveVal(cnd_frame())),
+    session = with_llm_session()
+  )
+})
+
 test_that("a changed block with no result is reported as unverified", {
 
   brd <- new_board(blocks = c(d = new_dataset_block("iris")))
