@@ -440,13 +440,17 @@ test_that("commit claims the blocks it touched, minus the ones it removes", {
 
 test_that("the claim states the assistant's whole set, so it replaces", {
 
-  delta <- commit_claim_delta(c("a", "b"))
+  delta <- commit_claim_delta(c("a", "b"), "asst-commit")
 
-  expect_named(delta, "blockr.assistant")
-  expect_identical(delta[["blockr.assistant"]], list(set = c("a", "b")))
+  expect_named(delta, "asst-commit")
+  expect_identical(delta[["asst-commit"]], list(set = c("a", "b")))
   expect_identical(
-    commit_claim_delta(character())[["blockr.assistant"]],
+    commit_claim_delta(character(), "asst-commit")[["asst-commit"]],
     list(set = character())
+  )
+
+  expect_identical(
+    commit_claim_owner(list(ns = shiny::NS("asst"))), "asst-commit"
   )
 })
 
@@ -501,7 +505,7 @@ test_that("the commit payload carries the claim over the touched blocks", {
 
       expect_identical(
         update()$sustain,
-        list(blockr.assistant = list(set = "h"))
+        set_names(list(list(set = "h")), session$ns("commit"))
       )
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
@@ -597,7 +601,11 @@ test_that("the turn end releases a claim a later commit left in place", {
 
       expect_identical(
         update(),
-        list(sustain = list(blockr.assistant = list(set = character())))
+        list(
+          sustain = set_names(
+            list(list(set = character())), session$ns("commit")
+          )
+        )
       )
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),

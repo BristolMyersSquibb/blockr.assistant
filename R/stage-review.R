@@ -306,8 +306,10 @@ commit_claim_ids <- function(payload, board) {
   setdiff(touched_blocks(payload, board), coal(payload$blocks$rm, character()))
 }
 
-commit_claim_owner <- function() {
-  "blockr.assistant"
+# Namespaced, as core's docs suggest, so two assistants on one board hold two
+# claims rather than overwriting one.
+commit_claim_owner <- function(session) {
+  session$ns("commit")
 }
 
 commit_claim <- function(ids) {
@@ -316,8 +318,8 @@ commit_claim <- function(ids) {
 
 # Stating the owner's whole set, so each commit's claim replaces the one
 # before it rather than accumulating, and an empty set releases.
-commit_claim_delta <- function(ids) {
-  set_names(list(commit_claim(ids)), commit_claim_owner())
+commit_claim_delta <- function(ids, owner) {
+  set_names(list(commit_claim(ids)), owner)
 }
 
 # Whether the claimed blocks have got far enough to be worth reading. A block

@@ -679,7 +679,7 @@ stage_extension_mod <- function(pending, board, id, delta) {
   )
 }
 
-flush_pending <- function(pending, update, claim = NULL) {
+flush_pending <- function(pending, update, claim = NULL, owner = NULL) {
 
   payload <- isolate(pending())
 
@@ -691,7 +691,7 @@ flush_pending <- function(pending, update, claim = NULL) {
   # Merged AFTER the has_any_changes() gate: a claim is a request component,
   # not a change, so one on its own must not make an empty payload look staged.
   if (length(claim)) {
-    payload$sustain <- commit_claim_delta(claim)
+    payload$sustain <- commit_claim_delta(claim, owner)
   }
 
   tryCatch(

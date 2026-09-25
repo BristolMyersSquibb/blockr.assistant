@@ -1023,7 +1023,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
                 delay = commit_timeout_secs()
               )
 
-              flush_pending(pending_update, update, claim)
+              flush_pending(
+                pending_update, update, claim, commit_claim_owner(session)
+              )
             }
           )
         }
@@ -1037,7 +1039,13 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         release_commit_claim <- function() {
 
           if (commit_bridge$drop_claim()) {
-            update(list(sustain = commit_claim_delta(character())))
+            update(
+              list(
+                sustain = commit_claim_delta(
+                  character(), commit_claim_owner(session)
+                )
+              )
+            )
           }
 
           invisible()
