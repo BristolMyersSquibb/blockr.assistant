@@ -50,6 +50,29 @@ test_that("format_flush_feedback reports an apply-phase failure", {
   )
 
   expect_match(msg, "apply phase", fixed = TRUE)
+  expect_match(msg, "boom", fixed = TRUE)
+})
+
+test_that("an apply-phase failure does not claim an unchanged board", {
+
+  msg <- format_flush_feedback(
+    list(ok = FALSE, phase = "apply", message = "boom")
+  )
+
+  expect_match(msg, "may be partly updated", fixed = TRUE)
+  expect_match(msg, "get_block_state", fixed = TRUE)
+  expect_match(msg, "get_block_result", fixed = TRUE)
+  expect_no_match(msg, "was not changed", fixed = TRUE)
+})
+
+test_that("a phase other than validate is reported as partly updated", {
+
+  msg <- format_flush_feedback(
+    list(ok = FALSE, phase = "augment", message = "boom")
+  )
+
+  expect_match(msg, "augment phase", fixed = TRUE)
+  expect_no_match(msg, "was not changed", fixed = TRUE)
 })
 
 test_that("format_flush_feedback reports newly broken blocks per block", {
@@ -81,7 +104,8 @@ test_that("format_flush_feedback combines a rejection and new conditions", {
     cnd_frame(cnd_row("a", "error", "boom"))
   )
 
-  expect_match(msg, "rejected", fixed = TRUE)
+  expect_match(msg, "may be partly updated", fixed = TRUE)
+  expect_match(msg, "partial", fixed = TRUE)
   expect_match(msg, "boom", fixed = TRUE)
 })
 

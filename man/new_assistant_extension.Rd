@@ -65,8 +65,9 @@ time from the \code{blockr.chat_save_turns} option (or the
 environment variable), which takes \code{0} for none, a positive whole
 number, or \code{Inf} for all, and defaults to 50. Setting it to \code{0} is
 worth considering where boards are shared, since the file otherwise
-carries whatever was typed into every thread. It describes the
-deployment rather than the board, so it is neither a constructor
+carries whatever was typed into every thread; at \code{0} the chat is not
+read at save time either, not read and then discarded. It describes
+the deployment rather than the board, so it is neither a constructor
 argument nor part of \code{state} -- restore reads whatever the file
 holds.
 
@@ -76,7 +77,10 @@ holding anything else under \code{history} opens without its
 conversation rather than on a guess at one. The raw provider
 response is stripped before saving, and a thread trimmed to the
 budget is cut between exchanges rather than inside one, so it never
-opens on half of a tool call.
+opens on half of a tool call. A thread reaches \code{state} once
+shinychat has recorded it, which is once the model has answered, so
+a question typed but not yet answered when the board is saved is not
+in the file.
 
 Which thread is open is remembered by the browser rather than in
 \code{state}, so a board reopened elsewhere lists its threads without

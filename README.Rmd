@@ -46,7 +46,7 @@ The chat is wired to whichever `ellmer` model the board's `llm_model` option res
 ## Status
 
 The assistant is feature-complete for the initial roadmap: read
-tools (`list_blocks`, `describe_block`, `query_data`, ...),
+tools (`list_blocks`, `describe_block`, `inspect_results`, ...),
 mutation tools (`add_block`, `modify_block`, ...) flushed
 atomically per turn, and a system prompt refreshed on every
 materialized board change so the model always sees the current

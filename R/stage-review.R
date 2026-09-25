@@ -14,13 +14,7 @@ format_flush_feedback <- function(outcome, conditions = NULL, results = NULL,
   parts <- character()
 
   if (!is.null(outcome) && isFALSE(outcome$ok)) {
-    parts <- c(
-      parts,
-      glue::glue(
-        "The board update was rejected during the {outcome$phase} phase ",
-        "and the board was not changed: {outcome$message}"
-      )
-    )
+    parts <- c(parts, reject_sentence(outcome))
   }
 
   if (length(results)) {
@@ -43,6 +37,34 @@ format_flush_feedback <- function(outcome, conditions = NULL, results = NULL,
   paste(c(header, parts), collapse = "\n\n")
 }
 
+# Core records a `validate` rejection from an observer that runs before
+# `apply_core_board_update()` is called, so nothing has moved and the board is
+# genuinely untouched. An `apply` rejection comes from the error handler
+# wrapping that call, and the apply it wraps is a sequence of separate
+# mutations with no rollback -- removed blocks torn down, the board object
+# rewritten, then each `blocks$mod` delta written one at a time. A throw on the
+# third of five modified blocks leaves the first two written. So the untouched
+# claim is made for `validate` alone, and any other phase points at the tools
+# that report what actually landed.
+reject_sentence <- function(outcome) {
+
+  if (identical(outcome$phase, "validate")) {
+    return(
+      glue::glue(
+        "The board update was rejected during the validate phase ",
+        "and the board was not changed: {outcome$message}"
+      )
+    )
+  }
+
+  glue::glue(
+    "The board update stopped partway through the {outcome$phase} phase, so ",
+    "the board may be partly updated: {outcome$message}. Read the blocks you ",
+    "touched with get_block_state and get_block_result to find out what ",
+    "landed."
+  )
+}
+
 flush_check_header <- function() {
   paste(
     "[Automatic board check after applying your changes.] Correct the",
@@ -57,7 +79,7 @@ review_invitation <- function() {
     "it. State is reported for a block you added, whose constructor resolves",
     "every argument you did not name; a block you modified holds what you",
     "staged, so it carries no state section. Inspect downstream results with",
-    "get_block_result or query_data when:",
+    "get_block_result or inspect_results when:",
     "a problem is reported below; you are unsure how a change propagates; or",
     "you made an upstream change (a column rename or removal, a new filter, a",
     "type change) that downstream blocks may depend on."
@@ -174,7 +196,7 @@ collect_touched_results <- function(touched, board, added = character(),
       lines,
       glue::glue(
         "(showing {length(shown)} of {length(ids)} blocks -- call ",
-        "get_block_result or query_data for the rest)"
+        "get_block_result or inspect_results for the rest)"
       )
     )
   }
