@@ -281,29 +281,28 @@ neighbor_blocks <- function(ids, board) {
   unique(c(lnks$from[lnks$to %in% ids], lnks$to[lnks$from %in% ids]))
 }
 
-# --- the commit's claim over the blocks it touched ---------------------------
-
 # A block the model changed on a tab nobody is looking at is `dormant`: core
 # does not evaluate it, so it raises nothing, so the commit reads back clean
 # and the model reports a table it has never seen. Claiming the touched blocks
 # for the length of the read-back is what closes that gap -- see the Evaluation
 # requests section of blockr.core::board_server().
 #
-# `sustain`, not `evaluate`. Both put an off-screen block into the eval set,
-# but `evaluate` is a one-off core drops the moment the block has run, so the
-# block is back to `dormant` by the time the review reads it: an error survives
-# (conditions persist) while a result does not. A claim held across the
-# read-back gives the model both, and holding it past the review keeps a
-# follow-up get_block_result from answering `dormant` for a block the model
-# just built.
+# A `sustain` claim, not an `evaluate` request. Both put an off-screen block
+# into the eval set, but `evaluate` is a one-off core drops the moment the
+# block has run, so the block is back to `dormant` by the time the review
+# reads it: an error survives (conditions persist) while a result does not. A
+# claim held across the read-back gives the model both, and holding it past
+# the review keeps a follow-up get_block_result from answering `dormant` for a
+# block the model just built.
 commit_claim_ids <- function(payload, board) {
 
   if (is.null(payload)) {
     return(character())
   }
 
-  # `sustain` `set` resolves against the POST-update block set, so a block this
-  # payload removes cannot be claimed -- core would reject the payload whole.
+  # A `sustain` `set` resolves against the POST-update block set, so a block
+  # this payload removes cannot be claimed -- core would reject the payload
+  # whole.
   setdiff(touched_blocks(payload, board), coal(payload$blocks$rm, character()))
 }
 
@@ -332,10 +331,10 @@ commit_settled <- function(ids, board) {
     return(TRUE)
   }
 
-  # eval_status() under a reactive read rather than an isolated one: the
-  # observer waiting on the claim has to re-run as each claimed block's status
-  # advances, and reading the container live is also what wakes it when a block
-  # the payload ADDED is constructed and gets a status for the first time.
+  # Read live rather than through eval_status(), which isolates: the observer
+  # waiting on the claim has to re-run as each claimed block's status advances.
+  # The per-block read in claim_status() is also what wakes it when a block the
+  # payload ADDED is constructed and gets a status for the first time.
   status <- board$eval
 
   # Nothing to wait on: a board that reports no statuses at all cannot say

@@ -463,7 +463,7 @@ test_that("a claimed block that has not run yet is not settled", {
     expect_true(commit_settled("b", board))
     expect_true(commit_settled(character(), board))
 
-    # `stale` is dormant with an upstream change on top of it.
+    # A `stale` block is dormant with an upstream change on top of it.
     board$eval <- list(a = "stale")
     expect_false(commit_settled("a", board))
 

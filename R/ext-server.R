@@ -1196,8 +1196,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             # A commit is in flight -- `awaiting` is set only by perform_commit,
             # which arms the bridge before dispatching. Answer it in-band: a
             # rejected update resolves at once; a successful one waits for the
-            # block re-evaluation it triggered to drain on the next flush before
-            # collecting the touched results.
+            # blocks the commit claimed to run before collecting the touched
+            # results.
             if (isFALSE(outcome$ok)) {
               settle_commit(
                 format_flush_feedback(
