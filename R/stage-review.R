@@ -220,12 +220,16 @@ review_result_line <- function(id, board, added, changed = character()) {
 # The gloss no_result_message() puts on a status with no result -- `dormant` is
 # "the deferral, not a failure, and not something to reconfigure over" -- is
 # right when the model browses a block it had nothing to do with, and wrong
-# here. This block is one it just changed, and the commit claimed it, so if it
-# still has no result the change is unverified rather than fine. The model read
-# the browse gloss as an all-clear and reported a table it had never seen.
+# here. This block is one it just changed, so if it still has no result the
+# change is unverified rather than fine. The model read the browse gloss as an
+# all-clear and reported a table it had never seen. A `failed` block is left
+# out: it did run, and its status line already says that it raised and where
+# to read the error.
 unverified_note <- function(id, board) {
 
-  if (!has_no_result(eval_status(id, board))) {
+  status <- eval_status(id, board)
+
+  if (!has_no_result(status) || identical(status, "failed")) {
     return(NULL)
   }
 

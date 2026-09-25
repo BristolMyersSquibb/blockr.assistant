@@ -644,5 +644,12 @@ test_that("a changed block with no result is reported as unverified", {
     expect_no_match(
       review_result_line("d", board, character()), "UNVERIFIED", fixed = TRUE
     )
+
+    # A block that raised did run, and its error is the verdict.
+    board$eval <- list(d = "failed")
+    expect_no_match(
+      review_result_line("d", board, character(), changed = "d"),
+      "UNVERIFIED", fixed = TRUE
+    )
   })
 })
