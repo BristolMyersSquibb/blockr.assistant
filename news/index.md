@@ -2,6 +2,28 @@
 
 ## blockr.assistant (development version)
 
+- The package now requires shinychat 0.5.0 and installs it from CRAN,
+  where it used to track shinychat’s `HEAD` through `Remotes:`. All it
+  took from `HEAD` is in that release: `chat_server()`, conversation
+  history, slash commands, attachments, and the fix that reports a turn
+  the provider rejects before it streams, which a version floor could
+  not express while every build read `0.4.0.9000`. The floor also keeps
+  the footer’s history button on screen. It is shown on the mark
+  shinychat sets exactly when it renders its own trigger, and builds
+  from before 2026-08-25 never set it, which left no way into the
+  drawer.
+
+  Compaction is adjusted to the same release. From 0.5.0 the chat
+  module’s `clear()` refuses to run while conversation history is
+  enabled (posit-dev/shinychat#399), as it always is here, so the
+  transcript replay that follows a compaction now clears only the
+  browser’s copy, through
+  [`shinychat::chat_clear()`](https://rdrr.io/pkg/shinychat/man/chat_clear.html).
+  Until now both `/compact` and the automatic bound failed against that
+  release once the model’s turns had been swapped for the compacted
+  ones, leaving the transcript and the model’s memory out of step
+  (#175).
+
 - Plot results are now described rather than dumped. A block built on
   [`blockr.core::new_plot_block()`](https://bristolmyerssquibb.github.io/blockr.core/reference/new_plot_block.html)
   evaluates to recorded plots, which the default summary rendered as a
