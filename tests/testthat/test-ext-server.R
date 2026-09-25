@@ -1714,7 +1714,7 @@ test_that("a provider swap hands the client over instead of remounting", {
 
       mounts <<- mounts + 1L
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$set_client <- function(new_client, sync = TRUE) {
         handed <<- list(client = new_client, sync = sync)
         invisible()
@@ -1764,7 +1764,7 @@ test_that("focus rides with the thread and a switch resets the slate", {
   testthat::local_mocked_bindings(
     chat_server = function(id, client, ...) {
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$history <- list(
         save = function() FALSE,
         on_save = function(fn) on_save <<- fn,
@@ -1832,7 +1832,7 @@ test_that("saving state survives a module with no history save", {
       hist_env$on_restore <- function(fn) invisible(fn)
       lockEnvironment(hist_env, bindings = TRUE)
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$history <- hist_env
 
       mod

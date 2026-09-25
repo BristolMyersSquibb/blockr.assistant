@@ -31,7 +31,7 @@ Imports:
     promises,
     R6,
     shiny,
-    shinychat,
+    shinychat (>= 0.5.0),
     shinyWidgets,
     yaml
 Suggests:
@@ -43,8 +43,7 @@ Suggests:
     withr
 Remotes:
     BristolMyersSquibb/blockr.core,
-    BristolMyersSquibb/blockr.dock,
-    posit-dev/shinychat/pkg-r
+    BristolMyersSquibb/blockr.dock
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder:

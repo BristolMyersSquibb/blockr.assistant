@@ -104,6 +104,16 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     "none"
   )
 
+  # A click reaches a hidden element as readily as a painted one, so the click
+  # below cannot say whether the footer offered the drawer at all.
+  painted <- paste(
+    "getComputedStyle(document.querySelector('.asst-history-btn')).display",
+    "!== 'none'"
+  )
+
+  app$wait_for_js(painted, timeout = 10 * 1000)
+  expect_true(app$get_js(painted))
+
   app$run_js("document.querySelector('.asst-history-btn').click()")
 
   app$wait_for_js(

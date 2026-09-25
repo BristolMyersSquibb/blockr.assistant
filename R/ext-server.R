@@ -718,7 +718,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           turns <- c(compacted_turns(summary, kept), arrived)
 
           cl$set_turns(turns)
-          replay_transcript(mod, turns)
+          replay_transcript(mod, turns, session)
 
           invisible()
         }
@@ -1198,12 +1198,14 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
   }
 }
 
-# `keep` leaves the client alone -- the turns are set by the caller, which is
-# the point: this is what stops the transcript and the model's memory drifting
-# apart. Tool traffic carries no text and is not replayed.
-replay_transcript <- function(mod, turns) {
+# Only the browser's copy is cleared -- the turns are set by the caller, which
+# is the point: this is what stops the transcript and the model's memory
+# drifting apart. It cannot go through the module's own `clear()`, which
+# refuses to run while conversation history is enabled, as it always is here.
+# Tool traffic carries no text and is not replayed.
+replay_transcript <- function(mod, turns, session) {
 
-  mod$clear(client_history = "keep")
+  shinychat::chat_clear("chat", session = session)
 
   for (turn in shown_turns(turns)) {
     mod$append(turn_text(turn), role = turn@role)
