@@ -509,6 +509,45 @@ test_that("the commit payload carries the claim over the touched blocks", {
   )
 })
 
+test_that("a commit waits for the blocks it claimed before reading back", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+  conds <- reactiveVal(cnd_frame())
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      tools <- client_r()$get_tools()
+      tools$add_block(type = "head_block", args = "{}", id = "h")
+
+      p <- tools$commit()
+      session$flushReact()
+
+      board$eval <- list(h = "dormant")
+      board$last_update <- list(
+        ok = TRUE, phase = "apply", message = NA_character_
+      )
+
+      expect_null(drain_promise(p, session, tries = 3L))
+
+      board$blocks <- list(h = result_block(NULL))
+      conds(cnd_frame(cnd_row("h", "error", "unused argument")))
+      board$eval <- list(h = "failed")
+
+      res <- drain_promise(p, session)
+
+      expect_match(res, "Block h conditions:", fixed = TRUE)
+      expect_match(res, "unused argument", fixed = TRUE)
+    },
+    args = commit_board_args(brd, conds),
+    session = with_llm_session()
+  )
+})
+
 test_that("the turn end releases a claim a later commit left in place", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -619,6 +658,59 @@ test_that("a commit that timed out cannot settle the next one", {
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()
+  )
+})
+
+test_that("a commit reads back an off-screen block that raises", {
+
+  live <- new.env()
+  mod <- fake_chat_mod()
+
+  withr::local_options(
+    blockr.chat_function = function(system_prompt = NULL, params = NULL) {
+      live$client <- fake_chat_function(system_prompt, params)
+      live$client
+    },
+    blockr.background_construction_delay = 0
+  )
+
+  testthat::local_mocked_bindings(
+    chat_server = function(id, client, ...) mod,
+    .package = "shinychat"
+  )
+
+  brd <- new_board(blocks = c(data = new_dataset_block("iris")))
+
+  testServer(
+    getS3method("board_server", "board"),
+    {
+      session$flushReact()
+
+      tools <- live$client$get_tools()
+
+      tools$add_block(
+        type = "subset_block", args = '{"subset": "no_such_col > 1"}',
+        id = "bad"
+      )
+      tools$add_link(from = "data", to = "bad", input = "data")
+
+      res <- drain_promise(tools$commit(), session)
+
+      expect_identical(eval_status("bad", rv), "failed")
+      expect_match(res, "Block bad conditions:", fixed = TRUE)
+      expect_no_match(res, "dormant", fixed = TRUE)
+
+      # Held until the turn ends, then the board goes back to evaluating only
+      # what is on screen.
+      expect_identical(unlst(rv$claims()), "bad")
+
+      mod$last_turn(ellmer::Turn("assistant", "done"))
+      session$flushReact()
+
+      expect_length(rv$claims(), 0L)
+      expect_identical(eval_status("bad", rv), "dormant")
+    },
+    args = assistant_board_args(brd, visible = "data")
   )
 })
 
