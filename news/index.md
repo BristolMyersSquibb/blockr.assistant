@@ -18,7 +18,7 @@
   enabled (posit-dev/shinychat#399), as it always is here, so the
   transcript replay that follows a compaction now clears only the
   browser’s copy, through
-  [`shinychat::chat_clear()`](https://rdrr.io/pkg/shinychat/man/chat_clear.html).
+  [`shinychat::chat_clear()`](https://posit-dev.github.io/shinychat/r/reference/chat_clear.html).
   Until now both `/compact` and the automatic bound failed against that
   release once the model’s turns had been swapped for the compacted
   ones, leaving the transcript and the model’s memory out of step
