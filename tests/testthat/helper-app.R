@@ -89,16 +89,17 @@ retry_chrome_launch <- function(attempts = 3L) {
   stop(res)
 }
 
-# The dock sizes the assistant rail when the app loads and does not re-flow it
-# on a later resize, so the rail's width is decided by whatever viewport the
-# browser happened to open with. That default is per-platform, and the macOS
-# runner opened narrow enough that the rail's content box fell under the 140px
-# container-query threshold: the chat slot was blanked, and the composer inside
-# it could not take focus (#151). Measured locally, loading at 600px puts the
-# rail at 156px with a 136px content box and blanks the chat, while loading at
-# 1600px puts it at 211px. Resizing after load does neither, which is why a
-# resize-based probe reports a rail that never narrows. Pinning the viewport is
-# what makes the layout the same on every runner.
+# Chat is blanked below a 140px container query, so an e2e driver opening
+# narrow enough to squeeze the assistant's rail gets a composer that cannot
+# take focus (#151). Pinning the width here keeps every runner on one layout.
+#
+# The diagnosis that pin originally shipped on was wrong, and is worth not
+# repeating: the rail was thought to follow whatever viewport the browser
+# happened to open with. What actually ground it down was dockview laying the
+# shell out from a grid the ResizeObserver had not yet seeded, so a restore
+# that won the race sized the rail against a 100x100 default and nothing
+# re-flowed it -- fixed upstream in cynkra/dockViewR#116. Whether the pin still
+# carries weight has not been measured since.
 #
 # Every e2e driver goes through here, so the browser launch is hardened in the
 # same place as the viewport. The `Page.navigate` command draws its timeout
@@ -106,12 +107,11 @@ retry_chrome_launch <- function(attempts = 3L) {
 # object, and chromote's hardcoded 10s default is short for a loaded runner
 # binding the app's port (rstudio/shinytest2#448). Raise it on the object
 # `retry_chrome_launch()` returns -- the one AppDriver draws its session from.
-# Debug logging is on for every e2e app because blockr.dock gates its restore
-# probe on it at both ends -- `board_ui()` only attaches the client half under
-# it, and nothing is sent without it. The probe reports the dock container's
-# width at the moment the layout is restored, which is the reading that tells
-# the two candidate triggers for a ground-down rail apart, and it is worth
-# nothing if it only reports on a runner nobody is debugging on. A caller's
+#
+# Debug logging is on for every e2e app so that the app log `composer_log()`
+# attaches to a failed composer wait has something to report. It is read only
+# on failure, so a green run pays nothing for it, and for a failure that shows
+# up on a CI runner alone it is the only record of what the app did. A caller's
 # own options win, so a test injecting one (the dead chat function) keeps it.
 asst_app_driver <- function(app_dir, ..., options = list()) {
   chrome <- retry_chrome_launch()
