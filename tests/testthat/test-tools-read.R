@@ -609,6 +609,25 @@ test_that("inspect_results cuts output at a budget of characters", {
   expect_match(res, "the output is incomplete", fixed = TRUE)
 })
 
+test_that("inspect_results prints a frame too wide for 80 columns whole", {
+
+  wide <- as.data.frame(
+    matrix(1:30, nrow = 2L, dimnames = list(NULL, sprintf("col_%02d", 1:15)))
+  )
+  width <- getOption("width")
+
+  res <- isolate(call_query("wide", list(wide = wide)))
+
+  expect_match(res, "col_01[^\n]*col_15")
+  expect_identical(getOption("width"), width)
+
+  withr::local_options(blockr.assistant_eval_print_width = 80L)
+
+  res <- isolate(call_query("wide", list(wide = wide)))
+
+  expect_no_match(res, "col_01[^\n]*col_15")
+})
+
 test_that("inspect_results returns whatever the code draws as an image", {
 
   res <- isolate(call_query("plot(1:10)"))

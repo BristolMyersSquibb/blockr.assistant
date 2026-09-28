@@ -10,7 +10,15 @@
 
   The cap now counts characters, 16,000 by default through the
   `blockr.assistant_eval_max_chars` option, where it counted 200 lines,
-  which left a single long line unbounded.
+  which bounded neither a single long line nor how much a wider print puts
+  on each. Code now prints at a width of 200 rather than R's default of
+  80, set through `blockr.assistant_eval_print_width`. At 80 a wider frame
+  prints in blocks of columns, each repeating every row, so a cut inside
+  the first block showed rows without their later columns; at 200 such a
+  frame prints a row per line, and the rows before a cut are whole. The
+  `width` and `height` arguments now say that they size the plot device
+  and leave printed text alone, since the model had raised `width` to 1200
+  to see more rows.
 
 * The package now requires shinychat 0.5.0 and installs it from CRAN,
   where it used to track shinychat's `HEAD` through `Remotes:`. All it
