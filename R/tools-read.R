@@ -29,7 +29,7 @@ tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_blocks", {
+      with_tool_errors({
 
         b <- isolate(board$board)
         blks <- board_blocks(b)
@@ -77,7 +77,7 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_block", {
+      with_tool_errors({
 
         brd <- isolate(board$board)
         blks <- board_blocks(brd)
@@ -137,7 +137,7 @@ tool_list_links <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_links", {
+      with_tool_errors({
         as.data.frame(board_links(isolate(board$board)))
       })
     },
@@ -155,7 +155,7 @@ tool_list_stacks <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_stacks", {
+      with_tool_errors({
 
         stks <- board_stacks(isolate(board$board))
 
@@ -197,7 +197,7 @@ tool_describe_stack <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_stack", {
+      with_tool_errors({
 
         stks <- board_stacks(isolate(board$board))
 
@@ -260,7 +260,7 @@ tool_list_block_types <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_block_types", {
+      with_tool_errors({
 
         uids <- list_blocks()
 
@@ -319,7 +319,7 @@ tool_describe_block_type <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_block_type", {
+      with_tool_errors({
 
         if (!id %in% list_blocks()) {
           return(
@@ -377,7 +377,7 @@ tool_get_block_result <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_result", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 
@@ -410,7 +410,7 @@ tool_get_block_state <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_state", {
+      with_tool_errors({
 
         blks <- board_blocks(isolate(board$board))
 
@@ -458,7 +458,7 @@ tool_get_block_conditions <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_conditions", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 
@@ -508,7 +508,7 @@ tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
     function(code, width = NULL, height = NULL) {
-      with_tool_errors("inspect_results", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 

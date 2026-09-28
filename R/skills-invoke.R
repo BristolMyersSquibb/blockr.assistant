@@ -11,7 +11,7 @@ tool_read_skill <- function() {
 
   ellmer::tool(
     function(name, file = NULL) {
-      with_tool_errors("read_skill", {
+      with_tool_errors({
 
         skill <- skill_catalogue()[[name]]
 

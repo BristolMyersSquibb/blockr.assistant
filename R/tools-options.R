@@ -35,7 +35,7 @@ tool_list_board_options <- function(board, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_board_options", {
+      with_tool_errors({
 
         opts <- board_options(isolate(board$board))
 
@@ -89,7 +89,7 @@ tool_set_board_option <- function(board, session) {
 
   ellmer::tool(
     function(id, value) {
-      with_tool_errors("set_board_option", {
+      with_tool_errors({
 
         opts <- board_options(isolate(board$board))
 

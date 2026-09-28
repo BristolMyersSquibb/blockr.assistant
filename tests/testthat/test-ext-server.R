@@ -700,22 +700,17 @@ test_that("recovery sequence flushes a single corrected add", {
 
       tools <- client_r()$get_tools()
 
-      expect_match(
-        tools$add_block(type = "head_block", args = "{}", id = "x"),
-        "^Staged add_block"
-      )
-      expect_match(
-        tools$modify_block(id = "x", args = "{\"n\": 10}"),
-        "staged for creation"
-      )
-      expect_match(
-        tools$remove_block(id = "x"),
-        "^Staged remove_block"
-      )
-      expect_match(
-        tools$add_block(type = "head_block", args = "{}", id = "x"),
-        "^Staged add_block"
-      )
+      res <- tools$add_block(type = "head_block", args = "{}", id = "x")
+      expect_match(res, "^Staged add_block")
+
+      res <- tools$modify_block(id = "x", args = "{\"n\": 10}")
+      expect_match(res@error, "staged for creation")
+
+      res <- tools$remove_block(id = "x")
+      expect_match(res, "^Staged remove_block")
+
+      res <- tools$add_block(type = "head_block", args = "{}", id = "x")
+      expect_match(res, "^Staged add_block")
 
       flush_pending(pending_update, update)
 

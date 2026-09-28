@@ -1,18 +1,12 @@
-with_tool_errors <- function(name, expr) {
+# A failure goes back as a tool result carrying `error` rather than as text,
+# since the chat's tool card takes its status from `error` alone. The model
+# reads the message behind ellmer's own "Tool calling failed with error", so
+# the message carries no prefix of its own.
+with_tool_errors <- function(expr) {
 
   tryCatch(
     expr,
-    error = function(e) {
-
-      msg <- conditionMessage(e)
-      pat <- glue::glue("^{name}\\([^)]*\\) failed:")
-
-      if (grepl(pat, msg)) {
-        msg
-      } else {
-        glue::glue("{name} failed: {msg}")
-      }
-    }
+    error = function(e) ellmer::ContentToolResult(error = conditionMessage(e))
   )
 }
 

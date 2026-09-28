@@ -68,9 +68,9 @@ test_that("add_block rejects arguments outside a block's documented set", {
 
   res <- add(type = "dataset_block", args = "{\"bogus\": 1}", id = "d2")
 
-  expect_match(res, "unrecognized argument", fixed = TRUE)
-  expect_match(res, "bogus", fixed = TRUE)
-  expect_match(res, "dataset", fixed = TRUE)
+  expect_match(res@error, "unrecognized argument", fixed = TRUE)
+  expect_match(res@error, "bogus", fixed = TRUE)
+  expect_match(res@error, "dataset", fixed = TRUE)
   expect_false("d2" %in% names(isolate(env$pending()$blocks$add)))
 })
 
@@ -105,13 +105,12 @@ test_that("add_link names the unknown block, not the generated link id", {
 
   res <- add(from = "data", to = "scatter_plot", input = "data")
 
-  expect_match(
-    res,
+  expect_identical(
+    res@error,
     paste(
-      "add_link failed: no block `scatter_plot` to link to.",
+      "no block `scatter_plot` to link to.",
       "Known block ids: data, head, tail."
-    ),
-    fixed = TRUE
+    )
   )
 
   expect_length(isolate(env$pending()$links$add), 0L)
@@ -137,8 +136,7 @@ test_that("add_block surfaces a constructor error instead of throwing", {
     type = "head_block", args = "{\"direction\": \"sideways\"}", id = "h2"
   )
 
-  expect_match(res, "add_block")
-  expect_match(res, "should be one of", fixed = TRUE)
+  expect_match(res@error, "should be one of", fixed = TRUE)
   expect_false("h2" %in% names(isolate(env$pending()$blocks$add)))
 })
 
@@ -151,8 +149,8 @@ test_that("add_link rejects an over-saturated input instead of throwing", {
   # at stage time rather than producing an unbuildable board.
   res <- add(from = "tail", to = "head", input = "data", id = "l2")
 
-  expect_match(res, "add_link")
-  expect_match(res, "failed", fixed = TRUE)
+  expect_match(res@error, "add_link")
+  expect_match(res@error, "failed", fixed = TRUE)
   expect_false("l2" %in% names(isolate(env$pending()$links$add)))
 })
 
@@ -173,7 +171,7 @@ test_that("add_block surfaces JSON parse errors", {
 
   res <- add(type = "head_block", args = "{bad json}", id = "new")
 
-  expect_match(res, "^add_block failed:")
+  expect_match(res@error, "lexical error", fixed = TRUE)
   expect_length(isolate(env$pending()$blocks$add), 0L)
 })
 
@@ -182,14 +180,11 @@ test_that("add_block rejects non-object JSON args", {
   env <- new_mutation_env()
   add <- tool_add_block(env$board, env$pending, NULL)
 
-  expect_match(
-    add(type = "head_block", args = "[1,2,3]", id = "a"),
-    "must be a JSON object"
-  )
-  expect_match(
-    add(type = "head_block", args = "\"scalar\"", id = "b"),
-    "must be a JSON object"
-  )
+  array  <- add(type = "head_block", args = "[1,2,3]", id = "a")
+  scalar <- add(type = "head_block", args = "\"scalar\"", id = "b")
+
+  expect_match(array@error, "must be a JSON object")
+  expect_match(scalar@error, "must be a JSON object")
   expect_length(isolate(env$pending()$blocks$add), 0L)
 })
 
@@ -198,14 +193,11 @@ test_that("add_block treats null and empty args as no args", {
   env <- new_mutation_env()
   add <- tool_add_block(env$board, env$pending, NULL)
 
-  expect_match(
-    add(type = "head_block", args = "null", id = "n"),
-    "^Staged"
-  )
-  expect_match(
-    add(type = "head_block", args = "{}", id = "e"),
-    "^Staged"
-  )
+  null_args  <- add(type = "head_block", args = "null", id = "n")
+  empty_args <- add(type = "head_block", args = "{}", id = "e")
+
+  expect_match(null_args, "^Staged")
+  expect_match(empty_args, "^Staged")
 })
 
 test_that("add_block surfaces unknown block type with discoverable hint", {
@@ -215,9 +207,8 @@ test_that("add_block surfaces unknown block type with discoverable hint", {
 
   res <- add(type = "not_a_block", args = "{}", id = "new")
 
-  expect_match(res, "^add_block failed:")
-  expect_match(res, "unknown block type")
-  expect_match(res, "list_block_types")
+  expect_match(res@error, "unknown block type")
+  expect_match(res@error, "list_block_types")
 })
 
 test_that("add_block generates an id when omitted", {
@@ -240,8 +231,8 @@ test_that("add_block rejects a duplicate id via core's validator", {
 
   res <- add(type = "head_block", args = "{}", id = "head")
 
-  expect_match(res, "^add_block")
-  expect_match(res, "failed")
+  expect_match(res@error, "^add_block")
+  expect_match(res@error, "failed")
 })
 
 test_that("remove_block stages a removal", {
@@ -262,8 +253,8 @@ test_that("remove_block on unknown id fails via the validator", {
 
   res <- rm(id = "bogus")
 
-  expect_match(res, "^remove_block")
-  expect_match(res, "failed")
+  expect_match(res@error, "^remove_block")
+  expect_match(res@error, "failed")
 })
 
 test_that("modify_block stages a delta against a committed block", {
@@ -285,10 +276,9 @@ test_that("modify_block rejects an empty delta", {
   env <- new_mutation_env()
   mod <- tool_modify_block(env$board, env$pending, NULL)
 
-  expect_match(
-    mod(id = "head", args = "{}"),
-    "no fields supplied"
-  )
+  res <- mod(id = "head", args = "{}")
+
+  expect_match(res@error, "no fields supplied")
   expect_length(isolate(env$pending()$blocks$mod), 0L)
 })
 
@@ -301,9 +291,9 @@ test_that("modify_block rejects against a pending add (recovery message)", {
   add(type = "head_block", args = "{}", id = "new")
   res <- mod(id = "new", args = "{\"n\": 9}")
 
-  expect_match(res, "staged for creation")
-  expect_match(res, "remove_block")
-  expect_match(res, "add_block")
+  expect_match(res@error, "staged for creation")
+  expect_match(res@error, "remove_block")
+  expect_match(res@error, "add_block")
 })
 
 test_that("modify_block rejects when the delta key is not ctrl-able", {
@@ -313,8 +303,8 @@ test_that("modify_block rejects when the delta key is not ctrl-able", {
 
   res <- mod(id = "data", args = "{\"package\": \"utils\"}")
 
-  expect_match(res, "^modify_block")
-  expect_match(res, "not externally controllable")
+  expect_match(res@error, "^modify_block")
+  expect_match(res@error, "not externally controllable")
 })
 
 test_that("add_link constructs a link and stages it", {
@@ -348,7 +338,7 @@ test_that("modify_link stages a partial delta and rejects when empty", {
   expect_match(res, "Staged modify_link(lnk1)", fixed = TRUE)
 
   empty <- mod(id = "lnk1")
-  expect_match(empty, "^modify_link failed:")
+  expect_match(empty@error, "no fields supplied")
 })
 
 test_that("add_stack constructs a stack and stages it", {
@@ -382,7 +372,7 @@ test_that("modify_stack stages a partial delta and rejects when empty", {
   expect_match(res, "Staged modify_stack(pipe)", fixed = TRUE)
 
   empty <- mod(id = "pipe")
-  expect_match(empty, "^modify_stack failed:")
+  expect_match(empty@error, "no fields supplied")
 })
 
 test_that("recovery sequence flushes one corrected add", {
@@ -392,10 +382,17 @@ test_that("recovery sequence flushes one corrected add", {
   mod <- tool_modify_block(env$board, env$pending, NULL)
   rm <- tool_remove_block(env$board, env$pending, NULL)
 
-  expect_match(add(type = "head_block", args = "{}", id = "x"), "^Staged")
-  expect_match(mod(id = "x", args = "{\"n\": 10}"), "^modify_block")
-  expect_match(rm(id = "x"), "^Staged")
-  expect_match(add(type = "head_block", args = "{}", id = "x"), "^Staged")
+  res <- add(type = "head_block", args = "{}", id = "x")
+  expect_match(res, "^Staged")
+
+  res <- mod(id = "x", args = "{\"n\": 10}")
+  expect_match(res@error, "^modify_block")
+
+  res <- rm(id = "x")
+  expect_match(res, "^Staged")
+
+  res <- add(type = "head_block", args = "{}", id = "x")
+  expect_match(res, "^Staged")
 
   p <- isolate(env$pending())
   expect_length(p$blocks$add, 1L)

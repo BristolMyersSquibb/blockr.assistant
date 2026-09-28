@@ -8,7 +8,7 @@ register_commit_tool <- function(client, perform) {
 tool_commit <- function(perform) {
 
   ellmer::tool(
-    function() with_tool_errors("commit", perform()),
+    function() with_tool_errors(perform()),
     name = "commit",
     description = paste(
       "Apply everything you have staged this turn to the board as one",
@@ -36,7 +36,7 @@ tool_discard <- function(pending) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("discard", {
+      with_tool_errors({
 
         if (has_any_changes(isolate(pending()))) {
 

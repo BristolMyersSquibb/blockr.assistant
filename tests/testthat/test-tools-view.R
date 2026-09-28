@@ -131,8 +131,7 @@ test_that("validate_layout surfaces structural errors without staging", {
     "], \"orientation\": \"horizontal\"}"
   ))
 
-  expect_match(res, "^validate_layout failed:")
-  expect_match(res, "must be a string or an object")
+  expect_match(res@error, "must be a string or an object")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -143,8 +142,7 @@ test_that("validate_layout rejects unknown panel IDs", {
 
   res <- vl(layout = "{\"children\": [\"a\", \"ghost\"]}")
 
-  expect_match(res, "^validate_layout failed:")
-  expect_match(res, "ghost")
+  expect_match(res@error, "ghost")
 })
 
 test_that("validate_layout accepts staged-add panel IDs", {
@@ -176,8 +174,7 @@ test_that("validate_layout normalizes and id-checks a railed panel", {
     layout = '{"children": ["a"], "rails": {"left": {"panels": ["ghost"]}}}'
   )
 
-  expect_match(bad, "^validate_layout failed:")
-  expect_match(bad, "ghost")
+  expect_match(bad@error, "ghost")
 })
 
 test_that("add_view stages a parsed layout under its display name", {
@@ -239,7 +236,7 @@ test_that("add_view surfaces layout JSON parse errors as tool failures", {
 
   res <- av(name = "X", layout = "{not json")
 
-  expect_match(res, "^add_view failed:")
+  expect_match(res@error, "lexical error", fixed = TRUE)
   expect_length(isolate(env$pending()$views$add), 0L)
 })
 
@@ -253,8 +250,7 @@ test_that("add_view rejects malformed layout objects with a classed error", {
     layout = "{\"children\": [{\"unexpected\": \"a\"}]}"
   )
 
-  expect_match(res, "^add_view failed:")
-  expect_match(res, "must be a string or an object")
+  expect_match(res@error, "must be a string or an object")
 })
 
 test_that("remove_view stages an rm by id and rejects the last view", {
@@ -274,7 +270,7 @@ test_that("remove_view stages an rm by id and rejects the last view", {
   rv_solo <- tool_remove_view(solo_env$board, solo_env$pending, session = NULL)
 
   res <- rv_solo(id = "only")
-  expect_match(res, "cannot remove the last remaining view")
+  expect_match(res@error, "cannot remove the last remaining view")
   expect_length(isolate(solo_env$pending()$views$rm), 0L)
 })
 
@@ -317,8 +313,7 @@ test_that("add_panel_to_view rejects an unknown panel before staging", {
 
   res <- apv(view = "v_over", panel = "ghost")
 
-  expect_match(res, "^add_panel_to_view failed:")
-  expect_match(res, "does not resolve to a current block or extension")
+  expect_match(res@error, "does not resolve to a current block or extension")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -329,8 +324,7 @@ test_that("add_panel_to_view rejects a bad side keyword", {
 
   res <- apv(view = "v_over", panel = "b", near = "a", side = "diagonal")
 
-  expect_match(res, "^add_panel_to_view failed:")
-  expect_match(res, "side must be one of")
+  expect_match(res@error, "side must be one of")
 })
 
 test_that("add_panel_to_view stages a rail destination", {
@@ -357,8 +351,7 @@ test_that("add_panel_to_view rejects a bad rail edge", {
 
   res <- apv(view = "v_over", panel = "b", rail = "top")
 
-  expect_match(res, "^add_panel_to_view failed:")
-  expect_match(res, "rail must be one of: left, right")
+  expect_match(res@error, "rail must be one of: left, right")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -370,8 +363,7 @@ test_that("add_panel_to_view rejects a rail combined with a tree placement", {
   res <- apv(view = "v_over", panel = "b", near = "a", side = "right",
              rail = "left")
 
-  expect_match(res, "^add_panel_to_view failed:")
-  expect_match(res, "cannot combine with near, side")
+  expect_match(res@error, "cannot combine with near, side")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -382,8 +374,7 @@ test_that("add_panel_to_view rejects a size alongside a rail", {
 
   res <- apv(view = "v_over", panel = "b", rail = "right", size = 0.3)
 
-  expect_match(res, "^add_panel_to_view failed:")
-  expect_match(res, "cannot combine with size")
+  expect_match(res@error, "cannot combine with size")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -394,7 +385,7 @@ test_that("add_panel_to_view rejects an add on a non-existent view", {
 
   res <- apv(view = "does_not_exist", panel = "b")
 
-  expect_match(res, "add_panel_to_view\\(does_not_exist\\) failed:")
+  expect_match(res@error, "add_panel_to_view\\(does_not_exist\\) failed:")
 })
 
 test_that("remove_panel_from_view stages an rm verb by id", {
@@ -445,8 +436,8 @@ test_that("move_panel rejects a move onto a non-member anchor", {
 
   res <- mp(view = "v_over", panel = "a", near = "b", side = "right")
 
-  expect_match(res, "move_panel\\(v_over\\) failed:")
-  expect_match(res, "not a view member")
+  expect_match(res@error, "move_panel\\(v_over\\) failed:")
+  expect_match(res@error, "not a view member")
 })
 
 test_that("move_panel stages a rail move without an anchor", {
@@ -491,8 +482,7 @@ test_that("move_panel rejects a rail combined with an anchor", {
 
   res <- mp(view = "v_main", panel = "b", near = "a", rail = "left")
 
-  expect_match(res, "^move_panel failed:")
-  expect_match(res, "cannot combine with near")
+  expect_match(res@error, "cannot combine with near")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -503,8 +493,7 @@ test_that("move_panel rejects a move naming no destination", {
 
   res <- mp(view = "v_main", panel = "b")
 
-  expect_match(res, "^move_panel failed:")
-  expect_match(res, "needs a destination")
+  expect_match(res@error, "needs a destination")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -530,8 +519,7 @@ test_that("resize_panel rejects an out-of-range size before staging", {
 
   res <- rz(view = "v_main", panel = "b", size = 1.5)
 
-  expect_match(res, "^resize_panel failed:")
-  expect_match(res, "size must be a ratio in \\(0, 1\\)")
+  expect_match(res@error, "size must be a ratio in \\(0, 1\\)")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -542,8 +530,8 @@ test_that("resize_panel rejects a resize on a non-member panel", {
 
   res <- rz(view = "v_over", panel = "b", size = 0.4)
 
-  expect_match(res, "resize_panel\\(v_over\\) failed:")
-  expect_match(res, "not view members")
+  expect_match(res@error, "resize_panel\\(v_over\\) failed:")
+  expect_match(res@error, "not view members")
 })
 
 test_that("add_panel_to_view records a size hint on the add", {
@@ -599,8 +587,8 @@ test_that("focus_panel rejects a panel that isn't a member of the view", {
 
   res <- fp(view = "v_over", panel = "b")
 
-  expect_match(res, "focus_panel\\(v_over\\) failed:")
-  expect_match(res, "not a view member")
+  expect_match(res@error, "focus_panel\\(v_over\\) failed:")
+  expect_match(res@error, "not a view member")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -611,8 +599,7 @@ test_that("focus_panel rejects an unknown panel before staging", {
 
   res <- fp(view = "v_main", panel = "ghost")
 
-  expect_match(res, "^focus_panel failed:")
-  expect_match(res, "does not resolve to a current block or extension")
+  expect_match(res@error, "does not resolve to a current block or extension")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -649,8 +636,7 @@ test_that("set_active_view rejects an unknown view", {
   sav <- tool_set_active_view(env$board, env$pending, session = NULL)
 
   res <- sav(id = "ghost")
-  expect_match(res, "^set_active_view failed:")
-  expect_match(res, "does not exist")
+  expect_match(res@error, "does not exist")
 })
 
 test_that("rename_view stages a name change keyed by id, layout untouched", {
@@ -687,8 +673,7 @@ test_that("rename_view rejects an unknown view id", {
 
   res <- rnv(id = "ghost", name = "Other")
 
-  expect_match(res, "^rename_view failed:")
-  expect_match(res, "does not exist")
+  expect_match(res@error, "does not exist")
 })
 
 test_that("rename_view leaves view membership in place (regression)", {

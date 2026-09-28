@@ -23,15 +23,15 @@ call_tool <- function(tool_def, ...) {
 
 test_that("with_tool_errors returns the value on success", {
 
-  expect_identical(with_tool_errors("ok", 1L + 1L), 2L)
+  expect_identical(with_tool_errors(1L + 1L), 2L)
 })
 
-test_that("with_tool_errors traps errors into a formatted string", {
+test_that("with_tool_errors returns an error as a failed tool result", {
 
-  res <- with_tool_errors("trap", stop("boom"))
+  res <- with_tool_errors(stop("boom"))
 
-  expect_type(res, "character")
-  expect_match(res, "trap failed: boom", fixed = TRUE)
+  expect_s7_class(res, ellmer::ContentToolResult)
+  expect_identical(res@error, "boom")
 })
 
 test_that("tool_list_blocks returns id/type/name/package/status rows", {
@@ -539,15 +539,14 @@ test_that("inspect_results returns the failed-envelope on a parse error", {
 
   res <- isolate(call_query("nrow(data", list(data = iris)))
 
-  expect_match(res, "^inspect_results failed:")
+  expect_match(res@error, "unexpected end of input", fixed = TRUE)
 })
 
 test_that("inspect_results returns the failed-envelope on runtime error", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "^inspect_results failed:")
-  expect_match(res, "boom", fixed = TRUE)
+  expect_match(res@error, "boom", fixed = TRUE)
 })
 
 test_that("inspect_results skips blocks whose result errors", {
@@ -918,15 +917,15 @@ test_that("the eval scope is base R on every board", {
 
   res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
 
-  expect_match(res, "could not find function", fixed = TRUE)
+  expect_match(res@error, "could not find function", fixed = TRUE)
 })
 
 test_that("inspect_results leaves an unrelated error message alone", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "boom", fixed = TRUE)
-  expect_no_match(res, "prefix", fixed = TRUE)
+  expect_match(res@error, "boom", fixed = TRUE)
+  expect_no_match(res@error, "prefix", fixed = TRUE)
 })
 
 test_that("inspect_results respects invisibility, as a REPL does", {
