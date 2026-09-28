@@ -3,8 +3,10 @@
 # is not added on top. Only the over-long case is touched; text within budget
 # is returned verbatim. The hint is the caller's: a block summary points at
 # get_block_state, while a result and a stack summary need none -- a result
-# summary names what the result is, which is the pointer.
-truncate_chars <- function(txt, max_chars, hint = NULL) {
+# summary names what the result is, which is the pointer. With `whole_lines`,
+# the cut backs off to the last line break inside the budget, so a line is
+# shown whole or not at all; text with no line break there is cut mid-line.
+truncate_chars <- function(txt, max_chars, hint = NULL, whole_lines = FALSE) {
 
   if (nchar(txt) <= max_chars) {
     return(txt)
@@ -18,6 +20,15 @@ truncate_chars <- function(txt, max_chars, hint = NULL) {
   # Reserve room for the marker sized against the largest possible omitted
   # count (the whole input), so the reservation always covers the real one.
   keep <- max(0L, max_chars - nchar(marker(nchar(txt))))
+
+  if (whole_lines) {
+
+    breaks <- gregexpr("\n", substr(txt, 1L, keep + 1L), fixed = TRUE)[[1L]]
+
+    if (max(breaks) > 0L) {
+      keep <- max(breaks) - 1L
+    }
+  }
 
   paste0(substr(txt, 1L, keep), marker(nchar(txt) - keep))
 }

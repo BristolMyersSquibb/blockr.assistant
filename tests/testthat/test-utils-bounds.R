@@ -17,6 +17,23 @@ test_that("truncate_chars counts the marker and hint against max_chars", {
   expect_lte(nchar(truncate_chars(long, 200L, hint = hint)), 200L)
 })
 
+test_that("truncate_chars can keep whole lines", {
+
+  txt <- paste(strrep("x", 30L), strrep("y", 30L), strrep("z", 30L), sep = "\n")
+
+  expect_match(truncate_chars(txt, 70L), "\nyyy", fixed = TRUE)
+  expect_identical(
+    truncate_chars(txt, 70L, whole_lines = TRUE),
+    paste0(strrep("x", 30L), "\n... [+62 chars truncated]")
+  )
+
+  # Text with no line break inside the budget can only be cut mid-line.
+  long <- truncate_chars(strrep("x", 200L), 70L, whole_lines = TRUE)
+
+  expect_lte(nchar(long), 70L)
+  expect_match(long, "^x+\n")
+})
+
 test_that("the char cap is option-driven, defaulting to 2000", {
 
   expect_identical(summary_max_chars(), 2000L)

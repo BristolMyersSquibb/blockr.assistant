@@ -582,8 +582,10 @@ tool_inspect_results <- function(board, update, session) {
 
         # The marker of truncate_chars() alone reads as a footnote, and a
         # model shown the head of a frame that way took it for the whole
-        # table. So the hint says what the cut means and what to do instead.
-        # An empty capture is left alone: collapsed, it adds a blank line.
+        # table. So the hint says what the cut means and what to do instead,
+        # and the cut keeps whole lines: a row cut partway reads as a row with
+        # fewer columns or shorter numbers. An empty capture is left alone:
+        # collapsed, it adds a blank line.
         if (length(output)) {
           output <- truncate_chars(
             paste(output, collapse = "\n"),
@@ -594,7 +596,8 @@ tool_inspect_results <- function(board, update, session) {
               "so do not conclude what the rest holds or lacks. Ask again for",
               "the part you need: select the columns that matter, subset the",
               "rows, or print a range at a time"
-            )
+            ),
+            whole_lines = TRUE
           )
         }
 

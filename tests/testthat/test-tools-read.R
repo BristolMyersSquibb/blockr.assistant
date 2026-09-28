@@ -600,9 +600,15 @@ test_that("inspect_results cuts output at a budget of characters", {
   expect_lte(nchar(res), 16000L)
   expect_match(res, "the output is incomplete", fixed = TRUE)
 
-  # One long line, which a count of lines left unbounded.
   withr::local_options(blockr.assistant_eval_max_chars = 1000L)
 
+  res <- isolate(
+    call_query("cat(sprintf('row %03d end', 1:200), sep = '\\n')")
+  )
+
+  expect_match(res, "end\n... [+", fixed = TRUE)
+
+  # One long line, which a count of lines left unbounded.
   res <- isolate(call_query("cat(strrep('x', 5000L))"))
 
   expect_lte(nchar(res), 1000L)
