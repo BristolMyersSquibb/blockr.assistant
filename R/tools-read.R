@@ -83,8 +83,9 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
         blks <- board_blocks(brd)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -202,8 +203,9 @@ tool_describe_stack <- function(board, update, session) {
         stks <- board_stacks(isolate(board$board))
 
         if (!id %in% names(stks)) {
-          return(
-            glue::glue("No stack with id {id}. Call list_stacks first.")
+          stop(
+            glue::glue("No stack with id {id}. Call list_stacks first."),
+            call. = FALSE
           )
         }
 
@@ -322,11 +324,12 @@ tool_describe_block_type <- function(board, update, session, pool = NULL) {
       with_tool_errors({
 
         if (!id %in% list_blocks()) {
-          return(
+          stop(
             glue::glue(
               "No registered block type '{id}'. ",
               "Call list_block_types first."
-            )
+            ),
+            call. = FALSE
           )
         }
 
@@ -382,8 +385,9 @@ tool_get_block_result <- function(board, update, session) {
         blks <- isolate(board$blocks)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -415,8 +419,9 @@ tool_get_block_state <- function(board, update, session) {
         blks <- board_blocks(isolate(board$board))
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -463,8 +468,9 @@ tool_get_block_conditions <- function(board, update, session) {
         blks <- isolate(board$blocks)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 

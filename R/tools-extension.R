@@ -87,14 +87,20 @@ tool_describe_extension <- function(board, extensions, session) {
         brd <- isolate(board$board)
 
         if (!inherits(brd, "dock_board")) {
-          return("This board is not a dock board -- it has no extensions.")
+          stop(
+            "This board is not a dock board -- it has no extensions.",
+            call. = FALSE
+          )
         }
 
         exts <- as.list(dock_extensions(brd))
 
         if (!id %in% names(exts)) {
-          return(
-            glue::glue("No extension with id {id}. Call list_extensions first.")
+          stop(
+            glue::glue(
+              "No extension with id {id}. Call list_extensions first."
+            ),
+            call. = FALSE
           )
         }
 

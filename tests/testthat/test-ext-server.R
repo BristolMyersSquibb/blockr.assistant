@@ -562,7 +562,7 @@ test_that("registered describe_block tool dispatches on block class", {
   )
 })
 
-test_that("registered tool surfaces an error string instead of crashing", {
+test_that("registered tool surfaces a failed result instead of crashing", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -573,7 +573,7 @@ test_that("registered tool surfaces an error string instead of crashing", {
 
       res <- client_r()$get_tools()$describe_block(id = "no-such-block")
 
-      expect_match(res, "No block with id no-such-block", fixed = TRUE)
+      expect_match(res@error, "No block with id no-such-block", fixed = TRUE)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

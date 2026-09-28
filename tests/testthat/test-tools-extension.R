@@ -132,7 +132,9 @@ test_that("describe_extension returns a recovery hint for unknown id", {
   env <- new_ext_tool_env()
   de  <- tool_describe_extension(env$board, extensions = NULL, session = NULL)
 
-  expect_match(de(id = "ghost"), "No extension with id ghost", fixed = TRUE)
+  res <- de(id = "ghost")
+
+  expect_match(res@error, "No extension with id ghost", fixed = TRUE)
 })
 
 test_that("describe_extension reports a non-dock board", {
@@ -142,7 +144,9 @@ test_that("describe_extension reports a non-dock board", {
   )
   de <- tool_describe_extension(board, extensions = NULL, session = NULL)
 
-  expect_match(de(id = "whatever"), "not a dock board", fixed = TRUE)
+  res <- de(id = "whatever")
+
+  expect_match(res@error, "not a dock board", fixed = TRUE)
 })
 
 test_that("modify_extension stages a controllable delta", {

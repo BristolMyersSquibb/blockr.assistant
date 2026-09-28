@@ -147,7 +147,7 @@ test_that("tool_describe_block returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_block(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_list_links returns the board's link data.frame", {
@@ -195,7 +195,7 @@ test_that("tool_describe_stack returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_stack(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No stack with id bogus", fixed = TRUE)
+  expect_match(res@error, "No stack with id bogus", fixed = TRUE)
 })
 
 test_that("tool_describe_stack honours a class override", {
@@ -306,7 +306,7 @@ test_that("tool_describe_block_type returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_block_type(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No registered block type 'bogus'", fixed = TRUE)
+  expect_match(res@error, "No registered block type 'bogus'", fixed = TRUE)
 })
 
 test_that("tool_list_block_types surfaces block input slots", {
@@ -328,7 +328,7 @@ test_that("tool_get_block_result returns recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_result(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_get_block_result summarises a successful result", {
@@ -387,7 +387,7 @@ test_that("tool_get_block_conditions returns recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_conditions(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_get_block_conditions notes a block with no cond state", {
@@ -896,7 +896,7 @@ test_that("tool_get_block_state returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_state(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("inspect_results draws through a namespace-prefixed call", {
