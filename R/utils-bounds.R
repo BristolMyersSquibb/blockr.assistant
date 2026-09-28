@@ -102,10 +102,6 @@ eval_max_chars <- function() {
   as.integer(blockr_option("assistant_eval_max_chars", 16000L))
 }
 
-eval_print_width <- function() {
-  as.integer(blockr_option("assistant_eval_print_width", 200L))
-}
-
 board_section_max_chars <- function() {
   as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
 }

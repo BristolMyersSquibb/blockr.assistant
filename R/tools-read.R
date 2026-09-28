@@ -545,13 +545,6 @@ tool_inspect_results <- function(board, update, session) {
         env <- inspect_env(data)
         parsed <- parse(text = code)
 
-        # At R's default width of 80 a wider frame prints in blocks of
-        # columns, each block repeating every row, so a cut inside the first
-        # block shows rows without their later columns. Printed wide, the rows
-        # before a cut are whole.
-        old_width <- options(width = eval_print_width())
-        on.exit(options(old_width), add = TRUE)
-
         # REPL semantics, unchanged: stdout is captured and the last value is
         # auto-printed. The device is simply open while that happens, so a
         # value whose print method draws (a ggplot, a recordedplot) draws onto

@@ -60,16 +60,11 @@ test_that("the state bounds are option-driven, with a two-tier default", {
   expect_identical(state_value_max_chars(), 20L)
 })
 
-test_that("the inspect_results text bounds are option-driven", {
+test_that("the inspect_results output budget is option-driven", {
 
   expect_identical(eval_max_chars(), 16000L)
-  expect_identical(eval_print_width(), 200L)
 
-  withr::local_options(
-    blockr.assistant_eval_max_chars = 500L,
-    blockr.assistant_eval_print_width = 120L
-  )
+  withr::local_options(blockr.assistant_eval_max_chars = 500L)
 
   expect_identical(eval_max_chars(), 500L)
-  expect_identical(eval_print_width(), 120L)
 })
