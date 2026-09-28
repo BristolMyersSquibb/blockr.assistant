@@ -2,6 +2,24 @@
 
 ## blockr.assistant (development version)
 
+- The `inspect_results` tool now says plainly when it cuts its output:
+  the output is incomplete, nothing after the cut was shown, and the
+  model should ask again for the part it needs. The old marker, “(output
+  truncated; 143 lines hidden)”, read as a footnote. On a production
+  board the model asked a composed table for all of its rows, was shown
+  the head of the frame, and told the user that the rows it had just
+  added were further down, when they were not in the table at all
+  (#176).
+
+  The cap now counts characters, 16,000 by default through the
+  `blockr.assistant_eval_max_chars` option, where it counted 200 lines,
+  which left a single long line unbounded. The cut falls at the last
+  line break inside the budget, so a line is shown whole or not at all,
+  and mid-line only when there is no line break to cut at. The `width`
+  and `height` arguments now say that they size the plot device and
+  leave printed text alone, since the model had raised `width` to 1200
+  to see more rows.
+
 - The package now requires shinychat 0.5.0 and installs it from CRAN,
   where it used to track shinychat’s `HEAD` through `Remotes:`. All it
   took from `HEAD` is in that release: `chat_server()`, conversation
