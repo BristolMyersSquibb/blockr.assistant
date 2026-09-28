@@ -17,6 +17,23 @@ test_that("truncate_chars counts the marker and hint against max_chars", {
   expect_lte(nchar(truncate_chars(long, 200L, hint = hint)), 200L)
 })
 
+test_that("truncate_chars can keep whole lines", {
+
+  txt <- paste(strrep("x", 30L), strrep("y", 30L), strrep("z", 30L), sep = "\n")
+
+  expect_match(truncate_chars(txt, 70L), "\nyyy", fixed = TRUE)
+  expect_identical(
+    truncate_chars(txt, 70L, whole_lines = TRUE),
+    paste0(strrep("x", 30L), "\n... [+62 chars truncated]")
+  )
+
+  # Text with no line break inside the budget can only be cut mid-line.
+  long <- truncate_chars(strrep("x", 200L), 70L, whole_lines = TRUE)
+
+  expect_lte(nchar(long), 70L)
+  expect_match(long, "^x+\n")
+})
+
 test_that("the char cap is option-driven, defaulting to 2000", {
 
   expect_identical(summary_max_chars(), 2000L)
@@ -41,4 +58,13 @@ test_that("the state bounds are option-driven, with a two-tier default", {
 
   expect_identical(state_max_chars(), 300L)
   expect_identical(state_value_max_chars(), 20L)
+})
+
+test_that("the inspect_results output budget is option-driven", {
+
+  expect_identical(eval_max_chars(), 16000L)
+
+  withr::local_options(blockr.assistant_eval_max_chars = 500L)
+
+  expect_identical(eval_max_chars(), 500L)
 })

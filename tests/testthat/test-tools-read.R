@@ -593,11 +593,26 @@ test_that("inspect_results names the eval status of each skipped block", {
   expect_match(res, "6", fixed = TRUE)
 })
 
-test_that("inspect_results truncates output over 200 lines", {
+test_that("inspect_results cuts output at a budget of characters", {
 
   res <- isolate(call_query("seq_len(5000)", list(data = iris)))
 
-  expect_match(res, "output truncated", fixed = TRUE)
+  expect_lte(nchar(res), 16000L)
+  expect_match(res, "the output is incomplete", fixed = TRUE)
+
+  withr::local_options(blockr.assistant_eval_max_chars = 1000L)
+
+  res <- isolate(
+    call_query("cat(sprintf('row %03d end', 1:200), sep = '\\n')")
+  )
+
+  expect_match(res, "end\n... [+", fixed = TRUE)
+
+  # One long line, which a count of lines left unbounded.
+  res <- isolate(call_query("cat(strrep('x', 5000L))"))
+
+  expect_lte(nchar(res), 1000L)
+  expect_match(res, "the output is incomplete", fixed = TRUE)
 })
 
 test_that("inspect_results returns whatever the code draws as an image", {

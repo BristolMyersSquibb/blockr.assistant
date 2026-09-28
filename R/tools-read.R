@@ -573,11 +573,23 @@ tool_inspect_results <- function(board, update, session) {
 
         output <- drawn$value
 
-        if (length(output) > 200L) {
-          hidden <- length(output) - 200L
-          output <- c(
-            output[seq_len(200L)],
-            glue::glue("(output truncated; {hidden} lines hidden)")
+        # The marker of truncate_chars() alone reads as a footnote, and a
+        # model shown the head of a frame that way took it for the whole
+        # table. So the hint says what the cut means and what to do instead,
+        # and the cut keeps whole lines: a row cut partway reads as a row with
+        # fewer columns or shorter numbers. An empty capture is left alone:
+        # collapsed, it adds a blank line.
+        if (length(output)) {
+          output <- truncate_chars(
+            paste(output, collapse = "\n"),
+            eval_max_chars(),
+            hint = paste(
+              "the output is incomplete. What is above is its beginning, not",
+              "the whole result, and nothing after this cut was shown to you,",
+              "so do not conclude what the rest holds or lacks. Ask again for",
+              "just the part you need, or print the rest a piece at a time"
+            ),
+            whole_lines = TRUE
           )
         }
 
@@ -646,17 +658,18 @@ tool_inspect_results <- function(board, update, session) {
       ),
       width = ellmer::type_integer(
         paste(
-          "Width in pixels of the device the code draws on. Optional;",
-          "defaults to 768, clamped to 200-2000. Raise it for a dense",
-          "plot you need to read values off, lower it when the shape is",
-          "all you need."
+          "Width in pixels of the device the code draws on. It sizes",
+          "plots and leaves printed text alone. Optional; defaults to",
+          "768, clamped to 200-2000. Raise it for a dense plot you need to",
+          "read values off, lower it when the shape is all you need."
         ),
         required = FALSE
       ),
       height = ellmer::type_integer(
         paste(
-          "Height in pixels of the device the code draws on. Optional;",
-          "defaults to 768, clamped to 200-2000."
+          "Height in pixels of the device the code draws on. It sizes",
+          "plots and leaves printed text alone. Optional; defaults to",
+          "768, clamped to 200-2000."
         ),
         required = FALSE
       )
