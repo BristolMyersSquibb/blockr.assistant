@@ -35,7 +35,7 @@ tool_list_board_options <- function(board, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_board_options", {
+      with_tool_errors({
 
         opts <- board_options(isolate(board$board))
 
@@ -89,24 +89,26 @@ tool_set_board_option <- function(board, session) {
 
   ellmer::tool(
     function(id, value) {
-      with_tool_errors("set_board_option", {
+      with_tool_errors({
 
         opts <- board_options(isolate(board$board))
 
         if (!id %in% names(opts)) {
-          return(
+          stop(
             glue::glue(
               "No board option with id {id}. Call list_board_options first."
-            )
+            ),
+            call. = FALSE
           )
         }
 
         if (identical(id, "llm_model")) {
-          return(
+          stop(
             paste(
               "The llm_model option drives the assistant's own chat",
               "client and cannot be set here."
-            )
+            ),
+            call. = FALSE
           )
         }
 

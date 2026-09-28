@@ -149,9 +149,9 @@ test_that("a typed add tool stages the block it names", {
     "add", "head_block", board, pending, NULL, function(...) invisible()
   )
 
-  expect_match(
-    call_tool(tool, n = 4L, id = "h1"), "Staged add_block(h1)", fixed = TRUE
-  )
+  res <- call_tool(tool, n = 4L, id = "h1")
+
+  expect_match(res, "Staged add_block(h1)", fixed = TRUE)
 
   staged <- isolate(pending())$blocks$add
 
@@ -197,7 +197,9 @@ test_that("a typed modify tool refuses an empty delta", {
     NULL, function(...) invisible()
   )
 
-  expect_match(call_tool(tool, id = "d"), "no fields supplied")
+  res <- call_tool(tool, id = "d")
+
+  expect_match(res@error, "no fields supplied")
 })
 
 test_that("arming reports why a type has no typed tool", {

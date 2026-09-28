@@ -132,7 +132,9 @@ test_that("describe_extension returns a recovery hint for unknown id", {
   env <- new_ext_tool_env()
   de  <- tool_describe_extension(env$board, extensions = NULL, session = NULL)
 
-  expect_match(de(id = "ghost"), "No extension with id ghost", fixed = TRUE)
+  res <- de(id = "ghost")
+
+  expect_match(res@error, "No extension with id ghost", fixed = TRUE)
 })
 
 test_that("describe_extension reports a non-dock board", {
@@ -142,7 +144,9 @@ test_that("describe_extension reports a non-dock board", {
   )
   de <- tool_describe_extension(board, extensions = NULL, session = NULL)
 
-  expect_match(de(id = "whatever"), "not a dock board", fixed = TRUE)
+  res <- de(id = "whatever")
+
+  expect_match(res@error, "not a dock board", fixed = TRUE)
 })
 
 test_that("modify_extension stages a controllable delta", {
@@ -166,7 +170,7 @@ test_that("modify_extension rejects an empty args object without staging", {
 
   res <- me(id = "doc_extension", args = "{}")
 
-  expect_match(res, "^modify_extension failed:")
+  expect_match(res@error, "no fields supplied")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -177,7 +181,7 @@ test_that("modify_extension rejects a non-controllable key at stage time", {
 
   res <- me(id = "doc_extension", args = "{\"bogus\": 1}")
 
-  expect_match(res, "modify_extension\\(doc_extension\\) failed:")
+  expect_match(res@error, "modify_extension\\(doc_extension\\) failed:")
   expect_false(has_any_changes(isolate(env$pending())))
 })
 
@@ -188,7 +192,7 @@ test_that("modify_extension rejects an unknown extension id", {
 
   res <- me(id = "ghost", args = "{\"content\": \"x\"}")
 
-  expect_match(res, "modify_extension\\(ghost\\) failed:")
+  expect_match(res@error, "modify_extension\\(ghost\\) failed:")
 })
 
 test_that("describe_extension names the skills scoped to its class", {
