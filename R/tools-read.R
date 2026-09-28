@@ -587,8 +587,7 @@ tool_inspect_results <- function(board, update, session) {
               "the output is incomplete. What is above is its beginning, not",
               "the whole result, and nothing after this cut was shown to you,",
               "so do not conclude what the rest holds or lacks. Ask again for",
-              "the part you need: select the columns that matter, subset the",
-              "rows, or print a range at a time"
+              "just the part you need, or print the rest a piece at a time"
             ),
             whole_lines = TRUE
           )
@@ -660,11 +659,9 @@ tool_inspect_results <- function(board, update, session) {
       width = ellmer::type_integer(
         paste(
           "Width in pixels of the device the code draws on. It sizes",
-          "plots and leaves printed text alone, so it does not show more",
-          "of a printed frame: to see more rows or columns, select them",
-          "in the code. Optional; defaults to 768, clamped to 200-2000.",
-          "Raise it for a dense plot you need to read values off, lower it",
-          "when the shape is all you need."
+          "plots and leaves printed text alone. Optional; defaults to",
+          "768, clamped to 200-2000. Raise it for a dense plot you need to",
+          "read values off, lower it when the shape is all you need."
         ),
         required = FALSE
       ),
