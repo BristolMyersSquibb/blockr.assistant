@@ -85,6 +85,12 @@ plot_render_max <- function() {
   as.integer(blockr_option("assistant_plot_render_max", 4L))
 }
 
+# The default is what 200 full lines held at R's default width of 80, the
+# budget inspect_results had when it counted lines.
+eval_max_chars <- function() {
+  as.integer(blockr_option("assistant_eval_max_chars", 16000L))
+}
+
 board_section_max_chars <- function() {
   as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
 }
