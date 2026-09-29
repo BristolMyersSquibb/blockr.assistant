@@ -39,8 +39,8 @@ test_that("read_skill refuses a file outside the skill directory", {
 
   res <- tool_read_skill()("one", "../two/SKILL.md")
 
-  expect_match(res, "bundles no file", fixed = TRUE)
-  expect_no_match(res, "Second", fixed = TRUE)
+  expect_match(res@error, "bundles no file", fixed = TRUE)
+  expect_no_match(res@error, "Second", fixed = TRUE)
 })
 
 test_that("read_skill refuses a skill whose requirements are unmet", {
@@ -60,8 +60,10 @@ test_that("read_skill refuses a skill whose requirements are unmet", {
 
   res <- tool_read_skill()("gated")
 
-  expect_match(res, "No skill named 'gated' is available here", fixed = TRUE)
-  expect_no_match(res, "Secret instructions", fixed = TRUE)
+  expect_match(
+    res@error, "No skill named 'gated' is available here", fixed = TRUE
+  )
+  expect_no_match(res@error, "Secret instructions", fixed = TRUE)
 })
 
 test_that("read_skill refuses a skill that disables model invocation", {
@@ -81,8 +83,8 @@ test_that("read_skill refuses a skill that disables model invocation", {
 
   res <- tool_read_skill()("playbook")
 
-  expect_match(res, "No skill named 'playbook'", fixed = TRUE)
-  expect_no_match(res, "Secret instructions", fixed = TRUE)
+  expect_match(res@error, "No skill named 'playbook'", fixed = TRUE)
+  expect_no_match(res@error, "Secret instructions", fixed = TRUE)
 
   # The slash handler reads the body directly, so refusing the tool does not
   # cut off the invocation path the author asked for.
@@ -97,9 +99,9 @@ test_that("read_skill reports an unknown name", {
 
   local_skills_dir()
 
-  expect_match(
-    tool_read_skill()("nope"), "No skill named 'nope'", fixed = TRUE
-  )
+  res <- tool_read_skill()("nope")
+
+  expect_match(res@error, "No skill named 'nope'", fixed = TRUE)
 })
 
 test_that("read_skill is registered when the catalogue holds skills", {

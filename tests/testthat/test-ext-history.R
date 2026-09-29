@@ -247,3 +247,49 @@ test_that("a board rename does not strand the threads recorded before it", {
 
   expect_length(store$list(before), 2L)
 })
+
+test_that("a compaction redraws the transcript with history enabled", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("iris loaded, plot built")
+    }
+  )
+
+  rec <- recording_session()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      compact_conversation()
+      later::run_now()
+      session$flushReact()
+
+      shown <- rec$transcript()
+
+      expect_length(cl$get_turns(), 10L)
+      expect_length(shown, 10L)
+      expect_identical(shown[[2L]], "assistant: iris loaded, plot built")
+      expect_identical(shown[[3L]], "user: 5")
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = rec$session
+  )
+})

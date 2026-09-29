@@ -11,6 +11,55 @@
   flagged as unverified rather than glossed as the usual off-screen
   deferral (#165).
 
+* The `inspect_results` tool description now says how a data frame
+  prints and what to check before printing one. A data frame prints
+  every row and every column, and one wider than the console is split
+  into blocks of columns that each repeat every row. Printed whole, a
+  frame of 300 rows and 101 columns came to 227,254 characters, of which
+  the output budget held `USUBJID` and `VAR001` to `VAR009`, with nothing
+  to say that 91 more columns existed. The model is now asked to check a
+  frame's size and columns with `dim()` and `names()` and to print only
+  the rows and columns it needs. The description also warns that a
+  tibble prints only the first rows of a long table, rounds numbers to
+  three significant digits and may shorten text, so exact values are to
+  be read from a column rather than from the print (#187).
+
+* The `inspect_results` tool now says plainly when it cuts its output:
+  the output is incomplete, nothing after the cut was shown, and the model
+  should ask again for the part it needs. The old marker, "(output
+  truncated; 143 lines hidden)", read as a footnote. On a production board
+  the model asked a composed table for all of its rows, was shown the head
+  of the frame, and told the user that the rows it had just added were
+  further down, when they were not in the table at all (#176).
+
+  The cap now counts characters, 16,000 by default through the
+  `blockr.assistant_eval_max_chars` option, where it counted 200 lines,
+  which left a single long line unbounded. The cut falls at the last line
+  break inside the budget, so a line is shown whole or not at all, and
+  mid-line only when there is no line break to cut at. The `width` and
+  `height` arguments now say that they size the plot device and leave
+  printed text alone, since the model had raised `width` to 1200 to see
+  more rows.
+
+* The package now requires shinychat 0.5.0 and installs it from CRAN,
+  where it used to track shinychat's `HEAD` through `Remotes:`. All it
+  took from `HEAD` is in that release: `chat_server()`, conversation
+  history, slash commands, attachments, and the fix that reports a turn
+  the provider rejects before it streams, which a version floor could not
+  express while every build read `0.4.0.9000`. The floor also keeps the
+  footer's history button on screen. It is shown on the mark shinychat
+  sets exactly when it renders its own trigger, and builds from before
+  2026-08-25 never set it, which left no way into the drawer.
+
+  Compaction is adjusted to the same release. From 0.5.0 the chat module's
+  `clear()` refuses to run while conversation history is enabled
+  (posit-dev/shinychat#399), as it always is here, so the transcript
+  replay that follows a compaction now clears only the browser's copy,
+  through `shinychat::chat_clear()`. Until now both `/compact` and the
+  automatic bound failed against that release once the model's turns had
+  been swapped for the compacted ones, leaving the transcript and the
+  model's memory out of step (#175).
+
 * Plot results are now described rather than dumped. A block built on
   `blockr.core::new_plot_block()` evaluates to recorded plots, which the
   default summary rendered as a display list -- core's scatter block

@@ -211,7 +211,7 @@ tool_list_views <- function(board, view_data, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_views", {
+      with_tool_errors({
 
         layout <- resolve_view_layout(board, view_data)
         views  <- layout$views
@@ -256,7 +256,7 @@ tool_validate_layout <- function(board, pending, session) {
 
   ellmer::tool(
     function(layout) {
-      with_tool_errors("validate_layout", {
+      with_tool_errors({
 
         sets   <- panel_id_sets(board, pending)
         parsed <- layout_from_json(layout, sets$blocks, sets$exts)
@@ -301,7 +301,7 @@ tool_add_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(name, layout, active = FALSE) {
-      with_tool_errors("add_view", {
+      with_tool_errors({
 
         sets       <- panel_id_sets(board, pending)
         layout_obj <- layout_from_json(layout, sets$blocks, sets$exts)
@@ -347,7 +347,7 @@ tool_remove_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("remove_view", {
+      with_tool_errors({
 
         remaining <- setdiff(addressable_views(board, pending), id)
 
@@ -381,7 +381,7 @@ tool_add_panel_to_view <- function(board, pending, session) {
   ellmer::tool(
     function(view, panel, near = NULL, side = NULL, size = NULL,
              rail = NULL) {
-      with_tool_errors("add_panel_to_view", {
+      with_tool_errors({
 
         ref <- resolve_panel_op_ref(
           panel, near, side, board, pending, size = size, rail = rail
@@ -450,7 +450,7 @@ tool_remove_panel_from_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(view, panel) {
-      with_tool_errors("remove_panel_from_view", {
+      with_tool_errors({
 
         ref <- resolve_panel_op_ref(panel, NULL, NULL, board, pending)
 
@@ -488,7 +488,7 @@ tool_move_panel <- function(board, pending, session) {
 
   ellmer::tool(
     function(view, panel, near = NULL, side = NULL, rail = NULL) {
-      with_tool_errors("move_panel", {
+      with_tool_errors({
 
         # A rail move has no anchor, so `near` cannot stay required -- but a
         # move with neither key names no destination at all.
@@ -557,7 +557,7 @@ tool_resize_panel <- function(board, pending, session) {
 
   ellmer::tool(
     function(view, panel, size) {
-      with_tool_errors("resize_panel", {
+      with_tool_errors({
 
         ref <- resolve_panel_op_ref(
           panel, NULL, NULL, board, pending, size = size
@@ -601,7 +601,7 @@ tool_focus_panel <- function(board, pending, session) {
 
   ellmer::tool(
     function(view, panel) {
-      with_tool_errors("focus_panel", {
+      with_tool_errors({
 
         ref <- resolve_panel_op_ref(panel, NULL, NULL, board, pending)
 
@@ -648,7 +648,7 @@ tool_set_active_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("set_active_view", {
+      with_tool_errors({
 
         candidates <- addressable_views(board, pending)
 
@@ -688,7 +688,7 @@ tool_rename_view <- function(board, pending, session) {
 
   ellmer::tool(
     function(id, name) {
-      with_tool_errors("rename_view", {
+      with_tool_errors({
 
         if (!id %in% current_view_ids(board)) {
           stop(

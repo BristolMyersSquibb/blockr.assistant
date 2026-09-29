@@ -161,7 +161,7 @@ test_that("set_board_option refuses the llm_model option", {
     id = "llm_model", value = "\"x\""
   )
 
-  expect_match(res, "cannot be set here", fixed = TRUE)
+  expect_match(res@error, "cannot be set here", fixed = TRUE)
 })
 
 test_that("set_board_option returns a recovery hint for an unknown id", {
@@ -173,7 +173,7 @@ test_that("set_board_option returns a recovery hint for an unknown id", {
     id = "bogus", value = "1"
   )
 
-  expect_match(res, "No board option with id bogus", fixed = TRUE)
+  expect_match(res@error, "No board option with id bogus", fixed = TRUE)
 })
 
 test_that("register_board_options_tools wires both option tools", {

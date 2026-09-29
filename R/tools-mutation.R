@@ -64,7 +64,7 @@ tool_add_block <- function(board, pending, session) {
 
   ellmer::tool(
     function(type, args, id = NULL) {
-      with_tool_errors("add_block", {
+      with_tool_errors({
 
         if (!type %in% list_blocks()) {
           stop(
@@ -132,7 +132,7 @@ tool_remove_block <- function(board, pending, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("remove_block", {
+      with_tool_errors({
 
         dropped <- stage_block_rm(pending, board, id)
 
@@ -165,7 +165,7 @@ tool_modify_block <- function(board, pending, session) {
 
   ellmer::tool(
     function(id, args) {
-      with_tool_errors("modify_block", {
+      with_tool_errors({
 
         stage_modified_block(
           board, pending, id, parse_args_json(args, "modify_block")
@@ -199,7 +199,7 @@ tool_add_link <- function(board, pending, session) {
 
   ellmer::tool(
     function(from, to, input, id = NULL) {
-      with_tool_errors("add_link", {
+      with_tool_errors({
 
         if (is.null(id) || !nzchar(id)) {
           id <- rand_names(existing_ids(board, pending, "links"))
@@ -239,7 +239,7 @@ tool_remove_link <- function(board, pending, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("remove_link", {
+      with_tool_errors({
 
         stage_link_rm(pending, board, id)
 
@@ -258,7 +258,7 @@ tool_modify_link <- function(board, pending, session) {
 
   ellmer::tool(
     function(id, from = NULL, to = NULL, input = NULL) {
-      with_tool_errors("modify_link", {
+      with_tool_errors({
 
         delta <- compact(list(from = from, to = to, input = input))
 
@@ -302,7 +302,7 @@ tool_add_stack <- function(board, pending, session) {
 
   ellmer::tool(
     function(blocks, name = NULL, id = NULL) {
-      with_tool_errors("add_stack", {
+      with_tool_errors({
 
         if (is.null(id) || !nzchar(id)) {
           id <- rand_names(existing_ids(board, pending, "stacks"))
@@ -346,7 +346,7 @@ tool_remove_stack <- function(board, pending, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("remove_stack", {
+      with_tool_errors({
 
         stage_stack_rm(pending, board, id)
 
@@ -368,7 +368,7 @@ tool_modify_stack <- function(board, pending, session) {
 
   ellmer::tool(
     function(id, blocks = NULL, name = NULL) {
-      with_tool_errors("modify_stack", {
+      with_tool_errors({
 
         delta <- compact(list(blocks = blocks, name = name))
 

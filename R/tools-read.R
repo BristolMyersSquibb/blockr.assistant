@@ -29,7 +29,7 @@ tool_list_blocks <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_blocks", {
+      with_tool_errors({
 
         b <- isolate(board$board)
         blks <- board_blocks(b)
@@ -77,14 +77,15 @@ tool_describe_block <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_block", {
+      with_tool_errors({
 
         brd <- isolate(board$board)
         blks <- board_blocks(brd)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -137,7 +138,7 @@ tool_list_links <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_links", {
+      with_tool_errors({
         as.data.frame(board_links(isolate(board$board)))
       })
     },
@@ -155,7 +156,7 @@ tool_list_stacks <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_stacks", {
+      with_tool_errors({
 
         stks <- board_stacks(isolate(board$board))
 
@@ -197,13 +198,14 @@ tool_describe_stack <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_stack", {
+      with_tool_errors({
 
         stks <- board_stacks(isolate(board$board))
 
         if (!id %in% names(stks)) {
-          return(
-            glue::glue("No stack with id {id}. Call list_stacks first.")
+          stop(
+            glue::glue("No stack with id {id}. Call list_stacks first."),
+            call. = FALSE
           )
         }
 
@@ -260,7 +262,7 @@ tool_list_block_types <- function(board, update, session) {
 
   ellmer::tool(
     function() {
-      with_tool_errors("list_block_types", {
+      with_tool_errors({
 
         uids <- list_blocks()
 
@@ -319,14 +321,15 @@ tool_describe_block_type <- function(board, update, session, pool = NULL) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("describe_block_type", {
+      with_tool_errors({
 
         if (!id %in% list_blocks()) {
-          return(
+          stop(
             glue::glue(
               "No registered block type '{id}'. ",
               "Call list_block_types first."
-            )
+            ),
+            call. = FALSE
           )
         }
 
@@ -377,13 +380,14 @@ tool_get_block_result <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_result", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -410,13 +414,14 @@ tool_get_block_state <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_state", {
+      with_tool_errors({
 
         blks <- board_blocks(isolate(board$board))
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -458,13 +463,14 @@ tool_get_block_conditions <- function(board, update, session) {
 
   ellmer::tool(
     function(id) {
-      with_tool_errors("get_block_conditions", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 
         if (!id %in% names(blks)) {
-          return(
-            glue::glue("No block with id {id}. Call list_blocks first.")
+          stop(
+            glue::glue("No block with id {id}. Call list_blocks first."),
+            call. = FALSE
           )
         }
 
@@ -508,7 +514,7 @@ tool_inspect_results <- function(board, update, session) {
 
   ellmer::tool(
     function(code, width = NULL, height = NULL) {
-      with_tool_errors("inspect_results", {
+      with_tool_errors({
 
         blks <- isolate(board$blocks)
 
@@ -567,11 +573,23 @@ tool_inspect_results <- function(board, update, session) {
 
         output <- drawn$value
 
-        if (length(output) > 200L) {
-          hidden <- length(output) - 200L
-          output <- c(
-            output[seq_len(200L)],
-            glue::glue("(output truncated; {hidden} lines hidden)")
+        # The marker of truncate_chars() alone reads as a footnote, and a
+        # model shown the head of a frame that way took it for the whole
+        # table. So the hint says what the cut means and what to do instead,
+        # and the cut keeps whole lines: a row cut partway reads as a row with
+        # fewer columns or shorter numbers. An empty capture is left alone:
+        # collapsed, it adds a blank line.
+        if (length(output)) {
+          output <- truncate_chars(
+            paste(output, collapse = "\n"),
+            eval_max_chars(),
+            hint = paste(
+              "the output is incomplete. What is above is its beginning, not",
+              "the whole result, and nothing after this cut was shown to you,",
+              "so do not conclude what the rest holds or lacks. Ask again for",
+              "just the part you need, or print the rest a piece at a time"
+            ),
+            whole_lines = TRUE
           )
         }
 
@@ -607,10 +625,21 @@ tool_inspect_results <- function(board, update, session) {
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
-      "block id (e.g. for a block with id `data` write `head(data)`).",
+      "block id (e.g. for a block with id `data` write `utils::head(data)`).",
       "Returns captured stdout plus the last expression's value if it",
       "is visible -- the same shape an R REPL would produce, so an",
       "assignment or an invisible() result prints nothing.",
+      "The output is cut at a budget of characters, so print only what",
+      "you need. A data frame prints every row and every column, and one",
+      "wider than the console is split into blocks of columns that each",
+      "repeat every row: printed whole, a large frame can use up the",
+      "budget inside its first block, so the columns after it are never",
+      "shown. Before printing a frame, check its size and columns with",
+      "dim() and names(), then print a selection -- the rows you need by",
+      "condition or position, the columns you need by name. A tibble",
+      "prints only the first rows of a long table, rounds numbers to",
+      "three significant digits and may shorten text, so read exact",
+      "values from a column itself (`x$col`) rather than from its print.",
       "A block holding no readable result is not bound; those are",
       "listed with their eval status above the output, so a name",
       "that is missing from scope is explained rather than silent.",
@@ -640,17 +669,18 @@ tool_inspect_results <- function(board, update, session) {
       ),
       width = ellmer::type_integer(
         paste(
-          "Width in pixels of the device the code draws on. Optional;",
-          "defaults to 768, clamped to 200-2000. Raise it for a dense",
-          "plot you need to read values off, lower it when the shape is",
-          "all you need."
+          "Width in pixels of the device the code draws on. It sizes",
+          "plots and leaves printed text alone. Optional; defaults to",
+          "768, clamped to 200-2000. Raise it for a dense plot you need to",
+          "read values off, lower it when the shape is all you need."
         ),
         required = FALSE
       ),
       height = ellmer::type_integer(
         paste(
-          "Height in pixels of the device the code draws on. Optional;",
-          "defaults to 768, clamped to 200-2000."
+          "Height in pixels of the device the code draws on. It sizes",
+          "plots and leaves printed text alone. Optional; defaults to",
+          "768, clamped to 200-2000."
         ),
         required = FALSE
       )

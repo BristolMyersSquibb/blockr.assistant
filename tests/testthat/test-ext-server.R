@@ -562,7 +562,7 @@ test_that("registered describe_block tool dispatches on block class", {
   )
 })
 
-test_that("registered tool surfaces an error string instead of crashing", {
+test_that("registered tool surfaces a failed result instead of crashing", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -573,7 +573,7 @@ test_that("registered tool surfaces an error string instead of crashing", {
 
       res <- client_r()$get_tools()$describe_block(id = "no-such-block")
 
-      expect_match(res, "No block with id no-such-block", fixed = TRUE)
+      expect_match(res@error, "No block with id no-such-block", fixed = TRUE)
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),
@@ -700,22 +700,17 @@ test_that("recovery sequence flushes a single corrected add", {
 
       tools <- client_r()$get_tools()
 
-      expect_match(
-        tools$add_block(type = "head_block", args = "{}", id = "x"),
-        "^Staged add_block"
-      )
-      expect_match(
-        tools$modify_block(id = "x", args = "{\"n\": 10}"),
-        "staged for creation"
-      )
-      expect_match(
-        tools$remove_block(id = "x"),
-        "^Staged remove_block"
-      )
-      expect_match(
-        tools$add_block(type = "head_block", args = "{}", id = "x"),
-        "^Staged add_block"
-      )
+      res <- tools$add_block(type = "head_block", args = "{}", id = "x")
+      expect_match(res, "^Staged add_block")
+
+      res <- tools$modify_block(id = "x", args = "{\"n\": 10}")
+      expect_match(res@error, "staged for creation")
+
+      res <- tools$remove_block(id = "x")
+      expect_match(res, "^Staged remove_block")
+
+      res <- tools$add_block(type = "head_block", args = "{}", id = "x")
+      expect_match(res, "^Staged add_block")
 
       flush_pending(pending_update, update)
 
@@ -1714,7 +1709,7 @@ test_that("a provider swap hands the client over instead of remounting", {
 
       mounts <<- mounts + 1L
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$set_client <- function(new_client, sync = TRUE) {
         handed <<- list(client = new_client, sync = sync)
         invisible()
@@ -1764,7 +1759,7 @@ test_that("focus rides with the thread and a switch resets the slate", {
   testthat::local_mocked_bindings(
     chat_server = function(id, client, ...) {
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$history <- list(
         save = function() FALSE,
         on_save = function(fn) on_save <<- fn,
@@ -1832,7 +1827,7 @@ test_that("saving state survives a module with no history save", {
       hist_env$on_restore <- function(fn) invisible(fn)
       lockEnvironment(hist_env, bindings = TRUE)
 
-      mod <- fake_chat_mod(client = client)
+      mod <- fake_chat_mod()
       mod$history <- hist_env
 
       mod

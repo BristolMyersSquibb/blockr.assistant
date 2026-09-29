@@ -207,10 +207,8 @@ modify_tool_description <- function(type) {
 
 add_tool_handler <- function(type, board, pending, session, note) {
 
-  name <- block_tool_name("add", type)
-
   function(args) {
-    with_tool_errors(name, {
+    with_tool_errors({
 
       id <- args[["id"]]
       args[["id"]] <- NULL
@@ -226,10 +224,8 @@ add_tool_handler <- function(type, board, pending, session, note) {
 
 modify_tool_handler <- function(type, board, pending, session, note) {
 
-  name <- block_tool_name("modify", type)
-
   function(args) {
-    with_tool_errors(name, {
+    with_tool_errors({
 
       id <- args[["id"]]
       args[["id"]] <- NULL

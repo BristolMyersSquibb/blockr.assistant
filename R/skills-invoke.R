@@ -11,19 +11,20 @@ tool_read_skill <- function() {
 
   ellmer::tool(
     function(name, file = NULL) {
-      with_tool_errors("read_skill", {
+      with_tool_errors({
 
         skill <- skill_catalogue()[[name]]
 
         if (is.null(skill) || !is_model_invocable(skill)) {
-          return(
+          stop(
             glue::glue(
               "No skill named '{name}' is available here. Global skills ",
               "are listed in the Skills section of the system prompt; ",
               "block- and extension-scoped ones are named by ",
               "describe_block_type, describe_block and ",
               "describe_extension."
-            )
+            ),
+            call. = FALSE
           )
         }
 
@@ -34,11 +35,12 @@ tool_read_skill <- function() {
         bundled <- list.files(skill$path, recursive = TRUE)
 
         if (!file %in% bundled) {
-          return(
+          stop(
             glue::glue(
               "Skill '{name}' bundles no file '{file}'. It bundles: ",
               "{paste(bundled, collapse = ', ')}."
-            )
+            ),
+            call. = FALSE
           )
         }
 

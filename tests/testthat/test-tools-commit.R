@@ -342,8 +342,8 @@ test_that("commit reports a rejected update in-band without falling through", {
 
       res <- drain_promise(p, session)
 
-      expect_match(res, "was rejected", fixed = TRUE)
-      expect_match(res, "cycle detected", fixed = TRUE)
+      expect_match(res@error, "was rejected", fixed = TRUE)
+      expect_match(res@error, "cycle detected", fixed = TRUE)
       expect_null(isolate(report$nudge))
 
       expect_no_match(
@@ -378,10 +378,10 @@ test_that("a commit that fails to apply is not reported as a clean reject", {
 
       res <- drain_promise(p, session)
 
-      expect_match(res, "may be partly updated", fixed = TRUE)
-      expect_match(res, "get_block_state", fixed = TRUE)
-      expect_match(res, "boom", fixed = TRUE)
-      expect_no_match(res, "was not changed", fixed = TRUE)
+      expect_match(res@error, "may be partly updated", fixed = TRUE)
+      expect_match(res@error, "get_block_state", fixed = TRUE)
+      expect_match(res@error, "boom", fixed = TRUE)
+      expect_no_match(res@error, "was not changed", fixed = TRUE)
     },
     args = commit_board_args(brd, reactiveVal(cnd_frame())),
     session = with_llm_session()

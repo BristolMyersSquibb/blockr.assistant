@@ -23,15 +23,15 @@ call_tool <- function(tool_def, ...) {
 
 test_that("with_tool_errors returns the value on success", {
 
-  expect_identical(with_tool_errors("ok", 1L + 1L), 2L)
+  expect_identical(with_tool_errors(1L + 1L), 2L)
 })
 
-test_that("with_tool_errors traps errors into a formatted string", {
+test_that("with_tool_errors returns an error as a failed tool result", {
 
-  res <- with_tool_errors("trap", stop("boom"))
+  res <- with_tool_errors(stop("boom"))
 
-  expect_type(res, "character")
-  expect_match(res, "trap failed: boom", fixed = TRUE)
+  expect_s7_class(res, ellmer::ContentToolResult)
+  expect_identical(res@error, "boom")
 })
 
 test_that("tool_list_blocks returns id/type/name/package/status rows", {
@@ -147,7 +147,7 @@ test_that("tool_describe_block returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_block(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_list_links returns the board's link data.frame", {
@@ -195,7 +195,7 @@ test_that("tool_describe_stack returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_stack(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No stack with id bogus", fixed = TRUE)
+  expect_match(res@error, "No stack with id bogus", fixed = TRUE)
 })
 
 test_that("tool_describe_stack honours a class override", {
@@ -306,7 +306,7 @@ test_that("tool_describe_block_type returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_describe_block_type(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No registered block type 'bogus'", fixed = TRUE)
+  expect_match(res@error, "No registered block type 'bogus'", fixed = TRUE)
 })
 
 test_that("tool_list_block_types surfaces block input slots", {
@@ -328,7 +328,7 @@ test_that("tool_get_block_result returns recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_result(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_get_block_result summarises a successful result", {
@@ -387,7 +387,7 @@ test_that("tool_get_block_conditions returns recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_conditions(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("tool_get_block_conditions notes a block with no cond state", {
@@ -539,15 +539,14 @@ test_that("inspect_results returns the failed-envelope on a parse error", {
 
   res <- isolate(call_query("nrow(data", list(data = iris)))
 
-  expect_match(res, "^inspect_results failed:")
+  expect_match(res@error, "unexpected end of input", fixed = TRUE)
 })
 
 test_that("inspect_results returns the failed-envelope on runtime error", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "^inspect_results failed:")
-  expect_match(res, "boom", fixed = TRUE)
+  expect_match(res@error, "boom", fixed = TRUE)
 })
 
 test_that("inspect_results skips blocks whose result errors", {
@@ -594,11 +593,26 @@ test_that("inspect_results names the eval status of each skipped block", {
   expect_match(res, "6", fixed = TRUE)
 })
 
-test_that("inspect_results truncates output over 200 lines", {
+test_that("inspect_results cuts output at a budget of characters", {
 
   res <- isolate(call_query("seq_len(5000)", list(data = iris)))
 
-  expect_match(res, "output truncated", fixed = TRUE)
+  expect_lte(nchar(res), 16000L)
+  expect_match(res, "the output is incomplete", fixed = TRUE)
+
+  withr::local_options(blockr.assistant_eval_max_chars = 1000L)
+
+  res <- isolate(
+    call_query("cat(sprintf('row %03d end', 1:200), sep = '\\n')")
+  )
+
+  expect_match(res, "end\n... [+", fixed = TRUE)
+
+  # One long line, which a count of lines left unbounded.
+  res <- isolate(call_query("cat(strrep('x', 5000L))"))
+
+  expect_lte(nchar(res), 1000L)
+  expect_match(res, "the output is incomplete", fixed = TRUE)
 })
 
 test_that("inspect_results returns whatever the code draws as an image", {
@@ -897,7 +911,7 @@ test_that("tool_get_block_state returns a recovery hint for unknown id", {
 
   res <- call_tool(tool_get_block_state(board, NULL, NULL), id = "bogus")
 
-  expect_match(res, "No block with id bogus", fixed = TRUE)
+  expect_match(res@error, "No block with id bogus", fixed = TRUE)
 })
 
 test_that("inspect_results draws through a namespace-prefixed call", {
@@ -918,15 +932,29 @@ test_that("the eval scope is base R on every board", {
 
   res <- isolate(call_query("median(data$Sepal.Length)", list(data = iris)))
 
-  expect_match(res, "could not find function", fixed = TRUE)
+  expect_match(res@error, "could not find function", fixed = TRUE)
+})
+
+test_that("the example in the inspect_results description runs", {
+
+  tool <- tool_inspect_results(make_board(list(data = iris)), NULL, NULL)
+
+  # Taken from the description itself, so a change to the eval scope that
+  # breaks the example fails here rather than in front of the model.
+  example <- regmatches(
+    tool@description,
+    regexpr("(?<=write `)[^`]+", tool@description, perl = TRUE)
+  )
+
+  expect_match(isolate(tool(code = example)), "Sepal.Length", fixed = TRUE)
 })
 
 test_that("inspect_results leaves an unrelated error message alone", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
 
-  expect_match(res, "boom", fixed = TRUE)
-  expect_no_match(res, "prefix", fixed = TRUE)
+  expect_match(res@error, "boom", fixed = TRUE)
+  expect_no_match(res@error, "prefix", fixed = TRUE)
 })
 
 test_that("inspect_results respects invisibility, as a REPL does", {
