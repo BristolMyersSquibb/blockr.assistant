@@ -625,7 +625,7 @@ tool_inspect_results <- function(board, update, session) {
     description = paste(
       "Evaluate R code against the board's block results. Every",
       "committed block's evaluated result is bound in scope by its",
-      "block id (e.g. for a block with id `data` write `head(data)`).",
+      "block id (e.g. for a block with id `data` write `utils::head(data)`).",
       "Returns captured stdout plus the last expression's value if it",
       "is visible -- the same shape an R REPL would produce, so an",
       "assignment or an invisible() result prints nothing.",
