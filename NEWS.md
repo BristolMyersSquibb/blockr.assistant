@@ -1,5 +1,18 @@
 # blockr.assistant (development version)
 
+* The `inspect_results` tool description now says how a data frame
+  prints and what to check before printing one. A data frame prints
+  every row and every column, and one wider than the console is split
+  into blocks of columns that each repeat every row. Printed whole, a
+  frame of 300 rows and 101 columns came to 227,254 characters, of which
+  the output budget held `USUBJID` and `VAR001` to `VAR009`, with nothing
+  to say that 91 more columns existed. The model is now asked to check a
+  frame's size and columns with `dim()` and `names()` and to print only
+  the rows and columns it needs. The description also warns that a
+  tibble prints only the first rows of a long table, rounds numbers to
+  three significant digits and may shorten text, so exact values are to
+  be read from a column rather than from the print (#187).
+
 * The `inspect_results` tool now says plainly when it cuts its output:
   the output is incomplete, nothing after the cut was shown, and the model
   should ask again for the part it needs. The old marker, "(output
