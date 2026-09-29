@@ -935,6 +935,20 @@ test_that("the eval scope is base R on every board", {
   expect_match(res@error, "could not find function", fixed = TRUE)
 })
 
+test_that("the example in the inspect_results description runs", {
+
+  tool <- tool_inspect_results(make_board(list(data = iris)), NULL, NULL)
+
+  # Taken from the description itself, so a change to the eval scope that
+  # breaks the example fails here rather than in front of the model.
+  example <- regmatches(
+    tool@description,
+    regexpr("(?<=write `)[^`]+", tool@description, perl = TRUE)
+  )
+
+  expect_match(isolate(tool(code = example)), "Sepal.Length", fixed = TRUE)
+})
+
 test_that("inspect_results leaves an unrelated error message alone", {
 
   res <- isolate(call_query("stop('boom')", list(data = iris)))
