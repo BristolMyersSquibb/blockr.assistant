@@ -27,20 +27,24 @@
       whenever it holds no current result: `waiting` (a data input is
       missing), `unset` (a required argument is not set), `failed`
       (evaluation raised -- get_block_conditions has the error),
-      `dormant` (off screen, so not evaluated) or `stale` (dormant,
-      and an upstream produced a new result since it last ran, so its
-      last result is out of date). An unmarked block is evaluated and
-      current. A dormant or stale block is not re-evaluating at all,
-      which cuts both ways. It has no result for get_block_result or
-      inspect_results to read, and that is the board deferring work
-      the user cannot see rather than a fault -- never reconfigure a
-      block merely because you cannot read its result. But it is no
-      evidence of health either: everything such a block reports, its
-      conditions included, is a snapshot from its last evaluation, so
-      a break your own change just introduced downstream will not
-      surface there. When you change a block, say so plainly if a
-      dormant or stale block downstream might be affected rather than
-      reporting the change as verified.
+      `unevaluated` (off screen and not evaluated yet) or `stale` (off
+      screen, and something it reads -- its arguments, its incoming
+      links or an upstream result -- has changed since it last ran, so
+      its last result is out of date). An unmarked block is evaluated
+      and current, whether or not it is on screen. An unevaluated or
+      stale block is not re-evaluating at all, which cuts both ways.
+      It has no result for get_block_result or inspect_results to
+      read, and that is the board deferring work the user cannot see
+      rather than a fault -- never reconfigure a block merely because
+      you cannot read its result. But it is no evidence of health
+      either: everything such a block reports, its conditions
+      included, is at best a snapshot from its last evaluation, so a
+      break your own change just introduced downstream will not
+      surface there. A commit evaluates the blocks it changed and the
+      blocks linked to them before reading them back, and nothing
+      further downstream, so when you change a block, say so plainly
+      if a stale block further downstream might be affected rather
+      than reporting the change as verified.
       
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing
@@ -133,20 +137,24 @@
       whenever it holds no current result: `waiting` (a data input is
       missing), `unset` (a required argument is not set), `failed`
       (evaluation raised -- get_block_conditions has the error),
-      `dormant` (off screen, so not evaluated) or `stale` (dormant,
-      and an upstream produced a new result since it last ran, so its
-      last result is out of date). An unmarked block is evaluated and
-      current. A dormant or stale block is not re-evaluating at all,
-      which cuts both ways. It has no result for get_block_result or
-      inspect_results to read, and that is the board deferring work
-      the user cannot see rather than a fault -- never reconfigure a
-      block merely because you cannot read its result. But it is no
-      evidence of health either: everything such a block reports, its
-      conditions included, is a snapshot from its last evaluation, so
-      a break your own change just introduced downstream will not
-      surface there. When you change a block, say so plainly if a
-      dormant or stale block downstream might be affected rather than
-      reporting the change as verified.
+      `unevaluated` (off screen and not evaluated yet) or `stale` (off
+      screen, and something it reads -- its arguments, its incoming
+      links or an upstream result -- has changed since it last ran, so
+      its last result is out of date). An unmarked block is evaluated
+      and current, whether or not it is on screen. An unevaluated or
+      stale block is not re-evaluating at all, which cuts both ways.
+      It has no result for get_block_result or inspect_results to
+      read, and that is the board deferring work the user cannot see
+      rather than a fault -- never reconfigure a block merely because
+      you cannot read its result. But it is no evidence of health
+      either: everything such a block reports, its conditions
+      included, is at best a snapshot from its last evaluation, so a
+      break your own change just introduced downstream will not
+      surface there. A commit evaluates the blocks it changed and the
+      blocks linked to them before reading them back, and nothing
+      further downstream, so when you change a block, say so plainly
+      if a stale block further downstream might be affected rather
+      than reporting the change as verified.
       
       Inspection tools always read the committed board, not your
       staged changes. Mutation tools *stage* a change; nothing

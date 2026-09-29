@@ -4,17 +4,20 @@ eval_status <- function(id, board) {
 
 # One gloss per eval status under which a block has no result to read. A
 # `ready` block (and a block carrying no status at all) is deliberately absent,
-# so membership here doubles as the has_no_result() predicate.
+# so membership here doubles as the has_no_result() predicate. Core holds on to
+# a `stale` block's last result, but that result is out of date, so it is not
+# one to read either.
 eval_status_notes <- function() {
   c(
-    dormant = paste(
-      "off screen, so the board is not evaluating it -- holding no result is",
-      "the deferral, not a failure, and not something to reconfigure over"
+    unevaluated = paste(
+      "off screen and not evaluated yet -- holding no result is the board",
+      "deferring work nothing on screen needs, not a failure, and not",
+      "something to reconfigure over"
     ),
     stale = paste(
-      "off screen and not currently evaluated, and an upstream block has",
-      "produced a new result since the last evaluation, so the last result is",
-      "out of date"
+      "off screen and not re-evaluating, and something its last evaluation",
+      "read has changed since -- its arguments, its incoming links or an",
+      "upstream result -- so the last result is out of date"
     ),
     waiting = paste(
       "waiting on a data input -- an incoming link is missing, or an upstream",
@@ -29,11 +32,13 @@ has_no_result <- function(status) {
   status %in% names(eval_status_notes())
 }
 
-# Core's not-needed partition: the two statuses under which a block does not
-# re-evaluate at all. Everything it reports -- result, conditions -- is then a
-# snapshot from its last evaluation rather than a live reading.
+# The two statuses under which what a block reports -- result, conditions --
+# is not a check against what it reads now. Any other status is current
+# whether or not the block is on screen: an off-screen block keeps what its
+# last check found until something that check read changes, and then reads
+# `stale`.
 eval_deferred <- function(status) {
-  status %in% c("dormant", "stale")
+  status %in% c("stale", "unevaluated")
 }
 
 eval_status_note <- function(status) {
@@ -100,20 +105,23 @@ deferred_conditions_caveat <- function(id, status) {
     return(NULL)
   }
 
-  drift <- if (identical(status, "stale")) {
-    paste(
-      "an upstream has produced a new result since, so they may not reflect",
-      "the inputs it would run against now"
+  lead <- if (identical(status, "stale")) {
+    glue::glue(
+      "These are block {id}'s conditions as of its last evaluation. It is ",
+      "`stale` -- off screen and not re-evaluating -- and something it read ",
+      "has changed since, so they may not reflect what it would raise now."
     )
   } else {
-    "any edit made to it since is not reflected in them"
+    glue::glue(
+      "Block {id} is `unevaluated` -- off screen and not evaluated yet -- so ",
+      "it has had no chance to raise anything."
+    )
   }
 
-  glue::glue(
-    "These are block {id}'s conditions as of its last evaluation. It is ",
-    "`{status}` -- off screen and not re-evaluating -- and {drift}. Read ",
-    "an empty report as unknown rather than as an all-clear: a problem ",
-    "introduced since will not surface until the block evaluates again."
+  paste(
+    lead,
+    "Read an empty report as unknown rather than as an all-clear: a problem",
+    "will not surface until the block is evaluated."
   )
 }
 

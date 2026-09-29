@@ -452,22 +452,15 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         max_nudges <- 3L
 
         # The in-flight commit's state, bundled so only these methods touch it:
-        # perform_commit arms the bridge with the pre-flush baseline, the blocks
-        # the payload claims and the promise resolver; the board$last_update
-        # observer gives it the waiter on that claim, which settling the
-        # commit destroys. The generation fences a resolved commit's stale
-        # timeout off a subsequent commit.
-        #
-        # The `holding` flag outlives the commit. A commit that claims nothing
-        # leaves the previous claim in place rather than stating an empty set,
-        # and a rejected one never reaches core, so the claim a commit sent
-        # says nothing about what core still holds by the end of the turn.
+        # perform_commit arms the bridge with the pre-flush baseline and the
+        # promise resolver; the board$last_update observer gives it the waiter
+        # on the blocks the commit reads back, which settling the commit
+        # destroys. The generation fences a resolved commit's stale timeout off
+        # a subsequent commit.
         commit_bridge <- local({
 
           resolve  <- NULL
           baseline <- NULL
-          claimed  <- character()
-          holding  <- FALSE
           waiter   <- NULL
           gen      <- 0L
 
@@ -482,11 +475,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           }
 
           list(
-            arm = function(conditions, claim, resolver) {
+            arm = function(conditions, resolver) {
               drop_waiter()
               baseline <<- conditions
-              claimed  <<- claim
-              holding  <<- holding || length(claim) > 0L
               resolve  <<- resolver
               gen      <<- gen + 1L
               gen
@@ -507,12 +498,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               TRUE
             },
             baseline   = function() baseline,
-            claimed    = function() claimed,
-            drop_claim = function() {
-              held <- holding
-              holding <<- FALSE
-              held
-            },
+            reviewing  = function() not_null(waiter),
             is_current = function(g) identical(g, gen)
           )
         })
@@ -944,26 +930,28 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           )
         }
 
-        # Take the review once the blocks the commit claimed have run -- NOT on
-        # the flush that applies the update, which is what this replaces. Dock
-        # reports visibility from the client, so a block the model changed on a
-        # tab nobody is looking at needs several reactive cycles under its claim
-        # before it reaches a status worth reading. Reviewed at that first
-        # flush, every one of them still said `dormant`, the model was told
-        # `dormant` is "not a failure", and a block whose script raised came
-        # back as "no problems to report".
+        # Take the review once every block it reads back reports a check
+        # against the committed board -- NOT on the flush that applies the
+        # update. An off-screen block does not run on its own, so whatever the
+        # review would read `stale` or `unevaluated` is asked for once, through
+        # core's `evaluate` request, and the review waits until none of it
+        # still reads that way. Reviewed at the first flush, a block the model
+        # changed on a tab nobody is looking at had not run, and one whose
+        # script raised came back as "no problems to report".
         #
         # An observer rather than a poll, so the wait advances with the reactive
         # graph rather than racing it. The commit timeout stays the backstop: a
-        # claim that never settles resolves there. The bridge holds the observer
+        # block that never settles resolves there. The bridge holds the observer
         # and destroys it whichever way the commit settles, so a waiter that
-        # outlives its commit cannot settle the next one on its own claim.
-        await_commit_review <- function(claimed) {
+        # outlives its commit cannot settle the next one.
+        await_commit_review <- function() {
+
+          ids <- review_block_ids(isolate(touched()), board)
 
           commit_bridge$watch(
             observe({
 
-              if (!commit_settled(claimed, board)) {
+              if (length(deferred_blocks(ids, board))) {
                 return()
               }
 
@@ -974,6 +962,14 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               )
             })
           )
+
+          request <- isolate(deferred_blocks(ids, board))
+
+          if (length(request)) {
+            request_evaluation(update, request)
+          }
+
+          invisible()
         }
 
         settle_commit <- function(msg) {
@@ -1000,19 +996,10 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           added(character())
           report$awaiting <- TRUE
 
-          # Read off the staged payload, not off `touched()`: that reactiveVal
-          # is filled by the update() observer, which runs after the flush this
-          # claim has to ride in on.
-          claim <- commit_claim_ids(
-            isolate(pending_update()), isolate(board$board)
-          )
-
           promises::promise(
             function(resolve, reject) {
 
-              gen <- commit_bridge$arm(
-                isolate(board$conditions()), claim, resolve
-              )
+              gen <- commit_bridge$arm(isolate(board$conditions()), resolve)
 
               later::later(
                 function() {
@@ -1023,32 +1010,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
                 delay = commit_timeout_secs()
               )
 
-              flush_pending(
-                pending_update, update, claim, commit_claim_owner(session)
-              )
+              flush_pending(pending_update, update)
             }
           )
-        }
-
-        # Release the claim this turn's commits took. Held past the review on
-        # purpose -- a follow-up get_block_result on the block the model just
-        # built would otherwise answer `dormant` -- so the turn ending is what
-        # lets the board go back to evaluating only what is on screen. A commit
-        # that claims blocks states the owner's whole set, so it replaces rather
-        # than adds to the claim before it.
-        release_commit_claim <- function() {
-
-          if (commit_bridge$drop_claim()) {
-            update(
-              list(
-                sustain = commit_claim_delta(
-                  character(), commit_claim_owner(session)
-                )
-              )
-            )
-          }
-
-          invisible()
         }
 
         nudge_model <- function(msg) {
@@ -1143,8 +1107,6 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           account_turn(turn)
 
-          release_commit_claim()
-
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
           } else {
@@ -1197,15 +1159,18 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           {
             outcome <- board$last_update
 
-            if (is.null(outcome) || !isolate(report$awaiting)) {
+            # Once the review is waiting, the outcome is already in hand, and
+            # what lands here is the review's own evaluation request.
+            if (is.null(outcome) || !isolate(report$awaiting) ||
+                  commit_bridge$reviewing()) {
               return()
             }
 
             # A commit is in flight -- `awaiting` is set only by perform_commit,
             # which arms the bridge before dispatching. Answer it in-band: a
             # rejected update resolves at once; a successful one waits for the
-            # blocks the commit claimed to run before collecting the touched
-            # results.
+            # blocks it reads back to be evaluated before collecting the
+            # touched results.
             if (isFALSE(outcome$ok)) {
               settle_commit(
                 ellmer::ContentToolResult(
@@ -1218,7 +1183,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               return()
             }
 
-            await_commit_review(commit_bridge$claimed())
+            await_commit_review()
           },
           ignoreNULL = TRUE
         )

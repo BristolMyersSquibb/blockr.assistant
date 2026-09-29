@@ -61,9 +61,59 @@ test_that("a live block with no result reports its status, not NULL", {
   )
 })
 
+test_that("an off-screen block reads what its last evaluation found", {
+
+  withr::local_options(blockr.background_construction_delay = 0)
+
+  brd <- new_board(
+    blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+    links = c(ab = new_link("a", "b", "data"))
+  )
+
+  testServer(
+    getS3method("board_server", "board"),
+    {
+      session$flushReact()
+
+      expect_identical(eval_status("b", rv), "unevaluated")
+      expect_match(
+        block_result_summary("b", rv), "(`unevaluated`)", fixed = TRUE
+      )
+
+      board_update(list(evaluate = "b"))
+      session$flushReact()
+
+      # Off screen again once it has run, and still current.
+      expect_identical(eval_status("b", rv), "ready")
+      expect_match(block_result_summary("b", rv), "Sepal.Length", fixed = TRUE)
+
+      board_update(
+        list(blocks = list(mod = list(a = list(dataset = "mtcars"))))
+      )
+      session$flushReact()
+
+      expect_identical(eval_status("b", rv), "stale")
+      expect_match(block_result_summary("b", rv), "out of date", fixed = TRUE)
+      expect_no_match(
+        block_result_summary("b", rv), "Sepal.Length", fixed = TRUE
+      )
+    },
+    args = list(
+      x = brd,
+      plugins = list(),
+      callbacks = function(visibility, ...) {
+        visibility$visible[["a"]](TRUE)
+        eager("front-end", "a")
+      }
+    )
+  )
+})
+
 test_that("eval_status_note glosses each status holding no result", {
 
-  expect_match(eval_status_note("dormant"), "off screen", fixed = TRUE)
+  expect_match(
+    eval_status_note("unevaluated"), "not evaluated yet", fixed = TRUE
+  )
   expect_match(eval_status_note("stale"), "out of date", fixed = TRUE)
   expect_match(eval_status_note("waiting"), "data input", fixed = TRUE)
   expect_match(eval_status_note("unset"), "argument value", fixed = TRUE)
@@ -100,7 +150,8 @@ test_that("block_markers leads the condition marker with the eval status", {
     blocks = list(d = list(), e = list(), f = list()),
     conditions = reactiveVal(cnd_frame(cnd_row("d", "error", "boom"))),
     eval = reactiveValues(
-      d = reactive("failed"), e = reactive("dormant"), f = reactive("ready")
+      d = reactive("failed"), e = reactive("unevaluated"),
+      f = reactive("ready")
     )
   )
 
@@ -108,7 +159,7 @@ test_that("block_markers leads the condition marker with the eval status", {
 
   expect_named(res, c("d", "e", "f"))
   expect_match(res[["d"]], "^\\[failed\\] \\[.*1 error\\]$")
-  expect_identical(res[["e"]], "[dormant]")
+  expect_identical(res[["e"]], "[unevaluated]")
   expect_identical(res[["f"]], "")
 })
 
@@ -123,11 +174,13 @@ test_that("block_markers is empty without live blocks", {
   expect_length(isolate(block_markers(board)), 0L)
 })
 
-test_that("no_result_message explains a dormant block", {
+test_that("no_result_message explains an unevaluated block", {
 
-  res <- no_result_message("d", "dormant", simpleError(""))
+  res <- no_result_message("d", "unevaluated", simpleError(""))
 
-  expect_match(res, "Block d has no result to read (`dormant`)", fixed = TRUE)
+  expect_match(
+    res, "Block d has no result to read (`unevaluated`)", fixed = TRUE
+  )
   expect_match(res, "off screen", fixed = TRUE)
 })
 
@@ -159,7 +212,7 @@ test_that("no_result_message says so when there is no reason to give", {
 
 test_that("deferred_conditions_caveat fires only where a block defers", {
 
-  expect_match(deferred_conditions_caveat("d", "dormant"), "last evaluation")
+  expect_match(deferred_conditions_caveat("d", "unevaluated"), "not evaluated")
   expect_match(deferred_conditions_caveat("d", "stale"), "last evaluation")
 
   expect_null(deferred_conditions_caveat("d", "ready"))
@@ -173,26 +226,26 @@ test_that("deferred_conditions_caveat names what an empty report means", {
   res <- deferred_conditions_caveat("d", "stale")
 
   expect_match(res, "unknown rather than as an all-clear", fixed = TRUE)
-  expect_match(res, "upstream has produced a new result since", fixed = TRUE)
+  expect_match(res, "something it read has changed since", fixed = TRUE)
 })
 
-test_that("deferred_conditions_caveat blames the edit for a dormant block", {
+test_that("deferred_conditions_caveat says an unevaluated block has not run", {
 
-  expect_match(
-    deferred_conditions_caveat("d", "dormant"),
-    "any edit made to it since is not reflected",
-    fixed = TRUE
-  )
+  res <- deferred_conditions_caveat("d", "unevaluated")
+
+  expect_match(res, "no chance to raise anything", fixed = TRUE)
+  expect_match(res, "unknown rather than as an all-clear", fixed = TRUE)
+  expect_no_match(res, "last evaluation", fixed = TRUE)
 })
 
 test_that("skipped_block_lines groups skipped blocks by status", {
 
   res <- skipped_block_lines(
-    c(a = "dormant", b = "stale", c = "dormant", d = NA_character_)
+    c(a = "unevaluated", b = "stale", c = "unevaluated", d = NA_character_)
   )
 
   expect_match(res[[1L]], "Skipped blocks", fixed = TRUE)
-  expect_true(any(grepl("- a, c (`dormant`):", res, fixed = TRUE)))
+  expect_true(any(grepl("- a, c (`unevaluated`):", res, fixed = TRUE)))
   expect_true(any(grepl("- b (`stale`):", res, fixed = TRUE)))
   expect_true(any(grepl("- d: no result available", res, fixed = TRUE)))
 })
