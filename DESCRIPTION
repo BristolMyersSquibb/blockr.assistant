@@ -33,6 +33,7 @@ Imports:
     shiny,
     shinychat (>= 0.5.0),
     shinyWidgets,
+    typedjson,
     yaml
 Suggests:
     chromote,

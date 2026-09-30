@@ -28,17 +28,38 @@ options_session <- function(values) {
   sess
 }
 
-test_that("format_option_value renders scalars, vectors, NULL and functions", {
+make_columns_board <- function() {
+  new_board(
+    blocks = c(data = new_dataset_block("iris")),
+    options = new_board_options(
+      new_board_option(
+        "columns",
+        list(x = "Sepal.Length", y = "", group = "Species"),
+        ui = function(id) NULL,
+        category = "Plot",
+        ctor = "new_board_option",
+        pkg = "blockr.core"
+      )
+    )
+  )
+}
 
-  expect_identical(format_option_value(50L), "50")
-  expect_identical(format_option_value(TRUE), "TRUE")
-  expect_identical(format_option_value("dark"), "dark")
-  expect_identical(format_option_value(c("warning", "error")), "warning, error")
-  expect_identical(format_option_value(NULL), "NULL")
+list_options <- function(board, session = NULL) {
+
+  res <- typedjson::json_read_str(
+    isolate(call_tool(tool_list_board_options(board, session)))
+  )
+
+  set_names(res, chr_xtr(res, "id"))
+}
+
+test_that("model_option_value names a function by its chat name", {
 
   named <- structure(function() NULL, chat_name = "claude")
-  expect_identical(format_option_value(named), "claude")
-  expect_identical(format_option_value(function() NULL), "<function>")
+
+  expect_identical(model_option_value(named), "claude")
+  expect_identical(model_option_value(function() NULL), "<function>")
+  expect_identical(model_option_value(50L), 50L)
 })
 
 test_that("parse_option_value decodes JSON and falls back to a bare string", {
@@ -52,29 +73,27 @@ test_that("parse_option_value decodes JSON and falls back to a bare string", {
     c("warning", "error")
   )
   expect_identical(parse_option_value("Sales"), "Sales")
+  expect_identical(parse_option_value("\"~zInf\""), Inf)
   expect_error(parse_option_value(""), "no value supplied")
 })
 
-test_that("list_board_options returns id/category/value/default rows", {
+test_that("list_board_options returns id/category/value/default entries", {
 
   board <- reactiveValues(board = make_options_board())
 
-  res <- call_tool(tool_list_board_options(board, NULL))
+  res <- list_options(board)
 
-  expect_s3_class(res, "data.frame")
-  expect_named(res, c("id", "category", "value", "default"))
   expect_setequal(
-    res$id,
+    names(res),
     c("board_name", "n_rows", "dark_mode", "show_conditions")
   )
+  expect_named(res$n_rows, c("id", "category", "value", "default"))
 
-  n_rows <- res[res$id == "n_rows", ]
-  expect_identical(n_rows$category, "Table options")
-  expect_identical(n_rows$default, "50")
-  expect_identical(n_rows$value, "50")
+  expect_identical(res$n_rows$category, "Table options")
+  expect_identical(res$n_rows$default, 50L)
+  expect_identical(res$n_rows$value, 50L)
 
-  show <- res[res$id == "show_conditions", ]
-  expect_identical(show$value, "warning, error")
+  expect_identical(res$show_conditions$value, c("warning", "error"))
 })
 
 test_that("list_board_options reflects a live session value over the default", {
@@ -82,11 +101,40 @@ test_that("list_board_options reflects a live session value over the default", {
   board <- reactiveValues(board = make_options_board())
   sess  <- options_session(list(n_rows = 99L))
 
-  res <- isolate(call_tool(tool_list_board_options(board, sess)))
+  res <- list_options(board, sess)
 
-  n_rows <- res[res$id == "n_rows", ]
-  expect_identical(n_rows$value, "99")
-  expect_identical(n_rows$default, "50")
+  expect_identical(res$n_rows$value, 99L)
+  expect_identical(res$n_rows$default, 50L)
+})
+
+test_that("list_board_options writes a named value as a JSON object", {
+
+  board <- reactiveValues(board = make_columns_board())
+  sess  <- options_session(
+    list(columns = list(x = "Petal.Width", y = "", group = "Species"))
+  )
+
+  expect_identical(
+    isolate(call_tool(tool_list_board_options(board, sess))),
+    paste0(
+      "[{\"id\":\"columns\",\"category\":\"Plot\",",
+      "\"value\":{\"x\":\"Petal.Width\",\"y\":\"\",\"group\":\"Species\"},",
+      "\"default\":{\"x\":\"Sepal.Length\",\"y\":\"\",\"group\":\"Species\"}}]"
+    )
+  )
+})
+
+test_that("list_board_options marks a value plain JSON cannot hold", {
+
+  brd <- new_board(options = new_board_options(new_chat_compact_option(Inf)))
+  board <- reactiveValues(board = brd)
+
+  expect_match(
+    call_tool(tool_list_board_options(board, NULL)),
+    "\"value\":\"~zInf\"",
+    fixed = TRUE
+  )
+  expect_identical(list_options(board)$chat_compact_tokens$value, Inf)
 })
 
 test_that("list_board_options renders the function-valued llm_model option", {
@@ -99,10 +147,8 @@ test_that("list_board_options renders the function-valued llm_model option", {
   )
   board <- reactiveValues(board = brd)
 
-  res <- call_tool(tool_list_board_options(board, NULL))
+  llm <- list_options(board)$llm_model
 
-  llm <- res[res$id == "llm_model", ]
-  expect_equal(nrow(llm), 1L)
   expect_type(llm$value, "character")
   expect_true(nzchar(llm$value))
 })
@@ -111,11 +157,7 @@ test_that("list_board_options handles a board with no options", {
 
   board <- reactiveValues(board = new_board(options = new_board_options()))
 
-  res <- call_tool(tool_list_board_options(board, NULL))
-
-  expect_s3_class(res, "data.frame")
-  expect_named(res, c("id", "category", "value", "default"))
-  expect_equal(nrow(res), 0L)
+  expect_identical(call_tool(tool_list_board_options(board, NULL)), "[]")
 })
 
 test_that("set_board_option coerces the value to the option's type", {
@@ -142,7 +184,7 @@ test_that("set_board_option accepts a bare-word string value", {
     id = "board_name", value = "Sales"
   )
 
-  expect_match(res, "Set board option board_name to Sales", fixed = TRUE)
+  expect_match(res, "Set board option board_name to \"Sales\"", fixed = TRUE)
   expect_identical(isolate(get_board_option_value("board_name", sess)), "Sales")
 })
 

@@ -1,5 +1,16 @@
 # blockr.assistant (development version)
 
+* The `list_board_options` tool now writes its result with typedjson, the
+  format a saved board uses, so each option's value reaches the model as
+  JSON instead of flattened to text. Flattened, a value lost its names:
+  blockr.pharma's `study_roles` option, a named list of five column roles,
+  arrived as `ACTARM, , AESEV, ,`, and the model guessed which column
+  carries the arm even after listing the options. What plain JSON cannot
+  hold is marked the way typedjson marks it, such as `"~zInf"` for the
+  `Inf` that switches compaction off, and `set_board_option` reads its
+  value with typedjson too, so such a value passed back unchanged restores
+  exactly (#167).
+
 * A commit now reads back the blocks it changed even when they are off
   screen. The board does not evaluate a block nothing is showing, so a
   commit that changed one had nothing to read: the review reported no
