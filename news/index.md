@@ -323,7 +323,8 @@
   and the block focus selection travels with the conversation too. Both
   are saved alongside the thread’s turns, restored when you switch back
   to it, and start over in a new one – a meter and a focus left pointing
-  at the thread you just left are worse than none.
+  at the thread you just left are worse than none. Opening a thread
+  drops the changes staged against the one before it.
 
 - A collapsed dock panel no longer leaves a sliver of chat behind it,
   and the history button stays in the panel’s corner instead of drifting
@@ -332,23 +333,22 @@
   unrelated element overlapping the button’s corner, and the button
   nudges away from it until it hits its travel limit.
 
-- The `/clear` command is gone. Starting a fresh thread is the history
-  drawer’s own affordance, and nothing in `shinychat`’s server API opens
-  one, so a command that emptied the transcript would have left the
-  stored thread behind for the next response to extend. Opening a thread
-  still drops the changes staged against the one before it.
-
 - The chat’s command palette gained two built-in commands, listed
   alongside the user-invocable skills it already carried. The `/compact`
   command runs the conversation through the same summarise-and-replace
   that `chat_compact_tokens` triggers on its own, without waiting for
   the threshold – what a stale thread needs rather than a large one,
   where a long build has finished and the next question is unrelated to
-  it. It does not echo its invocation into the transcript, being about
-  to rewrite it. Built-ins are registered ahead of the skills, so a
-  deployment skill that takes one of their names is the registration
-  refused and logged, rather than one that silently shadows a built-in
-  (#125).
+  it. The `/clear` command starts a new conversation, as the history
+  drawer’s New button does, without the trip to the drawer. The thread
+  on screen is kept in the drawer rather than extended by the next
+  answer, and the chat empties along with the turns the model is sent,
+  the token meter, the block focus and any changes staged but never
+  committed (#163). Neither echoes its invocation into the transcript,
+  both being about to rewrite it. Built-ins are registered ahead of the
+  skills, so a deployment skill that takes one of their names is the
+  registration refused and logged, rather than one that silently shadows
+  a built-in (#125).
 
 - The assistant can now be pointed at particular blocks. A picker below
   the chat lists the board’s blocks – the rich selectize the board
