@@ -134,16 +134,17 @@ client would otherwise stay on screen unremembered. The same replay
 fills in a transcript that a board saved before threads existed
 leaves empty; tool traffic carries no text and is not replayed.
 
-Conversation size is reachable from the chat's command palette,
-which lists one built-in command alongside the user-invocable
-skills. The \verb{/compact} command runs the same summarise-and-replace
-on demand, without waiting for the threshold -- for a thread that
-has gone stale rather than large, where a long build has finished
-and the next question is unrelated to it. Opening a fresh thread is
-the history drawer's own affordance rather than a command, because
-nothing in \code{shinychat}'s server API starts one: a command that
-emptied the transcript would leave the stored thread behind for the
-next response to extend.
+Both the conversation and its size are reachable from the chat's
+command palette, which lists two built-in commands alongside the
+user-invocable skills. The \verb{/compact} command runs the same
+summarise-and-replace on demand, without waiting for the threshold
+-- for a thread that has gone stale rather than large, where a long
+build has finished and the next question is unrelated to it. The
+\verb{/clear} command starts a new conversation, as the history drawer's
+New button does: the thread on screen is kept in the drawer rather
+than extended by the next answer, and the chat empties along with
+the turns the model is sent, the token meter, the block focus and
+any changes staged but never committed.
 }
 \examples{
 ext <- new_assistant_extension()
