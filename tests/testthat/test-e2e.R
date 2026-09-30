@@ -248,10 +248,7 @@ test_that("the browser's command palette lists built-ins and skills", {
 
   expect_match(palette, "exposure-check", fixed = TRUE)
   expect_match(palette, "/compact", fixed = TRUE)
-  # Dropping `/clear` is deliberate: it leaves the stored thread for the next
-  # response to extend, and nothing in shinychat's server API opens a fresh
-  # conversation to replace it. Starting a thread is the drawer's job.
-  expect_no_match(palette, "/clear", fixed = TRUE)
+  expect_match(palette, "/clear", fixed = TRUE)
 })
 
 test_that("a rejected turn surfaces the error and releases the chat", {

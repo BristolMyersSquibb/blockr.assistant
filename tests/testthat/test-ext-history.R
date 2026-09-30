@@ -293,3 +293,121 @@ test_that("a compaction redraws the transcript with history enabled", {
     session = rec$session
   )
 })
+
+test_that("/clear keeps the thread on screen and opens a new one", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  rec <- recording_session()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+
+      session$setInputs(focus = "d")
+      spent(c(100L, 20L))
+      cl$set_turns(
+        list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
+      )
+      ctrl$on_response(recorded(cl))
+
+      first <- ctrl$record$id
+
+      stage_block_add(pending_update, board, "new", new_head_block())
+
+      clear_conversation()
+      later::run_now()
+      session$flushReact()
+
+      kept <- thread_store$threads()[[first]]
+
+      expect_identical(kept$values[["focus"]], list("d"))
+      expect_identical(kept$values[["spent"]], list(100L, 20L))
+
+      expect_null(ctrl$record)
+      expect_length(cl$get_turns(), 0L)
+      expect_identical(rec$transcript(), character())
+      expect_identical(spent(), c(0L, 0L))
+      expect_false(isolate(has_any_changes(pending_update())))
+
+      cl$set_turns(
+        list(ellmer::Turn("user", "two"), ellmer::Turn("assistant", "second"))
+      )
+      ctrl$on_response(recorded(cl))
+
+      expect_length(thread_store$threads(), 2L)
+      expect_identical(
+        lapply(
+          lapply(
+            thread_turns(thread_store$threads()[[first]]),
+            ellmer::contents_replay
+          ),
+          ellmer::contents_text
+        ),
+        list("one", "first")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = rec$session
+  )
+})
+
+test_that("/clear starts the new thread over after a provider swap", {
+
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-b",
+      credentials = function() list(Authorization = "Bearer b"),
+      echo = "none"
+    )
+  }
+
+  withr::local_options(
+    blockr.chat_function = list(A = fake_chat_function, B = fake_b)
+  )
+
+  brd <- new_board(blocks = c(d = new_dataset_block("iris")))
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      # The history controller shinychat builds for the swapped-in client
+      # carries the save and restore callbacks over but not the greeting, so a
+      # new thread no longer resets its state through it.
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      spent(c(100L, 20L))
+      stage_block_add(pending_update, board, "new", new_head_block())
+
+      clear_conversation()
+      later::run_now()
+      session$flushReact()
+
+      expect_identical(spent(), c(0L, 0L))
+      expect_false(isolate(has_any_changes(pending_update())))
+    },
+    args = list(
+      board = reactiveValues(board = brd),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
