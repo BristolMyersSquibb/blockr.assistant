@@ -6,17 +6,31 @@ register_board_options_tools <- function(client, board, session) {
   invisible(client)
 }
 
-format_option_value <- function(value) {
+model_option_value <- function(value) {
 
   if (is.function(value)) {
     return(coal(attr(value, "chat_name"), "<function>", fail_all = FALSE))
   }
 
-  if (!length(value)) {
-    return("NULL")
-  }
+  value
+}
 
-  paste(as.character(value), collapse = ", ")
+board_option_entry <- function(opt, session) {
+
+  id <- board_option_id(opt)
+
+  list(
+    id = id,
+    category = board_option_category(opt),
+    value = model_option_value(
+      coal(
+        get_board_option_or_null(id, session),
+        board_option_value(opt),
+        fail_all = FALSE
+      )
+    ),
+    default = model_option_value(board_option_value(opt))
+  )
 }
 
 parse_option_value <- function(value) {
@@ -26,7 +40,7 @@ parse_option_value <- function(value) {
   }
 
   tryCatch(
-    jsonlite::fromJSON(value, simplifyVector = TRUE),
+    typedjson::json_read_str(value),
     error = function(e) value
   )
 }
@@ -39,47 +53,21 @@ tool_list_board_options <- function(board, session) {
 
         opts <- board_options(isolate(board$board))
 
-        if (!length(opts)) {
-          return(
-            data.frame(
-              id       = character(),
-              category = character(),
-              value    = character(),
-              default  = character()
-            )
-          )
-        }
-
-        isolate(
-          data.frame(
-            id       = names(opts),
-            category = chr_ply(opts, function(o) {
-              coal(board_option_category(o), NA_character_)
-            }),
-            value    = chr_ply(opts, function(o) {
-              format_option_value(
-                coal(
-                  get_board_option_or_null(board_option_id(o), session),
-                  board_option_value(o),
-                  fail_all = FALSE
-                )
-              )
-            }),
-            default  = chr_ply(opts, function(o) {
-              format_option_value(board_option_value(o))
-            }),
-            row.names = NULL
-          )
+        typedjson::json_write_str(
+          unname(isolate(lapply(opts, board_option_entry, session)))
         )
       })
     },
     name        = "list_board_options",
     description = paste(
       "List the board's options -- user-level board settings such as",
-      "board name, theming, dark mode and table page size. One row",
-      "per option: id, category, current value, and default. Values",
-      "are board-dependent; current values reflect live session",
-      "state. Use set_board_option to change a value."
+      "board name, theming, dark mode and table page size. One entry",
+      "per option: id, category, current value and default, as JSON.",
+      "A \"~\" marks what plain JSON cannot hold (\"~zInf\" is",
+      "infinity, \"~~\" a literal \"~\"); pass such a value back to",
+      "set_board_option unchanged. Values are board-dependent; current",
+      "values reflect live session state. Use set_board_option to",
+      "change a value."
     ),
     arguments   = list()
   )
@@ -116,7 +104,10 @@ tool_set_board_option <- function(board, session) {
 
         set_board_option_value(id, coerced, isolate(board$board), session)
 
-        glue::glue("Set board option {id} to {format_option_value(coerced)}.")
+        glue::glue(
+          "Set board option {id} to ",
+          "{typedjson::json_write_str(model_option_value(coerced))}."
+        )
       })
     },
     name        = "set_board_option",
