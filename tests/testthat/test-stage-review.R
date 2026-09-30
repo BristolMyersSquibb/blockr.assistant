@@ -554,7 +554,7 @@ test_that("collect_touched_results reports state for a block with no result", {
 
   board <- list(
     blocks = list(a = fake_block(error = "", state = list(n = function() 3L))),
-    eval   = list(a = function() "dormant")
+    eval   = list(a = function() "unevaluated")
   )
 
   out <- collect_touched_results("a", board, added = "a")

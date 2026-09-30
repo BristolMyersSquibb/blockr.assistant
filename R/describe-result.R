@@ -137,8 +137,8 @@ summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
 # The eval status is consulted BEFORE the result: a block holding none answers
 # with a `NULL` result or a shiny.silent.error carrying no message, neither of
 # which distinguishes "nothing evaluated" from a block that legitimately
-# evaluated to NULL. Reading a dormant block's result() also re-enters its
-# gated pipeline for nothing.
+# evaluated to NULL. A `stale` block does answer, with what its last evaluation
+# left, and that is out of date.
 block_result_summary <- function(id, board) {
 
   status <- eval_status(id, board)

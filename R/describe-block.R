@@ -79,8 +79,8 @@ describe_block.block <- function(x, board, id, ..., state = NULL) {
 
 # Core keys block state by exactly the constructor inputs, so what comes back
 # always covers what format() needs. A block that never constructed is absent
-# from `board$blocks` and chains to NULL; a `dormant` one still holds correct
-# state, its result being the part deferral makes unreadable.
+# from `board$blocks` and chains to NULL; one that is off screen still holds
+# correct state, whatever its eval status says about its result.
 live_block_state <- function(id, board) {
 
   state <- isolate(board$blocks[[id]]$server$state)

@@ -62,12 +62,12 @@ tool_list_blocks <- function(board, update, session) {
     description = paste(
       "List all blocks on the board. One row per block: id, type",
       "(class name), display name, source package, and eval status.",
-      "A `ready` block has a current result; `dormant` and `stale`",
-      "blocks are off screen and hold no readable result (`stale`",
-      "additionally means an upstream changed since the block last",
-      "ran); `waiting`, `unset` and `failed` blocks have not produced",
-      "one. Call describe_block for what a status means for that",
-      "block."
+      "A `ready` block has a current result, on screen or off;",
+      "`unevaluated` and `stale` blocks are off screen and hold no",
+      "current result (`unevaluated` has not run yet, and `stale` has",
+      "had something it reads change since it last ran); `waiting`,",
+      "`unset` and `failed` blocks have not produced one. Call",
+      "describe_block for what a status means for that block."
     ),
     arguments   = list()
   )
@@ -400,7 +400,7 @@ tool_get_block_result <- function(board, update, session) {
       "output. Data frames are summarised with skimr-style stats;",
       "other objects fall back to a truncated print. A block that",
       "holds no readable result reports its eval status and what",
-      "that status means instead -- an off-screen (`dormant` or",
+      "that status means instead -- an off-screen (`unevaluated` or",
       "`stale`) block is not a broken block and does not need",
       "reconfiguring."
     ),
@@ -499,10 +499,11 @@ tool_get_block_conditions <- function(board, update, session) {
       "sibling of get_block_result for an unhealthy block: a block that",
       "errors on eval leaves its result empty, so the actual message",
       "surfaces only here. Reports no active conditions when the block",
-      "is healthy -- except for an off-screen (`dormant` or `stale`)",
-      "block, which is not re-evaluating, so its conditions are a",
-      "snapshot from its last run and an empty report means unknown,",
-      "not healthy. The response says so when that is the case."
+      "is healthy -- except for an off-screen (`unevaluated` or",
+      "`stale`) block, which is not re-evaluating, so its conditions",
+      "are at best a snapshot from its last run and an empty report",
+      "means unknown, not healthy. The response says so when that is",
+      "the case."
     ),
     arguments   = list(
       id = ellmer::type_string("Block id, as returned by list_blocks.")

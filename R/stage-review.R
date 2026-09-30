@@ -167,26 +167,20 @@ review_max_blocks <- function() {
 collect_touched_results <- function(touched, board, added = character(),
                                     cap = review_max_blocks()) {
 
-  blks <- isolate(board$blocks)
-  ids  <- intersect(touched, names(blks))
+  ids <- review_block_ids(touched, board)
 
   if (!length(ids)) {
     return(NULL)
   }
 
-  # Report the touched blocks together with their immediate neighbours -- the
-  # blocks feeding them and the blocks they feed. To judge whether a block
-  # built the right thing (or why it errored or came back empty) the model
-  # needs its inputs; to see whether the change propagated it needs its
-  # consumers. Touched blocks lead so the cap spends its budget on them first;
-  # per-result size is bounded in summarise_result(), so the worst-case review
+  # Per-result size is bounded in summarise_result(), so the worst-case review
   # is `cap` blocks times that per-result bound.
-  ids <- intersect(union(ids, neighbor_blocks(ids, board)), names(blks))
+  changed <- intersect(touched, ids)
 
   shown <- ids[seq_len(min(cap, length(ids)))]
 
   lines <- chr_ply(
-    shown, review_result_line, board, added, use_names = FALSE
+    shown, review_result_line, board, added, changed, use_names = FALSE
   )
 
   if (length(ids) > length(shown)) {
@@ -202,15 +196,39 @@ collect_touched_results <- function(touched, board, added = character(),
   c("Results of the blocks you changed and the blocks linked to them:", lines)
 }
 
-review_result_line <- function(id, board, added) {
+review_result_line <- function(id, board, added, changed = character()) {
 
   paste(
     c(
       glue::glue("- {id}:"),
       if (id %in% added) applied_state_lines(id, board),
-      block_result_summary(id, board)
+      block_result_summary(id, board),
+      if (id %in% changed) unverified_note(id, board)
     ),
     collapse = "\n"
+  )
+}
+
+# The gloss no_result_message() puts on a status with no result -- for an
+# off-screen block, "the board deferring work nothing on screen needs, not a
+# failure" -- is right when the model browses a block it had nothing to do
+# with, and wrong here. This block is one it just changed, so if it still has
+# no result the change is unverified rather than fine. The model read the
+# browse gloss as an all-clear and reported a table it had never seen. A
+# `failed` block is left out: it did run, and its status line already says
+# that it raised and where to read the error.
+unverified_note <- function(id, board) {
+
+  status <- eval_status(id, board)
+
+  if (!has_no_result(status) || identical(status, "failed")) {
+    return(NULL)
+  }
+
+  paste(
+    "You changed this block and it produced no result to check, so what you",
+    "built here is UNVERIFIED. Do not report it as done: say what is",
+    "unverified, or get the block into a state where it evaluates."
   )
 }
 
@@ -238,6 +256,20 @@ applied_state_lines <- function(id, board) {
   )
 }
 
+# The blocks a commit reads back: the touched blocks together with their
+# immediate neighbours -- the blocks feeding them and the blocks they feed. To
+# judge whether a block built the right thing (or why it errored or came back
+# empty) the model needs its inputs; to see whether the change propagated it
+# needs its consumers. Touched blocks lead, so a capped listing spends its
+# budget on them first.
+review_block_ids <- function(touched, board) {
+
+  known <- names(isolate(board$blocks))
+  ids <- intersect(touched, known)
+
+  intersect(union(ids, neighbor_blocks(ids, board)), known)
+}
+
 neighbor_blocks <- function(ids, board) {
 
   brd <- isolate(board$board)
@@ -253,4 +285,45 @@ neighbor_blocks <- function(ids, board) {
   }
 
   unique(c(lnks$from[lnks$to %in% ids], lnks$to[lnks$from %in% ids]))
+}
+
+# The blocks among `ids` that report no check against the board as it stands.
+# An off-screen block the model changed reads `stale`, and one it added reads
+# `unevaluated`, and neither runs until something asks for it. Read back like
+# that, a block whose script raised had raised nothing, so the commit came back
+# clean and the model reported a table it had never seen. The commit asks core
+# to evaluate these blocks once (see the Evaluation requests section of
+# blockr.core::board_server()) and reads them back when none is left.
+#
+# Read live rather than through eval_status(), which isolates: the observer
+# waiting on the read-back has to re-run as each block's status advances.
+deferred_blocks <- function(ids, board) {
+
+  status <- board$eval
+
+  # A board that reports no statuses at all cannot say whether a block ran, and
+  # holding the commit open to its timeout on every call would be worse than
+  # reviewing early. Core always has the container.
+  if (is.null(status)) {
+    return(character())
+  }
+
+  ids[lgl_ply(ids, status_deferred, status)]
+}
+
+# A block with no status is taken as core takes it, as not evaluated yet, and
+# the commit timeout is what bounds a wait on one.
+status_deferred <- function(id, status) {
+  eval_deferred(coal(reval_if(status[[id]]), "unevaluated"))
+}
+
+# Core drains the update channel once per flush, so a write replaces whatever
+# another writer left pending -- blockr.dock's eager set, say -- rather than
+# adding to it. The request is folded into that payload instead.
+request_evaluation <- function(update, ids) {
+
+  payload <- coal(isolate(update()), list(), fail_all = FALSE)
+  payload$evaluate <- union(payload$evaluate, ids)
+
+  update(payload)
 }

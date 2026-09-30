@@ -1,5 +1,29 @@
 # blockr.assistant (development version)
 
+* A commit now reads back the blocks it changed even when they are off
+  screen. The board does not evaluate a block nothing is showing, so a
+  commit that changed one had nothing to read: the review reported no
+  problems, and the model told the user that a block whose code raised was
+  done. The review reads the blocks the commit changed and the blocks
+  linked to them, and the commit now asks the board to evaluate, once,
+  each of those that has no current evaluation, then reads them back when
+  they have run. An error in a block on a tab nobody is looking at, or in
+  an off-screen block downstream that the change broke, reaches the model
+  like any other. Nothing is held evaluated afterwards: the board goes on
+  reporting what that evaluation found, so a later `get_block_result` on
+  such a block reads its result. A changed block that still produces no
+  result is flagged as unverified rather than glossed as the usual
+  off-screen deferral (#165).
+
+* Eval statuses follow blockr.core, where an off-screen block now reports
+  what its last evaluation found and the `dormant` status is gone. Such a
+  block reads `ready`, `failed`, `waiting` or `unset` while that evaluation
+  is current, and a `ready` one has a result to read. It reads `stale`
+  once something the evaluation read has changed, its own arguments
+  included, and `unevaluated` if it has never been evaluated. These two
+  are the statuses the Board summary markers, the read tools and the
+  system prompt now treat as holding no current result (#165).
+
 * The `inspect_results` tool description now says how a data frame
   prints and what to check before printing one. A data frame prints
   every row and every column, and one wider than the console is split
@@ -221,7 +245,7 @@
   change its result summary did not distinguish -- a renamed block, a
   plot colour, a filter that happens to select the same rows -- read back
   as though nothing had happened. State is the more dependable half of
-  the pair: a block that goes dormant after the change has no result to
+  the pair: a block that cannot run after the change has no result to
   report but still holds correct state. Only the blocks the model added
   or modified carry it; the neighbours pulled in to show propagation
   stay results-only (#133).
@@ -396,20 +420,20 @@
 
 * Block eval status now reaches the model. Each block line in the Board
   summary carries a marker while the block holds no current result
-  (`[dormant]`, `[stale]`, `[waiting]`, `[unset]`, `[failed]`),
+  (`[unevaluated]`, `[stale]`, `[waiting]`, `[unset]`, `[failed]`),
   `list_blocks` gained a `status` column, and `describe_block` names the
   status and what it means. The three sites that read a result --
   `get_block_result`, `query_data` and the post-commit review -- report the
   status in place of a generic failure. They had no way to tell a never
-  configured block from an off-screen one: a dormant block's `result()`
-  re-enters its gated pipeline and raises a `shiny.silent.error` whose
+  configured block from an off-screen one: an off-screen block's `result()`
+  re-entered its gated pipeline and raised a `shiny.silent.error` whose
   message is the empty string, so `get_block_result` rendered "has not
   evaluated successfully: " with nothing after the colon, `query_data`
   dropped the block into an unexplained skip list, and the review printed
   "(no result yet -- see conditions below)" against a block with no
-  conditions to see. The distinction matters most for blockr.core's sixth
-  eval status, `stale` -- a dormant block an upstream has since invalidated
-  -- where the model was told a healthy block had failed and would go on to
+  conditions to see. The distinction matters most for blockr.core's `stale`
+  eval status -- an off-screen block whose last result is out of date --
+  where the model was told a healthy block had failed and would go on to
   reconfigure it, or would reason about columns from a description its
   upstream no longer matches. Reading a result still never forces
   evaluation, so an off-screen block stays off-screen. Fixes #107.
@@ -418,13 +442,12 @@
   off-screen block does not re-evaluate, so its captured conditions date from
   its last run -- and an empty report rendered as "no active conditions (no
   errors, warnings, or messages)", an affirmative all-clear, for a block that
-  had simply not re-run since the model broke it. Both routes into that state
-  are real: an upstream change marks the block `stale`, while an edit to the
-  off-screen block itself leaves it `dormant`, since staleness tracks upstream
-  results rather than a block's own expression. A `dormant` or `stale` block's
-  conditions now carry the caveat and name which of the two applies, so an
-  empty report reads as unknown. Nothing here makes such a block evaluate;
-  until it does, its conditions cannot be brought up to date.
+  had simply not re-run since the model broke it. The conditions of a
+  `stale` block, which an edit to it or upstream has overtaken, and of an
+  `unevaluated` one, which has never run, now carry the caveat and name
+  which of the two applies, so an empty report reads as unknown. Nothing
+  here makes such a block evaluate; until it does, its conditions cannot be
+  brought up to date.
 
 * A turn the provider rejects outright -- an exhausted quota, an
   over-long context, a dropped connection -- now reports the error in

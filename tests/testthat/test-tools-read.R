@@ -349,11 +349,11 @@ test_that("tool_get_block_result summarises a successful result", {
   expect_length(res, 1L)
 })
 
-test_that("tool_get_block_result explains a dormant block", {
+test_that("tool_get_block_result explains an unevaluated block", {
 
   board <- reactiveValues(
-    blocks = list(head = list(server = list(result = reactive(req(FALSE))))),
-    eval   = reactiveValues(head = reactive("dormant"))
+    blocks = list(head = list(server = list(result = reactive(NULL)))),
+    eval   = reactiveValues(head = reactive("unevaluated"))
   )
 
   res <- isolate(
@@ -361,15 +361,17 @@ test_that("tool_get_block_result explains a dormant block", {
   )
 
   expect_match(
-    res, "Block head has no result to read (`dormant`)", fixed = TRUE
+    res, "Block head has no result to read (`unevaluated`)", fixed = TRUE
   )
   expect_no_match(res, "has not evaluated successfully", fixed = TRUE)
 })
 
 test_that("tool_get_block_result flags a stale block's result", {
 
+  # Core hands back what a stale block's last evaluation left, which is out of
+  # date, so it is not summarised as the block's result.
   board <- reactiveValues(
-    blocks = list(head = list(server = list(result = reactive(req(FALSE))))),
+    blocks = list(head = list(server = list(result = reactive(head(iris))))),
     eval   = reactiveValues(head = reactive("stale"))
   )
 
@@ -379,6 +381,7 @@ test_that("tool_get_block_result flags a stale block's result", {
 
   expect_match(res, "(`stale`)", fixed = TRUE)
   expect_match(res, "out of date", fixed = TRUE)
+  expect_no_match(res, "Sepal.Length", fixed = TRUE)
 })
 
 test_that("tool_get_block_conditions returns recovery hint for unknown id", {
@@ -581,13 +584,14 @@ test_that("inspect_results names the eval status of each skipped block", {
       old  = list(server = list(result = reactive(req(FALSE))))
     ),
     eval = reactiveValues(
-      ok = reactive("ready"), off = reactive("dormant"), old = reactive("stale")
+      ok = reactive("ready"), off = reactive("unevaluated"),
+      old = reactive("stale")
     )
   )
 
   res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "sum(ok)"))
 
-  expect_match(res, "- off (`dormant`):", fixed = TRUE)
+  expect_match(res, "- off (`unevaluated`):", fixed = TRUE)
   expect_match(res, "- old (`stale`):", fixed = TRUE)
   expect_match(res, "out of date", fixed = TRUE)
   expect_match(res, "6", fixed = TRUE)
@@ -727,14 +731,16 @@ test_that("inspect_results keeps the skipped-block report beside an image", {
       ok  = list(server = list(result = reactive(1:3))),
       off = list(server = list(result = reactive(req(FALSE))))
     ),
-    eval = reactiveValues(ok = reactive("ready"), off = reactive("dormant"))
+    eval = reactiveValues(
+      ok = reactive("ready"), off = reactive("unevaluated")
+    )
   )
 
   res <- isolate(tool_inspect_results(brd, NULL, NULL)(code = "plot(ok)"))
 
   expect_length(res, 2L)
   expect_s7_class(res[[1L]], ellmer::ContentText)
-  expect_match(res[[1L]]@text, "- off (`dormant`):", fixed = TRUE)
+  expect_match(res[[1L]]@text, "- off (`unevaluated`):", fixed = TRUE)
   expect_s7_class(res[[2L]], ellmer::ContentImageInline)
 })
 

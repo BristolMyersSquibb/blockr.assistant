@@ -22,7 +22,7 @@
 # renders sensibly when the `--blockr-*` sheet is absent.
 
 # Nothing here reads eval status: the greeting resolves before the board's
-# first evaluation pass, so blocks report `dormant` or no status at all, and
+# first evaluation pass, so blocks report `unevaluated` or no status at all, and
 # anything keyed on a result would be reading a board that has not run yet.
 asst_greeting <- function(board) {
 

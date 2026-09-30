@@ -86,16 +86,72 @@ fake_chat_mod <- function(status = "idle") {
 with_llm_session <- function() {
 
   sess <- shiny::MockShinySession$new()
+  set_llm_options(sess)
+
+  sess
+}
+
+set_llm_options <- function(session) {
 
   opts <- list(
     new_llm_model_option(), new_chat_compact_option(), new_chat_keep_option()
   )
 
   for (opt in opts) {
-    blockr.core:::board_option_to_userdata(opt, session = sess)
+    blockr.core:::board_option_to_userdata(opt, session = session)
   }
 
-  sess
+  invisible(session)
+}
+
+# A live core board_server with the assistant mounted on it the way an
+# extension is, and only `visible` on screen: the callback holds those blocks
+# eager, as a front-end does, so every other block is parked until something
+# asks for it.
+assistant_board_args <- function(brd, visible) {
+  list(
+    x = brd,
+    plugins = list(),
+    callbacks = function(board, update, visibility, session, ...) {
+
+      set_llm_options(session)
+
+      for (id in visible) {
+        visibility$visible[[id]](TRUE)
+      }
+
+      asst_ext_srv(system_prompt = default_system_prompt)(
+        "asst", board = board, update = update
+      )
+
+      eager("front-end", visible)
+    }
+  )
+}
+
+# The assistant's client, as the assistant mounted by assistant_board_args()
+# builds it, so a test can call its tools against a live board.
+local_live_client <- function() {
+
+  live <- new.env()
+  mod <- fake_chat_mod()
+
+  withr::local_options(
+    blockr.chat_function = function(system_prompt = NULL, params = NULL) {
+      live$client <- fake_chat_function(system_prompt, params)
+      live$client
+    },
+    blockr.background_construction_delay = 0,
+    .local_envir = parent.frame()
+  )
+
+  testthat::local_mocked_bindings(
+    chat_server = function(id, client, ...) mod,
+    .package = "shinychat",
+    .env = parent.frame()
+  )
+
+  live
 }
 
 # Faithful stand-in for core's `update` reactiveVal: readable via update() and
