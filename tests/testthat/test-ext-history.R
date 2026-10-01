@@ -20,6 +20,25 @@ recorded <- function(client) {
   lapply(client$get_turns(), ellmer::contents_record)
 }
 
+# Holds the summary back until the test hands it over, which opens the window
+# that a thread change has to fall in.
+local_held_summary <- function(env = parent.frame()) {
+
+  resolve <- NULL
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise(function(res, rej) resolve <<- res)
+    },
+    .env = env
+  )
+
+  function(summary) {
+    resolve(summary)
+    later::run_now()
+  }
+}
+
 test_that("a response lands in this board's thread store", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
@@ -291,6 +310,138 @@ test_that("a compaction redraws the transcript with history enabled", {
       update = reactiveVal()
     ),
     session = rec$session
+  )
+})
+
+test_that("an exchange that lands during a compaction is carried over", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  release_summary <- local_held_summary()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      compact_conversation()
+
+      cl$add_turn(
+        ellmer::Turn("user", "13"), ellmer::Turn("assistant", "14"),
+        log_tokens = FALSE
+      )
+
+      release_summary("iris loaded, plot built")
+      session$flushReact()
+
+      expect_identical(
+        chr_ply(cl$get_turns(), ellmer::contents_text),
+        c(compaction_request(), "iris loaded, plot built", as.character(5:14))
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a compaction does not land in a thread opened while it ran", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  release_summary <- local_held_summary()
+
+  rec <- recording_session()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      compact_conversation()
+      ctrl$new_chat()
+
+      release_summary("iris loaded, plot built")
+      session$flushReact()
+
+      expect_length(cl$get_turns(), 0L)
+      expect_identical(rec$transcript(), character())
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = rec$session
+  )
+})
+
+test_that("a compaction does not land in a thread switched to while it ran", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  release_summary <- local_held_summary()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(
+        list(ellmer::Turn("user", "two"), ellmer::Turn("assistant", "second"))
+      )
+      ctrl$on_response(recorded(cl))
+
+      other <- ctrl$record$id
+
+      ctrl$new_chat()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      compact_conversation()
+      ctrl$switch_to(other)
+
+      release_summary("iris loaded, plot built")
+      session$flushReact()
+
+      expect_identical(
+        chr_ply(cl$get_turns(), ellmer::contents_text),
+        c("two", "second")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
   )
 })
 
