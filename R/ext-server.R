@@ -746,6 +746,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           cl$set_turns(turns)
           replay_transcript(mod, turns, session)
+          replace_active_thread(session)
 
           invisible()
         }

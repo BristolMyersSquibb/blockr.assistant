@@ -66,6 +66,33 @@ thread_bytes <- function(record) {
   as.double(utils::object.size(record))
 }
 
+# The history controller extends the active thread by position: it records a
+# response only once the client holds more turns than the thread, and then
+# only the turns past that count. A compaction shortens the client, so left
+# alone the thread keeps the turns the summary replaced and misses every
+# exchange until the client outgrows it. The chat handle offers no way to
+# replace the thread, so the controller is reached where shinychat keeps it.
+# Emptied, its record is rebuilt by `save()` from the client's turns, as the
+# first response builds one, keeping its id and title.
+replace_active_thread <- function(session) {
+
+  ctrl <- history_controller(session)
+
+  if (is.null(ctrl) || is.null(ctrl$record)) {
+    return(invisible())
+  }
+
+  ctrl$record[["nodes"]] <- list()
+  ctrl$record["current_leaf"] <- list(NULL)
+  ctrl$save()
+
+  invisible()
+}
+
+history_controller <- function(session) {
+  session$userData$shinychat[[session$ns("chat.history-controller")]]
+}
+
 # A board saved before threads existed carries its conversation on the client
 # and nowhere else: shinychat records it only once the model answers, so a
 # board reopened and saved again without a word would drop it. Saving turns
