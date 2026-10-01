@@ -44,6 +44,17 @@ A `dock_extension` object additionally inheriting from
 
 ## Details
 
+Tools of the deployment's own come from the `blockr.assistant_tools`
+option, set in the app's startup script to a list of
+[`ellmer::tool()`](https://ellmer.tidyverse.org/reference/tool.html)
+definitions, and every client is built with them next to the
+assistant's. Like `chat_save_turns` below, they describe the deployment
+rather than the board, so a saved board carries none of them. A name
+already in use, by one of the assistant's own tools (the typed
+`add_<type>` and `modify_<type>` included) or by another tool in the
+list, fails the client build with an error the app shows, rather than
+leaving one of the two tools unreachable.
+
 The `system_prompt` argument controls the prompt the model sees:
 
 - A **function** is called on every refresh with `(board, client, ...)`

@@ -317,6 +317,55 @@ operator-only by construction: the directory comes from a server-side
 option, never from board state, and no tool writes a skill.</p>
 </div>
 <div class="section level2">
+<h2 id="give-it-your-own-tools">Give it your own tools<a class="anchor" aria-label="anchor" href="#give-it-your-own-tools"></a>
+</h2>
+<p>A skill shapes how the assistant uses the tools it has, but it cannot
+add one. To let the model reach something the board does not hold, such
+as a study catalogue, write the tool with <code><a href="https://ellmer.tidyverse.org/reference/tool.html" class="external-link">ellmer::tool()</a></code>
+and list it in the <code>blockr.assistant_tools</code> option, in the
+script that starts the app:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">studies</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  id    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ABC-101"</span>, <span class="st">"ABC-102"</span><span class="op">)</span>,</span>
+<span>  title <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Phase II dose finding"</span>, <span class="st">"Phase III efficacy"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">find_studies</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu"><a href="https://ellmer.tidyverse.org/reference/tool.html" class="external-link">tool</a></span><span class="op">(</span></span>
+<span>  <span class="kw">function</span><span class="op">(</span><span class="va">query</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">hits</span> <span class="op">&lt;-</span> <span class="va">studies</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grepl</a></span><span class="op">(</span><span class="va">query</span>, <span class="va">studies</span><span class="op">$</span><span class="va">title</span>, ignore.case <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, <span class="op">]</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">hits</span><span class="op">$</span><span class="va">id</span>, <span class="va">hits</span><span class="op">$</span><span class="va">title</span>, sep <span class="op">=</span> <span class="st">": "</span>, collapse <span class="op">=</span> <span class="st">"\n"</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"find_studies"</span>,</span>
+<span>  description <span class="op">=</span> <span class="st">"Find the studies whose title matches a pattern."</span>,</span>
+<span>  arguments <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    query <span class="op">=</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu"><a href="https://ellmer.tidyverse.org/reference/type_boolean.html" class="external-link">type_string</a></span><span class="op">(</span><span class="st">"Regular expression to match titles."</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>blockr.assistant_tools <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">find_studies</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<p>Every chat client the assistant builds gets these tools next to its
+own, including the one built when the user switches models. The chat
+titles them as it titles its own, so <code>find_studies</code> shows as
+“Find studies” unless the tool sets a <code>title</code> through
+<code><a href="https://ellmer.tidyverse.org/reference/tool_annotations.html" class="external-link">ellmer::tool_annotations()</a></code>.</p>
+<p>A tool may not take a name the assistant already uses, and two tools
+in the list may not share one: whichever is registered second would
+replace the first, leaving one of the assistant’s tools or one of yours
+unreachable. Either mistake stops the chat from being built, with an
+error in the app naming the tool. The assistant’s names include the
+<code>add_&lt;type&gt;</code> and <code>modify_&lt;type&gt;</code> it
+registers for each block type as the model asks for them.</p>
+<p><strong>Tools are capabilities.</strong> A tool is R code running in
+the app’s process, with whatever access that process has. Like a skill,
+it can come only from a server-side option: a board file cannot carry
+one, and a saved board does not take yours along. The option has no
+environment-variable form, as a tool is an R object rather than a
+string. A tool is handed the arguments the model passes and not the
+board, so the board still changes only through a commit. The same tool
+objects serve every session of the app, so a tool that keeps state
+between calls shares it between users.</p>
+</div>
+<div class="section level2">
 <h2 id="extend-per-block-class">Extend per block class<a class="anchor" aria-label="anchor" href="#extend-per-block-class"></a>
 </h2>
 <p>The package exports two S3 generics that let block / stack authors
@@ -362,7 +411,7 @@ packages would implement). A <code>dock_stack</code>’s colour reaches
 the summary exactly that way.</p>
 <p>A worked example overriding the detailed description for a bespoke
 block class:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">describe_block.fancy_block</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">board</span>, <span class="va">id</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>    <span class="kw"><a href="https://rdrr.io/r/base/UseMethod.html" class="external-link">NextMethod</a></span><span class="op">(</span><span class="op">)</span>,</span>

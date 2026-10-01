@@ -2,6 +2,15 @@
 
 ## blockr.assistant (development version)
 
+- A deployment can now give the assistant tools of its own. A list of
+  [`ellmer::tool()`](https://ellmer.tidyverse.org/reference/tool.html)
+  definitions set as the `blockr.assistant_tools` option, in the script
+  that starts the app, is registered on every chat client the assistant
+  builds, next to its own tools. A tool named like one of the
+  assistant’s, or like another tool in the list, stops the chat from
+  being built with an error naming it, rather than leaving one of the
+  two silently unreachable (#180).
+
 - The `list_board_options` tool now writes its result with typedjson,
   the format a saved board uses, so each option’s value reaches the
   model as JSON instead of flattened to text. Flattened, a value lost
