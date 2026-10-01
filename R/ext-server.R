@@ -6,6 +6,16 @@
 #' refreshed on every materialized board change so the model always
 #' sees the current shape of the board.
 #'
+#' Tools of the deployment's own come from the `blockr.assistant_tools`
+#' option, set in the app's startup script to a list of [ellmer::tool()]
+#' definitions, and every client is built with them next to the
+#' assistant's. Like `chat_save_turns` below, they describe the
+#' deployment rather than the board, so a saved board carries none of
+#' them. A name already in use, by one of the assistant's own tools (the
+#' typed `add_<type>` and `modify_<type>` included) or by another tool in
+#' the list, fails the client build with an error the app shows, rather
+#' than leaving one of the two tools unreachable.
+#'
 #' The `system_prompt` argument controls the prompt the model sees:
 #'
 #' * A **function** is called on every refresh with
@@ -539,6 +549,10 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               cl, board, pending_update, extensions, session
             )
           }
+
+          # The deployment's tools go last: their names are checked against
+          # the ones registered before them.
+          register_custom_tools(cl)
 
           annotate_tool_titles(cl)
 

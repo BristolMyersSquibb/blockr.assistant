@@ -252,6 +252,59 @@ says. Authorship is operator-only by construction: the directory
 comes from a server-side option, never from board state, and no
 tool writes a skill.
 
+## Give it your own tools
+
+A skill shapes how the assistant uses the tools it has, but it cannot
+add one. To let the model reach something the board does not hold,
+such as a study catalogue, write the tool with `ellmer::tool()` and
+list it in the `blockr.assistant_tools` option, in the script that
+starts the app:
+
+```{r}
+studies <- data.frame(
+  id    = c("ABC-101", "ABC-102"),
+  title = c("Phase II dose finding", "Phase III efficacy")
+)
+
+find_studies <- ellmer::tool(
+  function(query) {
+    hits <- studies[grepl(query, studies$title, ignore.case = TRUE), ]
+    paste(hits$id, hits$title, sep = ": ", collapse = "\n")
+  },
+  name = "find_studies",
+  description = "Find the studies whose title matches a pattern.",
+  arguments = list(
+    query = ellmer::type_string("Regular expression to match titles.")
+  )
+)
+
+options(blockr.assistant_tools = list(find_studies))
+```
+
+Every chat client the assistant builds gets these tools next to its
+own, including the one built when the user switches models. The chat
+titles them as it titles its own, so `find_studies` shows as "Find
+studies" unless the tool sets a `title` through
+`ellmer::tool_annotations()`.
+
+A tool may not take a name the assistant already uses, and two tools
+in the list may not share one: whichever is registered second would
+replace the first, leaving one of the assistant's tools or one of
+yours unreachable. Either mistake stops the chat from being built,
+with an error in the app naming the tool. The assistant's names
+include the `add_<type>` and `modify_<type>` it registers for each
+block type as the model asks for them.
+
+**Tools are capabilities.** A tool is R code running in the app's
+process, with whatever access that process has. Like a skill, it can
+come only from a server-side option: a board file cannot carry one,
+and a saved board does not take yours along. The option has no
+environment-variable form, as a tool is an R object rather than a
+string. A tool is handed the arguments the model passes and not the
+board, so the board still changes only through a commit. The same
+tool objects serve every session of the app, so a tool that keeps
+state between calls shares it between users.
+
 ## Extend per block class
 
 The package exports two S3 generics that let block / stack authors
