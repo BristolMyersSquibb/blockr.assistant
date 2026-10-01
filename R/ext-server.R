@@ -724,16 +724,19 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         # a clone. Turns that arrive while it is in flight are carried over
         # rather than clobbered, and a stream that starts in the meantime defers
         # the swap: the bound is still exceeded next turn, so this runs again.
+        # The client is read once the summary lands, since a model switch in
+        # the meantime hands the chat a new one seeded with the same turns.
         # A thread opened in the meantime, new or switched to, no longer
         # begins with the turns being compacted. The summary is dropped
         # rather than written into that thread, and the one it was taken
         # from stays as it was.
-        apply_compaction <- function(cl, mod, summary, kept, seen) {
+        apply_compaction <- function(mod, summary, kept, seen) {
 
           if (identical(isolate(mod$status()), "streaming")) {
             return(invisible())
           }
 
+          cl <- isolate(client_r())
           current <- cl$get_turns()
 
           if (!identical(utils::head(current, length(seen)), seen)) {
@@ -773,7 +776,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               promises::then(
                 summarise_turns(cl, split$summarise),
                 function(summary) {
-                  apply_compaction(cl, mod, summary, split$keep, turns)
+                  apply_compaction(mod, summary, split$keep, turns)
                 }
               ),
               function(e) {

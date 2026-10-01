@@ -440,6 +440,71 @@ test_that("a compaction does not land in a thread switched to while it ran", {
   )
 })
 
+test_that("a compaction lands on the client a model switch hands over", {
+
+  fake_b <- function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-b",
+      credentials = function() list(Authorization = "Bearer b"),
+      echo = "none"
+    )
+  }
+
+  withr::local_options(
+    blockr.chat_function = list(A = fake_chat_function, B = fake_b),
+    blockr.chat_compact_tokens = Inf
+  )
+
+  release_summary <- local_held_summary()
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      replaced <- client_r()
+      replaced$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(replaced))
+
+      id <- ctrl$record$id
+
+      compact_conversation()
+
+      rv <- session$userData$board_options[["llm_model"]]
+      rv(structure(fake_b, chat_name = "B"))
+      session$flushReact()
+
+      expect_false(identical(client_r(), replaced))
+
+      # The swap builds a new history controller, which waits on the same
+      # browser flush for its partition.
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      release_summary("iris loaded, plot built")
+      session$flushReact()
+
+      compacted <- c(
+        compaction_request(), "iris loaded, plot built", as.character(5:12)
+      )
+
+      expect_identical(
+        chr_ply(client_r()$get_turns(), ellmer::contents_text),
+        compacted
+      )
+      expect_identical(thread_text(thread_store$threads()[[id]]), compacted)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
 test_that("a compaction replaces the stored thread", {
 
   withr::local_options(
