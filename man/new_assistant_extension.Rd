@@ -34,6 +34,16 @@ refreshed on every materialized board change so the model always
 sees the current shape of the board.
 }
 \details{
+Tools of the deployment's own come from the \code{blockr.assistant_tools}
+option, set in the app's startup script to a list of \code{\link[ellmer:tool]{ellmer::tool()}}
+definitions, and every client is built with them next to the
+assistant's. Like \code{chat_save_turns} below, they describe the
+deployment rather than the board, so a saved board carries none of
+them. A name already in use, by one of the assistant's own tools (the
+typed \verb{add_<type>} and \verb{modify_<type>} included) or by another tool in
+the list, fails the client build with an error the app shows, rather
+than leaving one of the two tools unreachable.
+
 The \code{system_prompt} argument controls the prompt the model sees:
 \itemize{
 \item A \strong{function} is called on every refresh with
