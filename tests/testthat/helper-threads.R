@@ -82,3 +82,10 @@ thread_turns <- function(record) {
     recursive = FALSE
   )
 }
+
+thread_text <- function(record) {
+  chr_ply(
+    lapply(thread_turns(record), ellmer::contents_replay),
+    ellmer::contents_text
+  )
+}

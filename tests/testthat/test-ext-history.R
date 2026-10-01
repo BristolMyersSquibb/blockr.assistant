@@ -2,13 +2,8 @@
 # this feature actually rests on: shinychat's own history controller writing
 # into the store this package hands it. These drive the real thing.
 #
-# Reaching the controller through session$userData is how shinychat stashes it
-# (set_session_chat_bookmark_info). Setting the partition by hand stands in for
-# the browser flush that resolves it, which no testServer ever sends.
-history_controller <- function(session) {
-  session$userData$shinychat[[session$ns("chat.history-controller")]]
-}
-
+# Setting the partition by hand stands in for the browser flush that resolves
+# it, which no testServer ever sends.
 fake_partition <- function(chat_id = "chat", scope = "board") {
   structure(
     list(chat_id = chat_id, scope = scope),
@@ -435,6 +430,123 @@ test_that("a compaction does not land in a thread switched to while it ran", {
       expect_identical(
         chr_ply(cl$get_turns(), ellmer::contents_text),
         c("two", "second")
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a compaction replaces the stored thread", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("iris loaded, plot built")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      before <- ctrl$record
+
+      compact_conversation()
+      later::run_now()
+      session$flushReact()
+
+      saved <- session$returned$state$history()
+
+      expect_named(saved, before$id)
+      expect_identical(saved[[1L]]$title, before$title)
+      expect_identical(
+        thread_text(saved[[1L]]),
+        c(compaction_request(), "iris loaded, plot built", as.character(5:12))
+      )
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("the exchange after a compaction is stored with the thread", {
+
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.chat_compact_tokens = Inf
+  )
+
+  testthat::local_mocked_bindings(
+    summarise_turns = function(client, turns) {
+      promises::promise_resolve("iris loaded, plot built")
+    }
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      ctrl <- history_controller(session)
+      ctrl$partition <- fake_partition()
+
+      cl <- client_r()
+      cl$set_turns(priced_turns(12L, 400, 50))
+      ctrl$on_response(recorded(cl))
+
+      compact_conversation()
+      later::run_now()
+      session$flushReact()
+
+      cl$add_turn(
+        ellmer::Turn("user", "13"), ellmer::Turn("assistant", "14"),
+        log_tokens = FALSE
+      )
+      ctrl$on_response(recorded(cl))
+
+      compacted <- c(
+        compaction_request(), "iris loaded, plot built", as.character(5:14)
+      )
+
+      expect_identical(
+        thread_text(thread_store$threads()[[ctrl$record$id]]),
+        compacted
+      )
+
+      # Switching away and back loads the stored thread into the client, which
+      # is how a skipped exchange would be lost to the model as well.
+      thread_store$put(
+        fake_partition(),
+        fake_thread(alternating_turns(2L), id = "c_other")
+      )
+
+      id <- ctrl$record$id
+
+      ctrl$switch_to("c_other")
+      ctrl$switch_to(id)
+
+      expect_identical(
+        chr_ply(cl$get_turns(), ellmer::contents_text),
+        compacted
       )
     },
     args = list(
