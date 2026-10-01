@@ -238,6 +238,8 @@
       - ab: data -> head$data
       ### Options
       - board_name (Board options)
+      - thematic (Theme options)
+      - dark_mode (Theme options)
       Current values via list_board_options; change with set_board_option.
       ### Views
       - Analysis (id: Analysis) (active) <dock_view> data, head
