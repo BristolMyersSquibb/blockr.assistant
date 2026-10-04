@@ -73,8 +73,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   )
 
   app$wait_for_js(
-    "document.querySelector('.asst-focus-slot select') !== null &&
-     document.querySelector('.asst-focus-slot select').selectize !== undefined",
+    "document.querySelector('.asst-focus-slot .asst-focus-add') !== null",
     timeout = 15 * 1000
   )
 
@@ -130,33 +129,34 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     )
   )
 
-  picker <- "document.querySelector('.asst-focus-slot select').selectize"
+  add <- "document.querySelector('.asst-focus-add')"
 
   expect_setequal(
-    unlst(app$get_js(paste0("Object.keys(", picker, ".options)"))),
+    unlst(
+      app$get_js(
+        paste0(
+          "JSON.parse(", add, ".getAttribute('data-blocks'))",
+          ".map(function(b) { return b.id; })"
+        )
+      )
+    ),
     c("data", "head")
   )
-  expect_null(app$get_js(paste0(picker, ".settings.maxItems")))
 
-  # Without dropdownParent the menu is clipped by the panel it opens inside.
-  expect_identical(
-    app$get_js(paste0(picker, ".$dropdown.parent()[0].tagName")),
-    "BODY"
-  )
-
-  # Short enough that the menu cannot fit below a picker pinned to the
-  # bottom of the panel, so opening it has to lift it over the transcript.
+  # Short enough that the menu cannot fit below a + pinned to the bottom of
+  # the panel, so opening it has to put it over the transcript.
   app$set_window_size(width = 1200, height = 700)
-  app$run_js(paste0(picker, ".open();"))
-
-  visible <- paste0(
-    "(function() {
-       var menu = ", picker, ".$dropdown[0];
-       if (menu.offsetHeight === 0) return false;
-       var box = menu.getBoundingClientRect();
-       return box.top >= 0 && box.bottom <= window.innerHeight;
-     })()"
+  app$run_js(
+    "document.querySelector('.shiny-chat-history-trigger').click()"
   )
+  app$run_js(paste0(add, ".click();"))
+
+  visible <- "(function() {
+    var menu = document.querySelector('body > .blockr-select__dropdown--menu');
+    if (!menu || menu.offsetHeight === 0) return false;
+    var box = menu.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= window.innerHeight;
+  })()"
 
   app$wait_for_js(visible, timeout = 10 * 1000)
   expect_true(app$get_js(visible))

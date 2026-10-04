@@ -33,8 +33,8 @@ skills are listed here; block- and extension-scoped ones surface
 through the tools that describe their target.}
 
 \item{focus}{Character vector of block IDs the user has singled
-out as what they are working on, as reported by the extension's
-block picker. The focus section is omitted when this is \code{NULL}
+out as what they are working on, as reported by the tags under
+the extension's composer. The focus section is omitted when this is \code{NULL}
 or names no block still on \code{board}.}
 
 \item{...}{Forward-compatibility slot for future inputs.}

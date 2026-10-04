@@ -1,0 +1,277 @@
+# Which blocks the next message is about. The user points at a block by
+# clicking it on the board: the block that last had dock's focus is offered
+# under the composer as a suggested tag, which is not sent until the user
+# clicks it. A tag applies to one message. Sending clears the tags from the
+# composer, and the model keeps them in its prompt until its reply is done.
+#
+# dock reports the focused panel of each view on `view_data()`'s grid
+# (`focus`). The chat panel is a dock panel too, so clicking into the message
+# box moves that focus to the assistant: only block panels are read, so the
+# block clicked on the way to the composer survives the trip.
+new_focus_state <- function(board, view_data) {
+
+  seen      <- reactiveVal(NULL)
+  dismissed <- reactiveVal(NULL)
+  attached  <- reactiveVal(character())
+  held      <- reactiveVal(character())
+
+  last_pid <- NULL
+
+  # A block counts as freshly clicked whenever dock's focus moves onto it,
+  # including back from the assistant's own panel. That is what lets a
+  # dismissed suggestion return with a click on its block: the click that
+  # dismissed it was in the assistant, so focus has left the block since.
+  observe({
+
+    pid <- focused_panel(view_data)
+
+    if (identical(pid, last_pid)) {
+      return()
+    }
+
+    last_pid <<- pid
+
+    if (is.null(pid) || !is_block_panel(pid)) {
+      return()
+    }
+
+    seen(panel_obj_ids(pid))
+    dismissed(NULL)
+  })
+
+  in_view <- reactive(view_focus_blocks(board, view_data))
+
+  suggested <- reactive({
+
+    id <- seen()
+
+    if (is.null(id) || identical(id, dismissed()) || id %in% attached() ||
+          !id %in% in_view()) {
+      return(NULL)
+    }
+
+    id
+  })
+
+  live <- function(ids) intersect(ids, board_block_ids(board$board))
+
+  list(
+    attached = reactive(live(attached())),
+    suggested = suggested,
+    in_view = in_view,
+    # What the prompt is told: the tags of the message in flight plus any
+    # the user has already put on the next one.
+    prompt = reactive(live(union(held(), attached()))),
+    attach = function(id) {
+      if (length(id) == 1L && nzchar(id)) {
+        attached(union(isolate(attached()), id))
+      }
+      invisible()
+    },
+    # The + menu sends the whole set it shows ticked.
+    set = function(ids) {
+      attached(as.character(unlist(ids)))
+      invisible()
+    },
+    drop = function(id) {
+      attached(setdiff(isolate(attached()), id))
+      invisible()
+    },
+    dismiss = function() {
+      dismissed(isolate(seen()))
+      invisible()
+    },
+    # A user message went out: its tags move to the prompt for the turn,
+    # and the suggestion stays away until the next click on a block.
+    send = function() {
+      held(isolate(attached()))
+      attached(character())
+      dismissed(isolate(seen()))
+      invisible()
+    },
+    # The model's reply is done.
+    release = function() {
+      held(character())
+      invisible()
+    },
+    reset = function() {
+      held(character())
+      attached(character())
+      dismissed(isolate(seen()))
+      invisible()
+    }
+  )
+}
+
+is_block_panel <- function(x) {
+  is.character(x) && length(x) == 1L && startsWith(x, "block_panel-")
+}
+
+# The focused panel of the active view, as a panel id, or NULL while no dock
+# has reported. Reactive on `view_data`.
+focused_panel <- function(view_data) {
+
+  live <- if (is.function(view_data)) view_data() else NULL
+
+  if (is.null(live)) {
+    return(NULL)
+  }
+
+  active <- tryCatch(active_view(live[["views"]]), error = function(e) NULL)
+
+  if (is.null(active)) {
+    return(NULL)
+  }
+
+  live[["grids"]][[active]][["focus"]]
+}
+
+# The blocks in the active view, in screen order: panel group by panel group,
+# the front tab of each group first. Without a dock (or before it reports)
+# every block on the board.
+view_focus_blocks <- function(board, view_data) {
+
+  ids <- board_block_ids(board$board)
+  live <- if (is.function(view_data)) view_data() else NULL
+
+  if (is.null(live)) {
+    return(ids)
+  }
+
+  views <- live[["views"]]
+  active <- tryCatch(active_view(views), error = function(e) NULL)
+
+  if (is.null(active) || is.null(views[[active]])) {
+    return(ids)
+  }
+
+  members <- view_members(views[[active]])
+  pids <- unique(c(grid_screen_order(live[["grids"]][[active]]), members))
+  pids <- intersect(pids, members)
+  pids <- Filter(is_block_panel, pids)
+
+  intersect(panel_obj_ids(unlist(pids)), ids)
+}
+
+grid_screen_order <- function(grid) {
+
+  walk <- function(nodes) {
+    unlist(
+      lapply(
+        nodes,
+        function(node) {
+          if (!is.null(node[["panels"]])) {
+            panels <- unlist(node[["panels"]])
+            unique(c(unlist(node[["active"]]), panels))
+          } else {
+            walk(node[["children"]])
+          }
+        }
+      )
+    )
+  }
+
+  if (is.null(grid)) {
+    return(character())
+  }
+
+  as.character(walk(grid[["children"]]))
+}
+
+# The row under the composer: the message's tags, the suggestion, and the +
+# that adds any other block in the view. Every click goes back to R as an
+# input event, so the server owns the state and the row is redrawn from it.
+focus_row <- function(ns, board, attached, suggested, in_view) {
+
+  blks <- board_blocks(board)
+
+  if (!length(in_view) && !length(attached)) {
+    return(NULL)
+  }
+
+  tag <- function(id, suggested = FALSE) {
+
+    name <- block_name(blks[[id]])
+
+    remove <- tags$button(
+      type = "button",
+      class = "blockr-select__tag-remove",
+      `aria-label` = if (suggested) paste("Hide", name) else paste("Remove", name),
+      `data-blockr-tooltip` = if (suggested) "Hide" else "Remove",
+      onclick = focus_js_event(
+        ns(if (suggested) "focus_dismiss" else "focus_drop"), id
+      ),
+      blockr.ui::small_icon("remove")
+    )
+
+    if (suggested) {
+      tags$span(
+        class = "blockr-select__tag asst-focus-tag asst-focus-tag--suggested",
+        role = "button",
+        tabindex = "0",
+        `data-value` = id,
+        `data-blockr-tooltip` = "Ask about this block",
+        onclick = focus_js_event(ns("focus_take"), id),
+        onkeydown = paste0(
+          "if (event.key === 'Enter' || event.key === ' ') {",
+          " event.preventDefault(); this.click(); }"
+        ),
+        tags$span(class = "blockr-select__tag-label", name),
+        remove
+      )
+    } else {
+      tags$span(
+        class = "blockr-select__tag asst-focus-tag",
+        `data-value` = id,
+        tags$span(class = "blockr-select__tag-label", name),
+        remove
+      )
+    }
+  }
+
+  choices <- lapply(
+    in_view,
+    function(id) list(id = id, name = block_name(blks[[id]]))
+  )
+
+  div(
+    # With no tag in it, the + is all the row holds, so it stays shown.
+    class = if (length(attached) || length(suggested)) {
+      "asst-focus-row"
+    } else {
+      "asst-focus-row asst-focus-row--bare"
+    },
+    lapply(attached, tag),
+    if (length(suggested)) tag(suggested, suggested = TRUE),
+    if (length(in_view)) {
+      tags$button(
+        type = "button",
+        class = "blockr-tool asst-focus-add",
+        `aria-label` = "Add a block from this view",
+        `data-blockr-tooltip` = "Add a block from this view",
+        `data-input` = ns("focus_set"),
+        `data-blocks` = jsonlite::toJSON(choices, auto_unbox = TRUE),
+        `data-picked` = jsonlite::toJSON(as.character(attached)),
+        onclick = "Blockr.assistant.focusMenu(this)",
+        blockr.ui::small_icon("plus")
+      )
+    }
+  )
+}
+
+focus_js_event <- function(input, id) {
+  sprintf(
+    "event.stopPropagation(); Shiny.setInputValue(%s, %s, {priority: 'event'})",
+    jsonlite::toJSON(input, auto_unbox = TRUE),
+    jsonlite::toJSON(id, auto_unbox = TRUE)
+  )
+}
+
+focus_dep <- function() {
+  htmltools::htmlDependency(
+    "blockr-assistant-focus",
+    as.character(utils::packageVersion("blockr.assistant")),
+    src = system.file("assets", package = "blockr.assistant"),
+    script = "focus.js"
+  )
+}

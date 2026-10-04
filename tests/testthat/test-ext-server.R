@@ -1551,22 +1551,7 @@ test_that("a mistyped skills directory takes the mount down", {
   )
 })
 
-test_that("asst_focus_select builds an uncapped multi-select block picker", {
-
-  brd <- new_board(
-    blocks = c(a = new_dataset_block("iris"), b = new_head_block())
-  )
-
-  html <- as.character(asst_focus_select("focus", brd, c("a", "b"), "b"))
-
-  expect_match(html, "multiple=\"multiple\"", fixed = TRUE)
-  expect_no_match(html, "maxItems", fixed = TRUE)
-  expect_match(html, "\"items\":[\"b\"]", fixed = TRUE)
-  expect_match(html, "remove_button", fixed = TRUE)
-  expect_match(html, "\"dropdownParent\":\"body\"", fixed = TRUE)
-})
-
-test_that("the focus picker offers the live board's blocks", {
+test_that("the focus row offers the live board's blocks", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1579,22 +1564,22 @@ test_that("the focus picker offers the live board's blocks", {
     {
       session$flushReact()
 
-      expect_match(output$focus_picker$html, "ID: a", fixed = TRUE)
-      expect_no_match(output$focus_picker$html, "ID: b", fixed = TRUE)
+      expect_match(output$focus_picker$html, "&quot;id&quot;:&quot;a&quot;", fixed = TRUE)
+      expect_no_match(output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE)
 
       board$board <- new_board(
         blocks = c(a = new_dataset_block("iris"), b = new_head_block())
       )
       session$flushReact()
 
-      expect_match(output$focus_picker$html, "ID: b", fixed = TRUE)
+      expect_match(output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE)
     },
     args = list(board = board, update = reactiveVal()),
     session = with_llm_session()
   )
 })
 
-test_that("the picker is absent while the board holds no blocks", {
+test_that("the focus row is absent while the board holds no blocks", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1613,7 +1598,7 @@ test_that("the picker is absent while the board holds no blocks", {
   )
 })
 
-test_that("a picker selection reaches the model's system prompt", {
+test_that("a block tag reaches the model's system prompt", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1632,7 +1617,7 @@ test_that("a picker selection reaches the model's system prompt", {
         client_r()$get_system_prompt(), "## Focus", fixed = TRUE
       )
 
-      session$setInputs(focus = "b")
+      session$setInputs(focus_set = list("b"))
 
       expect_match(
         client_r()$get_system_prompt(),
@@ -1640,7 +1625,7 @@ test_that("a picker selection reaches the model's system prompt", {
         fixed = TRUE
       )
 
-      session$setInputs(focus = character())
+      session$setInputs(focus_drop = "b")
 
       expect_no_match(
         client_r()$get_system_prompt(), "## Focus", fixed = TRUE
@@ -1664,7 +1649,7 @@ test_that("removing a focused block drops it from the prompt", {
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt),
     {
-      session$setInputs(focus = c("a", "b"))
+      session$setInputs(focus_set = list("a", "b"))
 
       expect_match(
         client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
@@ -1678,6 +1663,42 @@ test_that("removing a focused block drops it from the prompt", {
       expect_match(prompt, "## Focus", fixed = TRUE)
       expect_match(prompt, "- a <dataset_block>", fixed = TRUE)
       expect_no_match(prompt, "- b <head_block>", fixed = TRUE)
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
+test_that("sending clears the tags, the prompt keeps them for the reply", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+      session$setInputs(focus_set = list("b"))
+
+      on_user_input()
+      session$flushReact()
+
+      expect_no_match(output$focus_picker$html, "asst-focus_drop", fixed = TRUE)
+      expect_match(
+        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+      )
+
+      on_model_turn(ellmer::Turn("assistant", "done"))
+      session$flushReact()
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
     },
     args = list(board = board, update = reactiveVal()),
     session = with_llm_session()
@@ -1749,7 +1770,7 @@ test_that("a provider swap hands the client over instead of remounting", {
   )
 })
 
-test_that("focus rides with the thread and a switch resets the slate", {
+test_that("a thread switch clears the block tags and the slate", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1777,18 +1798,19 @@ test_that("focus rides with the thread and a switch resets the slate", {
     asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
-      session$setInputs(focus = "d")
+      session$setInputs(focus_set = list("d"))
 
-      # Board state carries `values` as plain JSON, which returns a character
-      # vector as a list, so the saved shape is a list either way.
-      expect_identical(on_save(list())[["focus"]], list("d"))
+      # The tags belong to the message being typed, not to the thread.
+      expect_null(on_save(list())[["focus"]])
 
       stage_block_add(pending_update, board, "new", new_head_block())
       expect_true(isolate(has_any_changes(pending_update())))
 
-      on_restore(list(focus = list("d")))
+      on_restore(list())
+      session$flushReact()
 
       expect_false(isolate(has_any_changes(pending_update())))
+      expect_identical(focus_r(), character())
     },
     args = list(
       board = reactiveValues(board = brd),
