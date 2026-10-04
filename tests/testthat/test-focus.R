@@ -14,19 +14,13 @@ focus_board <- function() {
   )
 }
 
-# dock's live view data for `brd`, with `focus` set on view `view` and the
-# board's active view switched to it.
-focus_view_data <- function(brd, view = "one", focus = NULL) {
+# dock's live view data for `brd`, with the active view switched to `view`.
+focus_view_data <- function(brd, view = "one") {
 
   views <- board_views(brd)
   active_view(views) <- view
-  grids <- board_grids(brd)
 
-  if (!is.null(focus)) {
-    grids[[view]][["focus"]] <- focus
-  }
-
-  list(views = views, grids = grids)
+  list(views = views, grids = board_grids(brd))
 }
 
 test_that("grid_screen_order puts each group's front tab first", {
@@ -68,21 +62,22 @@ test_that("the clicked block is suggested, and the assistant panel is not", {
   brd <- focus_board()
   board <- reactiveValues(board = brd)
   vd <- reactiveVal(focus_view_data(brd))
+  pv <- reactiveVal()
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd)
+      st <- new_focus_state(board, vd, pv)
     },
     {
       session$flushReact()
       expect_null(st$suggested())
 
-      vd(focus_view_data(brd, focus = "block_panel-b"))
+      pv("block_panel-b")
       session$flushReact()
       expect_identical(st$suggested(), "b")
 
-      # Clicking into the chat moves dock's focus to the assistant's panel.
-      vd(focus_view_data(brd, focus = "ext_panel-assistant"))
+      # Clicking into the chat makes the assistant's panel active.
+      pv("ext_panel-assistant")
       session$flushReact()
       expect_identical(st$suggested(), "b")
 
@@ -102,11 +97,12 @@ test_that("a tag lasts one message and the model keeps it for the reply", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-a"))
+  vd <- reactiveVal(focus_view_data(brd))
+  pv <- reactiveVal("block_panel-a")
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd)
+      st <- new_focus_state(board, vd, pv)
     },
     {
       session$flushReact()
@@ -125,9 +121,9 @@ test_that("a tag lasts one message and the model keeps it for the reply", {
       expect_identical(st$prompt(), character())
 
       # Back to the block from the assistant: suggested again.
-      vd(focus_view_data(brd, focus = "ext_panel-assistant"))
+      pv("ext_panel-assistant")
       session$flushReact()
-      vd(focus_view_data(brd, focus = "block_panel-a"))
+      pv("block_panel-a")
       session$flushReact()
       expect_identical(st$suggested(), "a")
     }
@@ -138,11 +134,12 @@ test_that("a dismissed suggestion returns with the next click on a block", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-a"))
+  vd <- reactiveVal(focus_view_data(brd))
+  pv <- reactiveVal("block_panel-a")
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd)
+      st <- new_focus_state(board, vd, pv)
     },
     {
       session$flushReact()
@@ -152,9 +149,28 @@ test_that("a dismissed suggestion returns with the next click on a block", {
       session$flushReact()
       expect_null(st$suggested())
 
-      vd(focus_view_data(brd, focus = "block_panel-c"))
+      pv("block_panel-c")
       session$flushReact()
       expect_identical(st$suggested(), "c")
+    }
+  )
+})
+
+test_that("a block in the first panel group is suggested too", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+  pv <- reactiveVal()
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, reactiveVal(focus_view_data(brd)), pv)
+    },
+    {
+      # dock's own focus drops the first group; the announced panel does not.
+      pv("block_panel-a")
+      session$flushReact()
+      expect_identical(st$suggested(), "a")
     }
   )
 })
@@ -163,11 +179,12 @@ test_that("a block in another view is not suggested", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-b"))
+  vd <- reactiveVal(focus_view_data(brd))
+  pv <- reactiveVal("block_panel-b")
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd)
+      st <- new_focus_state(board, vd, pv)
     },
     {
       session$flushReact()
@@ -187,7 +204,7 @@ test_that("a tag whose block leaves the board drops out", {
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, NULL)
+      st <- new_focus_state(board, NULL, reactiveVal())
     },
     {
       st$set(list("a", "b"))

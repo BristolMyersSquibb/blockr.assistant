@@ -5,6 +5,27 @@
   window.Blockr = window.Blockr || {};
   Blockr.assistant = Blockr.assistant || {};
 
+  // The panel the user makes active, for the suggested tag. dockViewR
+  // re-broadcasts every change of the active panel as this DOM event; dock's
+  // own record of it drops the first panel group. dockview also activates a
+  // panel on load, which is no click, so nothing counts before the first
+  // pointer or key press.
+  var gestured = false;
+  var gesture = function () { gestured = true; };
+  document.addEventListener('pointerdown', gesture, true);
+  document.addEventListener('keydown', gesture, true);
+
+  document.addEventListener('dockview:active-panel', function (e) {
+    if (!gestured || !window.Shiny || !e.detail) return;
+    document.querySelectorAll('.asst-focus-row[data-panel-input]')
+      .forEach(function (row) {
+        Shiny.setInputValue(
+          row.getAttribute('data-panel-input'), e.detail.id,
+          { priority: 'event' }
+        );
+      });
+  });
+
   Blockr.assistant.focusMenu = function (btn) {
     if (!Blockr.Select || !Blockr.Select.menu) return;
 

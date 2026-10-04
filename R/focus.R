@@ -1,37 +1,31 @@
 # Which blocks the next message is about. The user points at a block by
-# clicking it on the board: the block that last had dock's focus is offered
+# clicking it on the board: the block last made active is offered
 # under the composer as a suggested tag, which is not sent until the user
 # clicks it. A tag applies to one message. Sending clears the tags from the
 # composer, and the model keeps them in its prompt until its reply is done.
 #
-# dock reports the focused panel of each view on `view_data()`'s grid
-# (`focus`). The chat panel is a dock panel too, so clicking into the message
-# box moves that focus to the assistant: only block panels are read, so the
+# `panel` is the panel the user last made active, as dockViewR announces it
+# in the browser (see focus.js). dock's own `focus` on `view_data()` cannot
+# serve: it drops the first panel group, which dockview also activates by
+# default on load. The chat panel is a dock panel too, so clicking into the
+# message box makes the assistant active: only block panels are read, so the
 # block clicked on the way to the composer survives the trip.
-new_focus_state <- function(board, view_data) {
+new_focus_state <- function(board, view_data, panel) {
 
   seen      <- reactiveVal(NULL)
   dismissed <- reactiveVal(NULL)
   attached  <- reactiveVal(character())
   held      <- reactiveVal(character())
 
-  last_pid <- NULL
+  # dockview announces a change of the active panel only, so every block
+  # announced is a fresh click on it, including a click back from the
+  # assistant's own panel. That is what lets a dismissed suggestion return
+  # with a click on its block.
+  observeEvent(panel(), {
 
-  # A block counts as freshly clicked whenever dock's focus moves onto it,
-  # including back from the assistant's own panel. That is what lets a
-  # dismissed suggestion return with a click on its block: the click that
-  # dismissed it was in the assistant, so focus has left the block since.
-  observe({
+    pid <- panel()
 
-    pid <- focused_panel(view_data)
-
-    if (identical(pid, last_pid)) {
-      return()
-    }
-
-    last_pid <<- pid
-
-    if (is.null(pid) || !is_block_panel(pid)) {
+    if (!is_block_panel(pid)) {
       return()
     }
 
@@ -105,25 +99,6 @@ new_focus_state <- function(board, view_data) {
 
 is_block_panel <- function(x) {
   is.character(x) && length(x) == 1L && startsWith(x, "block_panel-")
-}
-
-# The focused panel of the active view, as a panel id, or NULL while no dock
-# has reported. Reactive on `view_data`.
-focused_panel <- function(view_data) {
-
-  live <- if (is.function(view_data)) view_data() else NULL
-
-  if (is.null(live)) {
-    return(NULL)
-  }
-
-  active <- tryCatch(active_view(live[["views"]]), error = function(e) NULL)
-
-  if (is.null(active)) {
-    return(NULL)
-  }
-
-  live[["grids"]][[active]][["focus"]]
 }
 
 # The blocks in the active view, in screen order: panel group by panel group,
@@ -241,6 +216,7 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
 
   div(
     class = "asst-focus-row",
+    `data-panel-input` = ns("focus_panel"),
     lapply(attached, tag),
     if (length(suggested)) tag(suggested, suggested = TRUE),
     if (length(in_view)) {

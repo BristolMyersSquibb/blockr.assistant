@@ -807,7 +807,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           invisible()
         }
 
-        focus <- new_focus_state(board, view_data)
+        focus <- new_focus_state(board, view_data, reactive(input$focus_panel))
         focus_r <- focus$prompt
 
         output$focus_picker <- renderUI(
