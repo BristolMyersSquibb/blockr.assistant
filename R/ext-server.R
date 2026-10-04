@@ -268,8 +268,20 @@ asst_ext_styles <- function() {
         overflow-y: auto;
       }
       .asst-focus-row .asst-focus-tag {
+        gap: 5px;
+        padding-left: 4px;
         background: var(--blockr-color-bg-surface);
         color: var(--blockr-color-text-default);
+      }
+      /* blockr.dock's stylesheet redefines .blockr-block-mark for its own
+         header (32px, colour from an inline variable) and loads after
+         blockr.ui's, so the 16px mark is restated here. */
+      .asst-focus-row .blockr-block-mark {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        font-size: 10px;
+        background: color-mix(in srgb, currentColor 18%, transparent);
       }
       /* Suggested, not sent: the block last clicked on the board. A click
          makes it a tag (design system, Tags). */
@@ -287,15 +299,15 @@ asst_ext_styles <- function() {
         outline: var(--blockr-focus-outline);
         outline-offset: var(--blockr-focus-offset);
       }
-      /* The + shows with the pointer on the row or while it is in use. */
+      /* Adding a second block is rare, so the + shows only with the
+         pointer on the tags or while it is in use. */
       .asst-focus-row .asst-focus-add {
         opacity: 0;
         transition: opacity var(--blockr-transition);
       }
-      .asst-footer:hover .asst-focus-add,
+      .asst-focus-row:hover .asst-focus-add,
       .asst-focus-add:focus-visible,
-      .asst-focus-add[aria-expanded='true'],
-      .asst-focus-row--bare .asst-focus-add {
+      .asst-focus-add[aria-expanded='true'] {
         opacity: 1;
       }
       .asst-token-slot.shiny-html-output {

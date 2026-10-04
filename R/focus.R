@@ -192,6 +192,9 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
   tag <- function(id, suggested = FALSE) {
 
     name <- block_name(blks[[id]])
+    meta <- block_metadata(blks[[id]], fields = c("icon", "category"))
+    # The tab's size of the mark, so the tag reads as a block, not a value.
+    mark <- blockr.ui::block_mark(meta$icon, meta$category, size = 16)
 
     remove <- tags$button(
       type = "button",
@@ -216,6 +219,7 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
           "if (event.key === 'Enter' || event.key === ' ') {",
           " event.preventDefault(); this.click(); }"
         ),
+        mark,
         tags$span(class = "blockr-select__tag-label", name),
         remove
       )
@@ -223,6 +227,7 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
       tags$span(
         class = "blockr-select__tag asst-focus-tag",
         `data-value` = id,
+        mark,
         tags$span(class = "blockr-select__tag-label", name),
         remove
       )
@@ -235,12 +240,7 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
   )
 
   div(
-    # With no tag in it, the + is all the row holds, so it stays shown.
-    class = if (length(attached) || length(suggested)) {
-      "asst-focus-row"
-    } else {
-      "asst-focus-row asst-focus-row--bare"
-    },
+    class = "asst-focus-row",
     lapply(attached, tag),
     if (length(suggested)) tag(suggested, suggested = TRUE),
     if (length(in_view)) {

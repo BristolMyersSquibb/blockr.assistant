@@ -217,13 +217,7 @@ test_that("focus_row draws tags, the suggestion and the +", {
   expect_match(html, "asst-focus_dismiss", fixed = TRUE)
   expect_match(html, "asst-focus_drop", fixed = TRUE)
   expect_match(html, "data-input=\"asst-focus_set\"", fixed = TRUE)
-  expect_no_match(html, "asst-focus-row--bare", fixed = TRUE)
-
-  bare <- as.character(
-    focus_row(ns, brd, attached = character(), suggested = NULL,
-              in_view = "a")
-  )
-  expect_match(bare, "asst-focus-row--bare", fixed = TRUE)
+  expect_match(html, "blockr-block-mark", fixed = TRUE)
 
   expect_null(
     focus_row(ns, brd, attached = character(), suggested = NULL,
