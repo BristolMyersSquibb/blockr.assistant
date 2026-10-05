@@ -821,8 +821,14 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         observeEvent(input$focus_take, focus$attach(input$focus_take))
         observeEvent(input$focus_drop, focus$drop(input$focus_drop))
         observeEvent(input$focus_dismiss, focus$dismiss())
-        # An emptied menu sends `[]`, which arrives as `list()`, not NULL.
-        observeEvent(input$focus_set, focus$set(input$focus_set))
+        # An emptied menu sends `[]`, which Shiny's input handler turns into
+        # NULL, so a NULL is the last tick taken off and is not ignored. The
+        # run at start finds no tags to take.
+        observeEvent(
+          input$focus_set,
+          focus$set(input$focus_set),
+          ignoreNULL = FALSE
+        )
 
         refresh_prompt <- function() {
 

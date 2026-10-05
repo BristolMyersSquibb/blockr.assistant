@@ -1642,6 +1642,39 @@ test_that("a block tag reaches the model's system prompt", {
   )
 })
 
+test_that("unticking the last block in the + menu removes its tag", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+      session$setInputs(focus_set = list("b"))
+
+      expect_match(
+        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+      )
+
+      # What the emptied menu's `[]` arrives as, once Shiny's input handler
+      # has decoded it.
+      session$setInputs(focus_set = NULL)
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
 test_that("removing a focused block drops it from the prompt", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
