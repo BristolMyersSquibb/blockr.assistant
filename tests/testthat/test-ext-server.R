@@ -1626,7 +1626,7 @@ test_that("a block tag reaches the model's system prompt", {
       session$setInputs(focus_set = list("b"))
 
       expect_match(
-        client_r()$get_system_prompt(),
+        focus_section(client_r()$get_system_prompt()),
         "- b <head_block> n, direction",
         fixed = TRUE
       )
@@ -1659,7 +1659,8 @@ test_that("unticking the last block in the + menu removes its tag", {
       session$setInputs(focus_set = list("b"))
 
       expect_match(
-        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+        focus_section(client_r()$get_system_prompt()), "- b <head_block>",
+        fixed = TRUE
       )
 
       # What the emptied menu's `[]` arrives as, once Shiny's input handler
@@ -1691,7 +1692,8 @@ test_that("removing a focused block drops it from the prompt", {
       session$setInputs(focus_set = list("a", "b"))
 
       expect_match(
-        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+        focus_section(client_r()$get_system_prompt()), "- b <head_block>",
+        fixed = TRUE
       )
 
       board$board <- new_board(blocks = c(a = new_dataset_block("iris")))
@@ -1700,7 +1702,7 @@ test_that("removing a focused block drops it from the prompt", {
       prompt <- client_r()$get_system_prompt()
 
       expect_match(prompt, "## Focus", fixed = TRUE)
-      expect_match(prompt, "- a <dataset_block>", fixed = TRUE)
+      expect_match(focus_section(prompt), "- a <dataset_block>", fixed = TRUE)
       expect_no_match(prompt, "- b <head_block>", fixed = TRUE)
     },
     args = list(board = board, update = reactiveVal()),
@@ -1729,7 +1731,8 @@ test_that("sending clears the tags, the prompt keeps them for the reply", {
 
       expect_no_match(output$focus_picker$html, "asst-focus_drop", fixed = TRUE)
       expect_match(
-        client_r()$get_system_prompt(), "- b <head_block>", fixed = TRUE
+        focus_section(client_r()$get_system_prompt()), "- b <head_block>",
+        fixed = TRUE
       )
 
       on_model_turn(ellmer::Turn("assistant", "done"))
