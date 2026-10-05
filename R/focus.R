@@ -209,8 +209,11 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
         `data-value` = id,
         `data-blockr-tooltip` = "Ask about this block",
         onclick = focus_js_event(ns("focus_take"), id),
+        # Keys on the x inside bubble up to here, and must keep the x's own
+        # meaning: Enter there hides the suggestion rather than taking it.
         onkeydown = paste0(
-          "if (event.key === 'Enter' || event.key === ' ') {",
+          "if (event.target === this && ",
+          "(event.key === 'Enter' || event.key === ' ')) {",
           " event.preventDefault(); this.click(); }"
         ),
         mark,
