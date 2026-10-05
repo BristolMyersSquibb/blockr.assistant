@@ -1747,6 +1747,52 @@ test_that("sending clears the tags, the prompt keeps them for the reply", {
   )
 })
 
+test_that("the tags last through the uncommitted-changes nudge", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+      session$setInputs(focus_set = list("b"))
+
+      on_user_input()
+      stage_block_add(pending_update, board, "h", new_head_block())
+
+      # The reply leaves a change staged, so the nudge goes out as a user turn
+      # of our own. Neither the reply nor the nudge ends the message.
+      on_model_turn(ellmer::Turn("assistant", "staged"))
+      session$flushReact()
+
+      report$injecting <- TRUE
+      on_user_input()
+      session$flushReact()
+
+      expect_match(
+        focus_section(client_r()$get_system_prompt()), "- b <head_block>",
+        fixed = TRUE
+      )
+
+      reset_pending(pending_update)
+      on_model_turn(ellmer::Turn("assistant", "committed"))
+      session$flushReact()
+
+      expect_no_match(
+        client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
 test_that("a provider swap hands the client over instead of remounting", {
 
   fake_a <- function(system_prompt = NULL, params = NULL) {
