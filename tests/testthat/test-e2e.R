@@ -162,6 +162,123 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   expect_true(app$get_js(visible))
 })
 
+test_that("the block tags follow presses on the board and keys on the row", {
+
+  skip_on_cran()
+  skip_if_not_installed("shinytest2")
+  skip_if_not_installed("chromote")
+
+  app_dir <- withr::local_tempdir()
+
+  writeLines(
+    c(
+      "library(blockr.core)",
+      "library(blockr.dock)",
+      "library(blockr.assistant)",
+      "",
+      "fake_chat <- function(system_prompt = NULL, params = NULL) {",
+      "  ellmer::chat_openai(",
+      "    model = 'gpt-4.1-nano',",
+      "    credentials = function() {",
+      "      list(Authorization = 'Bearer test')",
+      "    },",
+      "    echo = 'none'",
+      "  )",
+      "}",
+      "options(blockr.chat_function = fake_chat)",
+      "",
+      "board <- new_dock_board(",
+      "  blocks = c(",
+      "    data = new_dataset_block('iris'),",
+      "    head = new_head_block()",
+      "  ),",
+      "  links = c(new_link('data', 'head', 'data')),",
+      "  extensions = list(assistant = new_assistant_extension()),",
+      "  views = list(",
+      "    Main = list(blk('data'), blk('head'), ext('assistant'))",
+      "  ),",
+      "  grids = list(",
+      "    Main = dock_grid(blk('data'), blk('head'), ext('assistant'))",
+      "  )",
+      ")",
+      "",
+      "serve(board)"
+    ),
+    file.path(app_dir, "app.R")
+  )
+
+  app <- asst_app_driver(
+    app_dir,
+    name = "focus-row",
+    seed = 42,
+    load_timeout = 30 * 1000
+  )
+  withr::defer(app$stop())
+
+  app$wait_for_js(
+    "document.querySelector('.asst-focus-row .asst-focus-add') !== null",
+    timeout = 15 * 1000
+  )
+
+  suggested <- paste(
+    "(document.querySelector('.asst-focus-tag--suggested')",
+    "?.getAttribute('data-value') ?? null)"
+  )
+
+  tag <- function(id) {
+    paste0(
+      "document.querySelector(",
+      "'.asst-focus-tag:not(.asst-focus-tag--suggested)[data-value=\"", id,
+      "\"]') !== null"
+    )
+  }
+
+  # The panel dockview activates on load is no click, so nothing is offered
+  # yet. A first press on it changes no panel either, and dockview announces
+  # nothing: the press itself has to offer it.
+  expect_null(app$get_js(suggested))
+  expect_identical(
+    app$get_js(
+      paste(
+        "document.querySelector('.dv-active-group .dv-active-tab')",
+        ".getAttribute('data-tab-panel-id')"
+      )
+    ),
+    "block_panel-data"
+  )
+
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-data']")
+  app$wait_for_js(paste(suggested, "=== 'data'"), timeout = 10 * 1000)
+
+  # Pressing the suggestion moves focus into the assistant's panel, which
+  # dockview makes active. A row redrawn for that under the held button
+  # loses the click.
+  press_element(
+    app, ".asst-focus-tag--suggested .blockr-select__tag-label", hold = 0.5
+  )
+  app$wait_for_js(tag("data"), timeout = 10 * 1000)
+
+  # Enter on the suggestion's x hides it, rather than taking it. Focusing
+  # from inside the polled predicate returns once the x holds the focus.
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-head']")
+  app$wait_for_js(paste(suggested, "=== 'head'"), timeout = 10 * 1000)
+
+  app$wait_for_js(
+    "(() => {
+       const x = document.querySelector('.asst-focus-tag--suggested button');
+       if (x === null) return false;
+       x.focus();
+       return document.activeElement === x;
+     })()",
+    timeout = 10 * 1000
+  )
+  press_enter(app)
+
+  app$wait_for_js(paste(suggested, "=== null"), timeout = 10 * 1000)
+  expect_false(app$get_js(tag("head")))
+  expect_true(app$get_js(tag("data")))
+})
+
 test_that("the browser's command palette lists built-ins and skills", {
 
   skip_on_cran()
