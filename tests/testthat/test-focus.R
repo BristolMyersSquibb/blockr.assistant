@@ -130,6 +130,36 @@ test_that("a tag lasts one message and the model keeps it for the reply", {
   )
 })
 
+test_that("sending clears a taken suggestion, not a block picked with the +", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(
+        board, reactiveVal(focus_view_data(brd)), reactiveVal()
+      )
+    },
+    {
+      session$flushReact()
+      st$set(list("b"))
+      st$attach("a")
+      session$flushReact()
+      expect_identical(st$attached(), c("b", "a"))
+
+      st$send()
+      session$flushReact()
+      expect_identical(st$attached(), "b")
+      expect_identical(st$prompt(), c("b", "a"))
+
+      st$release()
+      session$flushReact()
+      expect_identical(st$prompt(), "b")
+    }
+  )
+})
+
 test_that("a dismissed suggestion returns with the next click on a block", {
 
   brd <- focus_board()

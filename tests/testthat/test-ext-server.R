@@ -1710,7 +1710,7 @@ test_that("removing a focused block drops it from the prompt", {
   )
 })
 
-test_that("sending clears the tags, the prompt keeps them for the reply", {
+test_that("sending clears a taken suggestion; the reply still sees it", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1724,12 +1724,14 @@ test_that("sending clears the tags, the prompt keeps them for the reply", {
     asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
-      session$setInputs(focus_set = list("b"))
+      session$setInputs(focus_take = "b")
 
       on_user_input()
       session$flushReact()
 
-      expect_no_match(output$focus_picker$html, "asst-focus_drop", fixed = TRUE)
+      expect_no_match(
+        output$focus_picker$html, session$ns("focus_drop"), fixed = TRUE
+      )
       expect_match(
         focus_section(client_r()$get_system_prompt()), "- b <head_block>",
         fixed = TRUE
@@ -1761,7 +1763,7 @@ test_that("the tags last through the uncommitted-changes nudge", {
     asst_ext_srv(system_prompt = default_system_prompt),
     {
       session$flushReact()
-      session$setInputs(focus_set = list("b"))
+      session$setInputs(focus_take = "b")
 
       on_user_input()
       stage_block_add(pending_update, board, "h", new_head_block())
@@ -1786,6 +1788,39 @@ test_that("the tags last through the uncommitted-changes nudge", {
 
       expect_no_match(
         client_r()$get_system_prompt(), "## Focus", fixed = TRUE
+      )
+    },
+    args = list(board = board, update = reactiveVal()),
+    session = with_llm_session()
+  )
+})
+
+test_that("a block picked with the + stays on the next message", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  board <- reactiveValues(
+    board = new_board(
+      blocks = c(a = new_dataset_block("iris"), b = new_head_block())
+    )
+  )
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+      session$setInputs(focus_set = list("b"))
+
+      on_user_input()
+      on_model_turn(ellmer::Turn("assistant", "done"))
+      session$flushReact()
+
+      expect_match(
+        output$focus_picker$html, session$ns("focus_drop"), fixed = TRUE
+      )
+      expect_match(
+        focus_section(client_r()$get_system_prompt()), "- b <head_block>",
+        fixed = TRUE
       )
     },
     args = list(board = board, update = reactiveVal()),

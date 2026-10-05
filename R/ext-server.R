@@ -1055,8 +1055,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
         # The meter belongs to the conversation rather than the board, so a
         # switch carries it over and a fresh thread opens without it. An
-        # absent value is the fresh case: nothing spent. The block tags
-        # belong to a single message, so no thread opens with any.
+        # absent value is the fresh case: nothing spent. The block tags are
+        # not saved with a conversation, so no thread opens with any.
         restore_thread_state <- function(values) {
 
           meter <- unlst(values[["spent"]])

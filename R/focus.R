@@ -1,8 +1,9 @@
 # Which blocks the next message is about. The user points at a block by
 # clicking it on the board: the block last made active is offered
 # under the composer as a suggested tag, which is not sent until the user
-# clicks it. A tag applies to one message. Sending clears the tags from the
-# composer, and the model keeps them in its prompt until its reply is done.
+# clicks it. A tag taken from the suggestion applies to one message: sending
+# clears it from the composer, and the model keeps it in its prompt until its
+# reply is done. A block picked with the + stays until it is taken off.
 #
 # `panel` is the panel the user last made active, as dockViewR announces it
 # in the browser (see focus.js). dock's own `focus` on `view_data()` cannot
@@ -15,6 +16,8 @@ new_focus_state <- function(board, view_data, panel) {
   seen      <- reactiveVal(NULL)
   dismissed <- reactiveVal(NULL)
   attached  <- reactiveVal(character())
+  # The tags taken from the suggestion, which sending clears.
+  once      <- reactiveVal(character())
   held      <- reactiveVal(character())
 
   # dockview announces a change of the active panel only, so every block
@@ -78,31 +81,36 @@ new_focus_state <- function(board, view_data, panel) {
     attach = function(id) {
       if (length(id) == 1L && nzchar(id)) {
         attached(union(isolate(attached()), id))
+        once(union(isolate(once()), id))
       }
       invisible()
     },
     # The + menu sends the whole set it shows ticked. It shows the blocks in
     # view only, so a tag on any other block stays, and the tags kept stay
-    # in their place.
+    # in their place. A tag the menu adds is a pick, which sending keeps.
     set = function(ids) {
       ids <- as.character(unlist(ids))
       keep <- c(setdiff(isolate(attached()), isolate(in_view())), ids)
       attached(union(intersect(isolate(attached()), keep), ids))
+      once(intersect(isolate(once()), isolate(attached())))
       invisible()
     },
     drop = function(id) {
       attached(setdiff(isolate(attached()), id))
+      once(setdiff(isolate(once()), id))
       invisible()
     },
     dismiss = function() {
       dismissed(isolate(seen()))
       invisible()
     },
-    # A user message went out: its tags move to the prompt for the turn,
-    # and the suggestion stays away until the next click on a block.
+    # A user message went out: its tags move to the prompt for the turn, the
+    # ones taken from the suggestion leave the composer, and the suggestion
+    # stays away until the next click on a block.
     send = function() {
       held(isolate(attached()))
-      attached(character())
+      attached(setdiff(isolate(attached()), isolate(once())))
+      once(character())
       dismissed(isolate(seen()))
       invisible()
     },
@@ -114,6 +122,7 @@ new_focus_state <- function(board, view_data, panel) {
     reset = function() {
       held(character())
       attached(character())
+      once(character())
       dismissed(isolate(seen()))
       invisible()
     }
