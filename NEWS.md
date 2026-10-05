@@ -1,5 +1,15 @@
 # blockr.assistant (development version)
 
+* The assistant's block picker is replaced by tags under the composer. The
+  block last clicked on the board shows as a dashed suggestion; a click
+  attaches it to the message, its × hides it. The + next to the tags lists
+  the blocks in the current view, not every block on the board. A tag taken
+  from the suggestion applies to one message: sending clears it, and the
+  model keeps it in its prompt until its reply is done. A block picked with
+  the + stays until it is taken off. Clicking into the assistant does not
+  replace the suggestion, since only block panels are read. Tags are no
+  longer saved with a conversation.
+
 * A deployment can now give the assistant tools of its own. A list of
   `ellmer::tool()` definitions set as the `blockr.assistant_tools`
   option, in the script that starts the app, is registered on every

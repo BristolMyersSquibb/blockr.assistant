@@ -73,8 +73,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   )
 
   app$wait_for_js(
-    "document.querySelector('.asst-focus-slot select') !== null &&
-     document.querySelector('.asst-focus-slot select').selectize !== undefined",
+    "document.querySelector('.asst-focus-slot .asst-focus-add') !== null",
     timeout = 15 * 1000
   )
 
@@ -92,7 +91,13 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
 
   # The seam no unit test reaches: the footer button is ours, the drawer it
   # opens is shinychat's, and the click crosses into a React handler bound at
-  # the `shiny-chat-container` root.
+  # the `shiny-chat-container` root. React mounts the trigger on its own
+  # schedule, which the wait for our + above says nothing about.
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-history-trigger') !== null",
+    timeout = 15 * 1000
+  )
+
   expect_equal(
     unlst(
       app$get_js(
@@ -130,36 +135,182 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
     )
   )
 
-  picker <- "document.querySelector('.asst-focus-slot select').selectize"
+  add <- "document.querySelector('.asst-focus-add')"
 
   expect_setequal(
-    unlst(app$get_js(paste0("Object.keys(", picker, ".options)"))),
+    unlst(
+      app$get_js(
+        paste0(
+          "JSON.parse(", add, ".getAttribute('data-blocks'))",
+          ".map(function(b) { return b.id; })"
+        )
+      )
+    ),
     c("data", "head")
   )
-  expect_null(app$get_js(paste0(picker, ".settings.maxItems")))
 
-  # Without dropdownParent the menu is clipped by the panel it opens inside.
-  expect_identical(
-    app$get_js(paste0(picker, ".$dropdown.parent()[0].tagName")),
-    "BODY"
-  )
-
-  # Short enough that the menu cannot fit below a picker pinned to the
-  # bottom of the panel, so opening it has to lift it over the transcript.
+  # Short enough that the menu cannot fit below a + pinned to the bottom of
+  # the panel, so opening it has to put it over the transcript.
   app$set_window_size(width = 1200, height = 700)
-  app$run_js(paste0(picker, ".open();"))
-
-  visible <- paste0(
-    "(function() {
-       var menu = ", picker, ".$dropdown[0];
-       if (menu.offsetHeight === 0) return false;
-       var box = menu.getBoundingClientRect();
-       return box.top >= 0 && box.bottom <= window.innerHeight;
-     })()"
+  app$run_js(
+    "document.querySelector('.shiny-chat-history-trigger').click()"
   )
+  app$run_js(paste0(add, ".click();"))
+
+  visible <- "(function() {
+    var menu = document.querySelector('body > .blockr-select__dropdown--menu');
+    if (!menu || menu.offsetHeight === 0) return false;
+    var box = menu.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= window.innerHeight;
+  })()"
 
   app$wait_for_js(visible, timeout = 10 * 1000)
   expect_true(app$get_js(visible))
+})
+
+test_that("the block tags follow presses on the board and keys on the row", {
+
+  skip_on_cran()
+  skip_if_not_installed("shinytest2")
+  skip_if_not_installed("chromote")
+
+  app_dir <- withr::local_tempdir()
+
+  writeLines(
+    c(
+      "library(blockr.core)",
+      "library(blockr.dock)",
+      "library(blockr.assistant)",
+      "",
+      "fake_chat <- function(system_prompt = NULL, params = NULL) {",
+      "  ellmer::chat_openai(",
+      "    model = 'gpt-4.1-nano',",
+      "    credentials = function() {",
+      "      list(Authorization = 'Bearer test')",
+      "    },",
+      "    echo = 'none'",
+      "  )",
+      "}",
+      "options(blockr.chat_function = fake_chat)",
+      "",
+      "board <- new_dock_board(",
+      "  blocks = c(",
+      "    data = new_dataset_block('iris'),",
+      "    head = new_head_block(),",
+      "    filt = new_subset_block()",
+      "  ),",
+      "  links = c(",
+      "    new_link('data', 'head', 'data'),",
+      "    new_link('data', 'filt', 'data')",
+      "  ),",
+      "  extensions = list(assistant = new_assistant_extension()),",
+      "  views = list(",
+      "    Main = list(",
+      "      blk('data'), blk('head'), blk('filt'), ext('assistant')",
+      "    )",
+      "  ),",
+      "  grids = list(",
+      "    Main = dock_grid(",
+      "      blk('data'),",
+      "      panels(blk('head'), blk('filt'), active = blk('head')),",
+      "      ext('assistant')",
+      "    )",
+      "  )",
+      ")",
+      "",
+      "serve(board)"
+    ),
+    file.path(app_dir, "app.R")
+  )
+
+  app <- asst_app_driver(
+    app_dir,
+    name = "focus-row",
+    seed = 42,
+    load_timeout = 30 * 1000
+  )
+  withr::defer(app$stop())
+
+  app$wait_for_js(
+    "document.querySelector('.asst-focus-row .asst-focus-add') !== null",
+    timeout = 15 * 1000
+  )
+
+  suggested <- paste(
+    "(document.querySelector('.asst-focus-tag--suggested')",
+    "?.getAttribute('data-value') ?? null)"
+  )
+
+  tag <- function(id) {
+    paste0(
+      "document.querySelector(",
+      "'.asst-focus-tag:not(.asst-focus-tag--suggested)[data-value=\"", id,
+      "\"]') !== null"
+    )
+  }
+
+  # The panel dockview activates on load is no click, so nothing is offered
+  # yet. A first press on it changes no panel either, and dockview announces
+  # nothing: the press itself has to offer it.
+  expect_null(app$get_js(suggested))
+  expect_identical(
+    app$get_js(
+      paste(
+        "document.querySelector('.dv-active-group .dv-active-tab')",
+        ".getAttribute('data-tab-panel-id')"
+      )
+    ),
+    "block_panel-data"
+  )
+
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-data']")
+  app$wait_for_js(paste(suggested, "=== 'data'"), timeout = 10 * 1000)
+
+  # Pressing the suggestion moves focus into the assistant's panel, which
+  # dockview makes active. A row redrawn for that under the held button
+  # loses the click.
+  press_element(
+    app, ".asst-focus-tag--suggested .blockr-select__tag-label", hold = 0.5
+  )
+  app$wait_for_js(tag("data"), timeout = 10 * 1000)
+
+  # Enter on the suggestion's x hides it, rather than taking it. Focusing
+  # from inside the polled predicate returns once the x holds the focus.
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-head']")
+  app$wait_for_js(paste(suggested, "=== 'head'"), timeout = 10 * 1000)
+
+  app$wait_for_js(
+    "(() => {
+       const x = document.querySelector('.asst-focus-tag--suggested button');
+       if (x === null) return false;
+       x.focus();
+       return document.activeElement === x;
+     })()",
+    timeout = 10 * 1000
+  )
+  press_enter(app)
+
+  app$wait_for_js(paste(suggested, "=== null"), timeout = 10 * 1000)
+  expect_false(app$get_js(tag("head")))
+  expect_true(app$get_js(tag("data")))
+
+  # A press on a tab behind another, in a group that is not active, has
+  # dockview announce the group's front panel and then the pressed one.
+  # Only the pressed one reaches the server, so the row is not drawn for a
+  # block nobody pressed.
+  app$run_js(
+    "window.focusSent = [];
+     const send = Shiny.setInputValue;
+     Shiny.setInputValue = function(name, value, opts) {
+       if (/focus_panel$/.test(name)) window.focusSent.push(value);
+       return send.apply(this, arguments);
+     };"
+  )
+
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-filt']")
+  app$wait_for_js(paste(suggested, "=== 'filt'"), timeout = 10 * 1000)
+
+  expect_identical(unlist(app$get_js("window.focusSent")), "block_panel-filt")
 })
 
 test_that("the browser's command palette lists built-ins and skills", {

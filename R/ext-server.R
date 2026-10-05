@@ -163,6 +163,7 @@ new_assistant_extension <- function(system_prompt = default_system_prompt,
 
 asst_ext_ui <- function(id, board, ...) {
   tagList(
+    focus_dep(),
     asst_ext_styles(),
     asst_skin_styles(),
     div(
@@ -205,58 +206,6 @@ asst_history_button <- function() {
   )
 }
 
-asst_focus_select <- function(id, board, blk_ids, selected) {
-  board_block_select(
-    id,
-    board,
-    blk_ids,
-    selected = selected,
-    max_items = NULL,
-    options = list(
-      placeholder = "Focus on block(s)...",
-      plugins = list("remove_button"),
-      dropdownParent = "body",
-      onDropdownOpen = I(js_focus_dropdown_flip())
-    )
-  )
-}
-
-# Every other board-block picker sits near the top of its container, so
-# selectize's downward-only placement suits it. This one is pinned to the
-# bottom edge of a full-height panel, where opening downward puts the menu
-# below the fold. A body-parented dropdown carries a JS-set `top`, so the
-# lift cannot be done in CSS -- it has to run after selectize positions, and
-# again on its own whenever the menu changes height, since the menu has none
-# until a frame after it opens and grows and shrinks as a search narrows it.
-js_focus_dropdown_flip <- function() {
-  "function($dropdown) {
-     if (this.focusLift) return;
-     this.focusLift = true;
-
-     var self = this;
-     var menu = $dropdown[0];
-
-     var lift = function() {
-       var box = self.$control[0].getBoundingClientRect();
-       var height = menu.offsetHeight;
-
-       if (height > 0 && box.bottom + height > window.innerHeight &&
-           box.top - height > 0) {
-         menu.style.top = (window.scrollY + box.top - height) + 'px';
-       }
-     };
-
-     var position = self.positionDropdown.bind(self);
-
-     self.positionDropdown = function() {
-       position();
-       lift();
-     };
-
-     new ResizeObserver(lift).observe(menu);
-   }"
-}
-
 asst_ext_styles <- function() {
   tags$style(
     HTML(
@@ -289,7 +238,7 @@ asst_ext_styles <- function() {
       }
       /* Sits under the chat container, aligned to the composer: shinychat
          insets its own column by --shiny-chat-fill-padding, so the footer
-         has to carry the same inset for the picker's left edge and the
+         has to carry the same inset for the tags' left edge and the
          meter's right edge to land on the composer's. */
       .asst-footer {
         display: flex;
@@ -308,27 +257,61 @@ asst_ext_styles <- function() {
         flex: 1 1 auto;
         min-width: 0;
       }
-      /* Shiny gives every input container a 300px default width, which
-         would leave the picker a third of the strip it shares. */
-      .asst-focus-slot .shiny-input-container {
-        width: 100%;
-        margin-bottom: 0;
-      }
-      /* The footer is flex:0 0 auto against a flex:1 1 0 transcript, so an
-         unbounded multi-select would grow into the chat as selections pile
-         up. Two rows of chips, then scroll. */
-      .asst-focus-slot .selectize-input {
-        max-height: 84px;
+      /* The message's tags. They sit on the panel surface, as the
+         crossfilter's Filter by tags do (design system, Tags). */
+      .asst-focus-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        max-height: 56px;
         overflow-y: auto;
-        gap: 3px;
       }
-      /* Selectize spaces stacked chips with a bottom margin on each, which
-         in this centred flex box reads as the chip sitting high. Carry the
-         row spacing on the container's gap instead. The selector matches
-         selectize's own `.selectize-control.multi` specificity, or its
-         margin wins. */
-      .asst-focus-slot .selectize-control.multi .selectize-input > div {
-        margin: 0;
+      .asst-focus-row .asst-focus-tag {
+        gap: 5px;
+        padding-left: 4px;
+        background: var(--blockr-color-bg-surface);
+        color: var(--blockr-color-text-default);
+      }
+      /* blockr.dock's stylesheet redefines .blockr-block-mark for its own
+         header (32px, colour from an inline variable) and loads after
+         blockr.ui's, so the 16px mark is restated here. */
+      .asst-focus-row .blockr-block-mark {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        font-size: 10px;
+        background: color-mix(in srgb, currentColor 18%, transparent);
+      }
+      /* Suggested, not sent: the block last clicked on the board. A click
+         makes it a tag (design system, Tags). */
+      .asst-focus-row .asst-focus-tag--suggested {
+        background: transparent;
+        border-style: dashed;
+        color: var(--blockr-color-text-muted);
+        cursor: pointer;
+      }
+      .asst-focus-row .asst-focus-tag--suggested:hover {
+        border-color: var(--blockr-color-border-strong);
+        color: var(--blockr-color-text-default);
+      }
+      .asst-focus-row .asst-focus-tag--suggested:focus-visible {
+        outline: var(--blockr-focus-outline);
+        outline-offset: var(--blockr-focus-offset);
+      }
+      /* Adding a second block is rare, so the + shows only with the
+         pointer on the tags or while it is in use. It takes the tags'
+         24px rather than a tool's 26px, so its hover lines up with them. */
+      .asst-focus-row .asst-focus-add {
+        width: 24px;
+        height: 24px;
+        opacity: 0;
+        transition: opacity var(--blockr-transition);
+      }
+      .asst-focus-row:hover .asst-focus-add,
+      .asst-focus-add:focus-visible,
+      .asst-focus-add[aria-expanded='true'] {
+        opacity: 1;
       }
       .asst-token-slot.shiny-html-output {
         display: flex;
@@ -671,14 +654,11 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               )
             )
 
-            # Focus is per conversation: a switch that leaves it pointing at
-            # the thread the user just left is worse than not switching at
-            # all. The list round trip is deliberate -- board state carries
+            # The list round trip is deliberate -- board state carries
             # `values` as plain JSON, which returns a character vector as a
             # list, so saving one keeps both paths the same shape.
             mod$history$on_save(
               function(values) {
-                values[["focus"]] <- as.list(isolate(focus_r()))
                 values[["spent"]] <- as.list(isolate(spent()))
                 values
               }
@@ -830,33 +810,28 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           invisible()
         }
 
-        # Keyed on what the picker actually shows rather than on the board,
-        # so a commit that touches neither the block set nor a block name
-        # leaves an open dropdown and a half-typed search alone.
-        focus_choices <- reactiveVal()
-
-        observe({
-          blks <- board_blocks(board$board)
-          focus_choices(set_names(chr_ply(blks, block_name), names(blks)))
-        })
-
-        focus_r <- reactive(
-          intersect(input$focus, board_block_ids(board$board))
-        )
+        focus <- new_focus_state(board, view_data, reactive(input$focus_panel))
+        focus_r <- focus$prompt
 
         output$focus_picker <- renderUI({
-
-          blk_ids <- names(focus_choices())
-
-          if (!length(blk_ids)) {
-            return(NULL)
-          }
-
-          asst_focus_select(
-            session$ns("focus"), isolate(board$board), blk_ids,
-            isolate(focus_r())
+          shown <- req(focus$shown())
+          focus_row(
+            session$ns, isolate(board$board), shown$attached,
+            shown$suggested, shown$in_view
           )
         })
+
+        observeEvent(input$focus_take, focus$attach(input$focus_take))
+        observeEvent(input$focus_drop, focus$drop(input$focus_drop))
+        observeEvent(input$focus_dismiss, focus$dismiss())
+        # An emptied menu sends `[]`, which Shiny's input handler turns into
+        # NULL, so a NULL is the last tick taken off and is not ignored. The
+        # run at start finds no tags to take.
+        observeEvent(
+          input$focus_set,
+          focus$set(input$focus_set),
+          ignoreNULL = FALSE
+        )
 
         refresh_prompt <- function() {
 
@@ -1054,6 +1029,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           if (isolate(report$count) >= max_nudges) {
             reset_pending(pending_update)
+            focus$release()
             return(invisible())
           }
 
@@ -1080,18 +1056,15 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           ignoreNULL = TRUE
         )
 
-        # Both of these belong to the conversation rather than the board, so a
-        # switch carries them over and a fresh thread opens without them. An
-        # absent value is the fresh case: no focus, nothing spent.
+        # The meter belongs to the conversation rather than the board, so a
+        # switch carries it over and a fresh thread opens without it. An
+        # absent value is the fresh case: nothing spent. The block tags are
+        # not saved with a conversation, so no thread opens with any.
         restore_thread_state <- function(values) {
 
-          focus <- unlst(values[["focus"]])
           meter <- unlst(values[["spent"]])
 
-          updateSelectizeInput(
-            session, "focus",
-            selected = if (length(focus)) as.character(focus) else character()
-          )
+          focus$reset()
 
           spent(if (length(meter) == 2L) as.integer(meter) else c(0L, 0L))
 
@@ -1137,6 +1110,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             report$injecting <- FALSE
           } else {
             reset_staging()
+            focus$send()
           }
         }
 
@@ -1147,6 +1121,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           if (has_any_changes(isolate(pending_update()))) {
             nudge_or_discard()
           } else {
+            focus$release()
             maybe_compact()
           }
 
@@ -1335,8 +1310,8 @@ turn_text <- function(turn) {
 }
 
 # Rendered even before a turn has reported, as zeros. The meter shares its
-# row with the focus picker, so letting it appear only once it has numbers
-# would resize the picker out from under the user mid-conversation.
+# row with the block tags, so letting it appear only once it has numbers
+# would resize the tags' row out from under the user mid-conversation.
 format_token_telemetry <- function(spent) {
 
   in_t  <- spent[[1L]]

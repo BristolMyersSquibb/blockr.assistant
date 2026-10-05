@@ -264,3 +264,15 @@ dead_chat_function <- function(system_prompt = NULL, params = NULL) {
     echo = "none"
   )
 }
+
+# The focus section of a system prompt, or NULL without one. The board
+# summary above it lists every block in the same `- id <class>` form, so a
+# block found anywhere in the prompt says nothing about the focus.
+focus_section <- function(prompt) {
+
+  if (!grepl("## Focus", prompt, fixed = TRUE)) {
+    return(NULL)
+  }
+
+  sub("^[\\s\\S]*## Focus\n", "", prompt, perl = TRUE)
+}
