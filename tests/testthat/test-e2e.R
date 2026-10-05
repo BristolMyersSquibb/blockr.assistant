@@ -91,7 +91,13 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
 
   # The seam no unit test reaches: the footer button is ours, the drawer it
   # opens is shinychat's, and the click crosses into a React handler bound at
-  # the `shiny-chat-container` root.
+  # the `shiny-chat-container` root. React mounts the trigger on its own
+  # schedule, which the wait for our + above says nothing about.
+  app$wait_for_js(
+    "document.querySelector('.shiny-chat-history-trigger') !== null",
+    timeout = 15 * 1000
+  )
+
   expect_equal(
     unlst(
       app$get_js(
