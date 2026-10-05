@@ -196,15 +196,25 @@ test_that("the block tags follow presses on the board and keys on the row", {
       "board <- new_dock_board(",
       "  blocks = c(",
       "    data = new_dataset_block('iris'),",
-      "    head = new_head_block()",
+      "    head = new_head_block(),",
+      "    filt = new_subset_block()",
       "  ),",
-      "  links = c(new_link('data', 'head', 'data')),",
+      "  links = c(",
+      "    new_link('data', 'head', 'data'),",
+      "    new_link('data', 'filt', 'data')",
+      "  ),",
       "  extensions = list(assistant = new_assistant_extension()),",
       "  views = list(",
-      "    Main = list(blk('data'), blk('head'), ext('assistant'))",
+      "    Main = list(",
+      "      blk('data'), blk('head'), blk('filt'), ext('assistant')",
+      "    )",
       "  ),",
       "  grids = list(",
-      "    Main = dock_grid(blk('data'), blk('head'), ext('assistant'))",
+      "    Main = dock_grid(",
+      "      blk('data'),",
+      "      panels(blk('head'), blk('filt'), active = blk('head')),",
+      "      ext('assistant')",
+      "    )",
       "  )",
       ")",
       "",
@@ -283,6 +293,24 @@ test_that("the block tags follow presses on the board and keys on the row", {
   app$wait_for_js(paste(suggested, "=== null"), timeout = 10 * 1000)
   expect_false(app$get_js(tag("head")))
   expect_true(app$get_js(tag("data")))
+
+  # A press on a tab behind another, in a group that is not active, has
+  # dockview announce the group's front panel and then the pressed one.
+  # Only the pressed one reaches the server, so the row is not drawn for a
+  # block nobody pressed.
+  app$run_js(
+    "window.focusSent = [];
+     const send = Shiny.setInputValue;
+     Shiny.setInputValue = function(name, value, opts) {
+       if (/focus_panel$/.test(name)) window.focusSent.push(value);
+       return send.apply(this, arguments);
+     };"
+  )
+
+  press_element(app, ".dv-tab[data-tab-panel-id='block_panel-filt']")
+  app$wait_for_js(paste(suggested, "=== 'filt'"), timeout = 10 * 1000)
+
+  expect_identical(unlist(app$get_js("window.focusSent")), "block_panel-filt")
 })
 
 test_that("the browser's command palette lists built-ins and skills", {

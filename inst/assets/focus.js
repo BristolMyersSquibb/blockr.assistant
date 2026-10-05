@@ -17,6 +17,16 @@
   // an activation is announced.
   var unannounced = null;
 
+  // One press can announce more than one panel. A click on a tab behind
+  // another, in a group that is not active, has dockview announce the
+  // group's front panel on pointerdown and the clicked one on click, so
+  // forwarding both would offer the wrong block first and redraw the tags
+  // twice. Only the last panel announced is forwarded, once the press is
+  // over and the announcements have settled.
+  var pressing = false;
+  var latest = null;
+  var timer = null;
+
   var forward = function (id) {
     if (!window.Shiny) return;
     document.querySelectorAll('.asst-focus-row[data-panel-input]')
@@ -25,6 +35,16 @@
           row.getAttribute('data-panel-input'), id, { priority: 'event' }
         );
       });
+  };
+
+  var settle = function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () {
+      timer = null;
+      if (pressing || latest === null) return;
+      forward(latest);
+      latest = null;
+    }, 100);
   };
 
   // The panel a pointer lands in, by its tab or by its content, which
@@ -41,11 +61,20 @@
 
   document.addEventListener('pointerdown', function (e) {
     gestured = true;
+    pressing = true;
     if (unannounced !== null && panelOf(e.target) === unannounced) {
-      forward(unannounced);
+      latest = unannounced;
       unannounced = null;
     }
   }, true);
+
+  var release = function () {
+    pressing = false;
+    settle();
+  };
+
+  document.addEventListener('pointerup', release, true);
+  document.addEventListener('pointercancel', release, true);
 
   document.addEventListener('keydown', function () {
     gestured = true;
@@ -58,7 +87,8 @@
       return;
     }
     unannounced = null;
-    forward(e.detail.id);
+    latest = e.detail.id;
+    if (!pressing) settle();
   });
 
   Blockr.assistant.focusMenu = function (btn) {
