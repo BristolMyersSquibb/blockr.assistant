@@ -81,9 +81,13 @@ new_focus_state <- function(board, view_data, panel) {
       }
       invisible()
     },
-    # The + menu sends the whole set it shows ticked.
+    # The + menu sends the whole set it shows ticked. It shows the blocks in
+    # view only, so a tag on any other block stays, and the tags kept stay
+    # in their place.
     set = function(ids) {
-      attached(as.character(unlist(ids)))
+      ids <- as.character(unlist(ids))
+      keep <- c(setdiff(isolate(attached()), isolate(in_view())), ids)
+      attached(union(intersect(isolate(attached()), keep), ids))
       invisible()
     },
     drop = function(id) {

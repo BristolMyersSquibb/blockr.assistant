@@ -247,6 +247,39 @@ test_that("the row redraws for what it shows, not for every layout change", {
   )
 })
 
+test_that("the + menu changes the tags of the blocks in view only", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+  vd <- reactiveVal(focus_view_data(brd, "two"))
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, vd, reactiveVal())
+    },
+    {
+      session$flushReact()
+      st$set(list("d"))
+
+      vd(focus_view_data(brd, "one"))
+      session$flushReact()
+
+      st$set(list("b", "c"))
+      session$flushReact()
+      expect_identical(st$attached(), c("d", "b", "c"))
+
+      st$set(list("c"))
+      session$flushReact()
+      expect_identical(st$attached(), c("d", "c"))
+
+      # The emptied menu's NULL.
+      st$set(NULL)
+      session$flushReact()
+      expect_identical(st$attached(), "d")
+    }
+  )
+})
+
 test_that("a tag whose block leaves the board drops out", {
 
   brd <- focus_board()
