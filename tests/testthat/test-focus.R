@@ -197,6 +197,56 @@ test_that("a block in another view is not suggested", {
   )
 })
 
+test_that("the row redraws for what it shows, not for every layout change", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+
+  # One group per block, as dock reports its live layout. The `focus` moves
+  # to the assistant's panel when a press on the row puts focus there.
+  layout <- function(focus) {
+    vd <- focus_view_data(brd)
+    vd$grids <- list(
+      one = list(
+        children = lapply(
+          c("block_panel-a", "block_panel-b", "block_panel-c"),
+          function(p) list(panels = p, active = p)
+        ),
+        focus = focus
+      )
+    )
+    vd
+  }
+
+  vd <- reactiveVal(layout("block_panel-b"))
+  pv <- reactiveVal("block_panel-b")
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, vd, pv)
+      # An environment, as the test sees a copy of plain bindings.
+      drawn <- new.env()
+      drawn$n <- 0L
+      observe({
+        st$shown()
+        drawn$n <- drawn$n + 1L
+      })
+    },
+    {
+      session$flushReact()
+      before <- drawn$n
+
+      vd(layout("ext_panel-assistant"))
+      session$flushReact()
+      expect_identical(drawn$n, before)
+
+      pv("block_panel-c")
+      session$flushReact()
+      expect_identical(drawn$n, before + 1L)
+    }
+  )
+})
+
 test_that("a tag whose block leaves the board drops out", {
 
   brd <- focus_board()

@@ -49,10 +49,29 @@ new_focus_state <- function(board, view_data, panel) {
 
   live <- function(ids) intersect(ids, board_block_ids(board$board))
 
+  # What the row under the composer shows. A reactiveVal ignores a value
+  # identical to the one it holds, so the row is redrawn only when this
+  # changes. Every panel activation changes `view_data()`, including the one
+  # a press on the row causes by moving focus into the assistant's panel, and
+  # a row redrawn under the pressed button loses the click.
+  shown <- reactiveVal()
+
+  observe(
+    shown(
+      list(
+        attached = live(attached()),
+        suggested = suggested(),
+        in_view = in_view(),
+        names = chr_ply(board_blocks(board$board), block_name)
+      )
+    )
+  )
+
   list(
     attached = reactive(live(attached())),
     suggested = suggested,
     in_view = in_view,
+    shown = shown,
     # What the prompt is told: the tags of the message in flight plus any
     # the user has already put on the next one.
     prompt = reactive(live(union(held(), attached()))),

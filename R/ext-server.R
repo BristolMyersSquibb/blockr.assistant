@@ -810,12 +810,13 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
         focus <- new_focus_state(board, view_data, reactive(input$focus_panel))
         focus_r <- focus$prompt
 
-        output$focus_picker <- renderUI(
+        output$focus_picker <- renderUI({
+          shown <- req(focus$shown())
           focus_row(
-            session$ns, isolate(board$board), focus$attached(),
-            focus$suggested(), focus$in_view()
+            session$ns, isolate(board$board), shown$attached,
+            shown$suggested, shown$in_view
           )
-        )
+        })
 
         observeEvent(input$focus_take, focus$attach(input$focus_take))
         observeEvent(input$focus_drop, focus$drop(input$focus_drop))
