@@ -300,8 +300,11 @@ asst_ext_styles <- function() {
         outline-offset: var(--blockr-focus-offset);
       }
       /* Adding a second block is rare, so the + shows only with the
-         pointer on the tags or while it is in use. */
+         pointer on the tags or while it is in use. It takes the tags'
+         24px rather than a tool's 26px, so its hover lines up with them. */
       .asst-focus-row .asst-focus-add {
+        width: 24px;
+        height: 24px;
         opacity: 0;
         transition: opacity var(--blockr-transition);
       }
