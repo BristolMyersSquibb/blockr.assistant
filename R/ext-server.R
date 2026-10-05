@@ -238,7 +238,7 @@ asst_ext_styles <- function() {
       }
       /* Sits under the chat container, aligned to the composer: shinychat
          insets its own column by --shiny-chat-fill-padding, so the footer
-         has to carry the same inset for the picker's left edge and the
+         has to carry the same inset for the tags' left edge and the
          meter's right edge to land on the composer's. */
       .asst-footer {
         display: flex;
@@ -1308,7 +1308,7 @@ turn_text <- function(turn) {
 
 # Rendered even before a turn has reported, as zeros. The meter shares its
 # row with the block tags, so letting it appear only once it has numbers
-# would resize the picker out from under the user mid-conversation.
+# would resize the tags' row out from under the user mid-conversation.
 format_token_telemetry <- function(spent) {
 
   in_t  <- spent[[1L]]
