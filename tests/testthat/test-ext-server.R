@@ -1564,15 +1564,21 @@ test_that("the focus row offers the live board's blocks", {
     {
       session$flushReact()
 
-      expect_match(output$focus_picker$html, "&quot;id&quot;:&quot;a&quot;", fixed = TRUE)
-      expect_no_match(output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE)
+      expect_match(
+        output$focus_picker$html, "&quot;id&quot;:&quot;a&quot;", fixed = TRUE
+      )
+      expect_no_match(
+        output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE
+      )
 
       board$board <- new_board(
         blocks = c(a = new_dataset_block("iris"), b = new_head_block())
       )
       session$flushReact()
 
-      expect_match(output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE)
+      expect_match(
+        output$focus_picker$html, "&quot;id&quot;:&quot;b&quot;", fixed = TRUE
+      )
     },
     args = list(board = board, update = reactiveVal()),
     session = with_llm_session()

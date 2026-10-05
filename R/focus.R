@@ -174,7 +174,7 @@ focus_row <- function(ns, board, attached, suggested, in_view) {
     remove <- tags$button(
       type = "button",
       class = "blockr-select__tag-remove",
-      `aria-label` = if (suggested) paste("Hide", name) else paste("Remove", name),
+      `aria-label` = paste(if (suggested) "Hide" else "Remove", name),
       `data-blockr-tooltip` = if (suggested) "Hide" else "Remove",
       onclick = focus_js_event(
         ns(if (suggested) "focus_dismiss" else "focus_drop"), id
