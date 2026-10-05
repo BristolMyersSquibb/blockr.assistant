@@ -125,8 +125,9 @@ is_block_panel <- function(x) {
 }
 
 # The blocks in the active view, in screen order: panel group by panel group,
-# the front tab of each group first. Without a dock (or before it reports)
-# every block on the board.
+# each group's tabs as they sit in its tab strip. Not the front tab first,
+# which would change the order, and redraw the tags, with every tab switch.
+# Without a dock (or before it reports) every block on the board.
 view_focus_blocks <- function(board, view_data) {
 
   ids <- board_block_ids(board$board)
@@ -159,8 +160,7 @@ grid_screen_order <- function(grid) {
         nodes,
         function(node) {
           if (!is.null(node[["panels"]])) {
-            panels <- unlist(node[["panels"]])
-            unique(c(unlist(node[["active"]]), panels))
+            unlist(node[["panels"]])
           } else {
             walk(node[["children"]])
           }

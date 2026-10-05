@@ -23,7 +23,7 @@ focus_view_data <- function(brd, view = "one") {
   list(views = views, grids = board_grids(brd))
 }
 
-test_that("grid_screen_order puts each group's front tab first", {
+test_that("grid_screen_order keeps each group's tabs in strip order", {
 
   grid <- list(
     children = list(
@@ -36,7 +36,7 @@ test_that("grid_screen_order puts each group's front tab first", {
     )
   )
 
-  expect_identical(grid_screen_order(grid), c("p1", "p3", "p2", "p4"))
+  expect_identical(grid_screen_order(grid), c("p1", "p2", "p3", "p4"))
   expect_identical(grid_screen_order(NULL), character())
 })
 
@@ -202,15 +202,16 @@ test_that("the row redraws for what it shows, not for every layout change", {
   brd <- focus_board()
   board <- reactiveValues(board = brd)
 
-  # One group per block, as dock reports its live layout. The `focus` moves
-  # to the assistant's panel when a press on the row puts focus there.
-  layout <- function(focus) {
+  # As dock reports its live layout: `a` in a group of its own, `b` and `c`
+  # tabbed in another. The `focus` moves to the assistant's panel when a
+  # press on the row puts focus there, and `front` with a tab switch.
+  layout <- function(focus, front = "block_panel-b") {
     vd <- focus_view_data(brd)
     vd$grids <- list(
       one = list(
-        children = lapply(
-          c("block_panel-a", "block_panel-b", "block_panel-c"),
-          function(p) list(panels = p, active = p)
+        children = list(
+          list(panels = "block_panel-a", active = "block_panel-a"),
+          list(panels = c("block_panel-b", "block_panel-c"), active = front)
         ),
         focus = focus
       )
@@ -237,6 +238,10 @@ test_that("the row redraws for what it shows, not for every layout change", {
       before <- drawn$n
 
       vd(layout("ext_panel-assistant"))
+      session$flushReact()
+      expect_identical(drawn$n, before)
+
+      vd(layout("ext_panel-assistant", front = "block_panel-c"))
       session$flushReact()
       expect_identical(drawn$n, before)
 
