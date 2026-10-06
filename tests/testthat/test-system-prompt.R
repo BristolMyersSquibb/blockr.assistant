@@ -56,6 +56,14 @@ test_that("default_system_prompt() golden on a populated board", {
     views = list(
       Analysis = c("data", "head"),
       Overview = "data"
+    ),
+    # Options and the active view are given explicitly, so that the golden
+    # changes with the prompt and not with blockr.dock's defaults.
+    active = "Analysis",
+    options = new_board_options(
+      new_board_name_option(),
+      new_thematic_option(),
+      new_dark_mode_option()
     )
   )
 
