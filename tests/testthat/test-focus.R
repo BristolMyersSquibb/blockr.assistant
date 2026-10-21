@@ -186,3 +186,163 @@ test_that("a last active block that leaves the board drops out", {
     }
   )
 })
+
+test_that("the x leaves the clicked block out until the next click", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+  vd <- reactiveVal(focus_view_data(brd))
+  pv <- reactiveVal("block_panel-b")
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, vd, pv)
+    },
+    {
+      session$flushReact()
+      expect_identical(st$shown()$clicked, "b")
+
+      st$dismiss()
+      session$flushReact()
+      expect_null(st$shown()$clicked)
+      expect_null(st$last_active())
+
+      pv("ext_panel-assistant")
+      session$flushReact()
+      expect_null(st$shown()$clicked)
+
+      pv("block_panel-b")
+      session$flushReact()
+      expect_identical(st$shown()$clicked, "b")
+      expect_identical(st$last_active(), "b")
+    }
+  )
+})
+
+test_that("the @ changes the added blocks in view only", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+  vd <- reactiveVal(focus_view_data(brd, "two"))
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, vd, reactiveVal())
+    },
+    {
+      session$flushReact()
+      st$set(list("d"))
+
+      vd(focus_view_data(brd, "one"))
+      session$flushReact()
+
+      st$set(list("b", "c"))
+      session$flushReact()
+      expect_identical(st$added(), c("d", "b", "c"))
+
+      st$set(list("c"))
+      session$flushReact()
+      expect_identical(st$added(), c("d", "c"))
+
+      # The emptied menu's NULL.
+      st$set(NULL)
+      session$flushReact()
+      expect_identical(st$added(), "d")
+
+      st$reset()
+      session$flushReact()
+      expect_identical(st$added(), character())
+    }
+  )
+})
+
+test_that("a clicked block that is also added shows once", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+  pv <- reactiveVal("block_panel-b")
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, reactiveVal(focus_view_data(brd)), pv)
+    },
+    {
+      st$set(list("b"))
+      session$flushReact()
+      expect_null(st$shown()$clicked)
+      expect_identical(st$shown()$added, "b")
+    }
+  )
+})
+
+test_that("the row redraws for what it shows, not for every layout change", {
+
+  brd <- focus_board()
+  board <- reactiveValues(board = brd)
+
+  layout <- function(focus, front = "block_panel-b") {
+    vd <- focus_view_data(brd)
+    vd$grids <- list(
+      one = list(
+        children = list(
+          list(panels = "block_panel-a", active = "block_panel-a"),
+          list(panels = c("block_panel-b", "block_panel-c"), active = front)
+        ),
+        focus = focus
+      )
+    )
+    vd
+  }
+
+  vd <- reactiveVal(layout("block_panel-b"))
+  pv <- reactiveVal("block_panel-b")
+
+  testServer(
+    function(input, output, session) {
+      st <- new_focus_state(board, vd, pv)
+      drawn <- new.env()
+      drawn$n <- 0L
+      observe({
+        st$shown()
+        drawn$n <- drawn$n + 1L
+      })
+    },
+    {
+      session$flushReact()
+      before <- drawn$n
+
+      # A press on the row moves focus into the assistant's panel.
+      vd(layout("ext_panel-assistant"))
+      session$flushReact()
+      expect_identical(drawn$n, before)
+
+      vd(layout("ext_panel-assistant", front = "block_panel-c"))
+      session$flushReact()
+      expect_identical(drawn$n, before)
+
+      pv("block_panel-c")
+      session$flushReact()
+      expect_identical(drawn$n, before + 1L)
+    }
+  )
+})
+
+test_that("focus_row draws the clicked tag, the added tags and the @", {
+
+  brd <- focus_board()
+  ns <- NS("x")
+
+  html <- as.character(
+    focus_row(ns, brd, clicked = "b", added = "c", in_view = c("a", "b", "c"))
+  )
+
+  expect_match(html, "x-focus_dismiss", fixed = TRUE)
+  expect_match(html, "x-focus_drop", fixed = TRUE)
+  expect_match(html, ">@</button>", fixed = TRUE)
+  expect_no_match(html, "suggested", fixed = TRUE)
+
+  expect_null(
+    focus_row(ns, brd, clicked = NULL, added = character(),
+              in_view = character())
+  )
+})

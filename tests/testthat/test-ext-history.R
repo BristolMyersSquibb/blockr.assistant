@@ -123,7 +123,7 @@ test_that("a second thread is stored beside the first", {
   )
 })
 
-test_that("switching threads restores the client and the focus selection", {
+test_that("switching threads restores the client", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -139,7 +139,6 @@ test_that("switching threads restores the client and the focus selection", {
 
       cl <- client_r()
 
-      session$setInputs(focus = "d")
       cl$set_turns(
         list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
       )
@@ -147,12 +146,7 @@ test_that("switching threads restores the client and the focus selection", {
 
       first <- ctrl$record$id
 
-      # The focus selection was captured with the thread, through the on_save
-      # hook this extension registers.
-      expect_identical(ctrl$record$values[["focus"]], list("d"))
-
       ctrl$new_chat()
-      session$setInputs(focus = character())
       cl$set_turns(
         list(ellmer::Turn("user", "two"), ellmer::Turn("assistant", "second"))
       )
@@ -640,7 +634,6 @@ test_that("/clear keeps the thread on screen and opens a new one", {
 
       cl <- client_r()
 
-      session$setInputs(focus = "d")
       spent(c(100L, 20L))
       cl$set_turns(
         list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
@@ -657,7 +650,6 @@ test_that("/clear keeps the thread on screen and opens a new one", {
 
       kept <- thread_store$threads()[[first]]
 
-      expect_identical(kept$values[["focus"]], list("d"))
       expect_identical(kept$values[["spent"]], list(100L, 20L))
 
       expect_null(ctrl$record)

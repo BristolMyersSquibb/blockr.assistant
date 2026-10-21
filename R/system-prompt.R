@@ -39,12 +39,12 @@
 #'   skills are listed here; block- and extension-scoped ones surface
 #'   through the tools that describe their target.
 #' @param focus Character vector of block IDs the user has singled
-#'   out as what they are working on, as reported by the extension's
-#'   block picker.
+#'   out as what they are working on, as added with the `@` under the
+#'   extension's composer.
 #' @param in_view Character vector of the block IDs in the current
 #'   view, in screen order, as the extension reads them off the dock.
-#' @param last_active The ID of the block the user last made active
-#'   in the current view, or `NULL`.
+#' @param last_active The ID of the block the user last clicked in
+#'   the current view, or `NULL`, including when the user left it out.
 #'
 #'   The focus section, built from `focus`, `in_view` and
 #'   `last_active`, is omitted when none of them names a block still
