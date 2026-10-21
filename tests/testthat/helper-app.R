@@ -156,21 +156,3 @@ press_element <- function(app, selector, hold = 0) {
 
   invisible(app)
 }
-
-# Enter on whatever holds focus, through the input layer, so a focused button
-# gets its own activation as it does from a keyboard.
-press_enter <- function(app) {
-
-  input <- app$get_chromote_session()$Input
-
-  input$dispatchKeyEvent(
-    type = "keyDown", key = "Enter", code = "Enter",
-    windowsVirtualKeyCode = 13L, text = "\r"
-  )
-  input$dispatchKeyEvent(
-    type = "keyUp", key = "Enter", code = "Enter",
-    windowsVirtualKeyCode = 13L
-  )
-
-  invisible(app)
-}

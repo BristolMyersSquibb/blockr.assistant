@@ -200,3 +200,90 @@ test_that("default_system_prompt() keeps focus out of the focus_panel lane", {
   expect_match(res, "does not\nnarrow what you may do", fixed = TRUE)
   expect_match(res, "Nothing about this section asks", fixed = TRUE)
 })
+
+test_that("default_system_prompt() names the view and the last click", {
+
+  brd <- new_board(
+    blocks = c(
+      d = new_dataset_block("iris"), h = new_head_block(),
+      s = new_subset_block()
+    )
+  )
+
+  res <- focus_section(
+    default_system_prompt(
+      board = reactiveValues(board = brd), in_view = c("d", "h"),
+      last_active = "h"
+    )
+  )
+
+  expect_match(res, "these blocks, in screen order:\n- d\n- h\n", fixed = TRUE)
+  expect_match(res, "The user last clicked block h.", fixed = TRUE)
+  expect_no_match(res, "- s", fixed = TRUE)
+  expect_no_match(res, "singled out", fixed = TRUE)
+})
+
+test_that("default_system_prompt() does not list a view holding every block", {
+
+  brd <- new_board(
+    blocks = c(d = new_dataset_block("iris"), h = new_head_block())
+  )
+  board <- reactiveValues(board = brd)
+
+  expect_no_match(
+    default_system_prompt(board = board, in_view = c("d", "h")),
+    "## Focus",
+    fixed = TRUE
+  )
+
+  res <- focus_section(
+    default_system_prompt(
+      board = board, in_view = c("d", "h"), last_active = "d"
+    )
+  )
+
+  expect_match(res, "shows every block on the board", fixed = TRUE)
+  expect_match(res, "The user last clicked block d.", fixed = TRUE)
+})
+
+test_that("default_system_prompt() ignores a last click outside the view", {
+
+  brd <- new_board(
+    blocks = c(
+      d = new_dataset_block("iris"), h = new_head_block(),
+      s = new_subset_block()
+    )
+  )
+
+  res <- focus_section(
+    default_system_prompt(
+      board = reactiveValues(board = brd), in_view = c("d", "h"),
+      last_active = "s"
+    )
+  )
+
+  expect_no_match(res, "last clicked block", fixed = TRUE)
+})
+
+test_that("default_system_prompt() puts the picked blocks after the screen", {
+
+  brd <- new_board(
+    blocks = c(
+      d = new_dataset_block("iris"), h = new_head_block(),
+      s = new_subset_block()
+    )
+  )
+
+  res <- focus_section(
+    default_system_prompt(
+      board = reactiveValues(board = brd), focus = "d",
+      in_view = c("d", "h"), last_active = "h"
+    )
+  )
+
+  expect_lt(
+    regexpr("last clicked block h", res, fixed = TRUE),
+    regexpr("singled out", res, fixed = TRUE)
+  )
+  expect_match(res, "- d <dataset_block>", fixed = TRUE)
+})

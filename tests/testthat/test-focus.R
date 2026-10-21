@@ -1,28 +1,3 @@
-focus_board <- function() {
-  new_dock_board(
-    blocks = c(
-      a = new_dataset_block("iris"),
-      b = new_head_block(),
-      c = new_head_block(),
-      d = new_head_block()
-    ),
-    views = list(
-      one = dock_view(c("a", "b", "c"), name = "One"),
-      two = dock_view("d", name = "Two")
-    ),
-    active = "one"
-  )
-}
-
-# dock's live view data for `brd`, with the active view switched to `view`.
-focus_view_data <- function(brd, view = "one") {
-
-  views <- board_views(brd)
-  active_view(views) <- view
-
-  list(views = views, grids = board_grids(brd))
-}
-
 test_that("grid_screen_order keeps each group's tabs in strip order", {
 
   grid <- list(
@@ -57,7 +32,7 @@ test_that("view_focus_blocks offers the active view's blocks only", {
   )
 })
 
-test_that("the clicked block is suggested, and the assistant panel is not", {
+test_that("the clicked block is the last active, and the assistant is not", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
@@ -70,123 +45,25 @@ test_that("the clicked block is suggested, and the assistant panel is not", {
     },
     {
       session$flushReact()
-      expect_null(st$suggested())
+      expect_null(st$last_active())
 
       pv("block_panel-b")
       session$flushReact()
-      expect_identical(st$suggested(), "b")
+      expect_identical(st$last_active(), "b")
 
       # Clicking into the chat makes the assistant's panel active.
       pv("ext_panel-assistant")
       session$flushReact()
-      expect_identical(st$suggested(), "b")
-
-      # Nothing is sent until the suggestion is taken.
-      expect_identical(st$prompt(), character())
-
-      st$attach("b")
-      session$flushReact()
-      expect_identical(st$attached(), "b")
-      expect_identical(st$prompt(), "b")
-      expect_null(st$suggested())
-    }
-  )
-})
-
-test_that("a tag lasts one message and the model keeps it for the reply", {
-
-  brd <- focus_board()
-  board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd))
-  pv <- reactiveVal("block_panel-a")
-
-  testServer(
-    function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
-    },
-    {
-      session$flushReact()
-      st$attach("a")
-
-      st$send()
-      session$flushReact()
-
-      expect_identical(st$attached(), character())
-      expect_identical(st$prompt(), "a")
-      # The suggestion stays away until the next click on a block.
-      expect_null(st$suggested())
-
-      st$release()
-      session$flushReact()
-      expect_identical(st$prompt(), character())
-
-      # Back to the block from the assistant: suggested again.
-      pv("ext_panel-assistant")
-      session$flushReact()
-      pv("block_panel-a")
-      session$flushReact()
-      expect_identical(st$suggested(), "a")
-    }
-  )
-})
-
-test_that("sending clears a taken suggestion, not a block picked with the +", {
-
-  brd <- focus_board()
-  board <- reactiveValues(board = brd)
-
-  testServer(
-    function(input, output, session) {
-      st <- new_focus_state(
-        board, reactiveVal(focus_view_data(brd)), reactiveVal()
-      )
-    },
-    {
-      session$flushReact()
-      st$set(list("b"))
-      st$attach("a")
-      session$flushReact()
-      expect_identical(st$attached(), c("b", "a"))
-
-      st$send()
-      session$flushReact()
-      expect_identical(st$attached(), "b")
-      expect_identical(st$prompt(), c("b", "a"))
-
-      st$release()
-      session$flushReact()
-      expect_identical(st$prompt(), "b")
-    }
-  )
-})
-
-test_that("a dismissed suggestion returns with the next click on a block", {
-
-  brd <- focus_board()
-  board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd))
-  pv <- reactiveVal("block_panel-a")
-
-  testServer(
-    function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
-    },
-    {
-      session$flushReact()
-      expect_identical(st$suggested(), "a")
-
-      st$dismiss()
-      session$flushReact()
-      expect_null(st$suggested())
+      expect_identical(st$last_active(), "b")
 
       pv("block_panel-c")
       session$flushReact()
-      expect_identical(st$suggested(), "c")
+      expect_identical(st$last_active(), "c")
     }
   )
 })
 
-test_that("a block in the first panel group is suggested too", {
+test_that("a block in the first panel group can be the last active", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
@@ -200,12 +77,12 @@ test_that("a block in the first panel group is suggested too", {
       # dock's own focus drops the first group; the announced panel does not.
       pv("block_panel-a")
       session$flushReact()
-      expect_identical(st$suggested(), "a")
+      expect_identical(st$last_active(), "a")
     }
   )
 })
 
-test_that("a block in another view is not suggested", {
+test_that("a view switch drops the last active block of the view left", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
@@ -218,23 +95,30 @@ test_that("a block in another view is not suggested", {
     },
     {
       session$flushReact()
-      expect_identical(st$suggested(), "b")
+      expect_identical(st$last_active(), "b")
+      expect_identical(st$in_view(), c("a", "b", "c"))
 
       vd(focus_view_data(brd, "two"))
       session$flushReact()
-      expect_null(st$suggested())
+      expect_null(st$last_active())
+      expect_identical(st$in_view(), "d")
+
+      # Back again, the click still stands.
+      vd(focus_view_data(brd, "one"))
+      session$flushReact()
+      expect_identical(st$last_active(), "b")
     }
   )
 })
 
-test_that("the row redraws for what it shows, not for every layout change", {
+test_that("the blocks in view change with the view, not with every click", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
 
   # As dock reports its live layout: `a` in a group of its own, `b` and `c`
-  # tabbed in another. The `focus` moves to the assistant's panel when a
-  # press on the row puts focus there, and `front` with a tab switch.
+  # tabbed in another. The `focus` moves to the assistant's panel when the
+  # user clicks into the chat, and `front` with a tab switch.
   layout <- function(focus, front = "block_panel-b") {
     vd <- focus_view_data(brd)
     vd$grids <- list(
@@ -250,112 +134,55 @@ test_that("the row redraws for what it shows, not for every layout change", {
   }
 
   vd <- reactiveVal(layout("block_panel-b"))
-  pv <- reactiveVal("block_panel-b")
-
-  testServer(
-    function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
-      # An environment, as the test sees a copy of plain bindings.
-      drawn <- new.env()
-      drawn$n <- 0L
-      observe({
-        st$shown()
-        drawn$n <- drawn$n + 1L
-      })
-    },
-    {
-      session$flushReact()
-      before <- drawn$n
-
-      vd(layout("ext_panel-assistant"))
-      session$flushReact()
-      expect_identical(drawn$n, before)
-
-      vd(layout("ext_panel-assistant", front = "block_panel-c"))
-      session$flushReact()
-      expect_identical(drawn$n, before)
-
-      pv("block_panel-c")
-      session$flushReact()
-      expect_identical(drawn$n, before + 1L)
-    }
-  )
-})
-
-test_that("the + menu changes the tags of the blocks in view only", {
-
-  brd <- focus_board()
-  board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd, "two"))
 
   testServer(
     function(input, output, session) {
       st <- new_focus_state(board, vd, reactiveVal())
+      # An environment, as the test sees a copy of plain bindings.
+      seen <- new.env()
+      seen$n <- 0L
+      observe({
+        st$in_view()
+        seen$n <- seen$n + 1L
+      })
     },
     {
       session$flushReact()
-      st$set(list("d"))
+      before <- seen$n
 
-      vd(focus_view_data(brd, "one"))
+      vd(layout("ext_panel-assistant"))
       session$flushReact()
+      expect_identical(seen$n, before)
 
-      st$set(list("b", "c"))
+      vd(layout("ext_panel-assistant", front = "block_panel-c"))
       session$flushReact()
-      expect_identical(st$attached(), c("d", "b", "c"))
+      expect_identical(seen$n, before)
 
-      st$set(list("c"))
+      vd(focus_view_data(brd, "two"))
       session$flushReact()
-      expect_identical(st$attached(), c("d", "c"))
-
-      # The emptied menu's NULL.
-      st$set(NULL)
-      session$flushReact()
-      expect_identical(st$attached(), "d")
+      expect_identical(seen$n, before + 1L)
     }
   )
 })
 
-test_that("a tag whose block leaves the board drops out", {
+test_that("a last active block that leaves the board drops out", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
+  pv <- reactiveVal("block_panel-b")
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, NULL, reactiveVal())
+      st <- new_focus_state(board, NULL, pv)
     },
     {
-      st$set(list("a", "b"))
       session$flushReact()
-      expect_identical(st$prompt(), c("a", "b"))
+      expect_identical(st$last_active(), "b")
 
       board$board <- new_dock_board(blocks = c(a = new_dataset_block("iris")))
       session$flushReact()
-      expect_identical(st$prompt(), "a")
-      expect_identical(st$attached(), "a")
+      expect_null(st$last_active())
+      expect_identical(st$in_view(), "a")
     }
-  )
-})
-
-test_that("focus_row draws tags, the suggestion and the +", {
-
-  brd <- focus_board()
-  ns <- NS("asst")
-
-  html <- as.character(
-    focus_row(ns, brd, attached = "a", suggested = "b", in_view = c("a", "b"))
-  )
-
-  expect_match(html, "blockr-select__tag asst-focus-tag\"", fixed = TRUE)
-  expect_match(html, "asst-focus-tag--suggested", fixed = TRUE)
-  expect_match(html, "asst-focus_take", fixed = TRUE)
-  expect_match(html, "asst-focus_dismiss", fixed = TRUE)
-  expect_match(html, "asst-focus_drop", fixed = TRUE)
-  expect_match(html, "data-input=\"asst-focus_set\"", fixed = TRUE)
-  expect_match(html, "blockr-block-mark", fixed = TRUE)
-
-  expect_null(
-    focus_row(ns, brd, attached = character(), suggested = NULL,
-              in_view = character())
   )
 })

@@ -10,6 +10,8 @@ default_system_prompt(
   view_data = NULL,
   skills = NULL,
   focus = NULL,
+  in_view = NULL,
+  last_active = NULL,
   ...
 )
 }
@@ -33,9 +35,18 @@ skills are listed here; block- and extension-scoped ones surface
 through the tools that describe their target.}
 
 \item{focus}{Character vector of block IDs the user has singled
-out as what they are working on, as reported by the tags under
-the extension's composer. The focus section is omitted when this is \code{NULL}
-or names no block still on \code{board}.}
+out as what they are working on, as reported by the extension's
+block picker.}
+
+\item{in_view}{Character vector of the block IDs in the current
+view, in screen order, as the extension reads them off the dock.}
+
+\item{last_active}{The ID of the block the user last made active
+in the current view, or \code{NULL}.
+
+The focus section, built from \code{focus}, \code{in_view} and
+\code{last_active}, is omitted when none of them names a block still
+on \code{board}.}
 
 \item{...}{Forward-compatibility slot for future inputs.}
 }

@@ -1,14 +1,14 @@
 # blockr.assistant (development version)
 
-* The assistant's block picker is replaced by tags under the composer. The
-  block last clicked on the board shows as a dashed suggestion; a click
-  attaches it to the message, its × hides it. The + next to the tags lists
-  the blocks in the current view, not every block on the board. A tag taken
-  from the suggestion applies to one message: sending clears it, and the
-  model keeps it in its prompt until its reply is done. A block picked with
-  the + stays until it is taken off. Clicking into the assistant does not
-  replace the suggestion, since only block panels are read. Tags are no
-  longer saved with a conversation.
+* The assistant now tells the model what the user has on screen: the blocks
+  in the current view, and the block the user last clicked there. The model
+  reads a request that names no block as most likely about that block.
+  Clicking into the assistant does not count as a click on a block. A block
+  the assistant adds becomes the last clicked one, since dock fronts it.
+
+* The block picker under the composer lists the blocks in the current view,
+  not every block on the board. A pick on a block in another view leaves the
+  prompt when the user switches away from it.
 
 * A deployment can now give the assistant tools of its own. A list of
   `ellmer::tool()` definitions set as the `blockr.assistant_tools`
