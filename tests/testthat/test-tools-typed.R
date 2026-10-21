@@ -190,6 +190,32 @@ test_that("a typed modify tool stages the delta it is given", {
   expect_identical(isolate(pending())$blocks$mod$d$dataset, "mtcars")
 })
 
+test_that("records ellmer turned into a data frame reach the block as records", {
+
+  # What ellmer hands the tool for
+  # [{"type": "values", "column": "Species", "values": ["setosa"]},
+  #  {"type": "expr", "expr": "x > 1"}]
+  conds <- data.frame(
+    type = c("values", "expr"),
+    column = c("Species", NA),
+    expr = c(NA, "x > 1")
+  )
+  conds$values <- list("setosa", NULL)
+  conds$mode <- factor(c("include", NA), levels = c("include", "exclude"))
+
+  expect_identical(
+    as_block_value(conds),
+    list(
+      list(type = "values", column = "Species", values = "setosa",
+           mode = "include"),
+      list(type = "expr", expr = "x > 1")
+    )
+  )
+
+  expect_identical(as_block_value(c("a", "b")), c("a", "b"))
+  expect_identical(as_block_value(list("a", "b")), list("a", "b"))
+})
+
 test_that("a typed modify tool refuses an empty delta", {
 
   tool <- block_tool(
