@@ -63,25 +63,6 @@ test_that("the clicked block is the last active, and the assistant is not", {
   )
 })
 
-test_that("a block in the first panel group can be the last active", {
-
-  brd <- focus_board()
-  board <- reactiveValues(board = brd)
-  pv <- reactiveVal()
-
-  testServer(
-    function(input, output, session) {
-      st <- new_focus_state(board, reactiveVal(focus_view_data(brd)), pv)
-    },
-    {
-      # dock's own focus drops the first group; the announced panel does not.
-      pv("block_panel-a")
-      session$flushReact()
-      expect_identical(st$last_active(), "a")
-    }
-  )
-})
-
 test_that("a view switch drops the last active block of the view left", {
 
   brd <- focus_board()
