@@ -15,11 +15,18 @@ focus_board <- function() {
   )
 }
 
-# dock's live view data for `brd`, with the active view switched to `view`.
-focus_view_data <- function(brd, view = "one") {
+# The dock's live view data for `brd`, with the active view switched to
+# `view` and, if given, `focus` as the panel the dock reports focused there.
+focus_view_data <- function(brd, view = "one", focus = NULL) {
 
   views <- board_views(brd)
   active_view(views) <- view
 
-  list(views = views, grids = board_grids(brd))
+  grids <- unclass(board_grids(brd))
+
+  if (!is.null(focus)) {
+    grids[[view]] <- c(as.list(grids[[view]]), list(focus = focus))
+  }
+
+  list(views = views, grids = grids)
 }

@@ -168,7 +168,7 @@ test_that("demo app boots and the assistant panel reaches the DOM", {
   expect_true(app$get_js(visible))
 })
 
-test_that("a press on the board reports one block panel to the server", {
+test_that("a press on the board shows its block as the tag", {
 
   skip_on_cran()
   skip_if_not_installed("shinytest2")
@@ -225,55 +225,46 @@ test_that("a press on the board reports one block panel to the server", {
 
   app <- asst_app_driver(
     app_dir,
-    name = "focus-panel",
+    name = "focus-tag",
     seed = 42,
     load_timeout = 30 * 1000
   )
   withr::defer(app$stop())
 
   app$wait_for_js(
-    "document.querySelector('[data-asst-panel-input]') !== null",
+    "document.querySelector('.asst-focus-row .asst-focus-add') !== null",
     timeout = 15 * 1000
   )
 
-  app$run_js(
-    "window.focusSent = [];
-     const send = Shiny.setInputValue;
-     Shiny.setInputValue = function(name, value, opts) {
-       if (/focus_panel$/.test(name)) window.focusSent.push(value);
-       return send.apply(this, arguments);
-     };"
+  tag <- paste(
+    "(document.querySelector('.asst-focus-row .asst-focus-tag')",
+    "?.getAttribute('data-value') ?? null)"
   )
 
-  sent <- function() unlist(app$get_js("window.focusSent"))
+  # Nothing has been clicked on load, so no block shows.
+  expect_null(app$get_js(tag))
 
-  # The panel dockview activates on load is no click, so nothing is sent
-  # for it. A first press on it changes no panel either, and dockview
-  # announces nothing: the press itself has to report it.
-  expect_identical(
-    app$get_js(
-      paste(
-        "document.querySelector('.dv-active-group .dv-active-tab')",
-        ".getAttribute('data-tab-panel-id')"
-      )
-    ),
-    "block_panel-data"
-  )
-  expect_null(sent())
-
+  # The dock reports the first panel group as focused too, since
+  # blockr.dock#462.
   press_element(app, ".dv-tab[data-tab-panel-id='block_panel-data']")
-  app$wait_for_js("window.focusSent.length === 1", timeout = 10 * 1000)
-  expect_identical(sent(), "block_panel-data")
+  app$wait_for_js(paste(tag, "=== 'data'"), timeout = 10 * 1000)
 
-  # A press on a tab behind another, in a group that is not active, has
-  # dockview announce the group's front panel and then the pressed one.
-  # Only the pressed one reaches the server.
-  app$run_js("window.focusSent = [];")
+  # A tab behind another, in a group that is not active.
   press_element(app, ".dv-tab[data-tab-panel-id='block_panel-filt']")
-  app$wait_for_js("window.focusSent.length > 0", timeout = 10 * 1000)
-  Sys.sleep(0.5)
+  app$wait_for_js(paste(tag, "=== 'filt'"), timeout = 10 * 1000)
 
-  expect_identical(sent(), "block_panel-filt")
+  # Clicking into the chat makes the assistant the focus, and leaves the
+  # block clicked before.
+  press_element(app, ".asst-panel .ProseMirror")
+  app$wait_for_js(
+    paste(
+      "document.querySelector('.dv-active-group .dv-active-tab')",
+      "?.getAttribute('data-tab-panel-id') === 'ext_panel-assistant'"
+    ),
+    timeout = 10 * 1000
+  )
+  Sys.sleep(1)
+  expect_identical(app$get_js(tag), "filt")
 })
 
 test_that("the browser's command palette lists built-ins and skills", {

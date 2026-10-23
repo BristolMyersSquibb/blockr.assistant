@@ -1977,7 +1977,8 @@ test_that("the clicked block shows as a tag and reaches the prompt", {
         output$focus_picker$html, session$ns("focus_dismiss"), fixed = TRUE
       )
 
-      session$setInputs(focus_panel = "block_panel-c")
+      vd(focus_view_data(brd, "one", focus = "block_panel-c"))
+      session$flushReact()
       expect_match(
         client_r()$get_system_prompt(), "The user last clicked block c.",
         fixed = TRUE
@@ -1987,7 +1988,8 @@ test_that("the clicked block shows as a tag and reaches the prompt", {
       )
 
       # Clicking into the chat leaves the block clicked before.
-      session$setInputs(focus_panel = "ext_panel-assistant")
+      vd(focus_view_data(brd, "one", focus = "ext_panel-assistant"))
+      session$flushReact()
       expect_match(
         client_r()$get_system_prompt(), "The user last clicked block c.",
         fixed = TRUE
@@ -2002,7 +2004,8 @@ test_that("the clicked block shows as a tag and reaches the prompt", {
         output$focus_picker$html, session$ns("focus_dismiss"), fixed = TRUE
       )
 
-      session$setInputs(focus_panel = "block_panel-c")
+      vd(focus_view_data(brd, "one", focus = "block_panel-c"))
+      session$flushReact()
       expect_match(
         client_r()$get_system_prompt(), "The user last clicked block c.",
         fixed = TRUE

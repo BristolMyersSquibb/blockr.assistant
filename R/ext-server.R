@@ -177,8 +177,6 @@ asst_ext_ui <- function(id, board, ...) {
       ),
       div(
         class = "asst-footer",
-        # Where focus.js reports the panel the user last made active.
-        `data-asst-panel-input` = NS(id, "focus_panel"),
         uiOutput(NS(id, "focus_picker"), container = function(...) {
           div(class = "asst-focus-slot", ...)
         }),
@@ -782,7 +780,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           invisible()
         }
 
-        focus <- new_focus_state(board, view_data, reactive(input$focus_panel))
+        focus <- new_focus_state(board, view_data)
         focus_r <- focus$added
 
         output$focus_picker <- renderUI({

@@ -7,33 +7,48 @@
 # those stay until they are taken off. The model is also told which blocks
 # the current view holds.
 #
-# `panel` is the panel the user last made active, as dockViewR announces it
-# in the browser (see focus.js). dock's own `focus` on `view_data()` cannot
-# serve: it drops the first panel group, which dockview also activates by
-# default on load. The chat panel is a dock panel too, so clicking into the
-# message box makes the assistant active: only block panels are read, so the
-# block clicked on the way to the composer survives the trip.
+# The clicked block is read off the dock's `focus` for the current view in
+# `view_data()`: the open tab of the group the user last clicked into. The
+# chat panel is a dock panel too, so clicking into the message box makes the
+# assistant the focus: only block panels are read, so the block clicked on
+# the way to the composer survives the trip.
 #
-# A block that dock fronts, such as one the assistant adds, counts as
+# A block that the dock fronts, such as one the assistant adds, counts as
 # clicked: the user sees it come to the front.
-new_focus_state <- function(board, view_data, panel) {
+new_focus_state <- function(board, view_data) {
 
-  seen      <- reactiveVal(NULL)
+  # The block last clicked in each view, by view id.
+  seen      <- reactiveVal(list())
   dismissed <- reactiveVal(FALSE)
   added     <- reactiveVal(character())
 
-  # dockview announces a change of the active panel only, so every block
-  # announced is a fresh click on it, including a click back from the
-  # assistant's own panel. That is what brings back a block left out.
-  observeEvent(panel(), {
+  # Every layout change, such as a resize, changes `view_data()`. A
+  # reactiveVal ignores an identical value, so only a new focus or a view
+  # switch goes on from here.
+  view  <- reactiveVal()
+  focus <- reactiveVal()
 
-    pid <- panel()
+  observe({
+    cur <- view_focus(view_data)
+    view(cur[["view"]])
+    focus(cur)
+  })
 
-    if (!is_block_panel(pid)) {
+  # A focus moved to a block panel is a fresh click on it, including a click
+  # back from the assistant's own panel. That is what brings back a block
+  # left out.
+  observeEvent(focus(), {
+
+    cur <- focus()
+
+    if (!is_block_panel(cur[["panel"]])) {
       return()
     }
 
-    seen(panel_obj_ids(pid))
+    upd <- isolate(seen())
+    upd[[cur[["view"]]]] <- panel_obj_ids(cur[["panel"]])
+    seen(upd)
+
     dismissed(FALSE)
   })
 
@@ -45,10 +60,10 @@ new_focus_state <- function(board, view_data, panel) {
 
   observe(in_view(view_focus_blocks(board, view_data)))
 
-  # A view switch moves the user's attention with it, so a click in another
-  # view does not count.
+  # A view switch moves the user's attention with it: each view has its own
+  # clicked block, which stands again when the user comes back to it.
   last_active <- reactive({
-    id <- seen()
+    id <- if (length(view())) seen()[[view()]]
     if (length(id) && id %in% in_view()) id
   })
 
@@ -111,6 +126,25 @@ new_focus_state <- function(board, view_data, panel) {
 
 is_block_panel <- function(x) {
   is.character(x) && length(x) == 1L && startsWith(x, "block_panel-")
+}
+
+# The current view and the dock's focus in it, a panel id or NULL. NULL
+# without a dock, or before it reports.
+view_focus <- function(view_data) {
+
+  live <- if (is.function(view_data)) view_data() else NULL
+
+  if (is.null(live)) {
+    return(NULL)
+  }
+
+  active <- tryCatch(active_view(live[["views"]]), error = function(e) NULL)
+
+  if (is.null(active)) {
+    return(NULL)
+  }
+
+  list(view = active, panel = live[["grids"]][[active]][["focus"]])
 }
 
 # The blocks in the active view, in screen order: panel group by panel group,

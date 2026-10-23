@@ -37,42 +37,40 @@ test_that("the clicked block is the last active, and the assistant is not", {
   brd <- focus_board()
   board <- reactiveValues(board = brd)
   vd <- reactiveVal(focus_view_data(brd))
-  pv <- reactiveVal()
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
+      st <- new_focus_state(board, vd)
     },
     {
       session$flushReact()
       expect_null(st$last_active())
 
-      pv("block_panel-b")
+      vd(focus_view_data(brd, focus = "block_panel-b"))
       session$flushReact()
       expect_identical(st$last_active(), "b")
 
-      # Clicking into the chat makes the assistant's panel active.
-      pv("ext_panel-assistant")
+      # Clicking into the chat makes the assistant's panel the focus.
+      vd(focus_view_data(brd, focus = "ext_panel-assistant"))
       session$flushReact()
       expect_identical(st$last_active(), "b")
 
-      pv("block_panel-c")
+      vd(focus_view_data(brd, focus = "block_panel-c"))
       session$flushReact()
       expect_identical(st$last_active(), "c")
     }
   )
 })
 
-test_that("a view switch drops the last active block of the view left", {
+test_that("each view keeps the block last clicked in it", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd))
-  pv <- reactiveVal("block_panel-b")
+  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-b"))
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
+      st <- new_focus_state(board, vd)
     },
     {
       session$flushReact()
@@ -84,8 +82,13 @@ test_that("a view switch drops the last active block of the view left", {
       expect_null(st$last_active())
       expect_identical(st$in_view(), "d")
 
-      # Back again, the click still stands.
-      vd(focus_view_data(brd, "one"))
+      vd(focus_view_data(brd, "two", focus = "block_panel-d"))
+      session$flushReact()
+      expect_identical(st$last_active(), "d")
+
+      # Back again, the click there still stands, though the dock now
+      # reports the assistant's panel, where the user clicked last.
+      vd(focus_view_data(brd, "one", focus = "ext_panel-assistant"))
       session$flushReact()
       expect_identical(st$last_active(), "b")
     }
@@ -118,7 +121,7 @@ test_that("the blocks in view change with the view, not with every click", {
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, reactiveVal())
+      st <- new_focus_state(board, vd)
       # An environment, as the test sees a copy of plain bindings.
       seen <- new.env()
       seen$n <- 0L
@@ -150,11 +153,11 @@ test_that("a last active block that leaves the board drops out", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  pv <- reactiveVal("block_panel-b")
+  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-b"))
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, NULL, pv)
+      st <- new_focus_state(board, vd)
     },
     {
       session$flushReact()
@@ -172,12 +175,11 @@ test_that("the x leaves the clicked block out until the next click", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  vd <- reactiveVal(focus_view_data(brd))
-  pv <- reactiveVal("block_panel-b")
+  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-b"))
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
+      st <- new_focus_state(board, vd)
     },
     {
       session$flushReact()
@@ -188,11 +190,11 @@ test_that("the x leaves the clicked block out until the next click", {
       expect_null(st$shown()$clicked)
       expect_null(st$last_active())
 
-      pv("ext_panel-assistant")
+      vd(focus_view_data(brd, focus = "ext_panel-assistant"))
       session$flushReact()
       expect_null(st$shown()$clicked)
 
-      pv("block_panel-b")
+      vd(focus_view_data(brd, focus = "block_panel-b"))
       session$flushReact()
       expect_identical(st$shown()$clicked, "b")
       expect_identical(st$last_active(), "b")
@@ -208,7 +210,7 @@ test_that("the @ changes the added blocks in view only", {
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, reactiveVal())
+      st <- new_focus_state(board, vd)
     },
     {
       session$flushReact()
@@ -241,11 +243,11 @@ test_that("a clicked block that is also added shows once", {
 
   brd <- focus_board()
   board <- reactiveValues(board = brd)
-  pv <- reactiveVal("block_panel-b")
+  vd <- reactiveVal(focus_view_data(brd, focus = "block_panel-b"))
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, reactiveVal(focus_view_data(brd)), pv)
+      st <- new_focus_state(board, vd)
     },
     {
       st$set(list("b"))
@@ -276,11 +278,10 @@ test_that("the row redraws for what it shows, not for every layout change", {
   }
 
   vd <- reactiveVal(layout("block_panel-b"))
-  pv <- reactiveVal("block_panel-b")
 
   testServer(
     function(input, output, session) {
-      st <- new_focus_state(board, vd, pv)
+      st <- new_focus_state(board, vd)
       drawn <- new.env()
       drawn$n <- 0L
       observe({
@@ -301,7 +302,7 @@ test_that("the row redraws for what it shows, not for every layout change", {
       session$flushReact()
       expect_identical(drawn$n, before)
 
-      pv("block_panel-c")
+      vd(layout("block_panel-c", front = "block_panel-c"))
       session$flushReact()
       expect_identical(drawn$n, before + 1L)
     }
