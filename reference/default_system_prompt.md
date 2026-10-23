@@ -13,6 +13,8 @@ default_system_prompt(
   view_data = NULL,
   skills = NULL,
   focus = NULL,
+  in_view = NULL,
+  last_active = NULL,
   ...
 )
 ```
@@ -48,9 +50,20 @@ default_system_prompt(
 - focus:
 
   Character vector of block IDs the user has singled out as what they
-  are working on, as reported by the extension's block picker. The focus
-  section is omitted when this is `NULL` or names no block still on
-  `board`.
+  are working on, as added with the `@` under the extension's composer.
+
+- in_view:
+
+  Character vector of the block IDs in the current view, in screen
+  order, as the extension reads them off the dock.
+
+- last_active:
+
+  The ID of the block the user last clicked in the current view, or
+  `NULL`, including when the user left it out.
+
+  The focus section, built from `focus`, `in_view` and `last_active`, is
+  omitted when none of them names a block still on `board`.
 
 - ...:
 

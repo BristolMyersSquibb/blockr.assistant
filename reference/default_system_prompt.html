@@ -63,6 +63,8 @@ compact board summary.</p>
 <span>  view_data <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  skills <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  focus <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  in_view <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  last_active <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -99,9 +101,21 @@ through the tools that describe their target.</p></dd>
 
 <dt id="arg-focus">focus<a class="anchor" aria-label="anchor" href="#arg-focus"></a></dt>
 <dd><p>Character vector of block IDs the user has singled
-out as what they are working on, as reported by the extension's
-block picker. The focus section is omitted when this is <code>NULL</code>
-or names no block still on <code>board</code>.</p></dd>
+out as what they are working on, as added with the <code>@</code> under the
+extension's composer.</p></dd>
+
+
+<dt id="arg-in-view">in_view<a class="anchor" aria-label="anchor" href="#arg-in-view"></a></dt>
+<dd><p>Character vector of the block IDs in the current
+view, in screen order, as the extension reads them off the dock.</p></dd>
+
+
+<dt id="arg-last-active">last_active<a class="anchor" aria-label="anchor" href="#arg-last-active"></a></dt>
+<dd><p>The ID of the block the user last clicked in
+the current view, or <code>NULL</code>, including when the user left it out.</p>
+<p>The focus section, built from <code>focus</code>, <code>in_view</code> and
+<code>last_active</code>, is omitted when none of them names a block still
+on <code>board</code>.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
