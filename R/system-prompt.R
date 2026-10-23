@@ -39,9 +39,16 @@
 #'   skills are listed here; block- and extension-scoped ones surface
 #'   through the tools that describe their target.
 #' @param focus Character vector of block IDs the user has singled
-#'   out as what they are working on, as reported by the extension's
-#'   block picker. The focus section is omitted when this is `NULL`
-#'   or names no block still on `board`.
+#'   out as what they are working on, as added with the `@` under the
+#'   extension's composer.
+#' @param in_view Character vector of the block IDs in the current
+#'   view, in screen order, as the extension reads them off the dock.
+#' @param last_active The ID of the block the user last clicked in
+#'   the current view, or `NULL`, including when the user left it out.
+#'
+#'   The focus section, built from `focus`, `in_view` and
+#'   `last_active`, is omitted when none of them names a block still
+#'   on `board`.
 #' @param ... Forward-compatibility slot for future inputs.
 #'
 #' @return A character scalar.
@@ -49,7 +56,8 @@
 #' @export
 default_system_prompt <- function(board = NULL, client = NULL,
                                   view_data = NULL, skills = NULL,
-                                  focus = NULL, ...) {
+                                  focus = NULL, in_view = NULL,
+                                  last_active = NULL, ...) {
 
   catalogue <- if (!is.null(skills)) {
     format_skill_catalogue(global_skills(skills))
@@ -68,7 +76,7 @@ default_system_prompt <- function(board = NULL, client = NULL,
   }
 
   focused <- if (!is.null(board)) {
-    format_focus(board, focus)
+    format_focus(board, focus, in_view, last_active)
   }
 
   focus_section <- if (!is.null(focused)) {
@@ -94,20 +102,70 @@ default_system_prompt <- function(board = NULL, client = NULL,
   )
 }
 
-format_focus <- function(board, focus) {
+format_focus <- function(board, focus, in_view = NULL,
+                         last_active = NULL) {
 
   blks <- board_blocks(isolate(board$board))
+
+  screen <- format_screen(names(blks), in_view, last_active)
+
   hits <- intersect(focus, names(blks))
 
-  if (!length(hits)) {
-    return(NULL)
-  }
-
-  paste(
+  picked <- if (length(hits)) {
     c(
       focus_preamble(),
       "",
       paste0("- ", hits, " ", chr_ply(blks[hits], str_value))
+    )
+  }
+
+  if (is.null(screen) && is.null(picked)) {
+    return(NULL)
+  }
+
+  paste(
+    c(screen, if (!is.null(screen) && !is.null(picked)) "", picked),
+    collapse = "\n"
+  )
+}
+
+# What the user has on screen: the blocks of the current view, and the one
+# they last clicked. A view that holds every block is not listed, since that
+# would only repeat the board summary, and without a click it says nothing.
+format_screen <- function(ids, in_view, last_active) {
+
+  in_view <- intersect(in_view, ids)
+  last_active <- intersect(last_active, in_view)
+
+  clicked <- if (length(last_active)) {
+    paste0("The user last clicked block ", last_active, ".")
+  }
+
+  if (!length(in_view) || (setequal(in_view, ids) && is.null(clicked))) {
+    return(NULL)
+  }
+
+  view <- if (setequal(in_view, ids)) {
+    "The current view shows every block on the board."
+  } else {
+    c(
+      "The current view shows these blocks, in screen order:",
+      paste0("- ", in_view)
+    )
+  }
+
+  c(screen_preamble(), "", view, clicked)
+}
+
+screen_preamble <- function() {
+  paste(
+    c(
+      "What the user is looking at on the board. A request that names",
+      "no block -- \"this plot\", \"add a filter here\" -- is most",
+      "likely about the block they last clicked, and otherwise about a",
+      "block in the current view. A click can be old, so where the",
+      "request fits that block poorly, or plainly names another, go",
+      "with the request."
     ),
     collapse = "\n"
   )

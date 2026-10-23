@@ -122,3 +122,37 @@ asst_app_driver <- function(app_dir, ..., options = list()) {
     options = modifyList(list(blockr.log_level = "debug"), options)
   )
 }
+
+# A press through the browser's input layer, not a synthetic DOM event, so
+# focus moves and dockview reacts as they do for a user. A `hold` keeps the
+# button down, which is when a redraw of the element under it loses the click.
+press_element <- function(app, selector, hold = 0) {
+
+  xy <- unlist(
+    app$get_js(
+      paste0(
+        "(() => { const r = document.querySelector(",
+        encodeString(selector, quote = "\""),
+        ").getBoundingClientRect();",
+        " return [r.x + r.width / 2, r.y + r.height / 2]; })()"
+      )
+    )
+  )
+
+  input <- app$get_chromote_session()$Input
+
+  input$dispatchMouseEvent(type = "mouseMoved", x = xy[[1L]], y = xy[[2L]])
+  input$dispatchMouseEvent(
+    type = "mousePressed", x = xy[[1L]], y = xy[[2L]], button = "left",
+    clickCount = 1L
+  )
+
+  Sys.sleep(hold)
+
+  input$dispatchMouseEvent(
+    type = "mouseReleased", x = xy[[1L]], y = xy[[2L]], button = "left",
+    clickCount = 1L
+  )
+
+  invisible(app)
+}
