@@ -209,16 +209,14 @@ focus_row <- function(ns, board, clicked, added, in_view) {
     if (length(clicked)) tag(clicked, "focus_dismiss"),
     lapply(added, tag, input = "focus_drop"),
     if (length(in_view)) {
-      tags$button(
-        type = "button",
-        class = "blockr-tool asst-focus-add",
-        `aria-label` = "Add a block from this view",
-        `data-blockr-tooltip` = "Add a block from this view",
+      blockr.ui::tool_button(
+        "@",
+        "Add a block from this view",
+        class = "asst-focus-add",
         `data-input` = ns("focus_set"),
         `data-blocks` = jsonlite::toJSON(choices, auto_unbox = TRUE),
         `data-picked` = jsonlite::toJSON(as.character(added)),
-        onclick = "Blockr.assistant.focusMenu(this)",
-        "@"
+        onclick = "Blockr.assistant.focusMenu(this)"
       )
     }
   )
