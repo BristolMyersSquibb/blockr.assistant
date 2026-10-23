@@ -94,7 +94,11 @@
   // menu. Picks are sent to the server as the full set of block ids, which
   // redraws the row of tags from it.
   Blockr.assistant.focusMenu = function (btn) {
-    if (!Blockr.Select || !Blockr.Select.menu) return;
+    // A Select without multi menus opens a single one, which sends one name
+    // where the server reads the whole set.
+    if (!Blockr.Select || !Blockr.Select.menuMulti) {
+      throw new Error("The @ menu needs blockr.ui's Select with multi menus");
+    }
 
     var blocks = JSON.parse(btn.getAttribute('data-blocks') || '[]');
     var picked = JSON.parse(btn.getAttribute('data-picked') || '[]');
