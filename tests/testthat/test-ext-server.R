@@ -1808,7 +1808,7 @@ test_that("a provider swap hands the client over instead of remounting", {
   )
 })
 
-test_that("a thread switch clears the block tags and the slate", {
+test_that("added blocks ride with the thread and a switch resets the slate", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -1838,17 +1838,24 @@ test_that("a thread switch clears the block tags and the slate", {
       session$flushReact()
       session$setInputs(focus_set = list("d"))
 
-      # The blocks added with the @ are not saved with the thread.
-      expect_null(on_save(list())[["focus"]])
+      # Board state carries `values` as plain JSON, which returns a character
+      # vector as a list, so the saved shape is a list either way.
+      expect_identical(on_save(list())[["focus"]], list("d"))
 
       stage_block_add(pending_update, board, "new", new_head_block())
       expect_true(isolate(has_any_changes(pending_update())))
 
+      # A thread saved without added blocks takes none over from this one.
       on_restore(list())
       session$flushReact()
 
       expect_false(isolate(has_any_changes(pending_update())))
       expect_identical(focus_r(), character())
+
+      on_restore(list(focus = list("d")))
+      session$flushReact()
+
+      expect_identical(focus_r(), "d")
     },
     args = list(
       board = reactiveValues(board = brd),

@@ -640,6 +640,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             # list, so saving one keeps both paths the same shape.
             mod$history$on_save(
               function(values) {
+                values[["focus"]] <- as.list(isolate(focus$added()))
                 values[["spent"]] <- as.list(isolate(spent()))
                 values
               }
@@ -1038,15 +1039,15 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           ignoreNULL = TRUE
         )
 
-        # The meter belongs to the conversation rather than the board, so a
-        # switch carries it over and a fresh thread opens without it. An
-        # absent value is the fresh case: nothing spent. The blocks added
-        # with the @ are not saved with a conversation, so none carry over.
+        # The blocks added with the @ and the meter belong to the conversation
+        # rather than the board, so a switch carries them over and a fresh
+        # thread opens without them. An absent value is the fresh case: no
+        # blocks added, nothing spent.
         restore_thread_state <- function(values) {
 
           meter <- unlst(values[["spent"]])
 
-          focus$reset()
+          focus$reset(unlst(values[["focus"]]))
 
           spent(if (length(meter) == 2L) as.integer(meter) else c(0L, 0L))
 

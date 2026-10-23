@@ -7,8 +7,9 @@
   Clicking into the assistant does not count as a click on a block, and a
   block that dock brings to the front, such as one the assistant adds, does.
   The @ next to the tags adds other blocks from the current view, which stay
-  until they are taken off. The model is also told which blocks the current
-  view holds. Added blocks are no longer saved with a conversation.
+  until they are taken off and are saved with the conversation, as the
+  picker's blocks were. The model is also told which blocks the current view
+  holds.
 
 * A deployment can now give the assistant tools of its own. A list of
   `ellmer::tool()` definitions set as the `blockr.assistant_tools`

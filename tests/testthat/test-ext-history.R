@@ -123,7 +123,7 @@ test_that("a second thread is stored beside the first", {
   )
 })
 
-test_that("switching threads restores the client", {
+test_that("switching threads restores the client and the added blocks", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -139,6 +139,7 @@ test_that("switching threads restores the client", {
 
       cl <- client_r()
 
+      session$setInputs(focus_set = list("d"))
       cl$set_turns(
         list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
       )
@@ -146,18 +147,27 @@ test_that("switching threads restores the client", {
 
       first <- ctrl$record$id
 
+      # The blocks added with the @ were captured with the thread, through the
+      # on_save hook this extension registers.
+      expect_identical(ctrl$record$values[["focus"]], list("d"))
+
       ctrl$new_chat()
+      session$flushReact()
+      expect_identical(focus_r(), character())
+
       cl$set_turns(
         list(ellmer::Turn("user", "two"), ellmer::Turn("assistant", "second"))
       )
       ctrl$on_response(recorded(cl))
 
       ctrl$switch_to(first)
+      session$flushReact()
 
       expect_identical(
         lapply(cl$get_turns(), ellmer::contents_text),
         list("one", "first")
       )
+      expect_identical(focus_r(), "d")
     },
     args = list(
       board = reactiveValues(board = brd),
@@ -634,6 +644,7 @@ test_that("/clear keeps the thread on screen and opens a new one", {
 
       cl <- client_r()
 
+      session$setInputs(focus_set = list("d"))
       spent(c(100L, 20L))
       cl$set_turns(
         list(ellmer::Turn("user", "one"), ellmer::Turn("assistant", "first"))
@@ -650,7 +661,9 @@ test_that("/clear keeps the thread on screen and opens a new one", {
 
       kept <- thread_store$threads()[[first]]
 
+      expect_identical(kept$values[["focus"]], list("d"))
       expect_identical(kept$values[["spent"]], list(100L, 20L))
+      expect_identical(focus_r(), character())
 
       expect_null(ctrl$record)
       expect_length(cl$get_turns(), 0L)

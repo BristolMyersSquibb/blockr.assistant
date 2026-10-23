@@ -99,10 +99,11 @@ new_focus_state <- function(board, view_data, panel) {
       dismissed(TRUE)
       invisible()
     },
-    # A new or restored conversation starts without the blocks added with
-    # the @. The clicked block stays: the board has not changed.
-    reset = function() {
-      added(character())
+    # The blocks added with the @ belong to the conversation: a new one
+    # starts without any, a restored one with its own. The clicked block
+    # stays, since the board has not changed.
+    reset = function(ids = character()) {
+      added(as.character(ids))
       invisible()
     }
   )
