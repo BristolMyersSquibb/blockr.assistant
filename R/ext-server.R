@@ -276,16 +276,6 @@ asst_ext_styles <- function() {
         background: var(--blockr-color-bg-surface);
         color: var(--blockr-color-text-default);
       }
-      /* blockr.dock's stylesheet redefines .blockr-block-mark for its own
-         header (32px, colour from an inline variable) and loads after
-         blockr.ui's, so the 16px mark is restated here. */
-      .asst-focus-row .blockr-block-mark {
-        width: 16px;
-        height: 16px;
-        border-radius: 4px;
-        font-size: 10px;
-        background: color-mix(in srgb, currentColor 18%, transparent);
-      }
       /* The @ takes the tags' 24px rather than a tool's 26px, so it lines
          up with them. */
       .asst-focus-row .asst-focus-add {
