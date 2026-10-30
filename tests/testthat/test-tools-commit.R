@@ -670,3 +670,54 @@ test_that("a commit reads back an off-screen block its edit breaks", {
     args = assistant_board_args(brd, visible = "data")
   )
 })
+
+# The provider caches tools and system prompt as the prefix of every request,
+# so either one changing between two requests has the whole conversation
+# written to the cache again.
+test_that("system prompt and tools hold still through a turn", {
+
+  live <- local_live_client()
+
+  brd <- new_board(blocks = c(data = new_dataset_block("iris")))
+
+  testServer(
+    getS3method("board_server", "board"),
+    {
+      session$flushReact()
+
+      request <- function() {
+        list(
+          prompt = live$client$get_system_prompt(),
+          tools = live$client$get_tools()
+        )
+      }
+
+      live$mod$last_input("Show the first rows")
+      session$flushReact()
+
+      first <- request()
+
+      expect_match(first$prompt, "1 block(s)", fixed = TRUE)
+
+      tools <- live$client$get_tools()
+
+      tools$describe_block_type("head_block")
+      tools$add_block(type = "head_block", args = "{}", id = "top")
+      tools$add_link(from = "data", to = "top", input = "data")
+
+      res <- drain_promise(tools$commit(), session)
+
+      expect_match(res, "## Board after this commit", fixed = TRUE)
+      expect_match(res, "top <head_block>", fixed = TRUE)
+      expect_identical(request(), first)
+
+      # The commit result showed the model the board, so the next turn keeps
+      # the prompt too.
+      live$mod$last_input("Now sort them")
+      session$flushReact()
+
+      expect_identical(request(), first)
+    },
+    args = assistant_board_args(brd, visible = "data")
+  )
+})

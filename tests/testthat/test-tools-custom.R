@@ -102,7 +102,8 @@ test_that("server builds every client with the deployment's tools", {
 
   withr::local_options(
     blockr.chat_function = list(A = fake_chat_function, B = fake_b),
-    blockr.assistant_tools = list(custom_tool())
+    blockr.assistant_tools = list(custom_tool()),
+    blockr.assistant_block_tool_pool = 5L
   )
 
   testServer(

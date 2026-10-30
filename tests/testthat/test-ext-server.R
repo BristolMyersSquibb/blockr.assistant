@@ -326,7 +326,10 @@ test_that("string system_prompt is used verbatim and stored in state", {
 
 test_that("server registers the read and mutation tools on the client", {
 
-  withr::local_options(blockr.chat_function = fake_chat_function)
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_block_tool_pool = 5L
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt),
@@ -367,7 +370,10 @@ test_that("server registers the read and mutation tools on the client", {
 
 test_that("describing a block type arms its typed tool on the client", {
 
-  withr::local_options(blockr.chat_function = fake_chat_function)
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_block_tool_pool = 5L
+  )
 
   testServer(
     asst_ext_srv(system_prompt = default_system_prompt),
@@ -425,7 +431,10 @@ test_that("a fresh user turn lets the pool reclaim an armed tool", {
 
 test_that("a dock board additionally registers the extension tools", {
 
-  withr::local_options(blockr.chat_function = fake_chat_function)
+  withr::local_options(
+    blockr.chat_function = fake_chat_function,
+    blockr.assistant_block_tool_pool = 5L
+  )
 
   brd <- new_dock_board(
     blocks = c(a = new_dataset_block("iris")),
@@ -810,7 +819,7 @@ test_that("static string system_prompt is used verbatim each refresh", {
   )
 })
 
-test_that("board$board change triggers a fresh prompt", {
+test_that("a board change reaches the prompt as the next turn starts", {
 
   withr::local_options(blockr.chat_function = fake_chat_function)
 
@@ -824,6 +833,10 @@ test_that("board$board change triggers a fresh prompt", {
 
       board$board <- new_board(blocks = c(x = new_dataset_block("iris")))
       session$flushReact()
+
+      expect_identical(client_r()$get_system_prompt(), before)
+
+      on_user_input()
 
       after <- client_r()$get_system_prompt()
       expect_match(after, "1 block(s)", fixed = TRUE)
@@ -863,6 +876,7 @@ test_that("a throwing system_prompt function keeps the prior prompt", {
         blocks = c(x = new_dataset_block("iris"))
       )
       session$flushReact()
+      on_user_input()
 
       # composer threw -> prompt unchanged
       expect_identical(client_r()$get_system_prompt(), "FIRST")
@@ -895,7 +909,10 @@ test_that("llm_model swap rebuilds the client and migrates turns", {
   }
 
   opts <- list(A = fake_a, B = fake_b)
-  withr::local_options(blockr.chat_function = opts)
+  withr::local_options(
+    blockr.chat_function = opts,
+    blockr.assistant_block_tool_pool = 5L
+  )
 
   sess <- with_llm_session()
 
@@ -1633,6 +1650,7 @@ test_that("a picker selection reaches the model's system prompt", {
       )
 
       session$setInputs(focus = "b")
+      on_user_input()
 
       expect_match(
         client_r()$get_system_prompt(),
@@ -1641,6 +1659,7 @@ test_that("a picker selection reaches the model's system prompt", {
       )
 
       session$setInputs(focus = character())
+      on_user_input()
 
       expect_no_match(
         client_r()$get_system_prompt(), "## Focus", fixed = TRUE
@@ -1672,6 +1691,7 @@ test_that("removing a focused block drops it from the prompt", {
 
       board$board <- new_board(blocks = c(a = new_dataset_block("iris")))
       session$flushReact()
+      on_user_input()
 
       prompt <- client_r()$get_system_prompt()
 
@@ -1850,6 +1870,27 @@ test_that("saving state survives a module with no history save", {
 
       expect_true(is_thread_set(saved))
       expect_length(thread_turns(saved[["c_restored"]]), 2L)
+    },
+    args = list(
+      board = reactiveValues(board = blockr.core::new_board()),
+      update = reactiveVal()
+    ),
+    session = with_llm_session()
+  )
+})
+
+test_that("a registry that fits the pool has its typed tools from the start", {
+
+  withr::local_options(blockr.chat_function = fake_chat_function)
+
+  testServer(
+    asst_ext_srv(system_prompt = default_system_prompt),
+    {
+      session$flushReact()
+
+      tools <- names(client_r()$get_tools())
+
+      expect_true(all(c("add_head_block", "modify_subset_block") %in% tools))
     },
     args = list(
       board = reactiveValues(board = blockr.core::new_board()),

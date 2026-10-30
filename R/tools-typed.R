@@ -455,8 +455,26 @@ new_block_tool_pool <- function(client, board, pending, session) {
     armed_note(kind, type)
   }
 
+  # Every change to the tool list invalidates the provider's prompt cache from
+  # the top, so a registry small enough to fit the pool is armed whole when
+  # the client is built and the list stays the same for the conversation.
+  preload = function(types) {
+
+    if (length(types) > block_tool_pool_size()) {
+      return(invisible())
+    }
+
+    for (type in types) {
+      arm("add", type)
+      arm("modify", type)
+    }
+
+    invisible()
+  }
+
   list(
     arm = arm,
+    preload = preload,
     note = note,
     new_turn = function() {
       state$turn <- state$turn + 1L
