@@ -135,6 +135,7 @@ local_live_client <- function() {
 
   live <- new.env()
   mod <- fake_chat_mod()
+  live$mod <- mod
 
   withr::local_options(
     blockr.chat_function = function(system_prompt = NULL, params = NULL) {

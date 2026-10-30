@@ -550,6 +550,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
             )
           }
 
+          pool$preload(list_blocks())
+
           # The deployment's tools go last: their names are checked against
           # the ones registered before them.
           register_custom_tools(cl)
@@ -762,6 +764,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           turns <- c(compacted_turns(summary, kept), arrived)
 
           cl$set_turns(turns)
+          forget_seen()
           replay_transcript(mod, turns, session)
           replace_active_thread(session)
 
@@ -858,15 +861,52 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           )
         })
 
+        # The system prompt is set when the client is built and otherwise only
+        # as a user turn starts, never while the model works through one. The
+        # provider caches the prompt as a prefix, so a prompt that changed
+        # between two requests of a turn had the whole conversation written to
+        # the cache again. What the model knows of the board as it works comes
+        # from its commit results instead, each of which ends with the board
+        # summary, and `seen` records the last board and focus it was shown.
+        # A turn starts on a fresh prompt only when they no longer match: the
+        # user changed the board or the focus, or the thread no longer carries
+        # them. The board is compared without its eval-status markers. A block
+        # turns stale off screen without anyone touching the board, and
+        # telling the model so is not worth writing the conversation again.
+        seen <- new.env(parent = emptyenv())
+
+        forget_seen <- function() {
+          seen$board <- NULL
+          seen$focus <- NULL
+          invisible()
+        }
+
+        forget_seen()
+
+        board_summary <- function() {
+          isolate(summarise_board(board, view_data))
+        }
+
+        board_shape <- function() {
+          isolate(
+            describe_board(board$board, character(), view_data = view_data)
+          )
+        }
+
         refresh_prompt <- function() {
 
-          cl <- client_r()
+          cl <- isolate(client_r())
           if (is.null(cl)) return(invisible())
 
+          focus <- isolate(focus_r())
+          shape <- board_shape()
+
           prompt <- tryCatch(
-            compose(
-              board, cl, view_data = view_data, skills = skill_catalogue(),
-              focus = focus_r()
+            isolate(
+              compose(
+                board, cl, view_data = view_data, skills = skill_catalogue(),
+                focus = focus
+              )
             ),
             error = function(e) {
               notify(
@@ -882,15 +922,31 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           if (!is.null(prompt)) {
             cl$set_system_prompt(prompt)
+            seen$board <- shape
+            seen$focus <- focus
           }
+
+          invisible()
         }
 
-        observe({
-          board$board
-          client_r()
-          focus_r()
-          refresh_prompt()
-        })
+        refresh_prompt_if_unseen <- function() {
+
+          if (!identical(seen$board, board_shape()) ||
+                !identical(seen$focus, isolate(focus_r()))) {
+            refresh_prompt()
+          }
+
+          invisible()
+        }
+
+        with_board_summary <- function(msg) {
+
+          seen$board <- board_shape()
+
+          paste0(msg, "\n\n## Board after this commit\n", board_summary())
+        }
+
+        observeEvent(client_r(), refresh_prompt())
 
         last_input_r <- reactive(req(mod_r())$last_input())
         last_turn_r  <- reactive(req(mod_r())$last_turn())
@@ -981,7 +1037,9 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
               review <- flush_review(commit_bridge$baseline(), commit_header())
 
               settle_commit(
-                coal(review, commit_clean_note(), fail_all = FALSE)
+                with_board_summary(
+                  coal(review, commit_clean_note(), fail_all = FALSE)
+                )
               )
             })
           )
@@ -1095,6 +1153,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
 
           spent(if (length(meter) == 2L) as.integer(meter) else c(0L, 0L))
 
+          forget_seen()
+
           invisible()
         }
 
@@ -1132,6 +1192,8 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           if (!is.null(pool)) {
             pool$new_turn()
           }
+
+          refresh_prompt_if_unseen()
 
           if (isolate(report$injecting)) {
             report$injecting <- FALSE
