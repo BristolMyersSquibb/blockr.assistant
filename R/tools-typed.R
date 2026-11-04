@@ -401,9 +401,9 @@ new_block_tool_pool <- function(client, board, pending, session) {
     }
 
     # Pool tools are minted after the client is built, so they miss the
-    # one-shot pass over the registered set and would show in the transcript
-    # under their bare function name.
-    client$register_tool(annotate_tool_title(tool))
+    # one-shot pass over the registered set: they would show in the transcript
+    # under their bare function name and return unserialised results.
+    client$register_tool(prepare_tool(tool))
 
     state$counter <- state$counter + 1L
     state$entries[[key]] <- list(

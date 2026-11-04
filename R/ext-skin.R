@@ -81,13 +81,6 @@ annotate_tool_title <- function(tool) {
   tool
 }
 
-annotate_tool_titles <- function(client) {
-
-  client$set_tools(lapply(client$get_tools(), annotate_tool_title))
-
-  invisible(client)
-}
-
 asst_skin_styles <- function() {
   tags$style(
     HTML(

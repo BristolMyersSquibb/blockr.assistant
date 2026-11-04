@@ -378,7 +378,9 @@ test_that("describing a block type arms its typed tool on the client", {
 
       expect_false("add_head_block" %in% names(client$get_tools()))
 
-      res <- client$get_tools()[["describe_block_type"]]("head_block")
+      res <- jsonlite::fromJSON(
+        client$get_tools()[["describe_block_type"]]("head_block")
+      )
 
       expect_match(res$typed_tool, "add_head_block")
       expect_true("add_head_block" %in% names(client$get_tools()))
@@ -404,7 +406,8 @@ test_that("a fresh user turn lets the pool reclaim an armed tool", {
       session$flushReact()
 
       client <- client_r()
-      describe <- client$get_tools()[["describe_block_type"]]
+      describe_tool <- client$get_tools()[["describe_block_type"]]
+      describe <- function(type) jsonlite::fromJSON(describe_tool(type))
 
       describe("head_block")
 
@@ -482,7 +485,10 @@ test_that("server threads view_data into the prompt and the view tools", {
         fixed = TRUE
       )
 
-      views  <- client_r()$get_tools()$list_views()
+      views  <- jsonlite::fromJSON(
+        client_r()$get_tools()$list_views(),
+        simplifyVector = FALSE
+      )
       ids    <- vapply(views, function(x) x$id, character(1L))
       active <- vapply(views, function(x) x$active, logical(1L))
       expect_identical(active[ids == "v_over"], TRUE)
@@ -511,6 +517,10 @@ test_that("registered list_blocks tool reflects the live board contents", {
       session$flushReact()
 
       res <- client_r()$get_tools()$list_blocks()
+
+      expect_identical(class(res), "character")
+
+      res <- jsonlite::fromJSON(res)
 
       expect_s3_class(res, "data.frame")
       expect_setequal(res$id, c("d", "h"))

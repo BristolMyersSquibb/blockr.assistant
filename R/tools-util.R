@@ -10,6 +10,56 @@ with_tool_errors <- function(expr) {
   )
 }
 
+# Every tool hands ellmer a plain string. Left to ellmer, a list or data.frame
+# result is converted to JSON for us, which ellmer 0.5.0 deprecates, and the
+# JSON-object tool content it then sends is rejected (HTTP 400) by stricter
+# OpenAI-compatible gateways. A `json`-classed string, ellmer's suggested
+# replacement, goes out as that same JSON-object content, so the class is
+# dropped as well and only a bare character vector goes out as text. The
+# encoding is the one ellmer applied itself, so the model reads the same
+# payload as before. Wrapping at registration rather
+# than in each `ellmer::tool()` also covers the typed pool and the deployment's
+# own tools. A `ToolDef` is a closure carrying its props as attributes, so the
+# wrapper takes them over as is.
+as_text_tool <- function(tool) {
+
+  res <- function(...) tool_result_text(tool(...))
+  attributes(res) <- attributes(tool)
+
+  res
+}
+
+tool_result_text <- function(x) {
+
+  if (promises::is.promise(x)) {
+    return(promises::then(x, tool_result_text))
+  }
+
+  if (inherits(x, "ellmer::ContentToolResult")) {
+    return(x)
+  }
+
+  if (!is.character(x)) {
+    x <- jsonlite::toJSON(x, auto_unbox = TRUE)
+  }
+
+  as.character(x)
+}
+
+# What every tool goes through on its way into the client: once over the
+# registered set when the client is built, and again for each typed tool the
+# pool mints afterwards.
+prepare_tool <- function(tool) {
+  as_text_tool(annotate_tool_title(tool))
+}
+
+prepare_tools <- function(client) {
+
+  client$set_tools(lapply(client$get_tools(), prepare_tool))
+
+  invisible(client)
+}
+
 parse_args_json <- function(s, tool) {
 
   if (!nzchar(s)) {
