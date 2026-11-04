@@ -1,5 +1,11 @@
 # blockr.assistant (development version)
 
+* The assistant works again with ellmer 0.5.0 behind stricter
+  OpenAI-compatible gateways. Its tools, and those a deployment adds, now
+  hand ellmer their results as plain text:
+  ellmer 0.5.0 sends a list, a data.frame or a `jsonlite::toJSON()` string
+  as a JSON object instead, which those gateways reject with HTTP 400.
+
 * The assistant's block picker is replaced by tags under the composer, and
   the tags show what the model is told. The block the user last clicked in
   the current view shows as a tag and goes with every message, with nothing
