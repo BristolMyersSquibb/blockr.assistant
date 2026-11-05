@@ -63,27 +63,35 @@ tool_message <- function(request) {
   Filter(function(m) identical(m$role, "tool"), request$messages)[[1L]]
 }
 
-test_that("a tool result ellmer accepts is handed over as it is", {
+test_that("a Content tool result is handed over as it is", {
 
-  json <- jsonlite::toJSON(list(id = "d"), auto_unbox = TRUE)
   text <- ellmer::ContentText("a")
   failed <- ellmer::ContentToolResult(error = "boom")
 
   expect_identical(normalize_tool_result("a"), "a")
-  expect_identical(normalize_tool_result(json), json)
   expect_identical(normalize_tool_result(text), text)
   expect_identical(normalize_tool_result(list(text, text)), list(text, text))
   expect_identical(normalize_tool_result(failed), failed)
 })
 
-test_that("any other tool result becomes JSON, as ellmer would make it", {
+test_that("any other tool result becomes a plain-character JSON string", {
+
+  # Plain character, never `json`-classed: ellmer sends a `json`-classed value
+  # as a toolResult `json` content block the BMS gateway rejects; a plain string
+  # goes out as text.
+  json <- jsonlite::toJSON(list(id = "d"), auto_unbox = TRUE)
+  res_json <- normalize_tool_result(json)
+  expect_type(res_json, "character")
+  expect_false(inherits(res_json, "json"))
+  expect_identical(res_json, "{\"id\":\"d\"}")
 
   frame <- normalize_tool_result(data.frame(id = c("d", "h")))
+  expect_type(frame, "character")
+  expect_false(inherits(frame, "json"))
+  expect_identical(frame, "[{\"id\":\"d\"},{\"id\":\"h\"}]")
 
-  expect_s3_class(frame, "json")
-  expect_identical(unclass(frame), "[{\"id\":\"d\"},{\"id\":\"h\"}]")
-  expect_identical(unclass(normalize_tool_result(NULL)), "{}")
-  expect_identical(unclass(normalize_tool_result(list(n = 1L))), "{\"n\":1}")
+  expect_identical(normalize_tool_result(NULL), "{}")
+  expect_identical(normalize_tool_result(list(n = 1L)), "{\"n\":1}")
   expect_identical(normalize_tool_result(c("a", "b")), "a\nb")
 })
 
@@ -137,7 +145,8 @@ test_that("every registered tool has its results converted", {
   tools <- client$get_tools()
 
   expect_identical(unclass(tools$nothing()), "{}")
-  expect_s3_class(tools$frame(), "json")
+  expect_type(tools$frame(), "character")
+  expect_false(inherits(tools$frame(), "json"))
 })
 
 test_that("a NULL result reaches the provider as a string", {

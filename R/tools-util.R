@@ -33,7 +33,8 @@ prepare_tools <- function(client) {
 # Content when a tool returns it, and warns that this is deprecated.
 # A `NULL` result and the value of a returned ContentToolResult skip that
 # conversion and reach the provider raw, where it expects a string.
-# The conversion here is the one ellmer makes itself.
+# We make that conversion here, but to a plain-character JSON string rather than
+# a `json`-classed value, so the result leaves as a text block (see below).
 normalize_tool_result <- function(x) {
 
   if (promises::is.promise(x)) {
@@ -49,7 +50,9 @@ normalize_tool_result <- function(x) {
     return(x)
   }
 
-  if (inherits(x, "json") || inherits(x, "ellmer::Content")) {
+  # Content objects (and lists of them) are serialised by the provider, so pass
+  # them through untouched.
+  if (inherits(x, "ellmer::Content")) {
     return(x)
   }
 
@@ -62,7 +65,18 @@ normalize_tool_result <- function(x) {
     return(paste(x, collapse = "\n"))
   }
 
-  jsonlite::toJSON(x, auto_unbox = TRUE)
+  # Everything else becomes a plain-character JSON *string*, never a `json`-
+  # classed value. ellmer routes a `json`-classed tool result into a
+  # `toolResult.content[].json` block, which the BMS LLM Gateway rejects
+  # ("the format of the value at ...toolResult.content.0.json is invalid.
+  # Provide a json object"). A plain string goes out as a text block that every
+  # provider accepts. A value that is already `json` just drops its class;
+  # anything else is serialised and then unclassed.
+  if (inherits(x, "json")) {
+    return(as.character(x))
+  }
+
+  as.character(jsonlite::toJSON(x, auto_unbox = TRUE))
 }
 
 parse_args_json <- function(s, tool) {
