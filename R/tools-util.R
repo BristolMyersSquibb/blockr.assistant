@@ -10,10 +10,6 @@ with_tool_errors <- function(expr) {
   )
 }
 
-# What every tool goes through on its way into the client:
-# once over the registered set when the client is built,
-# and again for each typed tool the pool mints afterwards.
-# The tool is titled, and normalize_tool_result() converts its results.
 # A `ToolDef` is a closure that carries its props as attributes,
 # so the wrapper takes them over as they are.
 prepare_tool <- function(tool) {
@@ -33,17 +29,11 @@ prepare_tools <- function(client) {
   invisible(client)
 }
 
-# A tool's result has to reach ellmer in a shape that ellmer accepts:
-# a string, a `json` value, a Content object or a list of them.
-# Since 0.5.0, ellmer converts any other result to JSON when a tool returns.
-# That conversion is deprecated, and ellmer warns about it.
-# Two results skip that step and reach the provider as they are:
-# a `NULL` result, and the value of a ContentToolResult that the tool returns
-# (tidyverse/ellmer#1136).
-# They go out as JSON `null`, an object or an array where the provider
-# expects a string.
-# So every result is converted here, with the call ellmer makes itself.
-# A promise is converted once it resolves.
+# Since 0.5.0, ellmer converts a result that is not a string, `json` or
+# Content when a tool returns it, and warns that this is deprecated.
+# A `NULL` result and the value of a returned ContentToolResult skip that
+# conversion and reach the provider raw, where it expects a string.
+# The conversion here is the one ellmer makes itself.
 normalize_tool_result <- function(x) {
 
   if (promises::is.promise(x)) {

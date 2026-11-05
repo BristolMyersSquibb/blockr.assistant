@@ -1,7 +1,5 @@
-# One tool call through ellmer against mocked responses:
-# the model calls `tool` with `arguments`,
-# and the request that follows is decoded from the bytes curl would send.
-# That request is what the provider reads of the tool's result.
+# One tool call through ellmer against mocked responses.
+# Returns the request that follows it, decoded from the bytes curl would send.
 request_after_tool_call <- function(tool, arguments = "{}") {
 
   reply <- function(message, finish) {
@@ -116,10 +114,9 @@ test_that("a promised tool result is converted once it resolves", {
   expect_identical(unclass(out$value), "{\"id\":\"d\"}")
 })
 
-# A data.frame that reached ellmer would go out the same,
-# converted by ellmer itself, with its deprecation warning.
-# That warning is shown once a session, and never to expect_no_warning(),
-# so the test reads what ellmer is handed.
+# Handed a data.frame, ellmer would send the same JSON with a deprecation
+# warning, which shows once a session and never to expect_no_warning().
+# So the test reads what ellmer is handed.
 test_that("every registered tool has its results converted", {
 
   client <- fake_chat_function()

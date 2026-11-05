@@ -102,7 +102,6 @@ save_ready_thread <- function(record, save_turns) {
   map_record_turns(record, drop_raw_response)
 }
 
-# Applies `fun` to every recorded turn of a conversation record.
 map_record_turns <- function(record, fun) {
 
   record[["nodes"]] <- lapply(
@@ -129,13 +128,9 @@ has_content <- function(rec, class) {
   any(chr_xtr(rec[["props"]][["contents"]], "class") == class)
 }
 
-# A thread saved under ellmer 0.4 holds each tool result as the tool returned
-# it, a list or data.frame included.
-# That version converted a result to JSON only at the moment of sending.
-# Since 0.5.0, ellmer sends a replayed result as it is,
-# as an object or an array where the provider expects a string.
-# A saved `NULL` result goes out as JSON `null` in the same way.
-# Such results are converted once, when the thread store is built.
+# A thread saved under ellmer 0.4 holds a tool's list or data.frame result
+# as the tool returned it: that version converted results only to send them.
+# Since 0.5.0, ellmer sends such a replayed result, and a saved `NULL`, raw.
 normalize_thread_results <- function(threads) {
   lapply(threads, map_record_turns, normalize_turn_results)
 }
@@ -165,9 +160,6 @@ normalize_recorded_result <- function(rec) {
   rec
 }
 
-# Content that a tool returned, such as an image, is recorded as a list that
-# carries the class of the object.
-# Replayed, the list is Content again.
 is_recorded_content <- function(x) {
 
   is_record <- function(el) {
