@@ -4,7 +4,7 @@
 # blob lands stays this package's decision rather than something the history
 # UI can see.
 new_thread_store <- function(threads = list()) {
-  thread_store_class$new(threads)
+  thread_store_class$new(normalize_thread_results(threads))
 }
 
 thread_store_class <- R6Class(

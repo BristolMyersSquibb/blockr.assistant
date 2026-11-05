@@ -11,7 +11,8 @@ tool_request_turn <- function(id = "c1") {
   )
 }
 
-tool_result_turn <- function(id = "c1") {
+tool_result_turn <- function(id = "c1", value = "added block dataset_1",
+                             error = NULL) {
   ellmer::Turn(
     "user",
     list(
@@ -21,11 +22,13 @@ tool_result_turn <- function(id = "c1") {
           name = "add_block",
           arguments = list(type = "dataset")
         ),
-        value = "added block dataset_1"
+        value = value,
+        error = error
       )
     )
   )
 }
+
 
 test_that("a serialized thread replays as the turns it came from", {
 
@@ -80,6 +83,57 @@ test_that("the raw provider response is not saved", {
     back[["c_1"]][["nodes"]][["n_0001"]][["turns"]][[1]]$props$json,
     0L
   )
+})
+
+test_that("a thread saved with raw tool results replays them as JSON", {
+
+  # Under ellmer 0.4, a data.frame was recorded as the tool returned it,
+  # and a NULL result was recorded as NULL until tool results were converted.
+  turns <- list(
+    ellmer::Turn("user", "what is on the board?"),
+    tool_request_turn("c1"),
+    tool_result_turn("c1", value = data.frame(id = c("d", "h"))),
+    tool_request_turn("c2"),
+    tool_result_turn("c2", value = NULL),
+    ellmer::Turn("assistant", "Two blocks.")
+  )
+
+  saved <- via_board_file(list(c_1 = fake_thread(turns)))
+
+  record <- new_thread_store(saved)$get("p", "c_1")
+  replayed <- lapply(thread_turns(record), ellmer::contents_replay)
+
+  expect_identical(
+    unclass(replayed[[3L]]@contents[[1L]]@value),
+    "[{\"id\":\"d\"},{\"id\":\"h\"}]"
+  )
+  expect_identical(unclass(replayed[[5L]]@contents[[1L]]@value), "{}")
+})
+
+test_that("saved tool results that ellmer accepts are kept as they are", {
+
+  turns <- list(
+    ellmer::Turn("user", "show me"),
+    tool_request_turn("c1"),
+    tool_result_turn("c1"),
+    tool_request_turn("c2"),
+    tool_result_turn(
+      "c2",
+      value = jsonlite::toJSON(list(id = "d"), auto_unbox = TRUE)
+    ),
+    tool_request_turn("c3"),
+    tool_result_turn(
+      "c3",
+      value = list(ellmer::ContentText("a"), ellmer::ContentText("b"))
+    ),
+    tool_request_turn("c4"),
+    tool_result_turn("c4", value = NULL, error = "boom"),
+    ellmer::Turn("assistant", "Done.")
+  )
+
+  saved <- via_board_file(list(c_1 = fake_thread(turns)))
+
+  expect_identical(new_thread_store(saved)$get("p", "c_1"), saved[["c_1"]])
 })
 
 test_that("nothing is saved without threads or budget", {
