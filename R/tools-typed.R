@@ -155,12 +155,51 @@ block_tool_types <- function(kind, type) {
 block_tool_fun <- function(arg_names, handler) {
 
   fun <- function() {
-    handler(compact(mget(names(formals(sys.function())))))
+    args <- compact(mget(names(formals(sys.function()))))
+    handler(lapply(args, as_block_value))
   }
 
   formals(fun) <- set_names(rep(list(NULL), length(arg_names)), arg_names)
 
   fun
+}
+
+# ellmer converts an array of objects into a data frame, one column per member,
+# with `NA` where a record left a member out, and an enum inside it into a
+# factor. Blocks take a list of records, and one that iterates over its records
+# would walk the columns instead; one that switch()es on an enum would read the
+# factor's integer code. So a data frame goes back to records, a factor back to
+# character, and a member that came back `NULL` or `NA` is dropped, since the
+# record did not set it.
+as_block_value <- function(x) {
+
+  if (is.factor(x)) {
+    return(as.character(x))
+  }
+
+  if (is.data.frame(x)) {
+    x <- lapply(
+      seq_len(nrow(x)),
+      function(i) lapply(x, function(col) col[[i]])
+    )
+  }
+
+  if (!is.list(x)) {
+    return(x)
+  }
+
+  x <- lapply(x, as_block_value)
+
+  if (is.null(names(x))) {
+    return(x)
+  }
+
+  unset <- lgl_ply(
+    x,
+    function(v) is.null(v) || (is.atomic(v) && length(v) == 1L && is.na(v))
+  )
+
+  x[!unset]
 }
 
 block_type_blurb <- function(type) {
