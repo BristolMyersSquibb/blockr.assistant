@@ -1,10 +1,17 @@
 # blockr.assistant (development version)
 
-* The assistant works again with ellmer 0.5.0 behind stricter
-  OpenAI-compatible gateways. Its tools, and those a deployment adds, now
-  hand ellmer their results as plain text:
-  ellmer 0.5.0 sends a list, a data.frame or a `jsonlite::toJSON()` string
-  as a JSON object instead, which those gateways reject with HTTP 400.
+* The assistant works with ellmer 0.5.0 again.
+  That version sends three kinds of tool result to the provider unconverted:
+  a `NULL` result, the value of a `ContentToolResult` that a tool returns,
+  and the tool results of a thread saved with an earlier ellmer.
+  The provider then rejects the request with HTTP 400.
+  A tool result that is not a string, JSON or `Content` is now converted to
+  JSON, the way ellmer converts a list or data.frame.
+  This covers the assistant's own tools and those a deployment adds.
+  The tool results of a saved thread are converted when the thread is
+  restored.
+  This also stops ellmer 0.5.0's warning about converting tool results to
+  JSON.
 
 * The assistant's block picker is replaced by tags under the composer, and
   the tags show what the model is told. The block the user last clicked in
