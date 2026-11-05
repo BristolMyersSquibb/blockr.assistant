@@ -2,6 +2,18 @@
 
 ## blockr.assistant (development version)
 
+- The assistant works with ellmer 0.5.0 again. That version sends three
+  kinds of tool result to the provider unconverted: a `NULL` result, the
+  value of a `ContentToolResult` that a tool returns, and the tool
+  results of a thread saved with an earlier ellmer. Each reaches the
+  provider as JSON `null`, an object or an array instead of a string,
+  and a stricter provider rejects the request with HTTP 400. A tool
+  result that is not a string, JSON or `Content` is now converted to
+  JSON, the way ellmer converts a list or data.frame. This covers the
+  assistant’s own tools and those a deployment adds. The tool results of
+  a saved thread are converted when the thread is restored. This also
+  stops ellmer 0.5.0’s warning about converting tool results to JSON.
+
 - The assistant’s block picker is replaced by tags under the composer,
   and the tags show what the model is told. The block the user last
   clicked in the current view shows as a tag and goes with every
