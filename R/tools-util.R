@@ -10,47 +10,20 @@ with_tool_errors <- function(expr) {
   )
 }
 
-# Every tool hands ellmer a plain string. Left to ellmer, a list or data.frame
-# result is converted to JSON for us, which ellmer 0.5.0 deprecates, and the
-# JSON-object tool content it then sends is rejected (HTTP 400) by stricter
-# OpenAI-compatible gateways. A `json`-classed string, ellmer's suggested
-# replacement, goes out as that same JSON-object content, so the class is
-# dropped as well and only a bare character vector goes out as text. The
-# encoding is the one ellmer applied itself, so the model reads the same
-# payload as before. Wrapping at registration rather
-# than in each `ellmer::tool()` also covers the typed pool and the deployment's
-# own tools. A `ToolDef` is a closure carrying its props as attributes, so the
-# wrapper takes them over as is.
-as_text_tool <- function(tool) {
+# What every tool goes through on its way into the client:
+# once over the registered set when the client is built,
+# and again for each typed tool the pool mints afterwards.
+# The tool is titled, and normalize_tool_result() converts its results.
+# A `ToolDef` is a closure that carries its props as attributes,
+# so the wrapper takes them over as they are.
+prepare_tool <- function(tool) {
 
-  res <- function(...) tool_result_text(tool(...))
+  tool <- annotate_tool_title(tool)
+
+  res <- function(...) normalize_tool_result(tool(...))
   attributes(res) <- attributes(tool)
 
   res
-}
-
-tool_result_text <- function(x) {
-
-  if (promises::is.promise(x)) {
-    return(promises::then(x, tool_result_text))
-  }
-
-  if (inherits(x, "ellmer::ContentToolResult")) {
-    return(x)
-  }
-
-  if (!is.character(x)) {
-    x <- jsonlite::toJSON(x, auto_unbox = TRUE)
-  }
-
-  as.character(x)
-}
-
-# What every tool goes through on its way into the client: once over the
-# registered set when the client is built, and again for each typed tool the
-# pool mints afterwards.
-prepare_tool <- function(tool) {
-  as_text_tool(annotate_tool_title(tool))
 }
 
 prepare_tools <- function(client) {
@@ -58,6 +31,47 @@ prepare_tools <- function(client) {
   client$set_tools(lapply(client$get_tools(), prepare_tool))
 
   invisible(client)
+}
+
+# A tool's result has to reach ellmer in a shape that ellmer accepts:
+# a string, a `json` value, a Content object or a list of them.
+# Since 0.5.0, ellmer converts any other result to JSON when a tool returns.
+# That conversion is deprecated, and ellmer warns about it.
+# Two results skip that step and reach the provider as they are:
+# a `NULL` result, and the value of a ContentToolResult that the tool returns
+# (tidyverse/ellmer#1136).
+# The provider then rejects the request with HTTP 400.
+# So every result is converted here, with the call ellmer makes itself.
+# A promise is converted once it resolves.
+normalize_tool_result <- function(x) {
+
+  if (promises::is.promise(x)) {
+    return(promises::then(x, normalize_tool_result))
+  }
+
+  if (inherits(x, "ellmer::ContentToolResult")) {
+
+    if (is.null(x@error)) {
+      x@value <- normalize_tool_result(x@value)
+    }
+
+    return(x)
+  }
+
+  if (inherits(x, "json") || inherits(x, "ellmer::Content")) {
+    return(x)
+  }
+
+  if (is.list(x) && length(x) > 0L &&
+        all(lgl_ply(x, inherits, "ellmer::Content"))) {
+    return(x)
+  }
+
+  if (is.character(x)) {
+    return(paste(x, collapse = "\n"))
+  }
+
+  jsonlite::toJSON(x, auto_unbox = TRUE)
 }
 
 parse_args_json <- function(s, tool) {

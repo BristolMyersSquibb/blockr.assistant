@@ -39,6 +39,7 @@ Imports:
     yaml
 Suggests:
     chromote,
+    httr2,
     knitr,
     rmarkdown,
     shinytest2,

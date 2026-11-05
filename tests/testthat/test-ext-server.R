@@ -518,7 +518,7 @@ test_that("registered list_blocks tool reflects the live board contents", {
 
       res <- client_r()$get_tools()$list_blocks()
 
-      expect_identical(class(res), "character")
+      expect_s3_class(res, "json")
 
       res <- jsonlite::fromJSON(res)
 

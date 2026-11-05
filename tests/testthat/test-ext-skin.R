@@ -73,33 +73,6 @@ test_that("every registered tool is titled and keeps its name", {
   )
 })
 
-test_that("every registered tool returns a bare string", {
-
-  client <- fake_chat_function()
-
-  client$register_tool(
-    ellmer::tool(
-      function() data.frame(id = "a"),
-      name = "frame",
-      description = "Frame."
-    )
-  )
-  client$register_tool(
-    ellmer::tool(
-      function() jsonlite::toJSON(list(a = 1)),
-      name = "json",
-      description = "JSON."
-    )
-  )
-
-  prepare_tools(client)
-
-  tools <- client$get_tools()
-
-  expect_identical(tools$frame(), "[{\"id\":\"a\"}]")
-  expect_identical(class(tools$json()), "character")
-})
-
 test_that("an empty board is asked what to build, and offers a way in", {
 
   board <- reactiveValues(board = new_board())
