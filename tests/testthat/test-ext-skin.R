@@ -62,7 +62,7 @@ test_that("every registered tool is titled and keeps its name", {
   client$register_tool(skin_tool("list_blocks"))
   client$register_tool(skin_tool("remove_block"))
 
-  annotate_tool_titles(client)
+  prepare_tools(client)
 
   tools <- client$get_tools()
 

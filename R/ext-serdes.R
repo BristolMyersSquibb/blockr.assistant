@@ -99,16 +99,20 @@ save_ready_thread <- function(record, save_turns) {
     return(NULL)
   }
 
-  record[["nodes"]] <- lapply(record[["nodes"]], node_without_responses)
-
-  record
+  map_record_turns(record, drop_raw_response)
 }
 
-node_without_responses <- function(node) {
+map_record_turns <- function(record, fun) {
 
-  node[["turns"]] <- lapply(node[["turns"]], drop_raw_response)
+  record[["nodes"]] <- lapply(
+    record[["nodes"]],
+    function(node) {
+      node[["turns"]] <- lapply(node[["turns"]], fun)
+      node
+    }
+  )
 
-  node
+  record
 }
 
 drop_raw_response <- function(rec) {
@@ -122,4 +126,46 @@ drop_raw_response <- function(rec) {
 
 has_content <- function(rec, class) {
   any(chr_xtr(rec[["props"]][["contents"]], "class") == class)
+}
+
+# A thread saved under ellmer 0.4 holds a tool's list or data.frame result
+# as the tool returned it: that version converted results only to send them.
+# Since 0.5.0, ellmer sends such a replayed result, and a saved `NULL`, raw.
+normalize_thread_results <- function(threads) {
+  lapply(threads, map_record_turns, normalize_turn_results)
+}
+
+normalize_turn_results <- function(rec) {
+
+  rec[["props"]][["contents"]] <- lapply(
+    rec[["props"]][["contents"]],
+    normalize_recorded_result
+  )
+
+  rec
+}
+
+normalize_recorded_result <- function(rec) {
+
+  props <- rec[["props"]]
+
+  if (!identical(rec[["class"]], "ellmer::ContentToolResult") ||
+        not_null(props[["error"]]) ||
+        is_recorded_content(props[["value"]])) {
+    return(rec)
+  }
+
+  rec[["props"]]["value"] <- list(normalize_tool_result(props[["value"]]))
+
+  rec
+}
+
+is_recorded_content <- function(x) {
+
+  is_record <- function(el) {
+    is.list(el) && is_string(el[["class"]]) &&
+      startsWith(el[["class"]], "ellmer::Content")
+  }
+
+  is_record(x) || (is.list(x) && length(x) > 0L && all(lgl_ply(x, is_record)))
 }

@@ -10,6 +10,61 @@ with_tool_errors <- function(expr) {
   )
 }
 
+# A `ToolDef` is a closure that carries its props as attributes,
+# so the wrapper takes them over as they are.
+prepare_tool <- function(tool) {
+
+  tool <- annotate_tool_title(tool)
+
+  res <- function(...) normalize_tool_result(tool(...))
+  attributes(res) <- attributes(tool)
+
+  res
+}
+
+prepare_tools <- function(client) {
+
+  client$set_tools(lapply(client$get_tools(), prepare_tool))
+
+  invisible(client)
+}
+
+# Since 0.5.0, ellmer converts a result that is not a string, `json` or
+# Content when a tool returns it, and warns that this is deprecated.
+# A `NULL` result and the value of a returned ContentToolResult skip that
+# conversion and reach the provider raw, where it expects a string.
+# The conversion here is the one ellmer makes itself.
+normalize_tool_result <- function(x) {
+
+  if (promises::is.promise(x)) {
+    return(promises::then(x, normalize_tool_result))
+  }
+
+  if (inherits(x, "ellmer::ContentToolResult")) {
+
+    if (is.null(x@error)) {
+      x@value <- normalize_tool_result(x@value)
+    }
+
+    return(x)
+  }
+
+  if (inherits(x, "json") || inherits(x, "ellmer::Content")) {
+    return(x)
+  }
+
+  if (is.list(x) && length(x) > 0L &&
+        all(lgl_ply(x, inherits, "ellmer::Content"))) {
+    return(x)
+  }
+
+  if (is.character(x)) {
+    return(paste(x, collapse = "\n"))
+  }
+
+  jsonlite::toJSON(x, auto_unbox = TRUE)
+}
+
 parse_args_json <- function(s, tool) {
 
   if (!nzchar(s)) {

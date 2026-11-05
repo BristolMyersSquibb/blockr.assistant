@@ -506,7 +506,7 @@ asst_ext_srv <- function(system_prompt, threads = NULL) {
           # the ones registered before them.
           register_custom_tools(cl)
 
-          annotate_tool_titles(cl)
+          prepare_tools(cl)
 
           # Drop trailing turns that represent an incomplete or
           # failed exchange. Two shapes show up after a stream error
