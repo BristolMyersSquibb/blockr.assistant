@@ -40,7 +40,8 @@ prepare_tools <- function(client) {
 # Two results skip that step and reach the provider as they are:
 # a `NULL` result, and the value of a ContentToolResult that the tool returns
 # (tidyverse/ellmer#1136).
-# The provider then rejects the request with HTTP 400.
+# They go out as JSON `null`, an object or an array where the provider
+# expects a string.
 # So every result is converted here, with the call ellmer makes itself.
 # A promise is converted once it resolves.
 normalize_tool_result <- function(x) {

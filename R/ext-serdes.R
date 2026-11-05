@@ -133,8 +133,8 @@ has_content <- function(rec, class) {
 # it, a list or data.frame included.
 # That version converted a result to JSON only at the moment of sending.
 # Since 0.5.0, ellmer sends a replayed result as it is,
-# and the provider rejects the request with HTTP 400.
-# A saved `NULL` result fails the same way.
+# as an object or an array where the provider expects a string.
+# A saved `NULL` result goes out as JSON `null` in the same way.
 # Such results are converted once, when the thread store is built.
 normalize_thread_results <- function(threads) {
   lapply(threads, map_record_turns, normalize_turn_results)

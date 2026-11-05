@@ -4,7 +4,8 @@
   That version sends three kinds of tool result to the provider unconverted:
   a `NULL` result, the value of a `ContentToolResult` that a tool returns,
   and the tool results of a thread saved with an earlier ellmer.
-  The provider then rejects the request with HTTP 400.
+  Each reaches the provider as JSON `null`, an object or an array instead of
+  a string, and a stricter provider rejects the request with HTTP 400.
   A tool result that is not a string, JSON or `Content` is now converted to
   JSON, the way ellmer converts a list or data.frame.
   This covers the assistant's own tools and those a deployment adds.
