@@ -57,13 +57,6 @@ is_blank_page <- function() {
   is.null(rec) || !length(rec[[1L]])
 }
 
-# Read the drawn pages as ellmer image content. Sizing is ours, so
-# resize = "none" -- which is also what keeps magick off the dependency list,
-# since content_image_file() only needs it in order to resize.
-drawing_contents <- function(files) {
-  lapply(files, ellmer::content_image_file, resize = "none")
-}
-
 # Named rather than silent: a call that drew more pages than we return says so,
 # instead of reading as everything that was drawn.
 dropped_drawings_line <- function(n, max_plots) {
@@ -72,7 +65,9 @@ dropped_drawings_line <- function(n, max_plots) {
     return(NULL)
   }
 
-  glue::glue("Returned {max_plots} of {n} drawn plots; the rest are omitted.")
+  paste0(
+    "Returned ", max_plots, " of ", n, " drawn plots; the rest are omitted."
+  )
 }
 
 # Pinned to baseenv() rather than taken from the board's eval_env(), which

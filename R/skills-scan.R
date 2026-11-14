@@ -55,7 +55,7 @@ scan_skills <- function(dirs) {
 
   skills <- list()
 
-  for (skill in compact(lapply(dirs, parse_skill))) {
+  for (skill in Filter(not_null, lapply(dirs, parse_skill))) {
 
     if (!is.null(skills[[skill$name]])) {
       log_debug(
@@ -101,6 +101,31 @@ warn_catalogue_budget <- function(skills) {
   }
 
   invisible()
+}
+
+global_skills <- function(skills) {
+  Filter(is_global_skill, skills)
+}
+
+is_global_skill <- function(skill) {
+  is_model_invocable(skill) &&
+    !length(skill$blocks) && !length(skill$extensions)
+}
+
+is_model_invocable <- function(skill) {
+  isTRUE(skill$model_invocable)
+}
+
+skill_entry <- function(skill) {
+  paste0("- `", skill$name, "`: ", skill_blurb(skill))
+}
+
+skill_blurb <- function(skill) {
+  truncate_chars(
+    gsub("\\s+", " ", skill$description),
+    skill_description_max_chars(),
+    paste0("call read_skill(\"", skill$name, "\") for the rest")
+  )
 }
 
 parse_skill <- function(dir) {
@@ -269,14 +294,17 @@ unmet_summary <- function(skill) {
 
   unmet <- Filter(Negate(requirement_met), skill$requires)
 
-  glue::glue(
-    "{skill$name} needs ",
-    "{paste(chr_ply(unmet, requires_label), collapse = ', ')}"
+  paste0(
+    skill$name, " needs ",
+    paste(chr_ply(unmet, requires_label), collapse = ", ")
   )
 }
 
 requires_label <- function(req) {
-  paste0(req$pkg, if (nzchar(req$op)) glue::glue(" ({req$op} {req$version})"))
+  paste0(
+    req$pkg,
+    if (nzchar(req$op)) paste0(" (", req$op, " ", req$version, ")")
+  )
 }
 
 read_skill_file <- function(skill, file) {

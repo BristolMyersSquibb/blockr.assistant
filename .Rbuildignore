@@ -7,7 +7,6 @@
 ^index\.qmd$
 ^index\.md$
 ^vignettes/articles$
-^vignettes/design$
 ^vignettes/.*_files$
 ^vignettes/\.quarto$
 ^\.lintr$

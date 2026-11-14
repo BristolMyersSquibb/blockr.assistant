@@ -7,7 +7,7 @@
 #' terms, instead of supplying a [btw::btw_this()] method.
 #'
 #' Methods for recorded plots ship here, since a plot block built on
-#' [blockr.core::new_plot_block()] evaluates to recordings and the default
+#' `blockr.core::new_plot_block()` evaluates to recordings and the default
 #' renders their display list -- a list of graphics primitives, not a
 #' description of the chart. They name the class and count the recordings, and
 #' say when a block evaluated without drawing. Neither describes the chart
@@ -29,8 +29,8 @@
 #' @param x A block result (any R object).
 #' @param ... Passed on to methods (e.g. [btw::btw_this()]).
 #'
-#' @return Character vector of lines, consistent with [describe_block()] and
-#'   [describe_stack()]; the caller collapses with `paste(collapse = "\n")`.
+#' @return Character vector of lines; the caller collapses with
+#'   `paste(collapse = "\n")`.
 #'
 #' @export
 describe_result <- function(x, ...) {
@@ -132,29 +132,4 @@ summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
   )
 
   truncate_chars(paste(text, collapse = "\n"), max_chars)
-}
-
-# The eval status is consulted BEFORE the result: a block holding none answers
-# with a `NULL` result or a shiny.silent.error carrying no message, neither of
-# which distinguishes "nothing evaluated" from a block that legitimately
-# evaluated to NULL. A `stale` block does answer, with what its last evaluation
-# left, and that is out of date.
-block_result_summary <- function(id, board) {
-
-  status <- eval_status(id, board)
-
-  if (has_no_result(status)) {
-    return(no_result_message(id, status))
-  }
-
-  res <- tryCatch(
-    isolate(board$blocks[[id]]$server$result()),
-    error = function(e) e
-  )
-
-  if (inherits(res, "error")) {
-    return(no_result_message(id, status, res))
-  }
-
-  paste(summarise_result(res), collapse = "\n")
 }
