@@ -27,8 +27,8 @@ describe_result(x, ...)
 \item{...}{Passed on to methods (e.g. \code{\link[btw:btw_this]{btw::btw_this()}}).}
 }
 \value{
-Character vector of lines, consistent with \code{\link[=describe_block]{describe_block()}} and
-\code{\link[=describe_stack]{describe_stack()}}; the caller collapses with \code{paste(collapse = "\\n")}.
+Character vector of lines; the caller collapses with
+\code{paste(collapse = "\\n")}.
 }
 \description{
 Generic backing the result summaries the assistant feeds the model: the
@@ -39,7 +39,7 @@ terms, instead of supplying a \code{\link[btw:btw_this]{btw::btw_this()}} method
 }
 \details{
 Methods for recorded plots ship here, since a plot block built on
-\code{\link[blockr.core:new_plot_block]{blockr.core::new_plot_block()}} evaluates to recordings and the default
+\code{blockr.core::new_plot_block()} evaluates to recordings and the default
 renders their display list -- a list of graphics primitives, not a
 description of the chart. They name the class and count the recordings, and
 say when a block evaluated without drawing. Neither describes the chart

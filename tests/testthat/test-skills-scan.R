@@ -24,18 +24,6 @@ test_that("a well-formed skill is parsed into the catalogue", {
   expect_identical(skill_body(skill), "Always filter to SAFFL.")
 })
 
-test_that("the package ships the layout skill as a global skill", {
-
-  layout <- skill_catalogue()[["layout"]]
-
-  expect_type(layout, "list")
-  expect_true(is_global_skill(layout))
-  expect_false(layout$user_invocable)
-  expect_match(skill_body(layout), "Views are tabs")
-  expect_match(skill_body(layout), "orientation")
-  expect_match(skill_body(layout), "rails")
-})
-
 test_that("a skill without frontmatter is skipped with a warning", {
 
   root <- local_skills_dir()
@@ -197,7 +185,7 @@ test_that("a met requirement leaves a skill in the catalogue", {
       "description: Needs a package that is installed.",
       "requires:",
       "  - blockr.core (>= 0.1.0)",
-      "  - ellmer"
+      "  - yaml"
     )
   )
 
@@ -239,22 +227,6 @@ test_that("an unparseable requirement skips the skill with a warning", {
 
   expect_match(logs, "not R dependency specifications")
   expect_false("garbled" %in% names(skills))
-})
-
-test_that("a deployment skill shadows a built-in of the same name", {
-
-  root <- local_skills_dir()
-
-  write_skill(
-    root, "layout",
-    c("name: layout", "description: Site layout rules."),
-    body = "Panels go on the left."
-  )
-
-  layout <- skill_catalogue()[["layout"]]
-
-  expect_identical(layout$description, "Site layout rules.")
-  expect_identical(skill_body(layout), "Panels go on the left.")
 })
 
 test_that("a configured skills directory that is missing errors", {
@@ -319,11 +291,7 @@ test_that("an always-on catalogue over budget is warned about", {
 
   root <- local_skills_dir()
 
-  # The package's own layout skill is global too, so budget from what the
-  # catalogue already costs rather than from a bare number.
-  withr::local_options(
-    blockr.assistant_skill_catalogue_max_chars = catalogue_chars() + 100L
-  )
+  withr::local_options(blockr.assistant_skill_catalogue_max_chars = 100L)
 
   for (nme in c("alpha", "beta", "gamma")) {
     write_skill(
@@ -335,16 +303,14 @@ test_that("an always-on catalogue over budget is warned about", {
   logs <- capture_logs(skill_catalogue())
 
   expect_match(logs, "always-on skill catalogue is")
-  expect_match(logs, "trim the descriptions of the 4 global skills")
+  expect_match(logs, "trim the descriptions of the 3 global skills")
 })
 
 test_that("scoped skills do not count against the always-on budget", {
 
   root <- local_skills_dir()
 
-  withr::local_options(
-    blockr.assistant_skill_catalogue_max_chars = catalogue_chars() + 100L
-  )
+  withr::local_options(blockr.assistant_skill_catalogue_max_chars = 100L)
 
   for (nme in c("alpha", "beta", "gamma")) {
     write_skill(

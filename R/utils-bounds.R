@@ -1,11 +1,11 @@
 # Cap `txt` so the returned string -- truncated text plus the marker and any
 # hint -- never exceeds `max_chars`: the marker counts against the budget, it
 # is not added on top. Only the over-long case is touched; text within budget
-# is returned verbatim. The hint is the caller's: a block summary points at
-# get_block_state, while a result and a stack summary need none -- a result
-# summary names what the result is, which is the pointer. With `whole_lines`,
-# the cut backs off to the last line break inside the budget, so a line is
-# shown whole or not at all; text with no line break there is cut mid-line.
+# is returned verbatim. The hint is the caller's: a skill's description points
+# at read_skill, while a result summary needs none -- it names what the result
+# is, which is the pointer. With `whole_lines`, the cut backs off to the last
+# line break inside the budget, so a line is shown whole or not at all; text
+# with no line break there is cut mid-line.
 truncate_chars <- function(txt, max_chars, hint = NULL, whole_lines = FALSE) {
 
   if (nchar(txt) <= max_chars) {
@@ -14,7 +14,7 @@ truncate_chars <- function(txt, max_chars, hint = NULL, whole_lines = FALSE) {
 
   suffix <- if (is.null(hint)) "" else paste0(" -- ", hint)
   marker <- function(omitted) {
-    paste0("\n", glue::glue("... [+{omitted} chars truncated{suffix}]"))
+    paste0("\n... [+", omitted, " chars truncated", suffix, "]")
   }
 
   # Reserve room for the marker sized against the largest possible omitted
@@ -40,23 +40,6 @@ is_whole_bound <- function(x, min) {
 
 summary_max_chars <- function() {
   as.integer(blockr_option("assistant_summary_max_chars", 2000L))
-}
-
-# The detail tier behind that summary: what get_block_state may spend across
-# one block's argument values. Deliberately far above summary_max_chars(),
-# because it is reached by a tool call the model makes when it is about to
-# rewrite an argument, and a generated script runs to several thousand
-# characters.
-state_max_chars <- function() {
-  as.integer(blockr_option("assistant_state_max_chars", 20000L))
-}
-
-# Per-value bound in a *summary* of block state, matching the `nchar.max` that
-# utils::str() cuts character values at -- core's format.block() calls str()
-# with the default and exposes no way to raise it. A value over this is elided
-# rather than shown in part; see elide_long_values().
-state_value_max_chars <- function() {
-  as.integer(blockr_option("assistant_state_value_max_chars", 128L))
 }
 
 # Device size for inspect_results, in pixels -- the default only. The model
@@ -102,22 +85,10 @@ eval_max_chars <- function() {
   as.integer(blockr_option("assistant_eval_max_chars", 16000L))
 }
 
-board_section_max_chars <- function() {
-  as.integer(blockr_option("assistant_board_section_max_chars", 1500L))
-}
-
-description_max_chars <- function() {
-  as.integer(blockr_option("assistant_description_max_chars", 1000L))
-}
-
 skill_description_max_chars <- function() {
   as.integer(blockr_option("assistant_skill_description_max_chars", 1024L))
 }
 
 skill_catalogue_max_chars <- function() {
   as.integer(blockr_option("assistant_skill_catalogue_max_chars", 4000L))
-}
-
-block_tool_pool_size <- function() {
-  as.integer(blockr_option("assistant_block_tool_pool", 20L))
 }

@@ -1,4 +1,21 @@
-# blockr.assistant (development version)
+# blockr.assistant 0.2.0
+
+* R no longer runs the assistant, which becomes a plugin whose agent loop runs
+  in the browser (#219).
+  The extension with `new_assistant_extension()`, its chat, its tools,
+  staging and the review of a commit are gone.
+  So are the generics `describe_block()`, `describe_board()` and
+  `describe_stack()`, the threads with their compaction and saving,
+  `default_system_prompt()`, the `layout` skill and the examples in
+  `inst/examples`.
+  What stays is `describe_result()` with its methods, the capture of the plots
+  that R code draws, the scanning of skills and the caps on what R returns to
+  the model.
+  The package requires blockr.core 0.2.0 and no longer imports shiny,
+  shinychat, ellmer, bsicons, htmltools, shinyWidgets, later, promises, R6,
+  glue, typedjson, jsonlite, blockr.ui or blockr.dock.
+
+# blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
   That version sends three kinds of tool result to the provider unconverted:
