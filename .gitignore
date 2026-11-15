@@ -8,3 +8,4 @@ README.html
 *.Rproj
 vignettes/.quarto
 vignettes/*_files
+node_modules/

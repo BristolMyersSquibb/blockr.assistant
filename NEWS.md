@@ -15,6 +15,14 @@
   shinychat, ellmer, bsicons, htmltools, shinyWidgets, later, promises, R6,
   glue, typedjson, jsonlite, blockr.ui or blockr.dock.
 
+* The assistant is a plugin of the class `blockr.assistant-assistant_plugin`,
+  named Assistant, which `new_assistant_plugin()` makes (#220).
+  The package lists the class in the `._BLOCKR_MODULES_` that it exports.
+  So `blockr.core::serve()` runs the assistant in every app that does not
+  narrow its plugins.
+  The class's `ui` draws an empty panel in React wherever the frontend places
+  the plugin.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
