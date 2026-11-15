@@ -11,3 +11,9 @@
 ^vignettes/\.quarto$
 ^\.lintr$
 ^\.git$
+^srcts$
+^node_modules$
+^package(-lock)?\.json$
+^tsconfig(\.[a-z]+)?\.json$
+^eslint\.config\.ts$
+^vitest\.config\.ts$
