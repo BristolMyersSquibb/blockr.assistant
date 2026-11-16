@@ -8,15 +8,15 @@ export interface AssistantCommand<A> {
   readonly label: string;
   readonly description: string;
   readonly args: JsonSchema;
-  enabled(board: Board, args: A): boolean;
+  preflight(board: Board, args: A): boolean;
   run(board: Board, args: A): Delta;
 }
 
 // The command as core registers it, with `undo: false`, which every command
 // of the assistant's has, so that none takes an undo step.
-// The command registry hands enabled() and run() only args that the command's
-// schema takes, so they read them as an A, which TypeScript cannot take for a
-// Json where it has optional properties.
+// The command registry hands preflight() and run() only args that the
+// command's schema takes, so they read them as an A, which TypeScript cannot
+// take for a Json where it has optional properties.
 // The object names each member of core's Command itself, rather than casting
 // the definition to one, so that type-checking fails where core renames a
 // member, rather than core skipping a check that the command still defines
@@ -28,7 +28,7 @@ export function command<A>(definition: AssistantCommand<A>): Command<Json, unkno
     description: definition.description,
     args: definition.args,
     undo: false,
-    enabled: (board, args) => definition.enabled(board, args as unknown as A),
+    preflight: (board, args) => definition.preflight(board, args as unknown as A),
     run: (board, args) => definition.run(board, args as A),
   };
 }

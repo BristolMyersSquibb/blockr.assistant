@@ -86,7 +86,7 @@ describe("the assistant's commands", () => {
     expect(stateIn(fresh.core)).toEqual({ conversations: {} });
   });
 
-  test("add_conversation adds a conversation with no message, and is not enabled for an id that one has", async () => {
+  test("add_conversation adds a conversation with no message, and fails its preflight for an id that one has", async () => {
     const core = await started();
 
     await core.commands.run("blockr.assistant-add_conversation", { id: "c2", title: "New conversation" });
@@ -100,9 +100,9 @@ describe("the assistant's commands", () => {
       model: null,
     });
     expect(heldIn(core, "c3")?.model).toBe("gpt-5.4");
-    expect(core.commands.enabled("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).toBe(false);
     await expect(core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).rejects.toThrow(
-      /not enabled/,
+      /fails its preflight/,
     );
   });
 
@@ -127,18 +127,18 @@ describe("the assistant's commands", () => {
     expect(stateIn(core)).toEqual({ conversations: {} });
   });
 
-  test("none that names a conversation is enabled where the state lacks it", async () => {
+  test("each that names a conversation fails its preflight where the state lacks it", async () => {
     const core = await started();
     const lacking = { conversation: "c9" };
 
-    expect(core.commands.enabled("blockr.assistant-rename_conversation", { ...lacking, title: "x" })).toBe(false);
-    expect(core.commands.enabled("blockr.assistant-remove_conversation", lacking)).toBe(false);
-    expect(core.commands.enabled("blockr.assistant-add_message", { ...lacking, message: message("u2", "user") })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-rename_conversation", { ...lacking, title: "x" })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-remove_conversation", lacking)).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-add_message", { ...lacking, message: message("u2", "user") })).toBe(false);
     expect(
-      core.commands.enabled("blockr.assistant-compact_conversation", { ...lacking, summary: message("s", "summary"), from: "u1" }),
+      core.commands.preflight("blockr.assistant-compact_conversation", { ...lacking, summary: message("s", "summary"), from: "u1" }),
     ).toBe(false);
-    expect(core.commands.enabled("blockr.assistant-add_usage", { ...lacking, input: 1, output: 1, total: 1 })).toBe(false);
-    expect(core.commands.enabled("blockr.assistant-set_model", { ...lacking, model: null })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-add_usage", { ...lacking, input: 1, output: 1, total: 1 })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-set_model", { ...lacking, model: null })).toBe(false);
   });
 
   test("add_message adds the message at the end, makes its time the conversation's updated, and refuses an id that a message has", async () => {
@@ -151,7 +151,7 @@ describe("the assistant's commands", () => {
 
     expect(ids(heldIn(core, "c1"))).toEqual(["u1", "a1", "u2"]);
     expect(heldIn(core, "c1")?.updated).toBe("2026-11-16T09:30:00.000Z");
-    expect(core.commands.enabled("blockr.assistant-add_message", { conversation: "c1", message: message("a1", "assistant") })).toBe(
+    expect(core.commands.preflight("blockr.assistant-add_message", { conversation: "c1", message: message("a1", "assistant") })).toBe(
       false,
     );
   });
@@ -203,7 +203,7 @@ describe("the assistant's commands", () => {
     const summary = { ...message("s1", "summary"), parts: [{ type: "text", text: "The user asked for sales by region." }] };
 
     expect(
-      core.commands.enabled("blockr.assistant-compact_conversation", { conversation: "c1", summary, from: "u9" }),
+      core.commands.preflight("blockr.assistant-compact_conversation", { conversation: "c1", summary, from: "u9" }),
     ).toBe(false);
     await expect(
       core.commands.run("blockr.assistant-compact_conversation", { conversation: "c1", summary: message("s1", "user"), from: "u2" }),
@@ -225,7 +225,7 @@ describe("the assistant's commands", () => {
     expect(core.store.canUndo()).toBe(false);
   });
 
-  test("each stays enabled on a locked board, where core's command for a plugin's state is not", async () => {
+  test("each passes its preflight on a locked board, where core's command for a plugin's state fails its own", async () => {
     const core = await started(undefined, true);
 
     await core.commands.run("blockr.assistant-add_conversation", { id: "c2", title: "New conversation" });
@@ -234,7 +234,7 @@ describe("the assistant's commands", () => {
 
     expect(Object.keys(stateIn(core).conversations)).toEqual(["c2"]);
     expect(
-      core.commands.enabled("blockr.core-set_plugin_state", {
+      core.commands.preflight("blockr.core-set_plugin_state", {
         plugin: ASSISTANT,
         patches: [{ op: "replace", path: "/conversations/c2/title", value: "x" }],
       }),

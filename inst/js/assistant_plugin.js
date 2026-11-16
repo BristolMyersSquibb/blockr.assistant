@@ -399,7 +399,7 @@ function command(definition) {
     description: definition.description,
     args: definition.args,
     undo: false,
-    enabled: (board, args) => definition.enabled(board, args),
+    preflight: (board, args) => definition.preflight(board, args),
     run: (board, args) => definition.run(board, args)
   };
 }
@@ -465,7 +465,7 @@ var assistantCommands = [
   command({
     id: "blockr.assistant-add_conversation",
     label: "Add conversation",
-    description: "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It is not enabled for an id that a conversation has already.",
+    description: "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It fails its preflight for an id that a conversation has already.",
     args: object(
       {
         id: { type: "string", minLength: 1, description: "The id of the new conversation." },
@@ -474,7 +474,7 @@ var assistantCommands = [
       },
       ["id", "title"]
     ),
-    enabled: (board, { id }) => {
+    preflight: (board, { id }) => {
       const state = assistantState(board);
       return state !== void 0 && !Object.hasOwn(state.conversations, id);
     },
@@ -487,7 +487,7 @@ var assistantCommands = [
     label: "Rename conversation",
     description: "Gives a conversation a new title.",
     args: object({ conversation, title }, ["conversation", "title"]),
-    enabled: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2, title: title2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "title"), value: title2 }]
     })
@@ -497,13 +497,13 @@ var assistantCommands = [
     label: "Remove conversation",
     description: "Removes a conversation with its messages.",
     args: object({ conversation }, ["conversation"]),
-    enabled: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2 }) => ({ patches: [{ op: "remove", path: at("conversations", conversation2) }] })
   }),
   command({
     id: "blockr.assistant-add_message",
     label: "Add message",
-    description: "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It is not enabled for a message whose id a message of the conversation has.",
+    description: "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It fails its preflight for a message whose id a message of the conversation has.",
     args: object(
       {
         conversation,
@@ -512,7 +512,7 @@ var assistantCommands = [
       },
       ["conversation", "message"]
     ),
-    enabled: (board, { conversation: conversation2, message: message2 }) => {
+    preflight: (board, { conversation: conversation2, message: message2 }) => {
       const held = findConversation(board, conversation2);
       return held !== void 0 && !holdsMessage(held, message2.id);
     },
@@ -532,7 +532,7 @@ var assistantCommands = [
     label: "Trim conversations",
     description: "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as blockr.assistant-add_message drops them.",
     args: object({ keep: keep("How many messages each conversation keeps.") }, ["keep"]),
-    enabled: (board) => assistantState(board) !== void 0,
+    preflight: (board) => assistantState(board) !== void 0,
     run: (board, { keep: keep2 }) => ({
       patches: Object.entries(assistantState(board)?.conversations ?? {}).flatMap(
         ([id, conversation2]) => drops(id, messagesToDrop(conversation2.messages, keep2))
@@ -542,7 +542,7 @@ var assistantCommands = [
   command({
     id: "blockr.assistant-compact_conversation",
     label: "Compact conversation",
-    description: "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It is not enabled where the conversation no longer holds `from`.",
+    description: "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
     args: object(
       {
         conversation,
@@ -551,7 +551,7 @@ var assistantCommands = [
       },
       ["conversation", "summary", "from"]
     ),
-    enabled: (board, { conversation: conversation2, summary: summary2, from }) => {
+    preflight: (board, { conversation: conversation2, summary: summary2, from }) => {
       const held = findConversation(board, conversation2);
       return held !== void 0 && canCompact(held.messages, summary2, from);
     },
@@ -578,7 +578,7 @@ var assistantCommands = [
       },
       ["conversation", "input", "output", "total"]
     ),
-    enabled: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (board, { conversation: conversation2, input, output, total }) => {
       const usage = findConversation(board, conversation2)?.usage ?? { input: 0, output: 0, last: 0 };
       return {
@@ -591,7 +591,7 @@ var assistantCommands = [
     label: "Set model",
     description: "Sets a conversation's pick of the model, or removes it with null, after which the conversation talks to the default.",
     args: object({ conversation, model }, ["conversation", "model"]),
-    enabled: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2, model: model2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "model"), value: model2 }]
     })

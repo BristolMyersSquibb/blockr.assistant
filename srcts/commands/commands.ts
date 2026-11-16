@@ -5,14 +5,15 @@
 //   patches inside it, which the store checks against the state's schema.
 // - None takes an undo step, so that no undo takes back a message or a
 //   conversation's pick of the model (./command.ts).
-// - Each stays enabled on a locked board, since it changes the assistant's own
-//   state alone, so that a reader of a locked board still chats.
-// - A command that names a conversation is not enabled where the state lacks
-//   that conversation. Neither blockr.assistant-add_conversation nor
-//   blockr.assistant-add_message is enabled for an id that the state holds
-//   already, and neither is blockr.assistant-compact_conversation for a
-//   summary whose id a message that it keeps has, which keeps the ids unique,
-//   as no schema can.
+// - Each passes its preflight on a locked board, since it changes the
+//   assistant's own state alone, so that a reader of a locked board still
+//   chats.
+// - A command that names a conversation fails its preflight where the state
+//   lacks that conversation. Both blockr.assistant-add_conversation and
+//   blockr.assistant-add_message fail theirs for an id that the state holds
+//   already, and so does blockr.assistant-compact_conversation for a summary
+//   whose id a message that it keeps has, which keeps the ids unique, as no
+//   schema can.
 // - Each that cuts a conversation to `keep` messages drops its oldest
 //   exchanges, as messagesToDrop() counts them (../state/state.ts).
 // Their descriptions and the schemas of their args describe them to menus and
@@ -64,7 +65,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-add_conversation",
     label: "Add conversation",
     description:
-      "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It is not enabled for an id that a conversation has already.",
+      "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It fails its preflight for an id that a conversation has already.",
     args: schemas.object(
       {
         id: { type: "string", minLength: 1, description: "The id of the new conversation." },
@@ -73,7 +74,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
       },
       ["id", "title"],
     ),
-    enabled: (board, { id }) => {
+    preflight: (board, { id }) => {
       const state = assistantState(board);
       return state !== undefined && !Object.hasOwn(state.conversations, id);
     },
@@ -87,7 +88,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     label: "Rename conversation",
     description: "Gives a conversation a new title.",
     args: schemas.object({ conversation: schemas.conversation, title: schemas.title }, ["conversation", "title"]),
-    enabled: (board, { conversation }) => holds(board, conversation),
+    preflight: (board, { conversation }) => holds(board, conversation),
     run: (_board, { conversation, title }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation, "title"), value: title }],
     }),
@@ -98,7 +99,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     label: "Remove conversation",
     description: "Removes a conversation with its messages.",
     args: schemas.object({ conversation: schemas.conversation }, ["conversation"]),
-    enabled: (board, { conversation }) => holds(board, conversation),
+    preflight: (board, { conversation }) => holds(board, conversation),
     run: (_board, { conversation }) => ({ patches: [{ op: "remove", path: at("conversations", conversation) }] }),
   }),
 
@@ -106,7 +107,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-add_message",
     label: "Add message",
     description:
-      "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It is not enabled for a message whose id a message of the conversation has.",
+      "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It fails its preflight for a message whose id a message of the conversation has.",
     args: schemas.object(
       {
         conversation: schemas.conversation,
@@ -115,7 +116,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
       },
       ["conversation", "message"],
     ),
-    enabled: (board, { conversation, message }) => {
+    preflight: (board, { conversation, message }) => {
       const held = findConversation(board, conversation);
       return held !== undefined && !holdsMessage(held, message.id);
     },
@@ -137,7 +138,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     description:
       "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as blockr.assistant-add_message drops them.",
     args: schemas.object({ keep: schemas.keep("How many messages each conversation keeps.") }, ["keep"]),
-    enabled: (board) => assistantState(board) !== undefined,
+    preflight: (board) => assistantState(board) !== undefined,
     run: (board, { keep }) => ({
       patches: Object.entries(assistantState(board)?.conversations ?? {}).flatMap(([id, conversation]) =>
         drops(id, messagesToDrop(conversation.messages, keep)),
@@ -149,7 +150,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-compact_conversation",
     label: "Compact conversation",
     description:
-      "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It is not enabled where the conversation no longer holds `from`.",
+      "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
     args: schemas.object(
       {
         conversation: schemas.conversation,
@@ -158,7 +159,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
       },
       ["conversation", "summary", "from"],
     ),
-    enabled: (board, { conversation, summary, from }) => {
+    preflight: (board, { conversation, summary, from }) => {
       const held = findConversation(board, conversation);
       return held !== undefined && canCompact(held.messages, summary, from);
     },
@@ -187,7 +188,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
       },
       ["conversation", "input", "output", "total"],
     ),
-    enabled: (board, { conversation }) => holds(board, conversation),
+    preflight: (board, { conversation }) => holds(board, conversation),
     run: (board, { conversation, input, output, total }) => {
       const usage = findConversation(board, conversation)?.usage ?? { input: 0, output: 0, last: 0 };
       return {
@@ -202,7 +203,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     description:
       "Sets a conversation's pick of the model, or removes it with null, after which the conversation talks to the default.",
     args: schemas.object({ conversation: schemas.conversation, model: schemas.model }, ["conversation", "model"]),
-    enabled: (board, { conversation }) => holds(board, conversation),
+    preflight: (board, { conversation }) => holds(board, conversation),
     run: (_board, { conversation, model }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation, "model"), value: model }],
     }),
