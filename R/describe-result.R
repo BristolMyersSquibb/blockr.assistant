@@ -1,17 +1,27 @@
 #' Describe a block result for the LLM
 #'
-#' Generic backing the result summaries the assistant feeds the model: the
-#' `get_block_result` tool and the post-apply review it sends itself. The
-#' default method delegates to [btw::btw_this()]. A package contributing an
-#' unusual result type can add a method to describe it directly, in blockr
-#' terms, instead of supplying a [btw::btw_this()] method.
+#' Generic behind what the assistant tells the model about a block's result.
+#' R answers the assistant's request `describe_result` through it.
+#' The tool `get_block_result` and the review of an edit send that request.
+#' The default method delegates to [btw::btw_this()].
+#' A package contributing an unusual result type can add a method to describe
+#' it directly, in blockr terms, instead of supplying a [btw::btw_this()]
+#' method.
 #'
-#' Methods for recorded plots ship here, since a plot block built on
-#' `blockr.core::new_plot_block()` evaluates to recordings and the default
-#' renders their display list -- a list of graphics primitives, not a
-#' description of the chart. They name the class and count the recordings, and
-#' say when a block evaluated without drawing. Neither describes the chart
-#' itself: `inspect_results` renders it, by drawing it on a device.
+#' Methods for plots ship here, since the default describes none.
+#' A block that draws a ggplot returns the ggplot.
+#' A block whose expression draws a base plot returns a `captured_plot`, which
+#' [blockr.core::capture_plot()] makes.
+#' The default prints either, which draws the plot on a new device, and writes
+#' nothing.
+#' A block that evaluates its expression with [evaluate::evaluate()] returns an
+#' evaluation, which may hold recordings.
+#' The default writes their display list, a list of graphics primitives rather
+#' than a description of the chart.
+#' The methods name the class, count the recordings, and say when a block
+#' evaluated without drawing.
+#' None of them describes the chart itself: the request `inspect_results`
+#' draws it on a device.
 #'
 #' The [evaluate::evaluate()] method describes each component through the
 #' generic rather than reading the container as one shape, so an evaluation
@@ -23,8 +33,8 @@
 #'
 #' Methods need not bound their output or guard their own errors: the internal
 #' `summarise_result()` wrapper caps the text before it reaches the prompt and
-#' turns a failed description into a surfaced error message. It is what the
-#' tool and the review actually call.
+#' turns a failed description into a surfaced error message.
+#' It is what the request `describe_result` calls.
 #'
 #' @param x A block result (any R object).
 #' @param ... Passed on to methods (e.g. [btw::btw_this()]).
@@ -90,6 +100,18 @@ describe_result.recordedplot <- function(x, ...) {
 
 #' @rdname describe_result
 #' @export
+describe_result.captured_plot <- function(x, ...) {
+  "Captured plot (`captured_plot`)."
+}
+
+#' @rdname describe_result
+#' @export
+describe_result.ggplot <- function(x, ...) {
+  "Plot made with ggplot2 (`ggplot`)."
+}
+
+#' @rdname describe_result
+#' @export
 describe_result.source <- function(x, ...) {
   paste("Source:", trimws(x[["src"]]))
 }
@@ -116,9 +138,10 @@ describe_result.condition <- function(x, ...) {
 
 # Bounded, error-guarding wrapper around describe_result(): a method is trusted
 # neither to bound its output nor to catch its own failures, so both happen
-# here -- the single path the get_block_result tool and the post-apply review
-# read results through. A failed description surfaces its message rather than
-# taking the review down.
+# here, on the one path that the request `describe_result` reads results
+# through.
+# A failed description surfaces its message rather than taking the review
+# down.
 summarise_result <- function(x, ..., max_chars = summary_max_chars()) {
 
   text <- tryCatch(

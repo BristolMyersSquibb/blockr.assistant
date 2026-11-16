@@ -16,6 +16,7 @@ License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:
+    base64enc,
     blockr.core (>= 0.2.0),
     btw,
     evaluate,

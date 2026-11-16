@@ -5,6 +5,8 @@
 \alias{describe_result.default}
 \alias{describe_result.evaluate_evaluation}
 \alias{describe_result.recordedplot}
+\alias{describe_result.captured_plot}
+\alias{describe_result.ggplot}
 \alias{describe_result.source}
 \alias{describe_result.condition}
 \title{Describe a block result for the LLM}
@@ -16,6 +18,10 @@ describe_result(x, ...)
 \method{describe_result}{evaluate_evaluation}(x, ...)
 
 \method{describe_result}{recordedplot}(x, ...)
+
+\method{describe_result}{captured_plot}(x, ...)
+
+\method{describe_result}{ggplot}(x, ...)
 
 \method{describe_result}{source}(x, ...)
 
@@ -31,19 +37,29 @@ Character vector of lines; the caller collapses with
 \code{paste(collapse = "\\n")}.
 }
 \description{
-Generic backing the result summaries the assistant feeds the model: the
-\code{get_block_result} tool and the post-apply review it sends itself. The
-default method delegates to \code{\link[btw:btw_this]{btw::btw_this()}}. A package contributing an
-unusual result type can add a method to describe it directly, in blockr
-terms, instead of supplying a \code{\link[btw:btw_this]{btw::btw_this()}} method.
+Generic behind what the assistant tells the model about a block's result.
+R answers the assistant's request \code{describe_result} through it.
+The tool \code{get_block_result} and the review of an edit send that request.
+The default method delegates to \code{\link[btw:btw_this]{btw::btw_this()}}.
+A package contributing an unusual result type can add a method to describe
+it directly, in blockr terms, instead of supplying a \code{\link[btw:btw_this]{btw::btw_this()}}
+method.
 }
 \details{
-Methods for recorded plots ship here, since a plot block built on
-\code{blockr.core::new_plot_block()} evaluates to recordings and the default
-renders their display list -- a list of graphics primitives, not a
-description of the chart. They name the class and count the recordings, and
-say when a block evaluated without drawing. Neither describes the chart
-itself: \code{inspect_results} renders it, by drawing it on a device.
+Methods for plots ship here, since the default describes none.
+A block that draws a ggplot returns the ggplot.
+A block whose expression draws a base plot returns a \code{captured_plot}, which
+\code{\link[blockr.core:capture_plot]{blockr.core::capture_plot()}} makes.
+The default prints either, which draws the plot on a new device, and writes
+nothing.
+A block that evaluates its expression with \code{\link[evaluate:evaluate]{evaluate::evaluate()}} returns an
+evaluation, which may hold recordings.
+The default writes their display list, a list of graphics primitives rather
+than a description of the chart.
+The methods name the class, count the recordings, and say when a block
+evaluated without drawing.
+None of them describes the chart itself: the request \code{inspect_results}
+draws it on a device.
 
 The \code{\link[evaluate:evaluate]{evaluate::evaluate()}} method describes each component through the
 generic rather than reading the container as one shape, so an evaluation
@@ -55,6 +71,6 @@ register a method on that, which takes precedence over all of these.
 
 Methods need not bound their output or guard their own errors: the internal
 \code{summarise_result()} wrapper caps the text before it reaches the prompt and
-turns a failed description into a surfaced error message. It is what the
-tool and the review actually call.
+turns a failed description into a surfaced error message.
+It is what the request \code{describe_result} calls.
 }

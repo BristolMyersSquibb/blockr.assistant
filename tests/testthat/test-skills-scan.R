@@ -8,17 +8,19 @@ test_that("a well-formed skill is parsed into the catalogue", {
       "name: adam-exposure",
       "description: Site convention for exposure tables.",
       "blocks:",
-      "  - dataset_block"
+      "  - blockr.core-dataset_block",
+      "plugins:",
+      "  - blockr.dock-dock_plugin"
     ),
     body = "Always filter to SAFFL."
   )
 
-  skill <- skill_catalogue()[["adam-exposure"]]
+  skill <- skill_catalogue(character())[["adam-exposure"]]
 
   expect_type(skill, "list")
   expect_identical(skill$description, "Site convention for exposure tables.")
-  expect_identical(skill$blocks, "dataset_block")
-  expect_identical(skill$extensions, character())
+  expect_identical(skill$blocks, "blockr.core-dataset_block")
+  expect_identical(skill$plugins, "blockr.dock-dock_plugin")
   expect_false(skill$user_invocable)
   expect_true(skill$model_invocable)
   expect_identical(skill_body(skill), "Always filter to SAFFL.")
@@ -31,7 +33,7 @@ test_that("a skill without frontmatter is skipped with a warning", {
   dir.create(file.path(root, "bare"))
   writeLines("Just a body.", file.path(root, "bare", "SKILL.md"))
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "has no YAML frontmatter; skipped")
   expect_false("bare" %in% names(skills))
@@ -43,7 +45,7 @@ test_that("malformed frontmatter is skipped with a warning", {
 
   write_skill(root, "broken", c("name: broken", "description: [unclosed"))
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "has malformed frontmatter")
   expect_false("broken" %in% names(skills))
@@ -55,7 +57,7 @@ test_that("a missing description is skipped with a warning", {
 
   write_skill(root, "nameless", "name: nameless")
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "needs a `name` and a non-empty `description`")
   expect_false("nameless" %in% names(skills))
@@ -69,7 +71,7 @@ test_that("a name not matching its directory is skipped with a warning", {
     root, "on-disk", c("name: in-frontmatter", "description: Mismatched.")
   )
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "does not match its directory on-disk")
   expect_false("in-frontmatter" %in% names(skills))
@@ -81,7 +83,7 @@ test_that("a name outside the allowed charset is skipped with a warning", {
 
   write_skill(root, "Shouty", c("name: Shouty", "description: Bad charset."))
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "may only hold lowercase letters")
   expect_false("Shouty" %in% names(skills))
@@ -94,7 +96,7 @@ test_that("a directory without SKILL.md is not a skill", {
   dir.create(file.path(root, "notes"))
   writeLines("scratch", file.path(root, "notes", "README.md"))
 
-  expect_silent(skills <- skill_catalogue())
+  expect_silent(skills <- skill_catalogue(character()))
   expect_false("notes" %in% names(skills))
 })
 
@@ -112,7 +114,7 @@ test_that("allowed-tools is warned about and ignored", {
     )
   )
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "which the assistant does not honour")
   expect_true("restricted" %in% names(skills))
@@ -134,7 +136,7 @@ test_that("unknown frontmatter fields are ignored without complaint", {
     )
   )
 
-  expect_silent(skills <- skill_catalogue())
+  expect_silent(skills <- skill_catalogue(character()))
   expect_true("forward" %in% names(skills))
 })
 
@@ -151,7 +153,7 @@ test_that("a skill unreachable by model or user is warned about", {
     )
   )
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "so nothing can reach it")
   expect_true("orphan" %in% names(skills))
@@ -171,7 +173,7 @@ test_that("an unmet requirement makes a skill absent from the catalogue", {
     )
   )
 
-  expect_false("gated" %in% names(skill_catalogue()))
+  expect_false("gated" %in% names(skill_catalogue(character())))
 })
 
 test_that("a met requirement leaves a skill in the catalogue", {
@@ -189,7 +191,7 @@ test_that("a met requirement leaves a skill in the catalogue", {
     )
   )
 
-  expect_true("supported" %in% names(skill_catalogue()))
+  expect_true("supported" %in% names(skill_catalogue(character())))
 })
 
 test_that("a version constraint that fails filters the skill out", {
@@ -206,7 +208,7 @@ test_that("a version constraint that fails filters the skill out", {
     )
   )
 
-  expect_false("toonew" %in% names(skill_catalogue()))
+  expect_false("toonew" %in% names(skill_catalogue(character())))
 })
 
 test_that("an unparseable requirement skips the skill with a warning", {
@@ -223,7 +225,7 @@ test_that("an unparseable requirement skips the skill with a warning", {
     )
   )
 
-  logs <- capture_logs(skills <- skill_catalogue())
+  logs <- capture_logs(skills <- skill_catalogue(character()))
 
   expect_match(logs, "not R dependency specifications")
   expect_false("garbled" %in% names(skills))
@@ -235,14 +237,14 @@ test_that("a configured skills directory that is missing errors", {
     blockr.assistant_skills = file.path(tempdir(), "no-such-skills")
   )
 
-  expect_error(skill_catalogue(), class = "missing_skills_dir")
+  expect_error(skill_catalogue(character()), class = "missing_skills_dir")
 })
 
 test_that("a non-scalar skills directory errors", {
 
   withr::local_options(blockr.assistant_skills = c("a", "b"))
 
-  expect_error(skill_catalogue(), class = "invalid_skills_option")
+  expect_error(skill_catalogue(character()), class = "invalid_skills_option")
 })
 
 test_that("an edited skill is picked up without a restart", {
@@ -255,7 +257,7 @@ test_that("an edited skill is picked up without a restart", {
   )
 
   expect_identical(
-    skill_catalogue()[["evolving"]]$description, "First take."
+    skill_catalogue(character())[["evolving"]]$description, "First take."
   )
 
   write_skill(
@@ -265,10 +267,10 @@ test_that("an edited skill is picked up without a restart", {
   Sys.setFileTime(file.path(path, "SKILL.md"), Sys.time() + 2)
 
   expect_identical(
-    skill_catalogue()[["evolving"]]$description, "Second take."
+    skill_catalogue(character())[["evolving"]]$description, "Second take."
   )
   expect_identical(
-    skill_body(skill_catalogue()[["evolving"]]), "Second body."
+    skill_body(skill_catalogue(character())[["evolving"]]), "Second body."
   )
 })
 
@@ -282,7 +284,7 @@ test_that("frontmatter delimiters inside the body are left alone", {
   )
 
   expect_identical(
-    skill_body(skill_catalogue()[["ruled"]]),
+    skill_body(skill_catalogue(character())[["ruled"]]),
     "Above.\n\n---\n\nBelow."
   )
 })
@@ -300,7 +302,7 @@ test_that("an always-on catalogue over budget is warned about", {
     )
   }
 
-  logs <- capture_logs(skill_catalogue())
+  logs <- capture_logs(skill_catalogue(character()))
 
   expect_match(logs, "always-on skill catalogue is")
   expect_match(logs, "trim the descriptions of the 3 global skills")
@@ -324,5 +326,41 @@ test_that("scoped skills do not count against the always-on budget", {
     )
   }
 
-  expect_no_match(capture_logs(skill_catalogue()), "over the")
+  expect_no_match(capture_logs(skill_catalogue(character())), "over the")
+})
+
+test_that("a skill that names plugin classes is not global", {
+
+  root <- local_skills_dir()
+
+  withr::local_options(blockr.assistant_skill_catalogue_max_chars = 100L)
+
+  for (nme in c("alpha", "beta", "gamma")) {
+    write_skill(
+      root, nme,
+      c(
+        sprintf("name: %s", nme),
+        paste("description:", strrep("word ", 30L)),
+        "plugins:",
+        "  - blockr.dock-dock_plugin"
+      )
+    )
+  }
+
+  expect_no_match(capture_logs(skill_catalogue(character())), "over the")
+})
+
+test_that("a skill that names only extensions is global", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "views",
+    c("name: views", "description: Today's form.", "extensions:", "  - dock")
+  )
+
+  skill <- skill_catalogue(character())[["views"]]
+
+  expect_identical(skill$plugins, character())
+  expect_true(is_global_skill(skill))
 })
