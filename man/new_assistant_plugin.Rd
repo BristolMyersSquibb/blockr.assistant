@@ -52,6 +52,11 @@ board stays open.
 As a board opens, the plugin cuts each of its conversations to the cap.
 Under \code{0}, it keeps every conversation in the browser's memory alone.
 
+The plugin prints a line for each conversation, the last updated first.
+Each line gives the conversation's id and title, how many messages it
+holds, its pick of the model and when it was updated.
+A board that holds the plugin prints it the same way.
+
 The package lists the class in the \code{._BLOCKR_MODULES_} that it exports,
 with its name, "Assistant", and its module, \code{js/assistant_plugin.js} (see
 \code{\link[blockr.core:read_blocks_yml]{blockr.core::read_blocks_yml()}}).
@@ -149,6 +154,8 @@ plugin <- new_assistant_plugin(
     )
   )
 )
+
+plugin
 
 names(blockr.core::plugin_state(plugin)[["conversations"]])
 
