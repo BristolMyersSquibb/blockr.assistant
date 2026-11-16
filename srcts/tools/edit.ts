@@ -22,8 +22,9 @@
 //   core.store.undo("assistant"), which applies the undo as a new edit and
 //   announces it with the origin "assistant". That step may be another
 //   conversation's. Where the assistant has no undo step left, the tool
-//   changes nothing, and where the store refuses the undo, as a lock refuses
-//   it, the tool returns why.
+//   changes nothing and says so, which is no error, since nothing failed.
+//   Where the store refuses the undo, as a lock refuses it, the tool returns
+//   why.
 // - An edit that applied is never marked as an error, even where its review
 //   holds a failed block or the user stopped the turn. A stop while a command
 //   of the list waits in its prepare() does not stop core.commands.run(),
@@ -76,7 +77,7 @@ const LOCKED_HINT =
 const STOPPED_PREPARING =
   "The user stopped the turn while a command of the list prepared. The commands applied all the same, but the tool reviewed nothing, so do not run them again.";
 
-const NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing.";
+const NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo.";
 
 const UNDID_NOTHING = "The undo changed nothing, since what the edit changed is no longer on the board.";
 
@@ -84,7 +85,7 @@ const EDIT_DESCRIPTION =
   "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
 
 const UNDO_DESCRIPTION =
-  "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. That edit may come from another of the assistant's conversations. The tool returns a review of what the undo changed, as edit does. Where the assistant has no edit left to take back, it changes nothing.";
+  "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. That edit may come from another of the assistant's conversations. The tool returns a review of what the undo changed, as edit does. Where the assistant has no edit left to take back, it changes nothing and says so.";
 
 interface Listed {
   readonly command: string;
@@ -159,7 +160,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
         const active = context.active();
         const caps = await reviewCaps(core);
         signal.throwIfAborted();
-        if (!core.store.canUndo(ORIGIN)) throw new Error(NOTHING_TO_UNDO);
+        if (!core.store.canUndo(ORIGIN)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
 
         const before = conditionsNow(core);
         const hearing = hear(core);

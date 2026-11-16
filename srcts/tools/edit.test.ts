@@ -291,14 +291,16 @@ describe("undo_edit", () => {
     expect(parsed(await callTool(tools, "undo_edit"))).toEqual({ applied: true, removed: { blocks: ["h"], links: [link] } });
   });
 
-  test("changes nothing where the assistant has no edit left to take back", async () => {
+  test("changes nothing, and says so as no error, where the assistant has no edit left to take back", async () => {
     const { core, tools } = await started();
     const board = core.store.board();
 
-    await expect(callTool(tools, "undo_edit")).resolves.toEqual({
-      text: "The assistant has no edit left to take back, so the tool changed nothing.",
-      isError: true,
-      images: [],
+    const result = await callTool(tools, "undo_edit");
+
+    expect(result.isError).toBe(false);
+    expect(parsed(result)).toEqual({
+      applied: false,
+      notes: ["The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo."],
     });
     expect(core.store.board()).toBe(board);
   });
