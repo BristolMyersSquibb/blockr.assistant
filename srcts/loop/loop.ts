@@ -9,6 +9,12 @@
 // - The loop takes the credential through getApiKey, which pi calls for each
 //   request, so that the loop knows no way to authenticate
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
+//   Where the connection gives no key, no call carries one, neither in
+//   Authorization nor in Anthropic's x-api-key, so that a base URL that
+//   needs no key, such as a company's own proxy, need not allow either header
+//   in its answer to a page's preflight. Each of pi's APIs refuses to call
+//   without a key, so the loop gives pi a placeholder, which its fetch takes
+//   off the request before the request leaves.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter, and the thinking level medium
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
@@ -59,6 +65,10 @@ export interface Connection {
   // undefined for none.
   apiKey(): Promise<string | undefined>;
 }
+
+// The key that the loop gives pi for a call that carries none, which the
+// loop's fetch takes off the request.
+const NO_KEY = "blockr-assistant-no-key";
 
 export interface Turn {
   readonly connection: Connection;
@@ -175,7 +185,8 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       return callMessages(transformed, kept, model, turn.tools, prompt);
     },
-    getApiKey: () => turn.connection.apiKey(),
+    getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
+    fetch: keyless,
     ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
   };
 
@@ -220,8 +231,18 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
 //   it takes, which Anthropic's current models refuse in any other form. It
 //   takes the catalog's settings for the API alone where the catalog's model
 //   speaks the connection's API.
-// - Any other model reasons, takes images, and has room for 200,000 tokens, of
-//   which a reply takes up to 32,000. The cost is unknown, so pi counts none.
+// - Any other model, such as one that a company's own proxy serves under a
+//   name of its own, gets settings that every API takes:
+//   - It does not reason, so that pi sends no reasoning effort and asks for no
+//     thinking, which a model that does not reason refuses, and the model
+//     reasons as its provider has it, as today's calls leave it to.
+//   - It takes images, so that the plots of inspect_results reach the model,
+//     as today's assistant sends them to every model.
+//   - Its context window holds 128,000 tokens, as gpt-4o's does, and each call
+//     asks for up to 16,384 tokens for its reply, the most that gpt-4o takes.
+//     The cap goes out with every call, and pi lowers it only as the input
+//     nears the window.
+//   - Its cost is unknown, so pi counts none.
 function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
   const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, id);
@@ -229,11 +250,11 @@ function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
     return {
       ...at,
       name: id,
-      reasoning: true,
+      reasoning: false,
       input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 200_000,
-      maxTokens: 32_000,
+      contextWindow: 128_000,
+      maxTokens: 16_384,
     };
   }
   // The catalog's headers belong to the catalog's provider, so they go.
@@ -247,6 +268,16 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
     if (Object.hasOwn(catalog, id)) return catalog[id];
   }
   return undefined;
+}
+
+// The page's fetch, but for the placeholder of a call that carries no key,
+// which it takes off the request. The SDKs that pi calls give their headers
+// with the request's init.
+function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
+  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+  return globalThis.fetch(input, { ...init, headers });
 }
 
 // A call that ended, with the reply that pi wrote.
