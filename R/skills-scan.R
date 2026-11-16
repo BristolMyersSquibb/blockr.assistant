@@ -1,8 +1,10 @@
 skill_cache <- new.env(parent = emptyenv())
 
-skill_catalogue <- function() {
+# The skills of the app's packages, `packages`, and of the deployment, by
+# name, as R lists them from the directories that `skill_sources()` gives.
+skill_catalogue <- function(packages) {
 
-  sources <- skill_sources()
+  sources <- skill_sources(packages)
   dirs    <- skill_dirs(sources)
 
   stamp <- list(
@@ -18,13 +20,30 @@ skill_catalogue <- function() {
   skill_cache$skills
 }
 
-skill_sources <- function() {
+# The directories that R lists skills from, in this order:
+# the `inst/assistant/skills` of each of the app's packages that has one, in
+# the order of the packages' names, then the directory that the blockr option
+# `assistant_skills` names.
+# A package's `inst/skills` is btw's, which lists the skills there for coding
+# agents.
+skill_sources <- function(packages) {
 
-  builtin <- system.file("skills", package = "blockr.assistant")
+  if (!is.character(packages) || anyNA(packages) ||
+        !all(grepl("^[A-Za-z][A-Za-z0-9.]*[A-Za-z0-9]$", packages))) {
+    blockr_abort(
+      "The app's packages are given by their names, in `packages`.",
+      class = "invalid_packages"
+    )
+  }
+
+  pkgs <- sort(unique(packages), method = "radix")
+  dirs <- chr_ply(pkgs, package_skills_dir, use_names = FALSE)
+  dirs <- dirs[dir.exists(dirs)]
+
   configured <- blockr_option("assistant_skills", NULL)
 
   if (is.null(configured)) {
-    return(builtin[dir.exists(builtin)])
+    return(dirs)
   }
 
   if (!is_string(configured)) {
@@ -41,7 +60,11 @@ skill_sources <- function() {
     )
   }
 
-  c(builtin[dir.exists(builtin)], configured)
+  c(dirs, configured)
+}
+
+package_skills_dir <- function(pkg) {
+  system.file("assistant", "skills", package = pkg)
 }
 
 skill_dirs <- function(sources) {
@@ -96,7 +119,7 @@ warn_catalogue_budget <- function(skills) {
       "The always-on skill catalogue is {size} characters, over the ",
       "{budget} character budget: trim the descriptions of the ",
       "{length(global_skills(skills))} global skills, or scope some of ",
-      "them to the blocks or extensions they bear on."
+      "them to the block classes or plugin classes they bear on."
     )
   }
 
@@ -109,7 +132,7 @@ global_skills <- function(skills) {
 
 is_global_skill <- function(skill) {
   is_model_invocable(skill) &&
-    !length(skill$blocks) && !length(skill$extensions)
+    !length(skill$blocks) && !length(skill$plugins)
 }
 
 is_model_invocable <- function(skill) {
@@ -207,7 +230,7 @@ parse_skill <- function(dir) {
     description     = meta[["description"]],
     path            = dir,
     blocks          = as.character(meta[["blocks"]]),
-    extensions      = as.character(meta[["extensions"]]),
+    plugins         = as.character(meta[["plugins"]]),
     requires        = requires,
     user_invocable  = user_invocable,
     model_invocable = model_invocable

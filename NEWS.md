@@ -23,6 +23,14 @@
   The class's `ui` draws an empty panel in React wherever the frontend places
   the plugin.
 
+* A package gives the assistant skills of its own, in its
+  `inst/assistant/skills` (#222).
+  R lists the skills of each of the app's packages, in the order of their
+  names, and then those of the directory that the blockr option
+  `assistant_skills` names.
+  A skill names block classes by their registry ids in `blocks:`, and plugin
+  classes by their ids in `plugins:`, in place of `extensions:`.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
