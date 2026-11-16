@@ -1,0 +1,288 @@
+// The loop, which runs a turn of a conversation on pi's agent loop
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
+// This directory is the only code that imports pi, and imports it at a pinned
+// version, so that a move to the AI SDK rewrites this module alone.
+//
+// - The calls go through a provider that pi's createProvider() makes for a
+//   base URL and the API that it speaks, by pi's name for the API
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#where-the-calls-go).
+// - The loop takes the credential through getApiKey, which pi calls for each
+//   request, so that the loop knows no way to authenticate
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
+// - It gives pi an identity without attribution, so that pi names no app to
+//   OpenRouter, and the thinking level medium
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
+// - It hands pi the tools as they are, with each tool's executionMode, and
+//   takes the system prompt, a transformContext and an onPayload from its
+//   caller.
+//   The transformContext takes the conversation in the state's shape, and the
+//   onPayload the request as the provider takes it.
+// - Before each call, it builds pi's messages from the conversation as the
+//   plugin holds it then (./messages.ts).
+//
+// It reports to its caller as the turn runs, and pi waits for each report
+// before it goes on, so that a reply is in the conversation before the next
+// call goes out:
+// - The reply as it streams.
+// - Each call to the model once it ended, with its reply, its tokens, and why
+//   it failed, where it failed.
+// - Each tool call once it returned, before the reply's other calls return.
+// - The results of a reply's tool calls, as one message of the role tool.
+//
+// Where the turn's signal aborts, pi stops the model's stream, and each tool
+// call left without a result gets one that says the user stopped the turn.
+// The tools stop waiting themselves, since each takes the signal.
+
+import type { Json } from "@blockr/core";
+import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
+import type { Kept, KeptImage } from "../conversations/index.ts";
+import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
+import type { Tool } from "../tools/index.ts";
+import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import type { Answered } from "./messages.ts";
+import type * as vendor from "./vendor.ts";
+
+// The parts of pi that the loop uses, as ./vendor.ts names them.
+export type Pi = typeof vendor;
+
+// The id of the provider through which every call goes. It names no service,
+// since the base URL of a deployment may belong to any.
+export const PROVIDER = "blockr.assistant";
+
+// Where a turn's calls go: a base URL, and the API that it speaks, by pi's
+// name for it, such as "openai-responses".
+export interface Connection {
+  readonly baseUrl: string;
+  readonly api: string;
+  // The credential for a call, which the loop asks for again for each call, or
+  // undefined for none.
+  apiKey(): Promise<string | undefined>;
+}
+
+export interface Turn {
+  readonly connection: Connection;
+  // The id of the model that the turn talks to, such as "gpt-5.4".
+  readonly model: string;
+  readonly tools: readonly Tool[];
+  // The conversation as the plugin holds it, as a call goes out: the messages
+  // that the memory holds, then those of the state.
+  messages(): readonly Message[];
+  // What the memory keeps of a message of the conversation.
+  kept(message: MessageId): Kept | undefined;
+  // What the caller adds to each call: the system prompt, a transform of the
+  // conversation for the call alone, and a transform of the request that goes
+  // to the provider, whose undefined keeps the request as it is.
+  readonly systemPrompt?: string;
+  readonly transformContext?: (messages: readonly Message[], signal: AbortSignal) => Promise<readonly Message[]>;
+  readonly onPayload?: (payload: unknown) => unknown;
+  readonly signal: AbortSignal;
+  readonly on: Handlers;
+}
+
+// What the loop reports as a turn runs. The loop waits for each that returns a
+// promise.
+export interface Handlers {
+  // The reply as it streams, after each change.
+  streaming(reply: Streamed): void;
+  // A call to the model that ended, however it ended.
+  called(call: Call): Promise<void>;
+  // A tool call that returned, with its result.
+  returned(id: string, result: Answered): void;
+  // The results of a reply's tool calls, as one message of the role tool, with
+  // what the memory keeps of it.
+  results(message: Message, kept: Kept): Promise<void>;
+}
+
+// A reply as it streams: its text and its tool calls so far, in the state's
+// shape, and its reasoning, as text.
+export interface Streamed {
+  readonly parts: readonly Part[];
+  readonly reasoning: readonly string[];
+}
+
+export interface Call {
+  // The reply, where it holds text or a tool call, with what the memory keeps
+  // of it.
+  readonly reply?: { readonly message: Message; readonly kept: Kept };
+  // The input tokens of the call, without the cached input, its output
+  // tokens, and every token of the call, the cached input included.
+  readonly usage: { readonly input: number; readonly output: number; readonly total: number };
+  // Why the call failed, where it failed. A call that the turn's signal
+  // stopped did not fail.
+  readonly failure?: string;
+}
+
+export interface Loop {
+  // Runs the turn, and resolves once the turn ends, however it ends. It
+  // rejects where the turn cannot go on, as where the credential cannot be
+  // read.
+  run(turn: Turn): Promise<void>;
+}
+
+// The loop on the parts of pi given, with the three APIs that the assistant
+// speaks, and the APIs given beside them, by pi's name for each, as a test
+// gives pi's fake API.
+export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams>> = {}): Loop {
+  const streams: Readonly<Record<string, ProviderStreams>> = {
+    "anthropic-messages": pi.anthropicMessages,
+    "openai-completions": pi.openaiCompletions,
+    "openai-responses": pi.openaiResponses,
+    ...apis,
+  };
+  return { run: (turn) => runTurn(pi, streams, turn) };
+}
+
+// The loop, once the page has imported pi's bundle.
+// The browser imports the bundle once, as the board's first turn starts.
+export async function loadLoop(): Promise<Loop> {
+  return createLoop(await import("./vendor.ts"));
+}
+
+async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+  const model = modelOf(pi, turn.model, turn.connection);
+  const models = pi.createModels();
+  models.setProvider(
+    pi.createProvider({
+      id: PROVIDER,
+      baseUrl: turn.connection.baseUrl,
+      // The credential comes through getApiKey, so the provider takes none.
+      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
+      models: [model],
+      api: streams,
+    }),
+  );
+
+  // The results that the tools gave, and those that pi gave in place of a
+  // tool before the signal aborted, as for args that the tool's schema
+  // refuses, by call.
+  const given = new Map<string, Answered>();
+  const answered = new Map<string, Answered>();
+  const answer = (id: string): Answered => given.get(id) ?? answered.get(id) ?? { text: STOPPED, isError: true, images: [] };
+  const tools = turn.tools.map((tool) => agentTool(tool, given));
+  const prompt = turn.systemPrompt ?? "";
+  const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+
+  const config: AgentLoopConfig = {
+    model,
+    reasoning: "medium",
+    identity: { attribution: null },
+    // The loop adds no messages of its own to pi's, so they go to the model
+    // as they are.
+    convertToLlm: (messages) => messages,
+    transformContext: async (_messages, signal) => {
+      const conversation = turn.messages();
+      const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
+      return callMessages(transformed, kept, model, turn.tools, prompt);
+    },
+    getApiKey: () => turn.connection.apiKey(),
+    ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
+  };
+
+  const emit = async (event: AgentEvent): Promise<void> => {
+    switch (event.type) {
+      case "message_start":
+      case "message_update":
+        if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
+        return;
+      case "message_end":
+        if (event.message.role === "assistant") await turn.on.called(callOf(event.message));
+        return;
+      case "tool_execution_end":
+        if (!given.has(event.toolCallId) && !turn.signal.aborted) {
+          answered.set(event.toolCallId, answeredOf(event.result as AgentToolResult<unknown>, event.isError));
+        }
+        turn.on.returned(event.toolCallId, answer(event.toolCallId));
+        return;
+      case "turn_end": {
+        // A reply whose call failed ran none of its tool calls, which then read
+        // to the model as calls that the turn ended before they returned.
+        if (event.message.role !== "assistant" || event.message.stopReason === "error") return;
+        const calls: ToolCallPart[] = partsOf(event.message).filter(isToolCall);
+        if (calls.length === 0) return;
+        const results = resultsOf(calls, (call) => answer(call.id));
+        await turn.on.results(results.message, results.kept);
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
+  const context = { messages: callMessages(turn.messages(), kept, model, turn.tools, prompt), tools };
+  await pi.runAgentLoopContinue(context, config, emit, turn.signal, models.streamSimple.bind(models));
+}
+
+// The model of the id given, at the connection's base URL, in its API,
+// through the plugin's provider.
+// - Where pi's catalog of OpenAI's or of Anthropic's models holds a model of
+//   the id, the model takes the catalog's settings, such as the thinking that
+//   it takes, which Anthropic's current models refuse in any other form. It
+//   takes the catalog's settings for the API alone where the catalog's model
+//   speaks the connection's API.
+// - Any other model reasons, takes images, and has room for 200,000 tokens, of
+//   which a reply takes up to 32,000. The cost is unknown, so pi counts none.
+function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
+  const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
+  const known = catalogModel(pi, id);
+  if (known === undefined) {
+    return {
+      ...at,
+      name: id,
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200_000,
+      maxTokens: 32_000,
+    };
+  }
+  // The catalog's headers belong to the catalog's provider, so they go.
+  return { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
+}
+
+// The model of the id given in pi's catalog of OpenAI's or of Anthropic's
+// models, or undefined.
+function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
+  for (const catalog of [pi.ANTHROPIC_MODELS, pi.OPENAI_MODELS] as readonly Readonly<Record<string, Model<Api>>>[]) {
+    if (Object.hasOwn(catalog, id)) return catalog[id];
+  }
+  return undefined;
+}
+
+// A call that ended, with the reply that pi wrote.
+function callOf(reply: AssistantMessage): Call {
+  const written = replyOf(reply);
+  return {
+    ...(written === undefined ? {} : { reply: written }),
+    usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
+    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+  };
+}
+
+// A tool as pi runs it, which keeps the result that the tool gave by call.
+// The tool rejects only where the turn's signal aborts, and pi then writes an
+// error of its own as the result, which the loop replaces.
+function agentTool(tool: Tool, given: Map<string, Answered>): AgentTool {
+  return {
+    name: tool.name,
+    label: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    executionMode: tool.executionMode,
+    async execute(id, args, signal) {
+      const result = await tool.execute(args as Readonly<Record<string, Json>>, signal ?? new AbortController().signal);
+      given.set(id, { text: result.text, isError: result.isError, images: result.images });
+      const content: (TextContent | ImageContent)[] = [{ type: "text", text: result.text }, ...result.images.map(image)];
+      return { content, details: undefined, isError: result.isError };
+    },
+  };
+}
+
+// The result that pi gave in place of a tool, as for args that the tool's
+// schema refuses.
+function answeredOf(result: AgentToolResult<unknown>, isError: boolean): Answered {
+  const text = result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n");
+  const images = result.content.flatMap((block): KeptImage[] => (block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []));
+  return { text, isError, images };
+}
+

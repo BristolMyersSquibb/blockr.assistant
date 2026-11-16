@@ -234,3 +234,62 @@ describe("the conversations under a value of chat_save_turns that the cap does n
     expect(stateIn(core).conversations.c1).toEqual(three);
   });
 });
+
+describe("what the memory keeps of a message", () => {
+  const reasoning = { reasoning: ["Count the blocks."], reply: { role: "assistant" } };
+
+  test("comes with a message that addMessage() adds, and grows through keep()", async () => {
+    const { conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
+
+    await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
+    conversations.keep("c1", "a1", { failure: "The call failed." });
+
+    expect(conversations.kept("c1", "a1")).toEqual({ ...reasoning, failure: "The call failed." });
+    expect(conversations.kept("c1", "u1")).toBeUndefined();
+    expect(() => {
+      conversations.keep("c1", "a9", { failure: "No such message." });
+    }).toThrow(/holds no message "a9"/);
+  });
+
+  test("stays with the messages that the cap cuts from the state into the memory", async () => {
+    const { conversations } = await opened({ conversations: { c1: three } }, 4);
+
+    await conversations.addMessage("c1", message("u4", "user"), { failure: "Kept." });
+    await conversations.addMessage("c1", message("a4", "assistant"));
+    await conversations.addMessage("c1", message("u5", "user"));
+
+    expect(conversations.kept("c1", "u4")).toEqual({ failure: "Kept." });
+  });
+
+  test("goes with a conversation that the state no longer holds, whoever removed it", async () => {
+    const { core, conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
+    await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
+
+    await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant");
+    await core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" }, "assistant");
+    await conversations.addMessage("c1", message("a1", "assistant"));
+
+    expect(conversations.kept("c1", "a1")).toBeUndefined();
+  });
+
+  test("goes with the messages that a summary replaces", async () => {
+    const { conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
+    await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
+    await conversations.addMessage("c1", message("u2", "user"), { failure: "Kept." });
+
+    await conversations.compactConversation("c1", message("s1", "summary"), "u2");
+
+    expect(conversations.kept("c1", "a1")).toBeUndefined();
+    expect(conversations.kept("c1", "u2")).toEqual({ failure: "Kept." });
+  });
+
+  test("goes with a conversation that the memory removes under a cap of 0", async () => {
+    const { conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } }, 0);
+    await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
+    expect(conversations.kept("c1", "a1")).toEqual(reasoning);
+
+    await conversations.removeConversation("c1");
+
+    expect(conversations.kept("c1", "a1")).toBeUndefined();
+  });
+});
