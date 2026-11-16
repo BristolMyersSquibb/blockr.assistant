@@ -258,6 +258,35 @@ describe("a turn that stops or fails", () => {
     expect(turn.calls.at(-1)?.reply).toBeUndefined();
   });
 
+  test("keeps a result that a tool gives after the stop, as the edit tool gives one once its commands applied", async () => {
+    let stop = (): void => undefined;
+    const edits = tool(
+      "edit",
+      (signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener("abort", () => {
+            setTimeout(() => {
+              resolve({ text: "The commands applied.", isError: false, images: [] });
+            }, 10);
+          });
+          stop();
+        }),
+      "sequential",
+    );
+    const turn = turnWith([fauxAssistantMessage([fauxToolCall("edit", {}, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Never sent.")], {
+      tools: [edits],
+    });
+    stop = () => {
+      queueMicrotask(() => {
+        turn.controller.abort();
+      });
+    };
+
+    await turn.run();
+
+    expect(turn.messages[2]?.parts).toEqual([{ type: "tool_result", id: "c1", text: "The commands applied." }]);
+  });
+
   test("reports a failed call with why it failed, after the reply that it streamed until then", async () => {
     const { run, messages, kept, calls } = turnWith([fauxAssistantMessage([fauxText("I will look.")], { stopReason: "error", errorMessage: "401 Unauthorized" })]);
 
