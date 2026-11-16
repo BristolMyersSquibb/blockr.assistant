@@ -26,6 +26,11 @@
 #' As a board opens, the plugin cuts each of its conversations to the cap.
 #' Under `0`, it keeps every conversation in the browser's memory alone.
 #'
+#' The plugin prints a line for each conversation, the last updated first.
+#' Each line gives the conversation's id and title, how many messages it
+#' holds, its pick of the model and when it was updated.
+#' A board that holds the plugin prints it the same way.
+#'
 #' The package lists the class in the `._BLOCKR_MODULES_` that it exports,
 #' with its name, "Assistant", and its module, `js/assistant_plugin.js` (see
 #' [blockr.core::read_blocks_yml()]).
@@ -123,6 +128,8 @@
 #'   )
 #' )
 #'
+#' plugin
+#'
 #' names(blockr.core::plugin_state(plugin)[["conversations"]])
 #'
 #' @export
@@ -151,6 +158,42 @@ is_conversations <- function(x) {
 
   !length(x) ||
     (!is.null(ids) && !anyNA(ids) && all(nzchar(ids)) && !anyDuplicated(ids))
+}
+
+# The print gives a line for each conversation, the last updated first, as the
+# chat's drawer lists them.
+# The method sorts the times in `updated` as strings, by their bytes.
+# That sorts them by time where all of them have one form, such as the form
+# that `toISOString()` gives in the client.
+# Conversations with the same time keep their order in the state.
+#' @export
+format.assistant_plugin <- function(x, ...) {
+
+  conversations <- plugin_state(x)[["conversations"]]
+
+  updated <- chr_xtr(conversations, "updated")
+  conversations <- conversations[
+    order(updated, decreasing = TRUE, method = "radix")
+  ]
+
+  c(
+    paste0("<", class(x)[1L], "> ", plugin_class_id(x)),
+    chr_mply(format_conversation, names(conversations), conversations)
+  )
+}
+
+# The line of the conversation `id` in the print of the assistant's plugin.
+format_conversation <- function(id, conversation) {
+
+  n <- length(conversation[["messages"]])
+  model <- conversation[["model"]]
+
+  paste0(
+    id, ": ", conversation[["title"]],
+    " (", n, if (n == 1L) " message" else " messages",
+    ", ", if (is.null(model)) "default model" else paste("model", model),
+    ", updated ", conversation[["updated"]], ")"
+  )
 }
 
 #' @rdname new_assistant_plugin

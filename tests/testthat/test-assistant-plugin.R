@@ -55,6 +55,69 @@ test_that("R writes the conversations by the schema beside the module", {
   expect_length(c1[["messages"]][[1L]][["parts"]], 1L)
 })
 
+test_that("the plugin prints a line for each conversation", {
+
+  # The state lists the conversations in an order other than that of their
+  # times.
+  revenue <- conversation("Revenue by month")
+  revenue[["updated"]] <- "2026-11-16T09:30:00Z"
+  revenue[["model"]] <- "gpt-5.4"
+  revenue[["messages"]] <- c(
+    revenue[["messages"]],
+    list(
+      list(
+        id = "m2",
+        role = "assistant",
+        parts = list(list(type = "text", text = "I'll add a summary block.")),
+        created = "2026-11-16T09:30:00Z"
+      )
+    )
+  )
+
+  fresh <- conversation("New conversation")
+  fresh[["updated"]] <- "2026-11-16T07:00:00Z"
+  fresh[["messages"]] <- list()
+
+  plugin <- new_assistant_plugin(
+    list(c1 = conversation(), c2 = fresh, c3 = revenue)
+  )
+
+  expect_snapshot(print(plugin))
+
+  expect_identical(
+    format(new_assistant_plugin()),
+    "<assistant_plugin> blockr.assistant-assistant_plugin"
+  )
+})
+
+test_that("the print keeps the state's order for conversations of one time", {
+
+  # The helper gives both conversations the same time.
+  # The state lists b before a, against the order of their ids.
+  plugin <- new_assistant_plugin(
+    list(b = conversation("Second"), a = conversation("First"))
+  )
+
+  expect_identical(
+    format(plugin)[-1L],
+    c(
+      "b: Second (1 message, default model, updated 2026-11-16T08:00:00Z)",
+      "a: First (1 message, default model, updated 2026-11-16T08:00:00Z)"
+    )
+  )
+})
+
+test_that("a board prints the assistant's plugin that it holds", {
+
+  plugin <- new_assistant_plugin(list(c1 = conversation()))
+
+  expect_output(
+    print(new_board(plugins = list(plugin))),
+    paste(format(plugin), collapse = "\n"),
+    fixed = TRUE
+  )
+})
+
 test_that("the package ships the schema of the state beside the module", {
 
   schema <- read_json_schema(
