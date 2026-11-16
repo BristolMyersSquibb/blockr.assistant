@@ -10,13 +10,24 @@
 //   its controls to the page that R serves, which resolves them through its
 //   import map. So the bundle holds none of them.
 // - The bundle is not minified, since it holds the assistant's own code alone.
-// - The parts of pi that the loop uses, which srcts/loop/vendor.ts names, are
-//   bundled, minified, into a file of their own, pi-<hash>.js. Its name holds
-//   a hash of its content, as core names its bundle of React, so that no
-//   browser runs an old copy from its cache. The loop's dynamic import of
-//   srcts/loop/vendor.ts becomes an import of that file, beside the module,
-//   where R serves it too. That bundle may leave no import, since the page's
-//   import map names none of its libraries.
+// - The build of the module takes the vendor check that blockr.core ships
+//   beside the preset. It fails the build where the module's bundle would
+//   hold code from node_modules, as where a file of the assistant imports pi
+//   other than through srcts/loop/vendor.ts.
+// - The packages that the assistant bundles from other projects are those
+//   that package.json lists in `dependencies`, pi's two, as blockr.dock's
+//   build takes the dock's. Of them, srcts/loop/vendor.ts names the parts
+//   that the loop uses, since pi's root entry point breaks a bundle. The
+//   build fails where vendor.ts imports any other package.
+// - Those parts are bundled, minified, into a file of their own,
+//   pi-<hash>.js, which the loop loads as the first turn starts, as core
+//   bundles the parts of OpenTelemetry's SDK that it loads on demand into
+//   opentelemetry-<hash>.js. The name holds a hash of the content, so that no
+//   browser runs an old copy from its cache. The bundle takes the build
+//   preset too, so that an import of React or of OpenTelemetry's API that pi
+//   makes stays an import of the one copy on the page. The loop's dynamic
+//   import of srcts/loop/vendor.ts becomes an import of that file, beside the
+//   module, where R serves it too.
 // - The license texts of the packages in that bundle go beside it, into
 //   pi-licenses.txt, since none of the bundled files holds its license. Each
 //   text comes from the package's LICENSE file, or from srcts/build/licenses
@@ -35,7 +46,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { preset } from "@blockr/core/build";
+import { preset, vendorCheck } from "@blockr/core/build";
 import * as esbuild from "esbuild";
 import { createGenerator } from "ts-json-schema-generator";
 
@@ -56,7 +67,7 @@ export async function build(root: string): Promise<string[]> {
     outdir: out,
     logLevel: "warning",
     metafile: true,
-    plugins: [vendoredPi(root, pi.file), ...preset.plugins],
+    plugins: [vendoredPi(root, pi.file), ...preset.plugins, vendorCheck],
   });
 
   if (result.warnings.length > 0) {
@@ -83,33 +94,26 @@ const LICENSES: Readonly<Record<string, string>> = {
 // writes the license texts of what it holds beside it, into
 // pi-licenses.txt. It gives the bundle's name, and the files that it wrote,
 // relative to `root`.
-// It fails where the bundle leaves an import or a dynamic import. A require()
-// that it leaves of one of Node's modules is no import, and pi reaches it in
-// Bun alone.
 async function piBundle(root: string, out: string): Promise<{ file: string; written: string[] }> {
+  const vendor = join(root, "srcts", "loop", "vendor.ts");
   const result = await esbuild.build({
+    ...preset,
     absWorkingDir: root,
-    entryPoints: [join(root, "srcts", "loop", "vendor.ts")],
-    bundle: true,
+    entryPoints: [vendor],
     write: false,
     metafile: true,
-    format: "esm",
-    platform: "browser",
-    target: preset.target,
-    define: preset.define,
     minify: true,
-    legalComments: "inline",
     logLevel: "warning",
   });
 
   if (result.warnings.length > 0) {
     throw new Error("esbuild warned, as printed above");
   }
-  const left = Object.values(result.metafile.outputs).flatMap((output) =>
-    output.imports.filter((entry) => entry.external === true && entry.kind !== "require-call").map((entry) => entry.path),
-  );
-  if (left.length > 0) {
-    throw new Error(`The bundle of pi imports ${left.join(", ")}, which the page cannot resolve.`);
+  const packages = await vendorPackages(root);
+  const imported = result.metafile.inputs[relative(root, vendor)]?.imports ?? [];
+  const strays = [...new Set(imported.flatMap((entry) => packageOf(entry.path) ?? []))].filter((name) => !packages.includes(name));
+  if (strays.length > 0) {
+    throw new Error(`The file srcts/loop/vendor.ts imports ${strays.join(", ")}, which package.json does not list in dependencies.`);
   }
 
   const text = result.outputFiles[0]?.text ?? "";
@@ -118,6 +122,25 @@ async function piBundle(root: string, out: string): Promise<{ file: string; writ
   await writeFile(join(out, file), text);
   await writeFile(licenses, await licenseTexts(root, file, result.metafile));
   return { file, written: [relative(root, join(out, file)), relative(root, licenses)] };
+}
+
+// The packages that the build bundles from other projects, by their names:
+// those that package.json lists in `dependencies`.
+async function vendorPackages(root: string): Promise<string[]> {
+  const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+    readonly dependencies?: Readonly<Record<string, string>>;
+  };
+  return Object.keys(manifest.dependencies ?? {});
+}
+
+// The npm package of a file in node_modules, as @earendil-works/pi-ai for
+// node_modules/@earendil-works/pi-ai/dist/models.js, or undefined for a file
+// from elsewhere.
+function packageOf(path: string): string | undefined {
+  const at = path.lastIndexOf("node_modules/");
+  if (at === -1) return undefined;
+  const [first = "", second = ""] = path.slice(at + "node_modules/".length).split("/");
+  return first.startsWith("@") ? `${first}/${second}` : first;
 }
 
 // The license texts of the packages that the bundle `file` holds, by their
