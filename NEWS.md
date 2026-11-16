@@ -108,6 +108,20 @@
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
 
+* The assistant takes the conditions of R's replies to its requests itself,
+  so that core raises no notification for them (#250).
+  The tools `get_block_result`, `inspect_results` and `read_skill` give the
+  model the warnings and messages of R's reply after what R answered, or
+  after R's error where R replied with one.
+  So the model learns, for instance, that its code introduced NAs by
+  coercion.
+  The blockr option `assistant_eval_max_chars` caps that list, as it caps
+  what the model's code prints.
+  The assistant drops the conditions of R's reply to `list_skills`, since R
+  logs them.
+  Where R cannot list the skills, the user sees the assistant's error
+  `assistant_skills_failed` alone, without R's error beside it.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

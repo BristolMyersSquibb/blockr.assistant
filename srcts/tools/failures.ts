@@ -7,7 +7,8 @@
 //   rejected it, of each block that is not.
 // - A request that R lost to a new session says so, since core sends it no
 //   more.
-// - An error in R, such as in the model's own code, gives R's message.
+// - An error in R, such as in the model's own code, gives R's message,
+//   followed by the warnings and messages of R's reply (./conditions.ts).
 
 import type { BlockStatus } from "@blockr/core";
 import { failureMessage, isRequestError, isSessionEnded } from "../requests/index.ts";

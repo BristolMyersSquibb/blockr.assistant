@@ -4,11 +4,15 @@
 
 import type { Condition, CoreApi } from "@blockr/core";
 import { describe, expect, test } from "vitest";
-import { callTool, skillsHolding, startAssistant } from "../testing/index.ts";
+import { callTool, requestNotifications, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
 const ERROR: Condition = { severity: "error", class: ["simpleError", "error", "condition"], phase: "expr", message: "object 'Sepal.Width' not found" };
+
+// A warning and a message, as R records them while it answers a request.
+const COERCED: Condition = { severity: "warning", class: ["simpleWarning", "warning", "condition"], phase: "request", message: "NAs introduced by coercion" };
+const JOINED: Condition = { severity: "message", class: ["simpleMessage", "message", "condition"], phase: "request", message: "Joining with `by = join_by(id)`" };
 
 // A PNG as base64, which R writes for each plot.
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
@@ -33,6 +37,20 @@ describe("get_block_result", () => {
     await expect(callTool(tools, "get_block_result", { id: "b" })).resolves.toEqual({ text: "The result of b.", isError: false, images: [] });
     expect(requests("describe_result")).toEqual([{ name: "describe_result", args: {}, reads: [{ block: "b", revision: core.scheduler.status("b")?.revision }] }]);
     expect(core.scheduler.status("b")?.status).toBe("ready");
+  });
+
+  test("gives the warnings of R's reply after what R writes, and core raises no notification for them", async () => {
+    const { core, tools } = await started({
+      answers: { describe_result: () => ({ b: ["The result of b."] }) },
+      conditions: { describe_result: [COERCED] },
+    });
+
+    await expect(callTool(tools, "get_block_result", { id: "b" })).resolves.toEqual({
+      text: "The result of b.\n\nWarning: NAs introduced by coercion",
+      isError: false,
+      images: [],
+    });
+    expect(requestNotifications(core)).toEqual([]);
   });
 
   test("gives the status of each block that it reads and that is not ready, and sends R nothing", async () => {
@@ -88,8 +106,46 @@ describe("inspect_results", () => {
     ]);
   });
 
-  test("gives R's error in the model's code", async () => {
+  test("gives the warnings and messages of the model's code after what it printed, in the order R raised them, and core raises no notification for them", async () => {
+    const { core, tools } = await started({
+      answers: { inspect_results: () => ({ output: ["[1] NA"], plots: [] }) },
+      conditions: { inspect_results: [COERCED, JOINED] },
+    });
+
+    await expect(callTool(tools, "inspect_results", { code: 'as.numeric("a")', blocks: [] })).resolves.toEqual({
+      text: "[1] NA\n\nWarning: NAs introduced by coercion\nMessage: Joining with `by = join_by(id)`",
+      isError: false,
+      images: [],
+    });
+    expect(requestNotifications(core)).toEqual([]);
+  });
+
+  test("gives the warnings alone where the code printed nothing", async () => {
     const { tools } = await started({
+      answers: { inspect_results: () => ({ output: [""], plots: [] }) },
+      conditions: { inspect_results: [COERCED] },
+    });
+
+    await expect(callTool(tools, "inspect_results", { code: 'x <- as.numeric("a")', blocks: [] })).resolves.toMatchObject({
+      text: "Warning: NAs introduced by coercion",
+      isError: false,
+    });
+  });
+
+  test("cuts the warnings and messages at assistant_eval_max_chars", async () => {
+    const { tools } = await started({
+      blockrOptions: { assistant_eval_max_chars: 80 },
+      answers: { inspect_results: () => ({ output: ["[1] NA"], plots: [] }) },
+      conditions: { inspect_results: Array.from({ length: 100 }, () => COERCED) },
+    });
+
+    await expect(callTool(tools, "inspect_results", { code: 'sapply(rep("a", 100), as.numeric)', blocks: [] })).resolves.toMatchObject({
+      text: "[1] NA\n\nWarning: NAs introduced by coercion\nWarning: NAs int\n... [+3547 chars truncated]",
+    });
+  });
+
+  test("gives R's error in the model's code, and core raises no notification for it", async () => {
+    const { core, tools } = await started({
       answers: {
         inspect_results: () => {
           throw new Error("object 'x' not found");
@@ -102,6 +158,25 @@ describe("inspect_results", () => {
       isError: true,
       images: [],
     });
+    expect(requestNotifications(core)).toEqual([]);
+  });
+
+  test("gives R's error in the model's code, followed by the warnings that the code raised before it", async () => {
+    const { core, tools } = await started({
+      answers: {
+        inspect_results: () => {
+          throw new Error("!anyNA(x) is not TRUE");
+        },
+      },
+      conditions: { inspect_results: [COERCED] },
+    });
+
+    await expect(callTool(tools, "inspect_results", { code: "x <- as.numeric(a$Species); stopifnot(!anyNA(x))", blocks: ["a"] })).resolves.toEqual({
+      text: "!anyNA(x) is not TRUE\n\nWarning: NAs introduced by coercion",
+      isError: true,
+      images: [],
+    });
+    expect(requestNotifications(core)).toEqual([]);
   });
 
   test("refuses on a locked board before core evaluates any block that it reads", async () => {

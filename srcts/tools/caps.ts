@@ -26,6 +26,9 @@ const DEFAULTS = {
   assistant_description_max_chars: 1000,
   // The description of a skill that names a class.
   assistant_skill_description_max_chars: 1024,
+  // What the model's own R code prints, which R cuts, and the warnings and
+  // messages of R's reply to a tool's request.
+  assistant_eval_max_chars: 16000,
 } as const;
 
 export type Cap = keyof typeof DEFAULTS;
