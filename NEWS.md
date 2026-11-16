@@ -23,6 +23,20 @@
   The class's `ui` draws an empty panel in React wherever the frontend places
   the plugin.
 
+* The assistant's class answers five requests in R, through its method of
+  `plugin_requests()` (#222).
+  The request `describe_result` gives what `describe_result()` writes about
+  the result of each block that it reads.
+  The request `inspect_results` runs the model's R code with each block's
+  result bound to its id, and gives what the code prints and the plots that
+  it draws, as base64 PNGs.
+  R refuses it on a locked board.
+  The requests `list_skills` and `read_skill` list the skills and read one.
+  The request `read_template` reads the file that the blockr option
+  `assistant_template` names.
+  The generic `describe_result()` gains a method for the `captured_plot` that
+  a block returns where its expression draws a base plot.
+
 * A package gives the assistant skills of its own, in its
   `inst/assistant/skills` (#222).
   R lists the skills of each of the app's packages, in the order of their
