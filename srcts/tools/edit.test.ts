@@ -167,6 +167,21 @@ describe("edit", () => {
     expect(sent.slice(before).filter(({ kind }) => kind === "evaluate" || kind === "request")).toEqual([]);
   });
 
+  test("says that the commands changed nothing, where the board holds what they set already", async () => {
+    const { core, tools } = await started();
+    const board = core.store.board();
+
+    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 6 } } }] });
+
+    expect(result.isError).toBe(false);
+    expect(parsed(result)).toEqual({
+      applied: true,
+      undo_step: false,
+      notes: ["The commands changed nothing on the board, so there is nothing to review. The board may hold what they set already."],
+    });
+    expect(core.store.board()).toBe(board);
+  });
+
   test("takes no undo step for a list that only sets board options, or whose commands all have undo: false", async () => {
     const { core, tools } = await started();
     core.commands.register({ id: "blockr.test-rename", label: "Rename", undo: false, run: () => ({ name: "Renamed" }) });
