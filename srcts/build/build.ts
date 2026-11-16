@@ -28,6 +28,14 @@
 //   makes stays an import of the one copy on the page. The loop's dynamic
 //   import of srcts/loop/vendor.ts becomes an import of that file, beside the
 //   module, where R serves it too.
+// - The chat's libraries, assistant-ui, its Markdown and remark-gfm, are
+//   vendored the same way: srcts/chat/vendor.ts names the parts that the chat
+//   draws with, which are bundled, minified, into chat-<hash>.js. The chat
+//   imports that file as it first mounts, so that no board waits for it to
+//   open.
+// - The stylesheet of the module, srcts/modules/assistant_plugin/index.css,
+//   is bundled, unminified, into assistant_plugin.css, beside the module,
+//   where core finds it and puts it on the page with the module.
 // - The licenses of what the files in inst/js hold from other projects go
 //   into LICENSES beside them, as blockr.core's build writes its own
 //   (BristolMyersSquibb/blockr.core#650), since none of the bundled files
@@ -36,8 +44,13 @@
 //   author where its package.json names one, and the files that hold its
 //   code. The text of a license follows the lines that share it.
 //   A package that npm installs without a license file takes the one in
-//   srcts/build/licenses under its name, as the four packages of pi and
-//   standardwebhooks do. The build fails for a package with neither, so that
+//   srcts/build/licenses under its name, as the four packages of pi,
+//   standardwebhooks, react-remove-scroll-bar and use-composed-ref do. That
+//   of react-remove-scroll-bar comes from its repository, which added it
+//   after the version that npm installs. That of use-composed-ref, whose
+//   package.json names the MIT license and whose repository holds no license
+//   file, is the MIT license with the package's maintainer on npm as its
+//   holder. The build fails for a package with neither, so that
 //   no code ships without its license.
 // - The build generates the JSON Schema of the assistant's state from the
 //   type AssistantState in srcts/state/types.ts, as blockr.dock's build
@@ -66,32 +79,64 @@ export async function build(root: string): Promise<string[]> {
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   const schema = await stateSchema(root, out);
-  const pi = await piBundle(root, out);
-  const licensed = await licenses(root, out, new Map([[pi.file, pi.metafile]]));
+  const vendored = new Map<string, Vendored>();
+  for (const [name, vendor] of VENDORED) vendored.set(join(root, vendor), await vendorBundle(root, out, name, join(root, vendor)));
+  const licensed = await licenses(root, out, new Map([...vendored.values()].map(({ file, metafile }) => [file, metafile])));
+  const module = join(root, "srcts", "modules", "assistant_plugin");
 
-  const result = await esbuild.build({
-    ...preset,
-    absWorkingDir: root,
-    entryPoints: [{ in: join(root, "srcts", "modules", "assistant_plugin", "index.tsx"), out: "assistant_plugin" }],
-    outdir: out,
-    logLevel: "warning",
-    metafile: true,
-    plugins: [vendoredPi(root, pi.file), ...preset.plugins, vendorCheck],
-  });
+  const results = [
+    await esbuild.build({
+      ...preset,
+      absWorkingDir: root,
+      entryPoints: [{ in: join(module, "index.tsx"), out: "assistant_plugin" }],
+      outdir: out,
+      logLevel: "warning",
+      metafile: true,
+      plugins: [vendoredImports(vendored), ...preset.plugins, vendorCheck],
+    }),
+    await esbuild.build({
+      absWorkingDir: root,
+      bundle: true,
+      entryPoints: [{ in: join(module, "index.css"), out: "assistant_plugin" }],
+      outdir: out,
+      logLevel: "warning",
+      metafile: true,
+      plugins: [vendorCheck],
+    }),
+  ];
 
-  if (result.warnings.length > 0) {
+  if (results.some((result) => result.warnings.length > 0)) {
     throw new Error("esbuild warned, as printed above");
   }
 
-  return [...Object.keys(result.metafile.outputs), schema, relative(root, join(out, pi.file)), licensed].sort();
+  return [
+    ...results.flatMap((result) => Object.keys(result.metafile.outputs)),
+    schema,
+    ...[...vendored.values()].map(({ file }) => relative(root, join(out, file))),
+    licensed,
+  ].sort();
 }
 
-// Bundles the parts of pi that srcts/loop/vendor.ts names, minified, into one
-// file in `out`, named by a hash of its content, as pi-3f2a9c1d.js. It gives
-// the file's name, and the metafile of the build, which says what the file
-// holds.
-async function piBundle(root: string, out: string): Promise<{ file: string; metafile: esbuild.Metafile }> {
-  const vendor = join(root, "srcts", "loop", "vendor.ts");
+// The files that name the parts of other projects that the client uses, each
+// with the start of the name of the file that bundles them: pi's parts, which
+// the loop uses, and the libraries that the chat draws with.
+const VENDORED: ReadonlyMap<string, string> = new Map([
+  ["pi", join("srcts", "loop", "vendor.ts")],
+  ["chat", join("srcts", "chat", "vendor.ts")],
+]);
+
+// A bundle of vendored parts: its file's name, and the metafile of the build,
+// which says what the file holds.
+interface Vendored {
+  readonly file: string;
+  readonly metafile: esbuild.Metafile;
+}
+
+// Bundles the parts that the file `vendor` names, minified, into one file in
+// `out`, named by `name` and a hash of its content, as pi-3f2a9c1d.js. The
+// build fails where the file imports a package that package.json does not
+// list in `dependencies`.
+async function vendorBundle(root: string, out: string, name: string, vendor: string): Promise<Vendored> {
   const result = await esbuild.build({
     ...preset,
     absWorkingDir: root,
@@ -107,19 +152,20 @@ async function piBundle(root: string, out: string): Promise<{ file: string; meta
   }
   const packages = await vendorPackages(root);
   const imported = result.metafile.inputs[relative(root, vendor)]?.imports ?? [];
-  const strays = [...new Set(imported.flatMap((entry) => packageOf(entry.path) ?? []))].filter((name) => !packages.includes(name));
+  const strays = [...new Set(imported.flatMap((entry) => packageOf(entry.path) ?? []))].filter((stray) => !packages.includes(stray));
   if (strays.length > 0) {
-    throw new Error(`The file srcts/loop/vendor.ts imports ${strays.join(", ")}, which package.json does not list in dependencies.`);
+    throw new Error(`The file ${relative(root, vendor)} imports ${strays.join(", ")}, which package.json does not list in dependencies.`);
   }
 
   const text = result.outputFiles[0]?.text ?? "";
-  const file = `pi-${createHash("sha256").update(text).digest("hex").slice(0, 8)}.js`;
+  const file = `${name}-${createHash("sha256").update(text).digest("hex").slice(0, 8)}.js`;
   await writeFile(join(out, file), text);
   return { file, metafile: result.metafile };
 }
 
 // The packages that the build bundles from other projects, by their names:
-// those that package.json lists in `dependencies`.
+// those that package.json lists in `dependencies`, which the files of
+// VENDORED import between them.
 async function vendorPackages(root: string): Promise<string[]> {
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
     readonly dependencies?: Readonly<Record<string, string>>;
@@ -213,14 +259,17 @@ function listing(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items.at(-1) ?? ""}`;
 }
 
-// Leaves the loop's import of srcts/loop/vendor.ts an import of the bundle of
-// pi that piBundle() wrote, by its name beside the module.
-function vendoredPi(root: string, file: string): esbuild.Plugin {
-  const vendor = join(root, "srcts", "loop", "vendor.ts");
+// Leaves each import of a file of VENDORED, as the loop's of
+// srcts/loop/vendor.ts, an import of the bundle that vendorBundle() wrote of
+// it, by its name beside the module.
+function vendoredImports(vendored: ReadonlyMap<string, Vendored>): esbuild.Plugin {
   return {
-    name: "blockr.assistant-pi",
+    name: "blockr.assistant-vendored",
     setup(build) {
-      build.onResolve({ filter: /^\.\.?\// }, (args) => (resolve(args.resolveDir, args.path) === vendor ? { path: `./${file}`, external: true } : undefined));
+      build.onResolve({ filter: /^\.\.?\// }, (args) => {
+        const bundle = vendored.get(resolve(args.resolveDir, args.path));
+        return bundle === undefined ? undefined : { path: `./${bundle.file}`, external: true };
+      });
     },
   };
 }

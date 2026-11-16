@@ -16,32 +16,25 @@
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).
 //   The assistant holds the conversations (../../conversations), the skills
 //   that R lists (../../skills) and the turns (../../turns).
-// - Its `ui`, which every frontend places for the assistant, draws an empty
-//   panel. It draws in React, on the one copy of React that core puts on the
-//   page, in a root of its own.
+// - Its `ui`, which every frontend places for the assistant, draws the chat
+//   (../../chat) in React, on the one copy of React that core puts on the
+//   page, in a root of its own. Its stylesheet, ./index.css, is bundled beside
+//   the module, where core finds it.
 
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
 import type { JsonSchema, PluginClass, PluginModule } from "@blockr/core";
 // The schema of the class's state is the file that the build writes for R,
 // beside the bundle.
 // eslint-disable-next-line no-restricted-imports
 import schema from "../../../inst/js/assistant_plugin.schema.json" with { type: "json" };
 import { openAssistant } from "../../assistant/index.ts";
+import { renderChat } from "../../chat/index.ts";
 import { assistantCommands } from "../../commands/index.ts";
 
 export const api = 1;
 
 const ui = {
-  render({ el }) {
-    const root = createRoot(el);
-    // React draws the panel before render() returns.
-    flushSync(() => {
-      root.render(<div />);
-    });
-    return () => {
-      root.unmount();
-    };
+  render({ el, core }) {
+    return renderChat({ el, core });
   },
 } satisfies PluginModule;
 

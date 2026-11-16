@@ -99,7 +99,7 @@ describe("the assistant's plugin class", () => {
     expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
   });
 
-  test("draws an empty panel in the element that a frontend gives mountPlugin()", async () => {
+  test("draws the chat in the element that a frontend gives mountPlugin(), once the chat's libraries have loaded", async () => {
     const { core, settled } = await started();
     const el = element();
 
@@ -110,11 +110,17 @@ describe("the assistant's plugin class", () => {
       });
       await settled();
     });
+    // The page imports the chat's libraries as the chat first mounts.
+    for (let i = 0; i < 200 && el.querySelector(".blockr-assistant-greeting") === null; i += 1) {
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    }
 
-    expect(el.innerHTML).toBe("<div></div>");
+    expect(el.firstElementChild?.className).toBe("blockr-assistant");
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+    expect(el.querySelector(".blockr-assistant textarea")?.getAttribute("placeholder")).toBe("Ask about your board");
   });
 
-  test("unmounts the panel in the cleanup that its render() returns", async () => {
+  test("draws the panel's root before its render() returns, and removes it in the cleanup that render() returns", async () => {
     const { core } = await started();
     const el = element();
 
@@ -122,7 +128,7 @@ describe("the assistant's plugin class", () => {
     act(() => {
       cleanup = assistant.default.ui.render({ el, core, plugin: ASSISTANT, signal: new AbortController().signal });
     });
-    expect(el.innerHTML).toBe("<div></div>");
+    expect(el.firstElementChild?.className).toBe("blockr-assistant");
 
     act(cleanup);
     expect(el.childElementCount).toBe(0);
@@ -133,11 +139,8 @@ describe("the assistant's plugin class", () => {
     const { settled } = await started(el, empty);
     await act(() => settled());
 
-    // The section holds the panel inside the markup that core puts around
-    // the element it mounts the panel in, which holds nothing where core
-    // mounts no panel.
     const section = [...el.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Assistant");
-    expect(section?.lastElementChild?.innerHTML).toContain("<div></div>");
+    expect(section?.querySelector(".blockr-assistant")).not.toBeNull();
   });
 });
 
