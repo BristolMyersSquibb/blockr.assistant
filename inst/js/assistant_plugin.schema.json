@@ -1,0 +1,335 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "conversations": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Conversation"
+      },
+      "description": "Every conversation, by its id."
+    }
+  },
+  "required": [
+    "conversations"
+  ],
+  "additionalProperties": false,
+  "description": "The assistant's conversations.",
+  "definitions": {
+    "Conversation": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the conversation."
+        },
+        "updated": {
+          "type": "string",
+          "description": "When the conversation was added, or when its last message entered it, by which the conversations are ordered.",
+          "format": "date-time"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Message"
+          },
+          "description": "The messages that the state keeps, in the order in which they entered the conversation."
+        },
+        "usage": {
+          "$ref": "#/definitions/Usage",
+          "description": "The tokens that the conversation's calls to the model spent."
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The conversation's pick of the model, such as \"gpt-5.4\", or null for the default."
+        }
+      },
+      "required": [
+        "title",
+        "updated",
+        "messages",
+        "usage",
+        "model"
+      ],
+      "additionalProperties": false,
+      "description": "A conversation with the assistant."
+    },
+    "Message": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/MessageId",
+          "description": "The id of the message."
+        },
+        "role": {
+          "$ref": "#/definitions/Role",
+          "description": "Who the message is from."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Part"
+          },
+          "description": "What the message holds, in order."
+        },
+        "created": {
+          "type": "string",
+          "description": "When the message was made.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "parts",
+        "created"
+      ],
+      "additionalProperties": false,
+      "description": "A message of a conversation, which never changes once it entered the conversation."
+    },
+    "MessageId": {
+      "type": "string",
+      "description": "The id of a message, which no other message of its conversation has."
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "tool",
+        "summary"
+      ],
+      "description": "Who a message is from: the user, the model, the tools whose results it holds, or a summary of older messages that took their place."
+    },
+    "Part": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TextPart"
+        },
+        {
+          "$ref": "#/definitions/ToolCallPart"
+        },
+        {
+          "$ref": "#/definitions/ToolResultPart"
+        },
+        {
+          "$ref": "#/definitions/AttachmentPart"
+        },
+        {
+          "$ref": "#/definitions/ChangesPart"
+        },
+        {
+          "$ref": "#/definitions/SkillPart"
+        }
+      ],
+      "description": "A part of a message."
+    },
+    "TextPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "Text that the message holds."
+    },
+    "ToolCallPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tool_call"
+        },
+        "id": {
+          "type": "string",
+          "description": "The id of the call, which its result names."
+        },
+        "tool": {
+          "type": "string",
+          "description": "The name of the tool."
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Json"
+          },
+          "description": "The args of the call."
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "tool",
+        "args"
+      ],
+      "additionalProperties": false,
+      "description": "A call of a tool that the model asked for."
+    },
+    "Json": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Json"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Json"
+          }
+        }
+      ]
+    },
+    "ToolResultPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tool_result"
+        },
+        "id": {
+          "type": "string",
+          "description": "The id of the call."
+        },
+        "text": {
+          "type": "string",
+          "description": "The text of the result."
+        },
+        "error": {
+          "type": "boolean",
+          "description": "Whether the call failed."
+        },
+        "images": {
+          "type": "integer",
+          "description": "How many images the result carried, which the state leaves out.",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "The result of a call of a tool."
+    },
+    "AttachmentPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "attachment"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the file."
+        },
+        "media_type": {
+          "type": "string",
+          "description": "The media type of the file, such as \"image/png\"."
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "media_type"
+      ],
+      "additionalProperties": false,
+      "description": "A file that the user attached, which the state leaves out but for its name and its media type."
+    },
+    "ChangesPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "changes"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "The note of what others changed in the board since the conversation's previous call, which the model read and the chat leaves out."
+    },
+    "SkillPart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "skill"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the skill."
+        },
+        "text": {
+          "type": "string",
+          "description": "The text of the skill."
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "The text of a skill that the user called with /name, which the model gets with the message and the chat leaves out."
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "integer",
+          "description": "The input tokens of every call so far.",
+          "minimum": 0
+        },
+        "output": {
+          "type": "integer",
+          "description": "The output tokens of every call so far.",
+          "minimum": 0
+        },
+        "last": {
+          "type": "integer",
+          "description": "Every token of the last call, its cached input included.",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "last"
+      ],
+      "additionalProperties": false,
+      "description": "The tokens that a conversation's calls to the model spent."
+    }
+  }
+}

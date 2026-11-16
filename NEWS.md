@@ -23,6 +23,24 @@
   The class's `ui` draws an empty panel in React wherever the frontend places
   the plugin.
 
+* The assistant keeps its conversations in the board, as its plugin state,
+  which a JSON board saves with the rest of the board (#221).
+  Each conversation has its title, its messages, the tokens that its calls
+  spent and its pick of the model.
+  Only the assistant's own commands change the state, and none of them takes
+  an undo step, so that no undo takes back a message.
+  The constructor `new_assistant_plugin()` takes the conversations of a board
+  that an app script builds, in `conversations`.
+
+* The blockr option `chat_save_turns` caps the messages of each conversation
+  that the board keeps, 50 by default, as before.
+  It takes `-1` for every message, where it took `Inf`, since R cannot send
+  `Inf` to the browser.
+  The board keeps whole exchanges, and the plugin keeps the older messages in
+  the browser's memory while the board stays open.
+  Under `0`, the board keeps no conversation, and the plugin keeps every one in
+  that memory alone.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

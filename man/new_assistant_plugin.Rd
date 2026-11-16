@@ -5,7 +5,11 @@
 \alias{._BLOCKR_MODULES_}
 \title{The assistant's plugin}
 \usage{
-new_assistant_plugin()
+new_assistant_plugin(conversations = list())
+}
+\arguments{
+\item{conversations}{The conversations of a board that an app script
+builds, by id, each a list in the shape that the schema gives.}
 }
 \value{
 A \code{plugin} object, as \code{\link[blockr.core:new_plugin]{blockr.core::new_plugin()}} returns it.
@@ -15,10 +19,29 @@ The assistant is a plugin whose agent loop runs in the browser.
 The constructor \code{new_assistant_plugin()} makes the plugin, of class
 \code{c("assistant_plugin", "plugin")}, whose plugin class has the id
 \code{blockr.assistant-assistant_plugin} (see \code{\link[blockr.core:new_plugin]{blockr.core::new_plugin()}}).
-The plugin keeps no state, so the constructor takes no args, and a board
-holds nothing for the assistant.
 }
 \details{
+The plugin keeps the assistant's conversations in the board, which saves
+them with the rest of the board.
+Each conversation, under its id, has a \code{title}, the time it was \code{updated},
+its \code{messages}, the tokens that its calls to the model spent, in \code{usage},
+and its pick of the \code{model}, or \code{NULL} for the default.
+The JSON Schema of that state ships beside the class's module, as
+\code{js/assistant_plugin.schema.json}, and R writes the state by it.
+Only the assistant's own commands change the state, and none of them takes
+an undo step, so that no undo takes back a message.
+
+The blockr option \code{chat_save_turns} caps how many messages of each
+conversation the board keeps: 50 by default, \code{0} for none and \code{-1} for
+every one.
+A deployment sets it as the R option \code{blockr.chat_save_turns} or the
+environment variable \code{BLOCKR_CHAT_SAVE_TURNS}.
+The board keeps whole exchanges, each from a message that the user sent,
+and the plugin keeps the older messages in the browser's memory while the
+board stays open.
+As a board opens, the plugin cuts each of its conversations to the cap.
+Under \code{0}, it keeps every conversation in the browser's memory alone.
+
 The package lists the class in the \code{._BLOCKR_MODULES_} that it exports,
 with its name, "Assistant", and its module, \code{js/assistant_plugin.js} (see
 \code{\link[blockr.core:read_blocks_yml]{blockr.core::read_blocks_yml()}}).
@@ -32,5 +55,28 @@ frontend places the plugin.
 new_assistant_plugin()
 
 blockr.core::plugin_class_id(new_assistant_plugin())
+
+plugin <- new_assistant_plugin(
+  conversations = list(
+    c1 = list(
+      title = "Sales by region",
+      updated = "2026-11-16T08:00:00Z",
+      messages = list(
+        list(
+          id = "m1",
+          role = "user",
+          parts = list(
+            list(type = "text", text = "Sum the sales by region.")
+          ),
+          created = "2026-11-16T08:00:00Z"
+        )
+      ),
+      usage = list(input = 0, output = 0, last = 0),
+      model = NULL
+    )
+  )
+)
+
+names(blockr.core::plugin_state(plugin)[["conversations"]])
 
 }
