@@ -46,7 +46,7 @@
 #' R calls each with the plugin's args by name, and with the blocks that it
 #' reads in `reads`, where the request takes them.
 #' The requests that read skills take the app's packages by name, in
-#' `packages`.
+#' `packages`, which the plugin sends as R named them in its reply to `hello`.
 #'
 #' * The request `describe_result` gives what [describe_result()] writes about
 #'   the result of each block that it reads, by block id.
@@ -91,6 +91,12 @@
 #' A skill takes the place of one of the same name that R listed before it.
 #' R does not read a package's `inst/skills`, where btw finds the skills that
 #' it gives coding agents.
+#'
+#' As a board opens, the plugin has R list the skills once, and the model reads
+#' them through the assistant's tools.
+#' Where R cannot list them, as for a directory in `assistant_skills` that does
+#' not exist, the plugin raises the error `assistant_skills_failed`.
+#' The assistant then goes on without skills until the next board opens.
 #'
 #' @param conversations The conversations of a board that an app script
 #'   builds, by id, each a list in the shape that the schema gives.

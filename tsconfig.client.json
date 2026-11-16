@@ -22,5 +22,5 @@
     "tsBuildInfoFile": "node_modules/.tmp/tsconfig.client.tsbuildinfo"
   },
   "include": ["srcts"],
-  "exclude": ["srcts/build", "srcts/**/*.test.ts", "srcts/**/*.test.tsx"]
+  "exclude": ["srcts/build", "srcts/testing", "srcts/**/*.test.ts", "srcts/**/*.test.tsx"]
 }

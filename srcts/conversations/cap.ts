@@ -12,20 +12,15 @@
 // the state under a cap that nobody set.
 
 import type { CoreApi } from "@blockr/core";
+import { sentNumber } from "../blockr-options/index.ts";
 
 export async function readCap(core: Pick<CoreApi, "blockrOption">): Promise<number> {
   const sent = await core.blockrOption("chat_save_turns");
   if (sent === undefined) return 50;
-  const value = typeof sent === "string" ? asNumber(sent) : sent;
+  const value = sentNumber(sent);
   if (value === -1) return Infinity;
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (Number.isInteger(value) && value >= 0) return value;
   throw new RangeError(
     `The blockr option chat_save_turns is ${JSON.stringify(sent)}, where it takes a whole number of 0 or more, or -1 for every message.`,
   );
-}
-
-// The number that a string holds, or NaN where it holds none, as "" and "a"
-// do, while Number() reads "" as 0.
-function asNumber(text: string): number {
-  return text.trim() === "" ? Number.NaN : Number(text);
 }

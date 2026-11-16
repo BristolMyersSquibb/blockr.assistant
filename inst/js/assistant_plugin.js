@@ -598,19 +598,23 @@ var assistantCommands = [
   })
 ];
 
+// srcts/blockr-options/numbers.ts
+function sentNumber(sent) {
+  if (typeof sent === "number") return sent;
+  if (typeof sent !== "string" || sent.trim() === "") return Number.NaN;
+  return Number(sent);
+}
+
 // srcts/conversations/cap.ts
 async function readCap(core) {
   const sent = await core.blockrOption("chat_save_turns");
   if (sent === void 0) return 50;
-  const value = typeof sent === "string" ? asNumber(sent) : sent;
+  const value = sentNumber(sent);
   if (value === -1) return Infinity;
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (Number.isInteger(value) && value >= 0) return value;
   throw new RangeError(
     `The blockr option chat_save_turns is ${JSON.stringify(sent)}, where it takes a whole number of 0 or more, or -1 for every message.`
   );
-}
-function asNumber(text) {
-  return text.trim() === "" ? Number.NaN : Number(text);
 }
 
 // srcts/conversations/conversations.ts
@@ -753,6 +757,86 @@ function compacted(messages, summary2, from, conversation2) {
   return [summary2, ...messages.slice(messages.findIndex((message2) => message2.id === from))];
 }
 
+// srcts/requests/requests.ts
+function appPackages(core) {
+  return Object.keys(core.store.packages());
+}
+function answeredTexts(answer, name) {
+  if (answer !== void 0 && isArray(answer) && answer.every((value) => typeof value === "string")) return [...answer];
+  throw new TypeError(`R answered the request ${name} with ${shown(answer ?? null)}, where it writes strings.`);
+}
+function isRequestError(error) {
+  return error instanceof Error && error.name === "RequestError";
+}
+function isSessionEnded(error) {
+  return error instanceof Error && error.name === "SessionEndedError";
+}
+function failureMessage(error) {
+  if (isRequestError(error)) {
+    const said = error.conditions.filter((condition) => condition.severity === "error").map((condition) => condition.message);
+    if (said.length > 0) return said.join("\n");
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+function isArray(value) {
+  return Array.isArray(value);
+}
+function shown(answer) {
+  return answer instanceof Blob ? "a file" : JSON.stringify(answer);
+}
+
+// srcts/skills/skills.ts
+function createSkills(core, signal) {
+  const listed = listSkills(core, signal);
+  return { list: () => listed };
+}
+async function listSkills(core, signal) {
+  for (; ; ) {
+    try {
+      const reply = await core.request(ASSISTANT, "list_skills", { packages: appPackages(core) }, { signal });
+      return skillsOf(reply);
+    } catch (error) {
+      if (signal.aborted) return [];
+      if (isSessionEnded(error)) continue;
+      core.notifications.notify(ASSISTANT, {
+        severity: "error",
+        code: "assistant_skills_failed",
+        message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
+      });
+      return [];
+    }
+  }
+}
+function skillsOf(reply) {
+  if (!Array.isArray(reply)) throw new TypeError("R's reply to list_skills is not a list of skills.");
+  return reply.map((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError(`R's reply to list_skills holds ${JSON.stringify(entry)}, where it holds a skill.`);
+    }
+    const fields = entry;
+    return {
+      name: one(fields, "name"),
+      description: one(fields, "description"),
+      blocks: answeredTexts(fields.blocks, "list_skills"),
+      plugins: answeredTexts(fields.plugins, "list_skills"),
+      userInvocable: flag(fields, "user-invocable"),
+      modelInvocable: !flag(fields, "disable-model-invocation")
+    };
+  });
+}
+function one(fields, name) {
+  const [value, ...rest] = answeredTexts(fields[name], "list_skills");
+  if (value === void 0 || rest.length > 0) {
+    throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(fields[name] ?? null)}, where it gives one string.`);
+  }
+  return value;
+}
+function flag(fields, name) {
+  const value = fields[name];
+  if (Array.isArray(value) && value.length === 1 && typeof value[0] === "boolean") return value[0];
+  throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
+}
+
 // srcts/modules/assistant_plugin/index.tsx
 import { jsx } from "react/jsx-runtime";
 var api = 1;
@@ -778,6 +862,7 @@ var assistant_plugin_default = {
     createConversations(core, signal).opened.catch((error) => {
       core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
     });
+    createSkills(core, signal);
     return void 0;
   }
 };

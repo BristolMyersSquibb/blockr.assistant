@@ -15,6 +15,8 @@
 //   every conversation to the cap on what the state keeps, or move every one
 //   into the plugin's memory under a cap of 0 (../../conversations). Where
 //   that fails, as for a cap that nobody can read, it logs the error.
+// - Its start also has R list the skills of the board that opens, which the
+//   assistant's tools read (../../skills).
 // - Its `ui`, which every frontend places for the assistant, draws an empty
 //   panel. It draws in React, on the one copy of React that core puts on the
 //   page, in a root of its own.
@@ -28,6 +30,7 @@ import type { JsonSchema, PluginClass, PluginModule } from "@blockr/core";
 import schema from "../../../inst/js/assistant_plugin.schema.json" with { type: "json" };
 import { assistantCommands } from "../../commands/index.ts";
 import { createConversations } from "../../conversations/index.ts";
+import { createSkills } from "../../skills/index.ts";
 
 export const api = 1;
 
@@ -55,6 +58,7 @@ export default {
     createConversations(core, signal).opened.catch((error: unknown) => {
       core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
     });
+    createSkills(core, signal);
     return undefined;
   },
 } satisfies Omit<PluginClass, "id">;

@@ -63,6 +63,28 @@
   A skill names block classes by their registry ids in `blocks:`, and plugin
   classes by their ids in `plugins:`, in place of `extensions:`.
 
+* The assistant's read tools run in the browser, on core's `CoreApi` (#223).
+  Those that carry over keep their names: `list_blocks`, `describe_block`,
+  `get_block_state`, `get_block_conditions`, `list_links`, `list_stacks`,
+  `describe_stack`, `list_block_types`, `describe_block_type`,
+  `list_board_options`, `get_block_result`, `inspect_results` and
+  `read_skill`.
+  The new tools `list_commands` and `describe_command` read the commands that
+  the app registers.
+  The new tools `list_plugins` and `get_plugin_state` read the app's plugins,
+  in place of `list_extensions`, `describe_extension` and `list_views`.
+  Each tool bounds what it returns by today's blockr options, at today's
+  defaults.
+  The tool `inspect_results` reads only the blocks that the model names, and
+  refuses on a locked board before core evaluates any of them.
+  The tool `list_board_options` lists every board option that a package
+  defines, with the value of each that the board holds, and no default.
+
+* As a board opens, the assistant has R list the skills, which its tools read
+  (#223).
+  Where R cannot list them, the assistant raises the error
+  `assistant_skills_failed` and goes on without skills.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
