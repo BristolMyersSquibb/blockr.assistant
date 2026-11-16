@@ -420,19 +420,47 @@ function createConversations(core, signal) {
   const memory = /* @__PURE__ */ new Map();
   const older = /* @__PURE__ */ new Map();
   const keptOf = /* @__PURE__ */ new Map();
+  const listeners = /* @__PURE__ */ new Set();
+  let changes = 0;
+  let given;
+  const merged = /* @__PURE__ */ new Map();
+  function notify() {
+    for (const listener of listeners) listener();
+  }
+  function changed() {
+    changes += 1;
+    notify();
+  }
+  let state = assistantState(core.store.board());
   const stop = core.store.subscribe((_change, board) => {
-    if (cap === 0) return;
-    const held = assistantState(board)?.conversations ?? {};
-    for (const id of older.keys()) {
-      if (!Object.hasOwn(held, id)) older.delete(id);
+    const now = assistantState(board);
+    if (now === state) return;
+    state = now;
+    if (cap !== 0) {
+      const held = now?.conversations ?? {};
+      for (const id of older.keys()) {
+        if (!Object.hasOwn(held, id)) older.delete(id);
+      }
+      for (const id of keptOf.keys()) {
+        if (!Object.hasOwn(held, id)) keptOf.delete(id);
+      }
+      for (const id of merged.keys()) {
+        if (!Object.hasOwn(held, id)) merged.delete(id);
+      }
     }
-    for (const id of keptOf.keys()) {
-      if (!Object.hasOwn(held, id)) keptOf.delete(id);
-    }
+    notify();
   });
-  signal.addEventListener("abort", stop, { once: true });
+  signal.addEventListener(
+    "abort",
+    () => {
+      stop();
+      listeners.clear();
+    },
+    { once: true }
+  );
   const capped = readCap(core).then(async (read) => {
     cap = read;
+    changed();
     await open(read);
     return read;
   });
@@ -443,6 +471,7 @@ function createConversations(core, signal) {
     const conversations = assistantState(core.store.board())?.conversations ?? {};
     if (read === 0) {
       for (const [id, conversation2] of Object.entries(conversations)) memory.set(id, conversation2);
+      changed();
       await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
       return;
     }
@@ -456,16 +485,24 @@ function createConversations(core, signal) {
     if (after === void 0) return;
     const kept = new Set(after.messages.map((message2) => message2.id));
     const cut = before.filter((message2) => !kept.has(message2.id));
-    if (cut.length > 0) older.set(conversation2, [...older.get(conversation2) ?? [], ...cut]);
+    if (cut.length === 0) return;
+    older.set(conversation2, [...older.get(conversation2) ?? [], ...cut]);
+    changed();
   }
-  function withOlder(id, conversation2) {
+  function withOlder(id, held) {
     const cut = older.get(id);
-    return cut === void 0 ? conversation2 : { ...conversation2, messages: [...cut, ...conversation2.messages] };
+    if (cut === void 0) return held;
+    const last = merged.get(id);
+    if (last?.held === held && last.cut === cut) return last.conversation;
+    const conversation2 = { ...held, messages: [...cut, ...held.messages] };
+    merged.set(id, { held, cut, conversation: conversation2 });
+    return conversation2;
   }
-  function change(conversation2, changed) {
+  function change(conversation2, changing) {
     const held = memory.get(conversation2);
     if (held === void 0) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
-    memory.set(conversation2, changed(held));
+    memory.set(conversation2, changing(held));
+    changed();
   }
   function get(conversation2) {
     if (cap === 0) return memory.get(conversation2);
@@ -476,21 +513,27 @@ function createConversations(core, signal) {
     const held = keptOf.get(conversation2) ?? /* @__PURE__ */ new Map();
     held.set(message2, { ...held.get(message2), ...kept });
     keptOf.set(conversation2, held);
+    changed();
+  }
+  function unkeep(conversation2, message2) {
+    if (keptOf.get(conversation2)?.delete(message2) === true) changed();
   }
   function forget(conversation2) {
     const held = keptOf.get(conversation2);
     if (held === void 0) return;
     const ids = new Set(get(conversation2)?.messages.map((message2) => message2.id) ?? []);
-    for (const id of held.keys()) {
-      if (!ids.has(id)) held.delete(id);
-    }
+    const gone = [...held.keys()].filter((id) => !ids.has(id));
+    for (const id of gone) held.delete(id);
+    if (gone.length > 0) changed();
   }
   return {
     opened: capped.then(() => void 0),
     all() {
-      if (cap === 0) return Object.fromEntries(memory);
-      const conversations = assistantState(core.store.board())?.conversations ?? {};
-      return Object.fromEntries(Object.entries(conversations).map(([id, conversation2]) => [id, withOlder(id, conversation2)]));
+      const now = cap === 0 ? void 0 : assistantState(core.store.board());
+      if (given !== void 0 && given.state === now && given.changes === changes) return given.all;
+      const all = cap === 0 ? Object.fromEntries(memory) : Object.fromEntries(Object.entries(now?.conversations ?? {}).map(([id, conversation2]) => [id, withOlder(id, conversation2)]));
+      given = { state: now, changes, all };
+      return all;
     },
     get,
     kept(conversation2, message2) {
@@ -509,6 +552,7 @@ function createConversations(core, signal) {
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
       memory.set(id, newConversation(title2, model2));
+      changed();
     },
     async renameConversation(conversation2, title2) {
       if (await capped !== 0) {
@@ -524,23 +568,29 @@ function createConversations(core, signal) {
       }
       if (!memory.delete(conversation2)) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
       keptOf.delete(conversation2);
+      changed();
     },
     async addMessage(conversation2, message2, kept) {
       const read = await capped;
-      if (read !== 0) {
-        const before = findConversation(core.store.board(), conversation2)?.messages ?? [];
-        const done = run("blockr.assistant-add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
-        keepCut(conversation2, before);
-        await done;
-      } else {
-        change(conversation2, (held) => {
-          if (holdsMessage(held, message2.id)) {
-            throw new Error(`The conversation "${conversation2}" holds a message "${message2.id}" already.`);
-          }
-          return { ...held, messages: [...held.messages, message2], updated: message2.created };
-        });
-      }
       if (kept !== void 0) keep2(conversation2, message2.id, kept);
+      try {
+        if (read !== 0) {
+          const before = findConversation(core.store.board(), conversation2)?.messages ?? [];
+          const done = run("blockr.assistant-add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
+          keepCut(conversation2, before);
+          await done;
+        } else {
+          change(conversation2, (held) => {
+            if (holdsMessage(held, message2.id)) {
+              throw new Error(`The conversation "${conversation2}" holds a message "${message2.id}" already.`);
+            }
+            return { ...held, messages: [...held.messages, message2], updated: message2.created };
+          });
+        }
+      } catch (error) {
+        if (kept !== void 0) unkeep(conversation2, message2.id);
+        throw error;
+      }
     },
     async compactConversation(conversation2, summary2, from) {
       const read = await capped;
@@ -549,11 +599,12 @@ function createConversations(core, signal) {
         change(conversation2, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary2, from, conversation2) }));
       } else if (held === void 0 || holdsMessage(held, from)) {
         await run("blockr.assistant-compact_conversation", { conversation: conversation2, summary: summary2, from });
-        older.delete(conversation2);
+        if (older.delete(conversation2)) changed();
       } else {
         const cut = older.get(conversation2) ?? [];
         const left = compacted([...cut, ...held.messages], summary2, from, conversation2);
         older.set(conversation2, left.slice(0, left.length - held.messages.length));
+        changed();
       }
       forget(conversation2);
     },
@@ -570,6 +621,12 @@ function createConversations(core, signal) {
         return;
       }
       change(conversation2, (held) => ({ ...held, model: model2 }));
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     }
   };
 }
@@ -1930,6 +1987,7 @@ var UNSET = {
   model: null
 };
 var opened = /* @__PURE__ */ new WeakMap();
+var waiting = /* @__PURE__ */ new WeakMap();
 function openAssistant(core, signal, options = {}) {
   const conversations = createConversations(core, signal);
   conversations.opened.catch((error) => {
@@ -1943,8 +2001,11 @@ function openAssistant(core, signal, options = {}) {
     load: options.load ?? loadLoop,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  const assistant = { conversations, skills, turns };
+  const assistant = { conversations, skills, turns, signal };
   opened.set(core, assistant);
+  const waiters = waiting.get(core);
+  waiting.delete(core);
+  for (const waiter of waiters ?? []) waiter(assistant);
   signal.addEventListener(
     "abort",
     () => {

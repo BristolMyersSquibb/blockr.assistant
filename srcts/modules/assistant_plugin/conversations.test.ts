@@ -293,3 +293,69 @@ describe("what the memory keeps of a message", () => {
     expect(conversations.kept("c1", "a1")).toBeUndefined();
   });
 });
+
+describe("whoever follows the conversations", () => {
+  test("hears each change of the state and of the memory, until it stops following", async () => {
+    const { conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
+    let heard = 0;
+    const stop = conversations.subscribe(() => {
+      heard += 1;
+    });
+
+    await conversations.addMessage("c1", message("a1", "assistant"));
+    const afterMessage = heard;
+    conversations.keep("c1", "a1", { failure: "The call failed." });
+    const afterKeep = heard;
+    stop();
+    await conversations.addMessage("c1", message("u2", "user"));
+
+    expect(afterMessage).toBeGreaterThan(0);
+    expect(afterKeep).toBeGreaterThan(afterMessage);
+    expect(heard).toBe(afterKeep);
+  });
+
+  test("hears each change of the memory alone where chat_save_turns is 0", async () => {
+    const { conversations } = await opened({ conversations: {} }, 0);
+    await conversations.opened;
+    let heard = 0;
+    conversations.subscribe(() => {
+      heard += 1;
+    });
+
+    await conversations.addConversation("c1", "Sales");
+    await conversations.addMessage("c1", message("u1", "user"));
+
+    expect(heard).toBe(2);
+    expect(ids(conversations.all().c1)).toEqual(["u1"]);
+  });
+
+  test("gets the same object from all() until something of it changes, and the same conversation while that conversation stays as it was", async () => {
+    const { core, conversations } = await opened({ conversations: { c1: three, c2: conversation(message("u9", "user")) } }, 4);
+    await conversations.opened;
+    const before = conversations.all();
+
+    expect(conversations.all()).toBe(before);
+    await core.commands.run("blockr.core-add_stack", { name: "Unrelated" }, "user");
+    expect(conversations.all()).toBe(before);
+
+    await conversations.addMessage("c1", message("u4", "user"));
+    const after = conversations.all();
+    expect(after).not.toBe(before);
+    expect(after.c2).toBe(before.c2);
+    expect(ids(after.c1)).toEqual(["u1", "a1", "u2", "a2", "u3", "a3", "u4"]);
+    expect(conversations.all().c1).toBe(after.c1);
+  });
+
+  test("reads a message that addMessage() adds with what the memory keeps of it, as soon as the message shows", async () => {
+    const { conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
+    await conversations.opened;
+    const seen: unknown[] = [];
+    conversations.subscribe(() => {
+      if (conversations.all().c1?.messages.some((m) => m.id === "a1") === true) seen.push(conversations.kept("c1", "a1"));
+    });
+
+    await conversations.addMessage("c1", message("a1", "assistant"), { reasoning: ["Count."] });
+
+    expect(seen[0]).toEqual({ reasoning: ["Count."] });
+  });
+});

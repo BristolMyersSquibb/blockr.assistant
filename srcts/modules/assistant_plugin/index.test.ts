@@ -8,7 +8,7 @@ import type { Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { assistantOf } from "../../assistant/index.ts";
+import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
 import * as assistant from "./index.tsx";
 
@@ -178,6 +178,39 @@ describe("the start of the assistant's plugin class", () => {
 
     act(stop);
     expect(assistantOf(core)).toBeUndefined();
+  });
+
+  test("lets the chat wait for the assistant that start opens, which a closed board's assistant does not stand in for", async () => {
+    const stubbed = await act(() => stubCore({ hello: empty, modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } } }));
+    onTestFinished(() => {
+      act(stubbed.stop);
+    });
+    let next: unknown;
+    void nextAssistant(stubbed.core).then((given) => {
+      next = given;
+    });
+
+    const first = new AbortController();
+    const opened = openAssistant(stubbed.core, first.signal);
+    await act(() => Promise.resolve());
+    expect(next).toBe(opened);
+    await expect(nextAssistant(stubbed.core)).resolves.toBe(opened);
+
+    first.abort();
+    let after: unknown;
+    void nextAssistant(stubbed.core).then((given) => {
+      after = given;
+    });
+    await act(() => Promise.resolve());
+    expect(after).toBeUndefined();
+
+    const second = new AbortController();
+    onTestFinished(() => {
+      second.abort();
+    });
+    const reopened = openAssistant(stubbed.core, second.signal);
+    await act(() => Promise.resolve());
+    expect(after).toBe(reopened);
   });
 
   test("runs no turn until the assistant reads its blockr options, since it has no model to talk to then", async () => {
