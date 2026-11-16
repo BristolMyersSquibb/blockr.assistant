@@ -9,7 +9,7 @@ import { context, createContextKey, ROOT_CONTEXT } from "@opentelemetry/api";
 import type { ContextManager } from "@opentelemetry/api";
 import type { Condition, CoreApi, Json } from "@blockr/core";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { callTool, parsed, startAssistant } from "../testing/index.ts";
+import { callTool, parsed, requestNotifications, startAssistant } from "../testing/index.ts";
 import type { Answers, StartOptions } from "../testing/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 import { editTools } from "./index.ts";
@@ -120,6 +120,18 @@ describe("edit", () => {
       blocks: { b: { status: "waiting", unverified: UNVERIFIED } },
     });
     expect((result as { blocks: Record<string, Json> }).blocks.b).toHaveProperty("reason");
+  });
+
+  test("gives the warnings of R's reply to its request in its notes, and core raises no notification for them", async () => {
+    const { core, tools } = await started({ conditions: { describe_result: [warning("NAs introduced by coercion")] } });
+
+    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+
+    expect(result).toMatchObject({
+      blocks: { b: { result: "The result of b." } },
+      notes: ["R raised these as it described the results:\nWarning: NAs introduced by coercion"],
+    });
+    expect(requestNotifications(core)).toEqual([]);
   });
 
   test("cuts the review at assistant_review_max_blocks, and says how many blocks it left out", async () => {
@@ -535,15 +547,19 @@ describe("edit meanwhile", () => {
 
     const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }, turn.signal);
 
+    const value = parsed(result) as { blocks: Record<string, Json> };
     expect(result.isError).toBe(false);
-    expect(parsed(result)).toMatchObject({
+    expect(value).toMatchObject({
       applied: true,
       undo_step: true,
-      blocks: { b: { unverified: UNVERIFIED } },
       notes: [
         "The user stopped the turn while the tool waited for its review, after the commands applied. So the review gives each block's status as it was then, with no description of its result.",
       ],
     });
+    // R's reply to the evaluation of b may land before the review reads b's
+    // status or after, so b reads ready or unverified, but is never described.
+    expect(value.blocks.b).toHaveProperty("status");
+    expect(value.blocks.b).not.toHaveProperty("result");
     expect(requests("describe_result")).toEqual([]);
   });
 

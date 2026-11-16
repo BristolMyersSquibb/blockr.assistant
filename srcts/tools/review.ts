@@ -41,15 +41,19 @@
 // tool captured before its first await, so that the request's span goes under
 // the tool's, as core puts it under the span that is active as request() is
 // called (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
+// It takes the conditions of R's reply itself, as every tool's request does,
+// so that core raises no notification for them, and its notes give the
+// warnings and messages that R raised as it described the results
+// (./conditions.ts).
 
 import { context } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
 import type { BlockId, BlockStatus, Board, Condition, CoreApi, Json } from "@blockr/core";
 import { answeredObject, answeredText, failureMessage, isRequestError, isSessionEnded } from "../requests/index.ts";
-import { ASSISTANT } from "../state/index.ts";
 import { readToolCap } from "./caps.ts";
 import { addedAndRemoved, changedBlocks } from "./changes.ts";
 import type { Heard } from "./changes.ts";
+import { toolRequest, withConditions } from "./conditions.ts";
 import { own } from "./context.ts";
 import { cutText, leaveOutLong } from "./cut.ts";
 import { conditionList } from "./statuses.ts";
@@ -150,6 +154,8 @@ export async function reviewed(core: CoreApi, step: Step, signals: Signals, acti
     return done();
   }
   if (described.note !== undefined) notes.push(described.note);
+  const raised = await withConditions(core, "", described.conditions);
+  if (raised !== "") notes.push(`R raised these as it described the results:\n${raised}`);
 
   const changed = new Set(groups.changed);
   const fresh = new Set(changes.added.blocks ?? []);
@@ -199,6 +205,8 @@ function reviewGroups(board: Board, changed: readonly BlockId[]) {
 interface Described {
   // What describe_result() wrote about each block that R described, by id.
   readonly texts: Readonly<Record<BlockId, string>>;
+  // The conditions of R's reply to the request that R answered.
+  readonly conditions: readonly Condition[];
   // Whether the review gives each ready block's one-line summary in place of
   // the texts that it lacks.
   readonly summaries: boolean;
@@ -227,7 +235,7 @@ async function describeResults(
     }
     const ready = picked.filter((id) => own(statuses, id)?.status === "ready");
     try {
-      return { texts: await requested(core, ready, signals.turn, active), summaries: false };
+      return { ...(await requested(core, ready, signals.turn, active)), summaries: false };
     } catch (error) {
       if (isSessionEnded(error) && attempt === 1) continue;
       return halted(core, error, signals, all, { what, waited: "the request that has R describe the results" });
@@ -246,55 +254,58 @@ function halted(
   all: readonly BlockId[],
   { what, waited }: { readonly what: string; readonly waited: string },
 ): Described {
-  if (signals.board.aborted) return { texts: {}, summaries: false, closed: true };
+  if (signals.board.aborted) return { texts: {}, conditions: [], summaries: false, closed: true };
   if (signals.turn.aborted) {
     return {
       texts: {},
+      conditions: [],
       summaries: true,
       note: `The user stopped the turn while the tool waited for its review, after ${what} applied. So the review gives each block's status as it was then, with no description of its result.`,
     };
   }
-  if (all.every((id) => core.scheduler.status(id) === undefined)) return { texts: {}, summaries: false };
+  if (all.every((id) => core.scheduler.status(id) === undefined)) return { texts: {}, conditions: [], summaries: false };
   const why = isSessionEnded(error) ? "R's session ended twice before R answered." : failureMessage(error);
   return {
     texts: {},
+    conditions: [],
     summaries: true,
     note: `The review could not finish ${waited}. ${/[.!?]$/.test(why) ? why : `${why}.`} So it gives each block's status as it is now, and the one-line summary of each ready block's result in place of a description. Call get_block_result for a block's result.`,
   };
 }
 
 // What describe_result() wrote about the result of each block of `reads`, by
-// id, sent again without the blocks that core's rejection names where core
-// rejects the request. Where that fails too, or R loses it to a new session, it
-// rejects.
-async function requested(
-  core: CoreApi,
-  reads: readonly BlockId[],
-  signal: AbortSignal,
-  active: Context,
-): Promise<Record<BlockId, string>> {
-  if (reads.length === 0) return {};
+// id, with the conditions of R's reply, sent again without the blocks that
+// core's rejection names where core rejects the request. Where that fails too,
+// or R loses it to a new session, it rejects.
+async function requested(core: CoreApi, reads: readonly BlockId[], signal: AbortSignal, active: Context): Promise<Answered> {
+  if (reads.length === 0) return { texts: {}, conditions: [] };
   try {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
     const named = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named.has(id) && core.scheduler.status(id) !== undefined);
-    return rest.length === 0 ? {} : await sent(core, rest, signal, active);
+    return rest.length === 0 ? { texts: {}, conditions: [] } : await sent(core, rest, signal, active);
   }
 }
 
-async function sent(core: CoreApi, reads: readonly BlockId[], signal: AbortSignal, active: Context): Promise<Record<BlockId, string>> {
-  const answer = answeredObject(
-    await context.with(active, () => core.request(ASSISTANT, "describe_result", {}, { reads: [...reads], signal })),
-    "describe_result",
+interface Answered {
+  readonly texts: Readonly<Record<BlockId, string>>;
+  readonly conditions: readonly Condition[];
+}
+
+async function sent(core: CoreApi, reads: readonly BlockId[], signal: AbortSignal, active: Context): Promise<Answered> {
+  const { answer, conditions } = await context.with(active, () =>
+    toolRequest(core, "describe_result", {}, { reads: [...reads], signal }),
   );
-  return Object.fromEntries(
+  const described = answeredObject(answer, "describe_result");
+  const texts = Object.fromEntries(
     reads.flatMap((id) => {
-      const text = own(answer, id);
+      const text = own(described, id);
       return text === undefined ? [] : [[id, answeredText(text, "describe_result")]];
     }),
   );
+  return { texts, conditions };
 }
 
 interface EntryOptions {

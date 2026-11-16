@@ -1348,6 +1348,27 @@ function noSkill(name) {
 // srcts/tools/review.ts
 import { context } from "@opentelemetry/api";
 
+// srcts/tools/conditions.ts
+async function toolRequest(core, name, args, opts = {}) {
+  try {
+    return await sendRequest(core, name, args, opts);
+  } catch (error) {
+    if (!isRequestError(error) || !error.conditions.some(isWarningOrMessage)) throw error;
+    throw new Error(await withConditions(core, failureMessage(error), error.conditions), { cause: error });
+  }
+}
+async function withConditions(core, text2, conditions) {
+  const lines = conditions.filter(isWarningOrMessage).map(({ severity, message: message2 }) => `${severity === "warning" ? "Warning" : "Message"}: ${message2}`);
+  if (lines.length === 0) return text2;
+  const listed = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
+  return text2 === "" ? listed : `${text2}
+
+${listed}`;
+}
+function isWarningOrMessage(condition) {
+  return condition.severity !== "error";
+}
+
 // srcts/tools/statuses.ts
 var NOTES = {
   unevaluated: "The block has not been evaluated yet, so it holds no result, conditions or summary. Core evaluates only what something needs, such as the blocks on screen. The tools get_block_result and inspect_results have the blocks that they read evaluated first.",
@@ -1432,6 +1453,9 @@ async function reviewed(core, step, signals, active) {
     return done();
   }
   if (described.note !== void 0) notes.push(described.note);
+  const raised = await withConditions(core, "", described.conditions);
+  if (raised !== "") notes.push(`R raised these as it described the results:
+${raised}`);
   const changed = new Set(groups.changed);
   const fresh = new Set(changes.added.blocks ?? []);
   result.blocks = Object.fromEntries(
@@ -1481,7 +1505,7 @@ async function describeResults(core, all, picked, signals, active, what) {
     }
     const ready = picked.filter((id) => own(statuses, id)?.status === "ready");
     try {
-      return { texts: await requested(core, ready, signals.turn, active), summaries: false };
+      return { ...await requested(core, ready, signals.turn, active), summaries: false };
     } catch (error) {
       if (isSessionEnded(error) && attempt === 1) continue;
       return halted(core, error, signals, all, { what, waited: "the request that has R describe the results" });
@@ -1489,44 +1513,48 @@ async function describeResults(core, all, picked, signals, active, what) {
   }
 }
 function halted(core, error, signals, all, { what, waited }) {
-  if (signals.board.aborted) return { texts: {}, summaries: false, closed: true };
+  if (signals.board.aborted) return { texts: {}, conditions: [], summaries: false, closed: true };
   if (signals.turn.aborted) {
     return {
       texts: {},
+      conditions: [],
       summaries: true,
       note: `The user stopped the turn while the tool waited for its review, after ${what} applied. So the review gives each block's status as it was then, with no description of its result.`
     };
   }
-  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, summaries: false };
+  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, conditions: [], summaries: false };
   const why = isSessionEnded(error) ? "R's session ended twice before R answered." : failureMessage(error);
   return {
     texts: {},
+    conditions: [],
     summaries: true,
     note: `The review could not finish ${waited}. ${/[.!?]$/.test(why) ? why : `${why}.`} So it gives each block's status as it is now, and the one-line summary of each ready block's result in place of a description. Call get_block_result for a block's result.`
   };
 }
 async function requested(core, reads, signal, active) {
-  if (reads.length === 0) return {};
+  if (reads.length === 0) return { texts: {}, conditions: [] };
   try {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
     const named = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named.has(id) && core.scheduler.status(id) !== void 0);
-    return rest.length === 0 ? {} : await sent(core, rest, signal, active);
+    return rest.length === 0 ? { texts: {}, conditions: [] } : await sent(core, rest, signal, active);
   }
 }
 async function sent(core, reads, signal, active) {
-  const answer = answeredObject(
-    await context.with(active, () => core.request(ASSISTANT, "describe_result", {}, { reads: [...reads], signal })),
-    "describe_result"
+  const { answer, conditions } = await context.with(
+    active,
+    () => toolRequest(core, "describe_result", {}, { reads: [...reads], signal })
   );
-  return Object.fromEntries(
+  const described = answeredObject(answer, "describe_result");
+  const texts = Object.fromEntries(
     reads.flatMap((id) => {
-      const text2 = own(answer, id);
+      const text2 = own(described, id);
       return text2 === void 0 ? [] : [[id, answeredText(text2, "describe_result")]];
     })
   );
+  return { texts, conditions };
 }
 function blockEntry(core, id, options) {
   const status = core.scheduler.status(id);
@@ -2000,27 +2028,6 @@ function pluginTools(context3) {
       }
     })
   ];
-}
-
-// srcts/tools/conditions.ts
-async function toolRequest(core, name, args, opts = {}) {
-  try {
-    return await sendRequest(core, name, args, opts);
-  } catch (error) {
-    if (!isRequestError(error) || !error.conditions.some(isWarningOrMessage)) throw error;
-    throw new Error(await withConditions(core, failureMessage(error), error.conditions), { cause: error });
-  }
-}
-async function withConditions(core, text2, conditions) {
-  const lines = conditions.filter(isWarningOrMessage).map(({ severity, message: message2 }) => `${severity === "warning" ? "Warning" : "Message"}: ${message2}`);
-  if (lines.length === 0) return text2;
-  const listed = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
-  return text2 === "" ? listed : `${text2}
-
-${listed}`;
-}
-function isWarningOrMessage(condition) {
-  return condition.severity !== "error";
 }
 
 // srcts/tools/read-skill.ts
