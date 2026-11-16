@@ -39,6 +39,13 @@ export function at(...segments: string[]): string {
   return ["plugins", ASSISTANT, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
 }
 
+// A new id for a message or a conversation: 128 random bits, as hex.
+// They come from crypto.getRandomValues(), which a page has over plain HTTP
+// too, where it lacks crypto.randomUUID().
+export function newId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 // A conversation that holds no message, which spent no token, added now.
 export function newConversation(title: string, model: string | null): Conversation {
   return { title, updated: new Date().toISOString(), messages: [], usage: { input: 0, output: 0, last: 0 }, model };

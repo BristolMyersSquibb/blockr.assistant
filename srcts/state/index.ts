@@ -12,6 +12,7 @@ export {
   isNote,
   messagesToDrop,
   newConversation,
+  newId,
 } from "./state.ts";
 export type {
   AssistantState,

@@ -8,11 +8,19 @@
 // until something evaluates it. Core stops as the test finishes.
 // R answers each of the assistant's requests with what the test gives under
 // its name, and list_skills with no skill unless the test gives one.
+// The loop runs on pi's fake provider, whose replies a test scripts, so that
+// the tests call no model.
 
 import type { Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCore, StubCoreOptions } from "@blockr/core/stubs";
+import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
 import { onTestFinished } from "vitest";
+import { createLoop, PROVIDER } from "../loop/index.ts";
+import type { Connection, Loop } from "../loop/index.ts";
+// The parts of pi, as the page's bundle of pi holds them.
+// eslint-disable-next-line no-restricted-imports
+import * as pi from "../loop/vendor.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
@@ -136,4 +144,42 @@ export function skill(name: string, given: Partial<Skill> = {}): Skill {
 function assistantRequest(request: Parameters<Answer>[0]): AssistantRequest | undefined {
   if (request.kind !== "request" || request.type !== "plugin" || request.plugin !== ASSISTANT) return undefined;
   return { name: request.name, args: request.args, reads: request.reads };
+}
+
+// The name of the API of pi's fake provider, which the tests' connection names.
+export const FAUX_API = "faux";
+
+export interface FauxLoop {
+  // The fake provider, whose replies a test scripts with setResponses().
+  readonly faux: ReturnType<typeof createFauxCore>;
+  readonly loop: Loop;
+  // The connection to the fake provider, which gives the key given for each
+  // call.
+  readonly connection: Connection;
+}
+
+export interface FauxOptions {
+  // The key that the connection gives, "test-key" unless given.
+  readonly key?: string | undefined;
+  // How fast the fake provider streams, in tokens a second, on timers, as a
+  // test that stops a reply while it streams needs. It streams each chunk on
+  // a microtask of its own unless given.
+  readonly tokensPerSecond?: number;
+}
+
+// The loop on pi's fake provider, whose replies carry the loop's provider and
+// the fake API, so that pi takes them for replies of the model that the turn
+// talks to.
+export function fauxLoop(options: FauxOptions = {}): FauxLoop {
+  const faux = createFauxCore({
+    api: FAUX_API,
+    provider: PROVIDER,
+    ...(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond }),
+  });
+  const key = "key" in options ? options.key : "test-key";
+  return {
+    faux,
+    loop: createLoop(pi, { [FAUX_API]: faux }),
+    connection: { baseUrl: "https://faux.invalid/v1", api: FAUX_API, apiKey: () => Promise.resolve(key) },
+  };
 }
