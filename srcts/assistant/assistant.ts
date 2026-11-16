@@ -6,6 +6,9 @@
 // start, so the chat finds the assistant through the CoreApi that core gives
 // both (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-panel).
 //
+// The turns offer the read tools and the edit tools, which take the
+// plugin's signal to tell another board opening from a stop.
+//
 // The turns call the model where the connection says. Until the assistant
 // reads its blockr options, the connection names OpenAI's base URL, which
 // speaks the Responses API, with no key and no default model. So every turn
@@ -18,7 +21,7 @@ import { loadLoop } from "../loop/index.ts";
 import type { Loop } from "../loop/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
-import { readTools } from "../tools/index.ts";
+import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Connection, Locks, Turns } from "../turns/index.ts";
 
@@ -58,7 +61,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const skills = createSkills(core, signal);
   const turns = createTurns(core, signal, {
     conversations,
-    tools: readTools(core, skills),
+    tools: [...readTools(core, skills), ...editTools(core, signal)],
     connection: options.connection ?? UNSET,
     load: options.load ?? loadLoop,
     ...("locks" in options ? { locks: options.locks } : {}),
