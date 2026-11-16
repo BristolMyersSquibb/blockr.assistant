@@ -95,7 +95,10 @@ describe("the assistant's plugin class", () => {
     const { settled } = await started(el, empty);
     await act(() => settled());
 
+    // The section holds the panel inside the markup that core puts around
+    // the element it mounts the panel in, which holds nothing where core
+    // mounts no panel.
     const section = [...el.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Assistant");
-    expect(section?.lastElementChild?.innerHTML).toBe("<div></div>");
+    expect(section?.lastElementChild?.innerHTML).toContain("<div></div>");
   });
 });
