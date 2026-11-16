@@ -1,8 +1,9 @@
 // The tool read_skill, on blockr.core's CoreApi for tests, where R answers
-// the request read_skill as the test gives.
+// the request read_skill as the test gives, and core's span of the request.
 
+import { trace } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
-import { callTool, requestNotifications, skill, skillsHolding, startAssistant } from "../testing/index.ts";
+import { callTool, recordSpans, requestNotifications, skill, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { Answers, StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
@@ -83,5 +84,19 @@ describe("read_skill", () => {
       images: [],
     });
     expect(requestNotifications(core)).toEqual([]);
+  });
+});
+
+describe("the span of read_skill's request", () => {
+  test("goes under the span that was active as the tool was called, though the tool reads the skills before it sends the request", async () => {
+    const recorded = recordSpans();
+    const { tools } = await started({ read_skill: () => ["The text of exposure."] });
+
+    await trace.getTracer("blockr.test").startActiveSpan("execute_tool read_skill", async (span) => {
+      await callTool(tools, "read_skill", { name: "exposure" });
+      span.end();
+    });
+
+    expect(recorded.span("request read_skill").parentSpanContext?.spanId).toBe(recorded.span("execute_tool read_skill").spanContext().spanId);
   });
 });

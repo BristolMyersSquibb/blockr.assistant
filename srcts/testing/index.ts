@@ -12,6 +12,8 @@
 // none unless it gives some.
 // The loop runs on pi's fake provider, whose replies a test scripts, so that
 // the tests call no model.
+// A test records the spans that core and the assistant start in memory, with
+// recordSpans() (./spans.ts).
 
 import type { Condition, CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
@@ -29,6 +31,9 @@ import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { Skill, Skills } from "../skills/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
+
+export { recordSpans } from "./spans.ts";
+export type { Recorded } from "./spans.ts";
 
 // A request of the assistant's, as R gets it.
 export interface AssistantRequest {
