@@ -86,15 +86,15 @@ describe("edit", () => {
     });
     await core.scheduler.evaluate(["b", "d"]);
 
-    const result = parsed(
-      await callTool(tools, "edit", {
-        commands: [
-          { command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } },
-          { command: "blockr.core-set_block", args: { id: "d", state: { select: "Species" } } },
-        ],
-      }),
-    );
+    const called = await callTool(tools, "edit", {
+      commands: [
+        { command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } },
+        { command: "blockr.core-set_block", args: { id: "d", state: { select: "Species" } } },
+      ],
+    });
+    const result = parsed(called);
 
+    expect(called.isError).toBe(false);
     expect(result).toMatchObject({
       blocks: {
         b: { status: "ready", conditions: [{ severity: "warning", phase: "expr", message: "new" }] },
@@ -383,6 +383,30 @@ describe("edit meanwhile", () => {
       blocks: { b: { summary: "<data.frame> [6 × 5]" } },
       notes: [expect.stringContaining("R's session ended twice before R answered. So it gives")],
     });
+  });
+
+  test("reports a block that the user edits meanwhile at its newer revision, waiting for it rather than failing", async () => {
+    const late: { core?: CoreApi } = {};
+    let edited = false;
+    const stub = await started({
+      evaluate: ({ block, recipe }) => {
+        if (block === "b" && recipe.state.n === 3 && !edited) {
+          edited = true;
+          void late.core?.commands.run("blockr.core-set_block", { id: "b", state: { n: 4 } });
+        }
+        return undefined;
+      },
+    });
+    late.core = stub.core;
+
+    const result = await callTool(stub.tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] });
+
+    expect(edited).toBe(true);
+    expect(stub.core.store.board().blocks.b?.state.n).toBe(4);
+    expect(result.isError).toBe(false);
+    expect(parsed(result)).toMatchObject({ applied: true, blocks: { b: { status: "ready", result: "The result of b." } } });
+    const reads = stub.requests("describe_result").flatMap((request) => request.reads);
+    expect(reads.find(({ block }) => block === "b")?.revision).toBe(stub.core.scheduler.status("b")?.revision);
   });
 
   test("names as removed a block that leaves the board while the tool waits", async () => {
