@@ -7,32 +7,15 @@ Authors@R:
              role = c("aut", "cre"),
              email = "nicolas@cynkra.com"),
       person(family = "Bristol Myers Squibb",
-             role = "fnd"),
-      person(given = "Mario",
-             family = "Zechner",
-             role = "cph",
-             comment = "'pi', bundled in inst/js, see inst/js/pi-licenses.txt"),
-      person(family = "OpenAI",
-             role = "cph",
-             comment = "The 'openai' SDK, bundled in inst/js"),
-      person(family = "Anthropic, PBC",
-             role = "cph",
-             comment = "The '@anthropic-ai/sdk' SDK, bundled in inst/js"),
-      person(family = "Promplate Dev Team",
-             role = "cph",
-             comment = "'partial-json', bundled in inst/js"),
-      person(family = "Svix",
-             role = "cph",
-             comment = "'standardwebhooks', bundled in inst/js"),
-      person(given = "Dmitry",
-             family = "Chestnykh",
-             role = "cph",
-             comment = "'@stablelib/base64', bundled in inst/js"))
+             role = "fnd"))
 Description: Provides the assistant, a plugin for 'blockr' boards whose agent
     loop runs in the browser. A large language model reads the board and
     edits it beside the user. Its edits go through the command registry of
     'blockr.core', as the user's own edits do.
 License: GPL (>= 3)
+Copyright: Where inst/js holds code from other projects, the file LICENSES
+    in that directory names the projects, their copyright holders and their
+    licenses.
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:

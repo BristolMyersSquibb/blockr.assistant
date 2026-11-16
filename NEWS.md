@@ -104,8 +104,9 @@
 * The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
   minified, into `inst/js/pi-<hash>.js`, which the browser loads as the first
   turn starts (#225).
-  The license texts of what that file holds are in `inst/js/pi-licenses.txt`,
-  and DESCRIPTION names their holders.
+  The file `inst/js/LICENSES` names the projects whose code it holds, with
+  their copyright holders and their licenses, as the `Copyright` field of
+  DESCRIPTION says.
 
 # blockr.assistant 0.1.0.9000
 

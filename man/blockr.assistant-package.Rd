@@ -26,12 +26,6 @@ Authors:
 Other contributors:
 \itemize{
   \item  Bristol Myers Squibb [funder]
-  \item Mario Zechner ('pi', bundled in inst/js, see inst/js/pi-licenses.txt) [copyright holder]
-  \item  OpenAI (The 'openai' SDK, bundled in inst/js) [copyright holder]
-  \item  Anthropic, PBC (The '@anthropic-ai/sdk' SDK, bundled in inst/js) [copyright holder]
-  \item  Promplate Dev Team ('partial-json', bundled in inst/js) [copyright holder]
-  \item  Svix ('standardwebhooks', bundled in inst/js) [copyright holder]
-  \item Dmitry Chestnykh ('@stablelib/base64', bundled in inst/js) [copyright holder]
 }
 
 }

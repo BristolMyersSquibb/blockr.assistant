@@ -1,9 +1,4 @@
-The bundle beside this file, pi-73d60f71.js, holds these packages, minified.
-The bundle keeps none of their license texts, so each follows here, under the package's name, its version and its license.
-
-================================================================================
-@anthropic-ai/sdk 0.129.0, MIT
-================================================================================
+@anthropic-ai/sdk 0.129.0, by Anthropic, in pi-73d60f71.js
 
 Copyright 2023 Anthropic, PBC.
 
@@ -13,37 +8,12 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+------------------------------------------------------------------------------
 
-================================================================================
-@earendil-works/pi-agent-core 1.5.2, MIT
-================================================================================
-
-MIT License
-
-Copyright (c) 2025 Mario Zechner
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-================================================================================
-@earendil-works/pi-ai 1.5.2, MIT
-================================================================================
+@earendil-works/pi-agent-core 1.5.2, by Mario Zechner, in pi-73d60f71.js
+@earendil-works/pi-ai 1.5.2, by Mario Zechner, in pi-73d60f71.js
+@earendil-works/pi-schema 1.5.2, by Earendil Works, in pi-73d60f71.js
+@earendil-works/pi-telemetry 1.5.2, by Mario Zechner, in pi-73d60f71.js
 
 MIT License
 
@@ -67,64 +37,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+------------------------------------------------------------------------------
 
-================================================================================
-@earendil-works/pi-schema 1.5.2, MIT
-================================================================================
-
-MIT License
-
-Copyright (c) 2025 Mario Zechner
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-================================================================================
-@earendil-works/pi-telemetry 1.5.2, MIT
-================================================================================
-
-MIT License
-
-Copyright (c) 2025 Mario Zechner
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-================================================================================
-@stablelib/base64 1.0.1, MIT
-================================================================================
+@stablelib/base64 1.0.1, by Dmitry Chestnykh, in pi-73d60f71.js
 
 This software is licensed under the MIT license:
 
@@ -148,10 +63,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+------------------------------------------------------------------------------
 
-================================================================================
-fast-sha256 1.3.0, Unlicense
-================================================================================
+fast-sha256 1.3.0, by Dmitry Chestnykh, in pi-73d60f71.js
 
 This is free and unencumbered software released into the public domain.
 
@@ -178,10 +92,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to <http://unlicense.org>
 
+------------------------------------------------------------------------------
 
-================================================================================
-openai 7.19.0, Apache-2.0
-================================================================================
+openai 7.19.0, by OpenAI, in pi-73d60f71.js
 
                                  Apache License
                            Version 2.0, January 2004
@@ -385,10 +298,9 @@ openai 7.19.0, Apache-2.0
    See the License for the specific language governing permissions and
    limitations under the License.
 
+------------------------------------------------------------------------------
 
-================================================================================
-partial-json 0.1.7, MIT
-================================================================================
+partial-json 0.1.7, by Muspi Merol, in pi-73d60f71.js
 
 MIT License
 
@@ -412,10 +324,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+------------------------------------------------------------------------------
 
-================================================================================
-standardwebhooks 1.1.1, MIT
-================================================================================
+standardwebhooks 1.1.1, by Standard Webhooks, in pi-73d60f71.js
 
 The MIT License
 
