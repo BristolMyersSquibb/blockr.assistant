@@ -1,0 +1,271 @@
+// The loop on pi's fake provider (./loop.ts), whose replies each test
+// scripts: a turn as it streams, its tool calls, its calls to the model, what
+// each call sends, a stop and a failed call. The test plays the turns, which
+// keep each message that the loop reports in a conversation of their own.
+
+import type { SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
+import { describe, expect, test } from "vitest";
+import type { Kept } from "../conversations/index.ts";
+import type { Message } from "../state/index.ts";
+import { fauxLoop } from "../testing/index.ts";
+import type { Tool, ToolResult } from "../tools/index.ts";
+import { STOPPED } from "./messages.ts";
+import type { Answered } from "./messages.ts";
+import type { Call, Streamed, Turn } from "./loop.ts";
+
+const CREATED = "2026-11-16T08:00:00.000Z";
+const asked: Message = { id: "u1", role: "user", parts: [{ type: "text", text: "How many blocks?" }], created: CREATED };
+
+function tool(name: string, run: (signal: AbortSignal) => Promise<ToolResult>, executionMode: Tool["executionMode"] = "parallel"): Tool {
+  return { name, description: `The tool ${name}.`, parameters: { type: "object", properties: {} }, executionMode, execute: (_args, signal) => run(signal) };
+}
+
+const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', isError: false, images: [] }));
+
+// A turn of the conversation that the test keeps, on pi's fake provider with
+// the replies given, and what the loop reported of it.
+function turnWith(
+  replies: FauxResponseStep[],
+  given: Partial<Pick<Turn, "tools" | "systemPrompt" | "transformContext" | "onPayload">> = {},
+  tokensPerSecond?: number,
+) {
+  const { faux, loop, connection } = fauxLoop(tokensPerSecond === undefined ? {} : { tokensPerSecond });
+  faux.setResponses(replies);
+  const messages: Message[] = [asked];
+  const kept = new Map<string, Kept>();
+  const calls: Call[] = [];
+  const streamed: Streamed[] = [];
+  const returned: [string, Answered][] = [];
+  const controller = new AbortController();
+  let keys = 0;
+
+  const turn: Turn = {
+    connection: {
+      ...connection,
+      apiKey: () => {
+        keys += 1;
+        return connection.apiKey();
+      },
+    },
+    model: "faux-1",
+    tools: [listed],
+    messages: () => messages,
+    kept: (id) => kept.get(id),
+    signal: controller.signal,
+    on: {
+      streaming(reply) {
+        streamed.push(reply);
+      },
+      called(call) {
+        calls.push(call);
+        if (call.reply !== undefined) {
+          messages.push(call.reply.message);
+          kept.set(call.reply.message.id, call.reply.kept);
+        }
+        return Promise.resolve();
+      },
+      returned(id, result) {
+        returned.push([id, result]);
+      },
+      results(message, keptOf) {
+        messages.push(message);
+        kept.set(message.id, keptOf);
+        return Promise.resolve();
+      },
+    },
+    ...given,
+  };
+
+  return { run: () => loop.run(turn), messages, kept, calls, streamed, returned, controller, keys: () => keys };
+}
+
+// A reply that pi's fake provider writes from a function of the call, which
+// the test reads.
+function seen(into: { context?: TranscriptContext; options?: SimpleStreamOptions }[], reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
+  return (context, options) => {
+    into.push({ context, ...(options === undefined ? {} : { options }) });
+    return reply;
+  };
+}
+
+describe("a turn on the loop", () => {
+  test("streams the reply, and reports it as one finished message, with its reasoning kept and its tokens, once the call ended", async () => {
+    const { run, messages, kept, calls, streamed } = turnWith([fauxAssistantMessage([fauxThinking("Count them."), fauxText("The board holds two blocks.")])]);
+
+    await run();
+
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(messages[1]?.parts).toEqual([{ type: "text", text: "The board holds two blocks." }]);
+    expect(kept.get(messages[1]?.id ?? "")?.reasoning).toEqual(["Count them."]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.usage.output).toBeGreaterThan(0);
+    expect(calls[0]?.usage.total).toBeGreaterThanOrEqual((calls[0]?.usage.input ?? 0) + (calls[0]?.usage.output ?? 0));
+    expect(calls[0]?.failure).toBeUndefined();
+    // The reply streamed in pieces before it entered the conversation.
+    expect(streamed.length).toBeGreaterThan(2);
+    expect(streamed.at(-1)?.parts).toEqual([{ type: "text", text: "The board holds two blocks." }]);
+  });
+
+  test("runs each tool call, and reports the results of a reply's calls as one message of the role tool, in the order of the calls", async () => {
+    const plotted = tool("inspect_results", () => Promise.resolve({ text: "Drew a plot.", isError: false, images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }] }));
+    const { run, messages, kept, returned } = turnWith(
+      [
+        fauxAssistantMessage([fauxToolCall("inspect_results", {}, { id: "c1" }), fauxToolCall("list_blocks", {}, { id: "c2" })], { stopReason: "toolUse" }),
+        fauxAssistantMessage("Two blocks, and a plot."),
+      ],
+      { tools: [plotted, listed] },
+    );
+
+    await run();
+
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(messages[2]?.parts).toEqual([
+      { type: "tool_result", id: "c1", text: "Drew a plot.", images: 1 },
+      { type: "tool_result", id: "c2", text: '["a","b"]' },
+    ]);
+    expect(kept.get(messages[2]?.id ?? "")?.images).toEqual({ c1: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }] });
+    expect(returned.map(([id]) => id).sort()).toEqual(["c1", "c2"]);
+  });
+
+  test("builds pi's messages from the conversation before each call, with the reply as pi wrote it and the tools' images", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const plotted = tool("inspect_results", () => Promise.resolve({ text: "Drew a plot.", isError: false, images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }] }));
+    const first = fauxAssistantMessage([fauxThinking("Plot it."), fauxToolCall("inspect_results", {}, { id: "c1" })], { stopReason: "toolUse" });
+    const { run } = turnWith([seen(calls, first), seen(calls, fauxAssistantMessage("Here it is."))], { tools: [plotted], systemPrompt: "Be brief." });
+
+    await run();
+
+    const second = calls[1]?.context?.messages ?? [];
+    expect(second.map((m) => m.role)).toEqual(["system", "user", "assistant", "toolResult"]);
+    expect(second[0]).toMatchObject({ role: "system", content: "Be brief.", toolsAdded: [{ name: "inspect_results" }] });
+    expect(second[2]).toMatchObject({ role: "assistant", content: [{ type: "thinking", thinking: "Plot it." }, { type: "toolCall", id: "c1" }] });
+    expect(second[3]).toMatchObject({ role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "Drew a plot." }, { type: "image" }] });
+  });
+
+  test("asks for the credential before each call, and sends the thinking level medium and no attribution", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { run, keys } = turnWith([seen(calls, fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" })), seen(calls, fauxAssistantMessage("Two."))]);
+
+    await run();
+
+    expect(keys()).toBe(2);
+    expect(calls.map((c) => c.options?.apiKey)).toEqual(["test-key", "test-key"]);
+    expect(calls[0]?.options?.reasoning).toBe("medium");
+    expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const board: Message = { id: "board", role: "user", parts: [{ type: "text", text: "The board holds a and b." }], created: CREATED };
+    const { run, messages } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { transformContext: (conversation) => Promise.resolve([...conversation, board]) });
+
+    await run();
+
+    expect(calls[0]?.context?.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "The board holds a and b." }] });
+    expect(messages.map((m) => m.id)).not.toContain("board");
+  });
+
+  test("hands pi the caller's onPayload", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const onPayload = (payload: unknown): unknown => payload;
+    const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { onPayload });
+
+    await run();
+
+    expect(calls[0]?.options?.onPayload).toBe(onPayload);
+  });
+
+  test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {
+    const { run, messages } = turnWith([fauxAssistantMessage([fauxToolCall("list_views", {}, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("No views.")]);
+
+    await run();
+
+    expect(messages[2]?.parts).toEqual([{ type: "tool_result", id: "c1", text: "Tool list_views not found", error: true }]);
+  });
+});
+
+describe("a turn that stops or fails", () => {
+  // A turn whose reply streams on timers and which stops once a streamed
+  // reply passes the check given.
+  function stoppedWhen(check: (reply: Streamed) => boolean) {
+    const reply = fauxAssistantMessage([fauxText("The board holds two blocks, and I will list them."), fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" });
+    const turn = turnWith([reply], {}, 400);
+    const push = turn.streamed.push.bind(turn.streamed);
+    turn.streamed.push = (...items: Streamed[]) => {
+      if (items.some(check)) turn.controller.abort();
+      return push(...items);
+    };
+    return turn;
+  }
+
+  test("enters what the reply streamed until the stop as its message, which the memory does not keep as pi wrote it", async () => {
+    const turn = stoppedWhen((reply) => reply.parts.length > 0);
+
+    await turn.run();
+
+    const [, written, ...rest] = turn.messages;
+    const said = written?.parts[0]?.type === "text" ? written.parts[0].text : "";
+    expect(said.length).toBeGreaterThan(0);
+    expect(said.length).toBeLessThan("The board holds two blocks, and I will list them.".length);
+    expect("The board holds two blocks, and I will list them.".startsWith(said)).toBe(true);
+    expect(turn.kept.get(written?.id ?? "")?.reply).toBeUndefined();
+    expect(rest).toEqual([]);
+    expect(turn.calls.every((call) => call.failure === undefined)).toBe(true);
+  });
+
+  test("gives the tool calls that the reply streamed until the stop results that say the user stopped the turn", async () => {
+    const turn = stoppedWhen((reply) => reply.parts.some((part) => part.type === "tool_call"));
+
+    await turn.run();
+
+    expect(turn.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
+    expect(turn.messages[1]?.parts.map((part) => part.type)).toEqual(["text", "tool_call"]);
+    expect(turn.messages[2]?.parts).toEqual([{ type: "tool_result", id: "c1", text: STOPPED, error: true }]);
+  });
+
+  test("keeps the results that the tools gave before a stop, and says that the user stopped the turn for each call left without one", async () => {
+    let stop = (): void => undefined;
+    const waits = tool(
+      "describe_block",
+      (signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(signal.reason as Error);
+          });
+          stop();
+        }),
+    );
+    const turn = turnWith(
+      [fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c1" }), fauxToolCall("describe_block", {}, { id: "c2" })], { stopReason: "toolUse" }), fauxAssistantMessage("Never sent.")],
+      { tools: [listed, waits] },
+    );
+    stop = () => {
+      queueMicrotask(() => {
+        turn.controller.abort();
+      });
+    };
+
+    await turn.run();
+
+    expect(turn.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
+    expect(turn.messages[2]?.parts).toEqual([
+      { type: "tool_result", id: "c1", text: '["a","b"]' },
+      { type: "tool_result", id: "c2", text: STOPPED, error: true },
+    ]);
+    // The call after the stop streamed nothing, so it adds no message.
+    expect(turn.calls.at(-1)?.reply).toBeUndefined();
+  });
+
+  test("reports a failed call with why it failed, after the reply that it streamed until then", async () => {
+    const { run, messages, kept, calls } = turnWith([fauxAssistantMessage([fauxText("I will look.")], { stopReason: "error", errorMessage: "401 Unauthorized" })]);
+
+    await run();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.failure).toBe("401 Unauthorized");
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+});

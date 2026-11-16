@@ -85,6 +85,29 @@
   Where R cannot list them, the assistant raises the error
   `assistant_skills_failed` and goes on without skills.
 
+* The assistant runs each turn from the `start` of its plugin class, so that a
+  turn goes on once the panel closes or its tab is hidden (#225).
+  The agent loop runs in the browser on pi, `@earendil-works/pi-agent-core`
+  and `@earendil-works/pi-ai` 1.5.2, through one module of the plugin's own.
+  One turn runs at a time on a board, and the tab holds a Web Lock while one
+  runs, so that Chrome does not freeze the tab.
+  Each reply enters its conversation as one finished message, with the
+  results of its tool calls as a message of the role `tool`, and the tokens
+  of each call enter the conversation's usage.
+  While the board stays open, the plugin's memory keeps each reply's reasoning
+  and the images that each tool result carries.
+  A call that fails raises the error `assistant_call_failed`, which the
+  plugin withdraws once a later call succeeds.
+  Until the assistant reads its blockr options, it has no model to talk to,
+  so each turn fails.
+
+* The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
+  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the first
+  turn starts (#225).
+  The file `inst/js/LICENSES` names the projects whose code it holds, with
+  their copyright holders and their licenses, as the `Copyright` field of
+  DESCRIPTION says.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

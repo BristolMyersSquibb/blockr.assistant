@@ -11,12 +11,11 @@
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#the-schema-the-default-and-the-version).
 // - It gives core the assistant's commands, which ../../commands defines and
 //   core registers with the class.
-// - Its start makes the conversations of the board that opens, which cut
-//   every conversation to the cap on what the state keeps, or move every one
-//   into the plugin's memory under a cap of 0 (../../conversations). Where
-//   that fails, as for a cap that nobody can read, it logs the error.
-// - Its start also has R list the skills of the board that opens, which the
-//   assistant's tools read (../../skills).
+// - Its start opens the assistant of the board that opens (../../assistant),
+//   so that a turn goes on once the panel closes
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).
+//   The assistant holds the conversations (../../conversations), the skills
+//   that R lists (../../skills) and the turns (../../turns).
 // - Its `ui`, which every frontend places for the assistant, draws an empty
 //   panel. It draws in React, on the one copy of React that core puts on the
 //   page, in a root of its own.
@@ -28,9 +27,8 @@ import type { JsonSchema, PluginClass, PluginModule } from "@blockr/core";
 // beside the bundle.
 // eslint-disable-next-line no-restricted-imports
 import schema from "../../../inst/js/assistant_plugin.schema.json" with { type: "json" };
+import { openAssistant } from "../../assistant/index.ts";
 import { assistantCommands } from "../../commands/index.ts";
-import { createConversations } from "../../conversations/index.ts";
-import { createSkills } from "../../skills/index.ts";
 
 export const api = 1;
 
@@ -55,10 +53,7 @@ export default {
   state: { schema: schema as unknown as JsonSchema, default: { conversations: {} } },
   commands: assistantCommands,
   start({ core, signal }) {
-    createConversations(core, signal).opened.catch((error: unknown) => {
-      core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
-    });
-    createSkills(core, signal);
+    openAssistant(core, signal);
     return undefined;
   },
 } satisfies Omit<PluginClass, "id">;

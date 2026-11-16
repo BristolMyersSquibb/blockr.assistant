@@ -8,6 +8,7 @@ import type { Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test } from "vitest";
+import { assistantOf } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
 import * as assistant from "./index.tsx";
 
@@ -164,6 +165,30 @@ describe("the start of the assistant's plugin class", () => {
     expect(conversationIn(core.store.board().plugins[ASSISTANT])).toHaveLength(6);
     expect(logged.filter((line) => line.package === "blockr.assistant").map((line) => [line.level, line.message])).toEqual([
       ["error", "The blockr option chat_save_turns is null, where it takes a whole number of 0 or more, or -1 for every message."],
+    ]);
+  });
+
+  test("opens the assistant of the board, which the chat finds through the CoreApi, until the next board opens", async () => {
+    const { core, settled, stop } = await started(undefined, three);
+    await act(() => settled());
+
+    const opened = assistantOf(core);
+    expect(opened?.conversations.get("c1")?.messages).toHaveLength(6);
+    expect(opened?.turns.current()).toBeUndefined();
+
+    act(stop);
+    expect(assistantOf(core)).toBeUndefined();
+  });
+
+  test("runs no turn until the assistant reads its blockr options, since it has no model to talk to then", async () => {
+    const { core, settled } = await started(undefined, three);
+    await act(() => settled());
+
+    await assistantOf(core)?.turns.run("c1");
+
+    const failed = core.notifications.get().filter((notification) => notification.source.kind === "module" && notification.source.code === "assistant_call_failed");
+    expect(failed.map((notification) => [notification.severity, notification.message])).toEqual([
+      ["error", "The assistant has no model to talk to, since the conversation picked none and the app offers none."],
     ]);
   });
 });
