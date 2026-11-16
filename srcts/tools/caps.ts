@@ -1,5 +1,5 @@
 // The caps on what the tools return, which are today's blockr options at
-// today's defaults (R/utils-bounds.R at fcbdb27)
+// today's defaults (R/utils-bounds.R and R/stage-review.R at fcbdb27)
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#the-tools).
 // A tool reads each cap that it needs through CoreApi.blockrOption(), which
 // asks R once per page. The caps of what R writes, such as the text of
@@ -29,6 +29,8 @@ const DEFAULTS = {
   // What the model's own R code prints, which R cuts, and the warnings and
   // messages of R's reply to a tool's request.
   assistant_eval_max_chars: 16000,
+  // The blocks that the review of an edit covers.
+  assistant_review_max_blocks: 50,
 } as const;
 
 export type Cap = keyof typeof DEFAULTS;

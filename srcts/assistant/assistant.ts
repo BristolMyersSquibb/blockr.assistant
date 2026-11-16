@@ -6,6 +6,9 @@
 // start, so the chat finds the assistant through the CoreApi that core gives
 // both (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-panel).
 //
+// The turns offer the read tools and the edit tools, which take the
+// plugin's signal to tell another board opening from a stop.
+//
 // As the board opens, the assistant reads the deployment's blockr options,
 // which say where the calls go, how they are authenticated and which models
 // the assistant offers (../deployment). The models and the turns read what the
@@ -16,6 +19,7 @@ import type { CoreApi } from "@blockr/core";
 import { createConversations } from "../conversations/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
+import type { Deployment } from "../deployment/index.ts";
 import { loadLoop } from "../loop/index.ts";
 import type { Loop } from "../loop/index.ts";
 import { createModels } from "../models/index.ts";
@@ -23,7 +27,7 @@ import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
-import { readTools } from "../tools/index.ts";
+import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
 
@@ -35,6 +39,9 @@ export interface Assistant {
 }
 
 export interface AssistantOptions {
+  // What the deployment chose, which the assistant reads from its blockr
+  // options unless given.
+  readonly deployment?: Promise<Deployment>;
   // Loads the loop, which imports pi's bundle.
   readonly load?: () => Promise<Loop>;
   // The tab's Web Locks, the page's by default.
@@ -55,14 +62,14 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
-  const deployment = readDeployment(core);
+  const deployment = options.deployment ?? readDeployment(core);
   // The turns report why the options cannot be read, as each turn starts.
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const turns = createTurns(core, signal, {
     conversations,
-    tools: readTools(core, skills),
+    tools: [...readTools(core, skills), ...editTools(core, signal)],
     deployment,
     models,
     callFailed,
