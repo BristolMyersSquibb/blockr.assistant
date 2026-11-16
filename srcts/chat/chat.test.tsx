@@ -371,6 +371,22 @@ describe("the chat's tool calls", () => {
     expect(blocks[1]?.hasAttribute("data-removed")).toBe(true);
   });
 
+  test("show what the edit tool did, from its own result, as a turn runs it", async () => {
+    const commands = [{ command: "blockr.core-add_block", args: { registry_id: "blockr.core-dataset_block", id: "d", name: "Cars" } }];
+    const { el, assistant } = await chat({ replies: [fauxAssistantMessage([fauxToolCall("edit", { commands }, { id: "e-1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Added.")] });
+
+    type(el, "Add a dataset.");
+    press(field(el), "Enter");
+    await until(() => assistant.turns.current() === undefined && el.querySelector(".blockr-assistant-tool") !== null, "the edit");
+
+    const row = el.querySelector(".blockr-assistant-tool");
+    expect(row?.querySelector(".blockr-assistant-tool-title")?.textContent).toBe("Edit");
+    expect(row?.querySelector(".blockr-assistant-edit-commands")?.textContent).toBe("Add block");
+    const block = row?.querySelector(".blockr-assistant-block");
+    expect(block?.textContent).toBe("Cars");
+    expect(block?.querySelector(".blockr-assistant-dot")).not.toBeNull();
+  });
+
   test("show the command that refused an edit, and why", async () => {
     localStorage.setItem(KEY, "c1");
     const args = { commands: [{ command: "blockr.core-add_link", args: {} }] };
