@@ -1,6 +1,6 @@
 // Reading the assistant's state on the board, and what the commands and the
 // plugin's memory share in changing a conversation
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-thread-the-state-keeps):
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-conversation-the-state-keeps):
 // - A note of what others changed in the board is a message of the role user
 //   that holds parts of the type changes alone. The plugin adds it before a
 //   call, so it is no message that the user sent.

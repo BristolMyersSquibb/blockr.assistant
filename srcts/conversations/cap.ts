@@ -1,7 +1,7 @@
 // The cap on the messages of each conversation that the state keeps: the
 // blockr option chat_save_turns, which the deployment sets, since it governs
 // whether a conversation may land in a shared file
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-thread-the-state-keeps).
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-conversation-the-state-keeps).
 // - It is 50 where nothing sets it.
 // - With 0, the state keeps no conversation.
 // - With -1, it keeps every message, since JSON holds no infinite number, so

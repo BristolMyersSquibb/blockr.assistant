@@ -1,6 +1,6 @@
 // The conversations: the one way in which the loop and the chat change a
 // conversation, and the plugin's memory, which holds what the state leaves out
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-thread-the-state-keeps).
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#how-much-of-a-conversation-the-state-keeps).
 // The class's start makes them as each board opens, and they last until the
 // next board opens, as the signal aborts.
 //
