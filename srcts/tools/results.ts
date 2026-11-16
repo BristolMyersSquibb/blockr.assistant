@@ -14,10 +14,12 @@
 //   assistant_summary_max_chars, what the code prints at
 //   assistant_eval_max_chars, and the plots at assistant_plot_render_max,
 //   each drawn within assistant_plot_render_range.
+// - The result gives the warnings and messages of R's reply after what R
+//   answered (./conditions.ts).
 
 import { object } from "../commands/index.ts";
 import { answeredObject, answeredText, answeredTexts } from "../requests/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { toolRequest, withConditions } from "./conditions.ts";
 import { own } from "./context.ts";
 import type { ToolContext } from "./context.ts";
 import { noBlock, noBlocks } from "./failures.ts";
@@ -42,8 +44,9 @@ export function resultTools({ core }: ToolContext): Tool[] {
       parameters: object({ id: { type: "string", description: "The block's id, as list_blocks gives it." } }, ["id"]),
       run: async ({ id }, signal) => {
         if (own(core.store.board().blocks, id) === undefined) throw new Error(noBlock(id));
-        const answer = answeredObject(await core.request(ASSISTANT, "describe_result", {}, { reads: [id], signal }), "describe_result");
-        return answeredText(own(answer, id) ?? null, "describe_result");
+        const { answer, conditions } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
+        const described = answeredObject(answer, "describe_result");
+        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), conditions);
       },
     }),
 
@@ -81,14 +84,12 @@ export function resultTools({ core }: ToolContext): Tool[] {
         const absent = blocks.filter((block) => own(board.blocks, block) === undefined);
         if (absent.length > 0) throw new Error(noBlocks(absent));
         const given = { code, ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }) };
-        const answer = answeredObject(
-          await core.request(ASSISTANT, "inspect_results", given, { reads: [...blocks], signal }),
-          "inspect_results",
-        );
+        const { answer, conditions } = await toolRequest(core, "inspect_results", given, { reads: [...blocks], signal });
+        const inspection = answeredObject(answer, "inspect_results");
         return {
-          text: answeredText(answer.output ?? null, "inspect_results"),
+          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), conditions),
           isError: false,
-          images: answeredTexts(answer.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" })),
+          images: answeredTexts(inspection.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" })),
         };
       },
     }),

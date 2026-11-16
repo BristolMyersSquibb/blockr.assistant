@@ -2,14 +2,14 @@
 // the request read_skill as the test gives.
 
 import { describe, expect, test } from "vitest";
-import { callTool, skill, skillsHolding, startAssistant } from "../testing/index.ts";
-import type { Answers } from "../testing/index.ts";
+import { callTool, requestNotifications, skill, skillsHolding, startAssistant } from "../testing/index.ts";
+import type { Answers, StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
 const SKILLS = [skill("exposure"), skill("review", { userInvocable: true, modelInvocable: false })];
 
-async function started(answers: Answers = {}) {
-  const stub = await startAssistant({ answers });
+async function started(answers: Answers = {}, conditions: StartOptions["conditions"] = {}) {
+  const stub = await startAssistant({ answers, conditions });
   return { ...stub, tools: readTools(stub.core, skillsHolding(...SKILLS)) };
 }
 
@@ -23,6 +23,29 @@ describe("read_skill", () => {
       images: [],
     });
     expect(requests("read_skill").map(({ args }) => args)).toEqual([{ name: "exposure", packages: ["blockr.core", "blockr.assistant"] }]);
+  });
+
+  test("gives the warnings of R's reply after the skill's text, and core raises no notification for them", async () => {
+    const { core, tools } = await started(
+      { read_skill: () => ["The text of exposure."] },
+      {
+        read_skill: [
+          {
+            severity: "warning",
+            class: ["simpleWarning", "warning", "condition"],
+            phase: "request",
+            message: "incomplete final line found on '/srv/skills/exposure/SKILL.md'",
+          },
+        ],
+      },
+    );
+
+    await expect(callTool(tools, "read_skill", { name: "exposure" })).resolves.toEqual({
+      text: "The text of exposure.\n\nWarning: incomplete final line found on '/srv/skills/exposure/SKILL.md'",
+      isError: false,
+      images: [],
+    });
+    expect(requestNotifications(core)).toEqual([]);
   });
 
   test("reads a file that the skill bundles, which R takes as its path", async () => {
@@ -47,8 +70,8 @@ describe("read_skill", () => {
     expect(requests("read_skill")).toEqual([]);
   });
 
-  test("gives R's error, such as for a file that the skill does not bundle", async () => {
-    const { tools } = await started({
+  test("gives R's error, such as for a file that the skill does not bundle, and core raises no notification for it", async () => {
+    const { core, tools } = await started({
       read_skill: () => {
         throw new Error("Skill exposure bundles no file notes.md. It bundles: SKILL.md.");
       },
@@ -59,5 +82,6 @@ describe("read_skill", () => {
       isError: true,
       images: [],
     });
+    expect(requestNotifications(core)).toEqual([]);
   });
 });

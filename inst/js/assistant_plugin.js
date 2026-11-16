@@ -850,6 +850,16 @@ function answeredOf(result, isError) {
 }
 
 // srcts/requests/requests.ts
+async function sendRequest(core, name, args, opts = {}) {
+  let conditions = [];
+  const answer = await core.request(ASSISTANT, name, args, {
+    ...opts,
+    conditions: (given) => {
+      conditions = given;
+    }
+  });
+  return { answer, conditions };
+}
 function appPackages(core) {
   return Object.keys(core.store.packages());
 }
@@ -893,8 +903,8 @@ function createSkills(core, signal) {
 async function listSkills(core, signal) {
   for (; ; ) {
     try {
-      const reply = await core.request(ASSISTANT, "list_skills", { packages: appPackages(core) }, { signal });
-      return skillsOf(reply);
+      const { answer } = await sendRequest(core, "list_skills", { packages: appPackages(core) }, { signal });
+      return skillsOf(answer);
     } catch (error) {
       if (signal.aborted) return [];
       if (isSessionEnded(error)) continue;
@@ -1160,6 +1170,9 @@ var DEFAULTS = {
   assistant_description_max_chars: 1e3,
   // The description of a skill that names a class.
   assistant_skill_description_max_chars: 1024,
+  // What the model's own R code prints, which R cuts, and the warnings and
+  // messages of R's reply to a tool's request.
+  assistant_eval_max_chars: 16e3,
   // The blocks that the review of an edit covers.
   assistant_review_max_blocks: 50
 };
@@ -1989,6 +2002,27 @@ function pluginTools(context3) {
   ];
 }
 
+// srcts/tools/conditions.ts
+async function toolRequest(core, name, args, opts = {}) {
+  try {
+    return await sendRequest(core, name, args, opts);
+  } catch (error) {
+    if (!isRequestError(error) || !error.conditions.some(isWarningOrMessage)) throw error;
+    throw new Error(await withConditions(core, failureMessage(error), error.conditions), { cause: error });
+  }
+}
+async function withConditions(core, text2, conditions) {
+  const lines = conditions.filter(isWarningOrMessage).map(({ severity, message: message2 }) => `${severity === "warning" ? "Warning" : "Message"}: ${message2}`);
+  if (lines.length === 0) return text2;
+  const listed = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
+  return text2 === "" ? listed : `${text2}
+
+${listed}`;
+}
+function isWarningOrMessage(condition) {
+  return condition.severity !== "error";
+}
+
 // srcts/tools/read-skill.ts
 function skillTools({ core, skills }) {
   return [
@@ -2012,7 +2046,8 @@ function skillTools({ core, skills }) {
         const skill = (await skills.list()).find((listed) => listed.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given = { name, packages: appPackages(core), ...file === void 0 ? {} : { path: file } };
-        return answeredText(await core.request(ASSISTANT, "read_skill", given, { signal }), "read_skill");
+        const { answer, conditions } = await toolRequest(core, "read_skill", given, { signal });
+        return withConditions(core, answeredText(answer, "read_skill"), conditions);
       }
     })
   ];
@@ -2028,8 +2063,9 @@ function resultTools({ core }) {
       parameters: object({ id: { type: "string", description: "The block's id, as list_blocks gives it." } }, ["id"]),
       run: async ({ id }, signal) => {
         if (own(core.store.board().blocks, id) === void 0) throw new Error(noBlock(id));
-        const answer = answeredObject(await core.request(ASSISTANT, "describe_result", {}, { reads: [id], signal }), "describe_result");
-        return answeredText(own(answer, id) ?? null, "describe_result");
+        const { answer, conditions } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
+        const described = answeredObject(answer, "describe_result");
+        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), conditions);
       }
     }),
     tool({
@@ -2063,14 +2099,12 @@ function resultTools({ core }) {
         const absent = blocks.filter((block) => own(board.blocks, block) === void 0);
         if (absent.length > 0) throw new Error(noBlocks(absent));
         const given = { code, ...width === void 0 ? {} : { width }, ...height === void 0 ? {} : { height } };
-        const answer = answeredObject(
-          await core.request(ASSISTANT, "inspect_results", given, { reads: [...blocks], signal }),
-          "inspect_results"
-        );
+        const { answer, conditions } = await toolRequest(core, "inspect_results", given, { reads: [...blocks], signal });
+        const inspection = answeredObject(answer, "inspect_results");
         return {
-          text: answeredText(answer.output ?? null, "inspect_results"),
+          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), conditions),
           isError: false,
-          images: answeredTexts(answer.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" }))
+          images: answeredTexts(inspection.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" }))
         };
       }
     })

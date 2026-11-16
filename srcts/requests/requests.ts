@@ -11,8 +11,41 @@
 //   not ready, or where R replies error, and with a SessionEndedError where
 //   R's session ends before R replies. Core exports neither class to plugins,
 //   so the plugin tells them by their names.
+// - The plugin takes the conditions of R's reply to each of its requests
+//   itself, ok or error, so that core raises no notification for them. The
+//   tools hand them to the model, and the skills drop them, since R logs each
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model).
 
-import type { CoreApi, Json, RequestError } from "@blockr/core";
+import type { Condition, CoreApi, Json, RequestError, RequestOpts } from "@blockr/core";
+import { ASSISTANT } from "../state/index.ts";
+
+// R's answer to one of the assistant's requests, and the conditions of R's
+// reply: the messages and warnings that R raised as it answered, in the order
+// that R raised them.
+export interface Reply {
+  readonly answer: Json | Blob;
+  readonly conditions: readonly Condition[];
+}
+
+// Sends the assistant's request `name`, and resolves with R's answer and the
+// conditions of R's reply, which the caller hands on itself. It rejects as
+// CoreApi.request() does, so that a reply of error rejects with its
+// conditions.
+export async function sendRequest(
+  core: { readonly request: CoreApi["request"] },
+  name: string,
+  args: Readonly<Record<string, Json>>,
+  opts: Omit<RequestOpts, "conditions"> = {},
+): Promise<Reply> {
+  let conditions: readonly Condition[] = [];
+  const answer = await core.request(ASSISTANT, name, args, {
+    ...opts,
+    conditions: (given) => {
+      conditions = given;
+    },
+  });
+  return { answer, conditions };
+}
 
 // The names of the app's packages, those of R's reply to `hello`.
 export function appPackages(core: { readonly store: Pick<CoreApi["store"], "packages"> }): string[] {
