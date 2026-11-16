@@ -417,22 +417,31 @@ describe("edit meanwhile", () => {
     expect(result).toEqual({ applied: true, undo_step: true, added: { blocks: ["h"] }, blocks: { h: { removed: "The block left the board while the tool waited for its review." } } });
   });
 
-  test("takes none of the user's changes, nor the conversations', for its own", async () => {
+  test("takes none of the user's changes, nor the conversations', for its own, while a command prepares", async () => {
     let open: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
       open = resolve;
+    });
+    let preparing: () => void = () => undefined;
+    const prepared = new Promise<void>((resolve) => {
+      preparing = resolve;
     });
     const { core, tools } = await started();
     core.commands.register({
       id: "blockr.test-slow_option",
       label: "Set rows slowly",
-      prepare: () => gate,
+      prepare: () => {
+        preparing();
+        return gate;
+      },
       run: () => ({ options: { set: { n_rows: 10 } } }),
     });
 
     const called = callTool(tools, "edit", { commands: [{ command: "blockr.test-slow_option" }] });
+    await prepared;
     await core.commands.run("blockr.core-set_block", { id: "d", state: { select: "Species" } });
     await core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Rows" }, "assistant");
+    await core.commands.run("blockr.core-remove_block", { id: "f" });
     open();
 
     expect(parsed(await called)).toEqual({ applied: true, undo_step: false });
