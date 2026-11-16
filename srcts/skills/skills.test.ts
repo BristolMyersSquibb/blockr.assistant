@@ -4,7 +4,7 @@
 
 import type { CoreApi, Json, Raised } from "@blockr/core";
 import { describe, expect, test, vi } from "vitest";
-import { startAssistant } from "../testing/index.ts";
+import { requestNotifications, startAssistant } from "../testing/index.ts";
 import { createSkills } from "./index.ts";
 
 // Two skills as R writes them, every vector as an array: one that names a
@@ -70,6 +70,26 @@ describe("the skills of the open board", () => {
     ]);
   });
 
+  test("drop the warnings of R's reply, for which core raises no notification", async () => {
+    const { core, settled } = await startAssistant({
+      answers: { list_skills: () => LISTED },
+      conditions: {
+        list_skills: [
+          {
+            severity: "warning",
+            class: ["simpleWarning", "warning", "condition"],
+            phase: "request",
+            message: "The skill catalogue takes more than assistant_skill_catalogue_max_chars.",
+          },
+        ],
+      },
+    });
+    await settled();
+
+    expect(requestNotifications(core)).toEqual([]);
+    expect(core.notifications.get()).toEqual([]);
+  });
+
   test("ask R once, however often the tools read them", async () => {
     const { core, requests } = await startAssistant({ answers: { list_skills: () => LISTED } });
     const before = requests("list_skills").length;
@@ -81,7 +101,7 @@ describe("the skills of the open board", () => {
     expect(requests("list_skills")).toHaveLength(before + 1);
   });
 
-  test("raise assistant_skills_failed where R cannot list them, with what R said", async () => {
+  test("raise assistant_skills_failed where R cannot list them, with what R said, and core raises no notification of R's error beside it", async () => {
     const { core, settled } = await startAssistant({
       answers: {
         list_skills: () => {
@@ -104,6 +124,7 @@ describe("the skills of the open board", () => {
         code: "assistant_skills_failed",
       },
     ]);
+    expect(requestNotifications(core)).toEqual([]);
   });
 
   test("hold none where R cannot list them", async () => {

@@ -13,9 +13,12 @@
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 //    That is also when they ask R again, so they withdraw nothing themselves.
 //    They raise nothing where the next board opened first.
+// 5. They drop the conditions of R's reply, ok or error, since R logs each.
+//    So core raises no notification for them, and R's error reaches the user
+//    only in assistant_skills_failed.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { answeredTexts, appPackages, failureMessage, isSessionEnded } from "../requests/index.ts";
+import { answeredTexts, appPackages, failureMessage, isSessionEnded, sendRequest } from "../requests/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 
 // A skill, as R lists it.
@@ -54,8 +57,8 @@ export function createSkills(core: Core, signal: AbortSignal): Skills {
 async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {
   for (;;) {
     try {
-      const reply = await core.request(ASSISTANT, "list_skills", { packages: appPackages(core) }, { signal });
-      return skillsOf(reply);
+      const { answer } = await sendRequest(core, "list_skills", { packages: appPackages(core) }, { signal });
+      return skillsOf(answer);
     } catch (error) {
       if (signal.aborted) return [];
       if (isSessionEnded(error)) continue;

@@ -9,4 +9,6 @@ export {
   failureMessage,
   isRequestError,
   isSessionEnded,
+  sendRequest,
 } from "./requests.ts";
+export type { Reply } from "./requests.ts";

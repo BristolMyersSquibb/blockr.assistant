@@ -7,11 +7,13 @@
 // frontend, so nothing demands a block, and every block reads unevaluated
 // until something evaluates it. Core stops as the test finishes.
 // R answers each of the assistant's requests with what the test gives under
-// its name, and list_skills with no skill unless the test gives one.
+// its name, and list_skills with no skill unless the test gives one. R's reply
+// carries the conditions that the test gives under the request's name, and
+// none unless it gives some.
 // The loop runs on pi's fake provider, whose replies a test scripts, so that
 // the tests call no model.
 
-import type { Json } from "@blockr/core";
+import type { Condition, CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCore, StubCoreOptions } from "@blockr/core/stubs";
 import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
@@ -43,6 +45,10 @@ export type Answers = Readonly<Record<string, (request: AssistantRequest) => Jso
 
 export interface StartOptions {
   readonly answers?: Answers;
+  // The messages and warnings that R's reply to a request of the assistant's
+  // carries, under the request's name, as the request's function raised them.
+  // A reply of error carries them before the error of an answer that throws.
+  readonly conditions?: Readonly<Record<string, readonly Condition[]>>;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
   readonly evaluate?: StubCoreOptions["evaluate"];
   // Whether the app sets the board lock.
@@ -79,6 +85,10 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
     const answered = asked === undefined ? undefined : answers[asked.name];
     return asked === undefined || answered === undefined ? undefined : answered(asked);
   };
+  const conditions: StubCoreOptions["conditions"] = (request) => {
+    const asked = assistantRequest(request);
+    return asked === undefined ? undefined : options.conditions?.[asked.name];
+  };
   const plugins = Object.entries(options.plugins ?? {});
   const boardOptions = Object.entries(options.options ?? {});
   const stubbed = await stubCore({
@@ -100,6 +110,7 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
       ...Object.fromEntries(boardOptions.map(([id, definition]) => [id, { api: 1, default: definition }])),
     },
     answer,
+    conditions,
     ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
     ...(options.evaluate === undefined ? {} : { evaluate: options.evaluate }),
   });
@@ -127,6 +138,15 @@ export function callTool(
 // What a tool's result gives as JSON.
 export function parsed(result: ToolResult): unknown {
   return JSON.parse(result.text);
+}
+
+// The notifications that core holds for the conditions of R's replies to the
+// plugins' requests, each by its severity and message.
+export function requestNotifications(core: Pick<CoreApi, "notifications">): { severity: string; message: string }[] {
+  return core.notifications
+    .get()
+    .filter(({ source }) => source.kind === "r" && source.request.type === "plugin")
+    .map(({ severity, message }) => ({ severity, message }));
 }
 
 // The skills of the open board as R lists them, here those given.
