@@ -68,7 +68,7 @@ The class answers five requests in R, through its method of
 R calls each with the plugin's args by name, and with the blocks that it
 reads in \code{reads}, where the request takes them.
 The requests that read skills take the app's packages by name, in
-\code{packages}.
+\code{packages}, which the plugin sends as R named them in its reply to \code{hello}.
 \itemize{
 \item The request \code{describe_result} gives what \code{\link[=describe_result]{describe_result()}} writes about
 the result of each block that it reads, by block id.
@@ -116,6 +116,12 @@ It then lists those of the directory that the blockr option
 A skill takes the place of one of the same name that R listed before it.
 R does not read a package's \code{inst/skills}, where btw finds the skills that
 it gives coding agents.
+
+As a board opens, the plugin has R list the skills once, and the model reads
+them through the assistant's tools.
+Where R cannot list them, as for a directory in \code{assistant_skills} that does
+not exist, the plugin raises the error \code{assistant_skills_failed}.
+The assistant then goes on without skills until the next board opens.
 }
 
 \examples{
