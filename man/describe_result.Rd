@@ -6,6 +6,7 @@
 \alias{describe_result.evaluate_evaluation}
 \alias{describe_result.recordedplot}
 \alias{describe_result.captured_plot}
+\alias{describe_result.ggplot}
 \alias{describe_result.source}
 \alias{describe_result.condition}
 \title{Describe a block result for the LLM}
@@ -19,6 +20,8 @@ describe_result(x, ...)
 \method{describe_result}{recordedplot}(x, ...)
 
 \method{describe_result}{captured_plot}(x, ...)
+
+\method{describe_result}{ggplot}(x, ...)
 
 \method{describe_result}{source}(x, ...)
 
@@ -44,9 +47,10 @@ method.
 }
 \details{
 Methods for plots ship here, since the default describes none.
+A block that draws a ggplot returns the ggplot.
 A block whose expression draws a base plot returns a \code{captured_plot}, which
 \code{\link[blockr.core:capture_plot]{blockr.core::capture_plot()}} makes.
-The default prints it, which draws the plot on a new device, and writes
+The default prints either, which draws the plot on a new device, and writes
 nothing.
 A block that evaluates its expression with \code{\link[evaluate:evaluate]{evaluate::evaluate()}} returns an
 evaluation, which may hold recordings.

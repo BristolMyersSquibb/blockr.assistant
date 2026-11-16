@@ -34,8 +34,8 @@
   The requests `list_skills` and `read_skill` list the skills and read one.
   The request `read_template` reads the file that the blockr option
   `assistant_template` names.
-  The generic `describe_result()` gains a method for the `captured_plot` that
-  a block returns where its expression draws a base plot.
+  The generic `describe_result()` gains methods for a ggplot and for the
+  `captured_plot` that a block returns where its expression draws a base plot.
 
 * A package gives the assistant skills of its own, in its
   `inst/assistant/skills` (#222).

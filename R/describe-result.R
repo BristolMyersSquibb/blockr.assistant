@@ -9,9 +9,10 @@
 #' method.
 #'
 #' Methods for plots ship here, since the default describes none.
+#' A block that draws a ggplot returns the ggplot.
 #' A block whose expression draws a base plot returns a `captured_plot`, which
 #' [blockr.core::capture_plot()] makes.
-#' The default prints it, which draws the plot on a new device, and writes
+#' The default prints either, which draws the plot on a new device, and writes
 #' nothing.
 #' A block that evaluates its expression with [evaluate::evaluate()] returns an
 #' evaluation, which may hold recordings.
@@ -101,6 +102,12 @@ describe_result.recordedplot <- function(x, ...) {
 #' @export
 describe_result.captured_plot <- function(x, ...) {
   "Captured plot (`captured_plot`)."
+}
+
+#' @rdname describe_result
+#' @export
+describe_result.ggplot <- function(x, ...) {
+  "Plot made with ggplot2 (`ggplot`)."
 }
 
 #' @rdname describe_result

@@ -174,3 +174,10 @@ test_that("a result summary carries no tool hint when truncated", {
   expect_no_match(res, "inspect_results", fixed = TRUE)
   expect_no_match(res, " -- use ", fixed = TRUE)
 })
+
+test_that("a ggplot is described by its class", {
+
+  res <- summarise_result(structure(list(), class = c("gg", "ggplot")))
+
+  expect_identical(res, "Plot made with ggplot2 (`ggplot`).")
+})
