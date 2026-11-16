@@ -7,7 +7,9 @@
 //   that the model reads why and can call again
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model).
 //   It rejects only where the turn's signal aborts, with the signal's reason,
-//   since the loop then writes the result of each call left without one.
+//   since the loop then writes the result of each call left without one. The
+//   edit tool and undo_edit resolve instead where their step applied before
+//   the stop, so that the model learns that it did (./edit.ts).
 
 import type { Json, JsonSchema } from "@blockr/core";
 import { failureText } from "./failures.ts";

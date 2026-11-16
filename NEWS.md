@@ -106,6 +106,36 @@
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
 
+* The assistant takes the conditions of R's replies to its requests itself,
+  so that core raises no notification for them (#250).
+  The tools `get_block_result`, `inspect_results` and `read_skill` give the
+  model the warnings and messages of R's reply after what R answered, or
+  after R's error where R replied with one.
+  So the model learns, for instance, that its code introduced NAs by
+  coercion.
+  The blockr option `assistant_eval_max_chars` caps that list, as it caps
+  what the model's code prints.
+  The assistant drops the conditions of R's reply to `list_skills`, since R
+  logs them.
+  Where R cannot list the skills, the user sees the assistant's error
+  `assistant_skills_failed` alone, without R's error beside it.
+
+* The model edits the board through the tool `edit`, which runs a list of
+  commands as one step of the origin `assistant`, all or none (#224).
+  Where a command refuses, the tool returns the command's index, its id and its
+  failures, with a hint where it fails its preflight, and the board stays as
+  it was.
+  Once the commands apply, the tool evaluates the blocks that the step changed,
+  those downstream of them and those that feed them.
+  It then returns a review of at most `assistant_review_max_blocks` of them, 50
+  by default.
+  The review gives each block's status, the conditions that appeared since the
+  edit began, what `describe_result()` writes about its result and the state
+  of each block that the step added.
+  It also says whether the step took an undo step.
+  The tool `undo_edit` takes back the assistant's last undo step, and returns
+  the same review of what the undo changed.
+
 * The class's `ui` draws the assistant's chat wherever the frontend places the
   plugin, in React on assistant-ui 0.15.36, in place of shinychat's chat
   (#229).
@@ -137,20 +167,6 @@
   The browser loads the file as the chat first mounts, so that no board waits
   for it to open.
   The chat's stylesheet is `inst/js/assistant_plugin.css`.
-
-* The assistant takes the conditions of R's replies to its requests itself,
-  so that core raises no notification for them (#250).
-  The tools `get_block_result`, `inspect_results` and `read_skill` give the
-  model the warnings and messages of R's reply after what R answered, or
-  after R's error where R replied with one.
-  So the model learns, for instance, that its code introduced NAs by
-  coercion.
-  The blockr option `assistant_eval_max_chars` caps that list, as it caps
-  what the model's code prints.
-  The assistant drops the conditions of R's reply to `list_skills`, since R
-  logs them.
-  Where R cannot list the skills, the user sees the assistant's error
-  `assistant_skills_failed` alone, without R's error beside it.
 
 # blockr.assistant 0.1.0.9000
 
