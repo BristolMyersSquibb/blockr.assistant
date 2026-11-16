@@ -190,7 +190,7 @@ test_that("a typed modify tool stages the delta it is given", {
   expect_identical(isolate(pending())$blocks$mod$d$dataset, "mtcars")
 })
 
-test_that("records ellmer turned into a data frame reach the block as records", {
+test_that("records ellmer made a data frame reach the block as records", {
 
   # What ellmer hands the tool for
   # [{"type": "values", "column": "Species", "values": ["setosa"]},
