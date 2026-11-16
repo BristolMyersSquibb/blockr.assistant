@@ -4,9 +4,11 @@
 // neither R nor a browser
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#testing).
 
+import type { Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test } from "vitest";
+import type { AssistantState, Message, Role } from "../../state/index.ts";
 import * as assistant from "./index.tsx";
 
 // React warns where an update in a test runs outside act().
@@ -32,11 +34,45 @@ const empty = {
   board: { ...hello.board, board: { ...hello.board.board, blocks: {}, links: {}, stacks: {} } },
 };
 
+// The same reply with a board that holds no block and holds the assistant's
+// state given.
+function withState(state: AssistantState): typeof hello {
+  return {
+    ...empty,
+    board: {
+      ...empty.board,
+      board: {
+        ...empty.board.board,
+        versions: { ...empty.board.board.versions, [ASSISTANT]: 1 },
+        plugins: { ...empty.board.board.plugins, [ASSISTANT]: state },
+      },
+    },
+  };
+}
+
+function message(id: string, role: Role): Message {
+  return { id, role, parts: [{ type: "text", text: id }], created: "2026-11-16T08:00:00.000Z" };
+}
+
+// A board whose conversation c1 holds three exchanges, of two messages each.
+const three = withState({
+  conversations: {
+    c1: {
+      title: "Sales",
+      updated: "2026-11-16T08:00:00.000Z",
+      messages: ["1", "2", "3"].flatMap((n) => [message(`u${n}`, "user"), message(`a${n}`, "assistant")]),
+      usage: { input: 0, output: 0, last: 0 },
+      model: null,
+    },
+  },
+});
+
 // Starts core with the module of the assistant's class, on the board of the
 // reply given, where core's basic frontend draws the page in `el` where a test
-// gives one. Core stops as the test finishes.
-async function started(el?: HTMLElement, reply = hello) {
-  const stubbed = await act(() => stubCore({ hello: reply, modules: { [ASSISTANT]: assistant }, el }));
+// gives one, and where R holds the blockr options given. Core stops as the
+// test finishes.
+async function started(el?: HTMLElement, reply = hello, blockrOptions: Readonly<Record<string, Json>> = {}) {
+  const stubbed = await act(() => stubCore({ hello: reply, modules: { [ASSISTANT]: assistant }, el, blockrOptions }));
   onTestFinished(() => {
     act(stubbed.stop);
   });
@@ -54,11 +90,12 @@ function element(): HTMLElement {
 }
 
 describe("the assistant's plugin class", () => {
-  test("is registered under its id with the module's ui, and keeps nothing in the board", async () => {
+  test("is registered under its id with the module's ui and state, and the board holds the state's default", async () => {
     const { core } = await started();
 
     expect(core.plugins.pluginClass(ASSISTANT).ui).toBe(assistant.default.ui);
-    expect(core.store.board().plugins).not.toHaveProperty(ASSISTANT);
+    expect(core.plugins.pluginClass(ASSISTANT).state).toBe(assistant.default.state);
+    expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
   });
 
   test("draws an empty panel in the element that a frontend gives mountPlugin()", async () => {
@@ -95,7 +132,38 @@ describe("the assistant's plugin class", () => {
     const { settled } = await started(el, empty);
     await act(() => settled());
 
+    // The section holds the panel inside the markup that core puts around
+    // the element it mounts the panel in, which holds nothing where core
+    // mounts no panel.
     const section = [...el.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Assistant");
-    expect(section?.lastElementChild?.innerHTML).toBe("<div></div>");
+    expect(section?.lastElementChild?.innerHTML).toContain("<div></div>");
+  });
+});
+
+describe("the start of the assistant's plugin class", () => {
+  const conversationIn = (state: Json | undefined) => (state as AssistantState).conversations.c1?.messages.map((m) => m.id);
+
+  test("cuts every conversation to chat_save_turns as the board opens", async () => {
+    const { core, settled } = await started(undefined, three, { chat_save_turns: 4 });
+    await act(() => settled());
+
+    expect(conversationIn(core.store.board().plugins[ASSISTANT])).toEqual(["u2", "a2", "u3", "a3"]);
+  });
+
+  test("moves every conversation out of the state where chat_save_turns is 0", async () => {
+    const { core, settled } = await started(undefined, three, { chat_save_turns: "0" });
+    await act(() => settled());
+
+    expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
+  });
+
+  test("logs why the board's conversations cannot open, where chat_save_turns holds a value that the cap does not take", async () => {
+    const { core, settled, logged } = await started(undefined, three, { chat_save_turns: null });
+    await act(() => settled());
+
+    expect(conversationIn(core.store.board().plugins[ASSISTANT])).toHaveLength(6);
+    expect(logged.filter((line) => line.package === "blockr.assistant").map((line) => [line.level, line.message])).toEqual([
+      ["error", "The blockr option chat_save_turns is null, where it takes a whole number of 0 or more, or -1 for every message."],
+    ]);
   });
 });
