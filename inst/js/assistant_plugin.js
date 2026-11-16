@@ -3247,7 +3247,7 @@ function Chat({ core, assistant }) {
     [all, history, running, runsHere, waiting2]
   );
   const escape = (event) => {
-    if (event.key !== "Escape" || event.defaultPrevented || !runsHere) return;
+    if (event.key !== "Escape" || event.defaultPrevented || running === void 0) return;
     if (event.target instanceof Element && event.target.closest("dialog") !== null) return;
     event.preventDefault();
     turns.stop();

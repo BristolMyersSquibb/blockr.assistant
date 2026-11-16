@@ -12,8 +12,8 @@
 //   which assistant-ui's message field holds while the chat is mounted.
 // - The user's message goes to the conversations and starts a turn
 //   (./send.ts). Sending waits while a turn runs in any conversation.
-// - The stop button and Escape in the chat stop the turn of the open
-//   conversation.
+// - The stop button, which shows in the turn's conversation, and Escape
+//   anywhere in the chat stop the turn.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 
@@ -118,7 +118,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   );
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== "Escape" || event.defaultPrevented || !runsHere) return;
+    if (event.key !== "Escape" || event.defaultPrevented || running === undefined) return;
     // Escape in the dialog before a link closes the dialog alone.
     if (event.target instanceof Element && event.target.closest("dialog") !== null) return;
     event.preventDefault();

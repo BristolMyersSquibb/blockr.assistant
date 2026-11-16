@@ -442,9 +442,9 @@ describe("the chat while a turn runs", () => {
     expect(el.querySelector(".blockr-assistant-send")?.getAttribute("aria-label")).toBe("Sends once the turn in “Costs” ends");
     expect(el.querySelector(".blockr-assistant-composer-note")?.textContent).toBe("A turn runs in “Costs”.");
     expect(assistant.conversations.get("c1")?.messages).toHaveLength(1);
-    act(() => {
-      assistant.turns.stop();
-    });
+
+    // Escape in the chat stops the turn, whichever conversation shows.
+    press(field(el), "Escape");
     await until(() => ended, "the turn to end");
   });
 
