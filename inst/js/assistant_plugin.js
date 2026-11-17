@@ -335,25 +335,6 @@ var assistant_plugin_schema_default = {
   }
 };
 
-// srcts/blockr-options/numbers.ts
-function sentNumber(sent2) {
-  if (typeof sent2 === "number") return sent2;
-  if (typeof sent2 !== "string" || sent2.trim() === "") return Number.NaN;
-  return Number(sent2);
-}
-
-// srcts/conversations/cap.ts
-async function readCap(core) {
-  const sent2 = await core.blockrOption("chat_save_turns");
-  if (sent2 === void 0) return 50;
-  const value = sentNumber(sent2);
-  if (value === -1) return Infinity;
-  if (Number.isInteger(value) && value >= 0) return value;
-  throw new RangeError(
-    `The blockr option chat_save_turns is ${JSON.stringify(sent2)}, where it takes a whole number of 0 or more, or -1 for every message.`
-  );
-}
-
 // srcts/state/state.ts
 var ASSISTANT = "blockr.assistant-assistant_plugin";
 function assistantState(board) {
@@ -380,6 +361,7 @@ function holdsMessage(conversation2, id) {
   return conversation2.messages.some((message2) => message2.id === id);
 }
 function canCompact(messages, summary2, from) {
+  if (from === void 0) return true;
   const index = messages.findIndex((message2) => message2.id === from);
   return index >= 0 && messages.slice(index).every((message2) => message2.id !== summary2.id);
 }
@@ -409,214 +391,233 @@ function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// srcts/conversations/conversations.ts
-var ORIGIN = "assistant";
-function createConversations(core, signal) {
-  let cap;
-  const memory = /* @__PURE__ */ new Map();
-  const older = /* @__PURE__ */ new Map();
-  const keptOf = /* @__PURE__ */ new Map();
-  const listeners = /* @__PURE__ */ new Set();
-  let changes = 0;
-  let given2;
-  const merged = /* @__PURE__ */ new Map();
-  function notify() {
-    for (const listener of listeners) listener();
-  }
-  function changed() {
-    changes += 1;
-    notify();
-  }
-  let state = assistantState(core.store.board());
-  const stop = core.store.subscribe((_change, board) => {
-    const now = assistantState(board);
-    if (now === state) return;
-    state = now;
-    if (cap !== 0) {
-      const held = now?.conversations ?? {};
-      for (const id of older.keys()) {
-        if (!Object.hasOwn(held, id)) older.delete(id);
-      }
-      for (const id of keptOf.keys()) {
-        if (!Object.hasOwn(held, id)) keptOf.delete(id);
-      }
-      for (const id of merged.keys()) {
-        if (!Object.hasOwn(held, id)) merged.delete(id);
-      }
-    }
-    notify();
-  });
+// srcts/notifications/notifications.ts
+function heldError(core, signal, code, severity = "error") {
+  let withdraw;
   signal.addEventListener(
     "abort",
     () => {
-      stop();
-      listeners.clear();
+      withdraw = void 0;
     },
     { once: true }
   );
-  const capped = readCap(core).then(async (read) => {
-    cap = read;
-    changed();
-    await open2(read);
-    return read;
-  });
-  function run(id, args) {
-    return core.commands.run(id, args, ORIGIN);
-  }
-  async function open2(read) {
-    const conversations = assistantState(core.store.board())?.conversations ?? {};
-    if (read === 0) {
-      for (const [id, conversation2] of Object.entries(conversations)) memory.set(id, conversation2);
-      changed();
-      await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
-      return;
-    }
-    if (!Object.values(conversations).some((conversation2) => messagesToDrop(conversation2.messages, read) > 0)) return;
-    const done = run("blockr.assistant-trim_conversations", { keep: read });
-    for (const [id, conversation2] of Object.entries(conversations)) keepCut(id, conversation2.messages);
-    await done;
-  }
-  function keepCut(conversation2, before) {
-    const after = findConversation(core.store.board(), conversation2);
-    if (after === void 0) return;
-    const kept = new Set(after.messages.map((message2) => message2.id));
-    const cut = before.filter((message2) => !kept.has(message2.id));
-    if (cut.length === 0) return;
-    older.set(conversation2, [...older.get(conversation2) ?? [], ...cut]);
-    changed();
-  }
-  function withOlder(id, held) {
-    const cut = older.get(id);
-    if (cut === void 0) return held;
-    const last = merged.get(id);
-    if (last?.held === held && last.cut === cut) return last.conversation;
-    const conversation2 = { ...held, messages: [...cut, ...held.messages] };
-    merged.set(id, { held, cut, conversation: conversation2 });
-    return conversation2;
-  }
-  function change(conversation2, changing) {
-    const held = memory.get(conversation2);
-    if (held === void 0) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
-    memory.set(conversation2, changing(held));
-    changed();
-  }
-  function get(conversation2) {
-    if (cap === 0) return memory.get(conversation2);
-    const held = findConversation(core.store.board(), conversation2);
-    return held === void 0 ? void 0 : withOlder(conversation2, held);
-  }
-  function keep2(conversation2, message2, kept) {
-    const held = keptOf.get(conversation2) ?? /* @__PURE__ */ new Map();
-    held.set(message2, { ...held.get(message2), ...kept });
-    keptOf.set(conversation2, held);
-    changed();
-  }
-  function unkeep(conversation2, message2) {
-    if (keptOf.get(conversation2)?.delete(message2) === true) changed();
-  }
-  function forget(conversation2) {
-    const held = keptOf.get(conversation2);
-    if (held === void 0) return;
-    const ids = new Set(get(conversation2)?.messages.map((message2) => message2.id) ?? []);
-    const gone = [...held.keys()].filter((id) => !ids.has(id));
-    for (const id of gone) held.delete(id);
-    if (gone.length > 0) changed();
-  }
   return {
-    opened: capped.then(() => void 0),
-    all() {
-      const now = cap === 0 ? void 0 : assistantState(core.store.board());
-      if (given2 !== void 0 && given2.state === now && given2.changes === changes) return given2.all;
-      const all = cap === 0 ? Object.fromEntries(memory) : Object.fromEntries(Object.entries(now?.conversations ?? {}).map(([id, conversation2]) => [id, withOlder(id, conversation2)]));
-      given2 = { state: now, changes, all };
-      return all;
+    raise(message2) {
+      if (signal.aborted) return;
+      withdraw?.();
+      withdraw = core.notifications.notify(ASSISTANT, { severity, code, message: message2 });
     },
-    get,
-    kept(conversation2, message2) {
-      return keptOf.get(conversation2)?.get(message2);
-    },
-    keep(conversation2, message2, kept) {
-      if (get(conversation2)?.messages.some((held) => held.id === message2) !== true) {
-        throw new Error(`The conversation "${conversation2}" holds no message "${message2}".`);
-      }
-      keep2(conversation2, message2, kept);
-    },
-    async addConversation(id, title2, model2 = null) {
-      if (await capped !== 0) {
-        await run("blockr.assistant-add_conversation", { id, title: title2, model: model2 });
-        return;
-      }
-      if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
-      memory.set(id, newConversation(title2, model2));
-      changed();
-    },
-    async renameConversation(conversation2, title2) {
-      if (await capped !== 0) {
-        await run("blockr.assistant-rename_conversation", { conversation: conversation2, title: title2 });
-        return;
-      }
-      change(conversation2, (held) => ({ ...held, title: title2 }));
-    },
-    async removeConversation(conversation2) {
-      if (await capped !== 0) {
-        await run("blockr.assistant-remove_conversation", { conversation: conversation2 });
-        return;
-      }
-      if (!memory.delete(conversation2)) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
-      keptOf.delete(conversation2);
-      changed();
-    },
-    async addMessage(conversation2, message2, kept) {
-      const read = await capped;
-      if (kept !== void 0) keep2(conversation2, message2.id, kept);
+    withdraw() {
+      withdraw?.();
+      withdraw = void 0;
+    }
+  };
+}
+
+// srcts/turns/lock.ts
+var NAME = `blockr.assistant-turn-${newId()}`;
+function pageLocks() {
+  return globalThis.navigator?.locks ?? void 0;
+}
+function holdLock(locks) {
+  if (locks === void 0) return Promise.resolve(nothing);
+  return new Promise((resolve) => {
+    let release = nothing;
+    const held = new Promise((done) => {
+      release = done;
+    });
+    locks.request(NAME, () => {
+      resolve(release);
+      return held;
+    }).catch(() => {
+      resolve(nothing);
+    });
+  });
+}
+function nothing() {
+}
+
+// srcts/turns/prepare.ts
+var NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
+var STOPPED = { kind: "stopped" };
+async function prepareCall(options, picked, stopped) {
+  let deployment;
+  try {
+    deployment = await options.deployment;
+  } catch (error) {
+    return failed(`The assistant cannot call a model: ${messageOf(error)}`);
+  }
+  if (deployment.credential.kind === "visitor") return failed(NO_KEY);
+  const offered = await options.models.offered();
+  if (stopped()) return STOPPED;
+  const pick = picked();
+  const model2 = pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
+  if (model2 === void 0) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
+  let loop;
+  try {
+    loop = await options.load();
+  } catch (error) {
+    return failed(`The assistant could not load the code that runs its turns: ${messageOf(error)}`);
+  }
+  if (stopped()) return STOPPED;
+  const settings = await options.settings.checked((id) => loop.inCatalog(id));
+  if (stopped()) return STOPPED;
+  return {
+    kind: "prepared",
+    loop,
+    model: { connection: connectionOf(deployment), model: model2, settings: settings.get(model2), listed: offered.settings?.get(model2) }
+  };
+}
+function failed(why) {
+  return { kind: "failed", why, raise: true };
+}
+function connectionOf(deployment) {
+  const { credential } = deployment;
+  const key = credential.kind === "deployment" ? credential.key : void 0;
+  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
+}
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// srcts/turns/turns.ts
+var STOP = new DOMException("The user stopped the turn.", "AbortError");
+var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
+var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
+function createTurns(core, signal, options) {
+  const { conversations, callFailed } = options;
+  const locks = "locks" in options ? options.locks : pageLocks();
+  const listeners = /* @__PURE__ */ new Set();
+  let running;
+  let snapshot;
+  function closed2() {
+    return signal.aborted;
+  }
+  function stopped(turn) {
+    return closed2() || turn.controller.signal.aborted;
+  }
+  function changed() {
+    snapshot = running === void 0 ? void 0 : { conversation: running.conversation, reply: running.reply, results: running.results, stopping: running.stopping };
+    for (const listener of listeners) listener();
+  }
+  function fail(conversation2, why) {
+    callFailed.raise(why);
+    keep2(conversation2, why);
+  }
+  function keep2(conversation2, why) {
+    const last = conversations.get(conversation2)?.messages.at(-1);
+    if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
+  }
+  function succeeded() {
+    callFailed.withdraw();
+  }
+  function handlers(turn) {
+    let writes = true;
+    const write = async (change) => {
+      if (!writes || closed2()) return;
       try {
-        if (read !== 0) {
-          const before = findConversation(core.store.board(), conversation2)?.messages ?? [];
-          const done = run("blockr.assistant-add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
-          keepCut(conversation2, before);
-          await done;
-        } else {
-          change(conversation2, (held) => {
-            if (holdsMessage(held, message2.id)) {
-              throw new Error(`The conversation "${conversation2}" holds a message "${message2.id}" already.`);
-            }
-            return { ...held, messages: [...held.messages, message2], updated: message2.created };
-          });
-        }
+        await change();
       } catch (error) {
-        if (kept !== void 0) unkeep(conversation2, message2.id);
-        throw error;
+        writes = false;
+        turn.controller.abort(GONE);
+        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf(error)}`);
       }
-    },
-    async compactConversation(conversation2, summary2, from) {
-      const read = await capped;
-      const held = findConversation(core.store.board(), conversation2);
-      if (read === 0) {
-        change(conversation2, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary2, from, conversation2) }));
-      } else if (held === void 0 || holdsMessage(held, from)) {
-        await run("blockr.assistant-compact_conversation", { conversation: conversation2, summary: summary2, from });
-        if (older.delete(conversation2)) changed();
-      } else {
-        const cut = older.get(conversation2) ?? [];
-        const left = compacted([...cut, ...held.messages], summary2, from, conversation2);
-        older.set(conversation2, left.slice(0, left.length - held.messages.length));
+    };
+    return {
+      streaming(reply) {
+        turn.reply = reply;
+        changed();
+      },
+      async called(call) {
+        turn.reply = void 0;
+        if (call.reply !== void 0) {
+          const { message: message2, kept } = call.reply;
+          await write(() => conversations.addMessage(turn.conversation, message2, kept));
+        }
+        const { input, output, total } = call.usage;
+        if (input > 0 || output > 0 || total > 0) {
+          await write(() => conversations.addUsage(turn.conversation, input, output, total));
+        }
+        if (call.failure !== void 0) {
+          if (writes && !closed2()) fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+        } else if (!turn.controller.signal.aborted) {
+          succeeded();
+        }
+        changed();
+      },
+      returned(id, result) {
+        turn.results = { ...turn.results, [id]: result };
+        changed();
+      },
+      async results(message2, kept) {
+        await write(() => conversations.addMessage(turn.conversation, message2, kept));
+        turn.results = {};
         changed();
       }
-      forget(conversation2);
-    },
-    async addUsage(conversation2, input, output, total) {
-      if (await capped !== 0) {
-        await run("blockr.assistant-add_usage", { conversation: conversation2, input, output, total });
-        return;
+    };
+  }
+  async function runTurn2(turn) {
+    if (conversations.get(turn.conversation) === void 0) return;
+    const prepared = await prepareCall(options, () => conversations.get(turn.conversation)?.model ?? null, () => stopped(turn));
+    if (prepared.kind === "stopped") return;
+    if (prepared.kind === "failed") {
+      if (!prepared.raise) keep2(turn.conversation, prepared.why);
+      else if (!closed2()) fail(turn.conversation, prepared.why);
+      return;
+    }
+    let systemPrompt2;
+    try {
+      systemPrompt2 = await options.prompt.system();
+    } catch (error) {
+      if (!closed2()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf(error)}`);
+      return;
+    }
+    if (stopped(turn)) return;
+    await prepared.loop.run({
+      ...prepared.model,
+      tools: options.tools,
+      messages: () => conversations.get(turn.conversation)?.messages ?? [],
+      kept: (message2) => conversations.kept(turn.conversation, message2),
+      systemPrompt: systemPrompt2,
+      appMessage: () => options.prompt.appMessage(),
+      signal: turn.controller.signal,
+      on: handlers(turn)
+    });
+  }
+  return {
+    async run(conversation2) {
+      if (closed2()) throw new Error("The board that the assistant's turns ran on is closed.");
+      if (running !== void 0) {
+        throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      change(conversation2, (held) => ({ ...held, usage: addedUsage(held.usage, input, output, total) }));
-    },
-    async setModel(conversation2, model2) {
-      if (await capped !== 0) {
-        await run("blockr.assistant-set_model", { conversation: conversation2, model: model2 });
-        return;
+      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, controller: new AbortController() };
+      const close = () => {
+        turn.controller.abort(CLOSED);
+      };
+      signal.addEventListener("abort", close, { once: true });
+      running = turn;
+      changed();
+      const release = await holdLock(locks);
+      try {
+        await runTurn2(turn);
+      } catch (error) {
+        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf(error)}`);
+      } finally {
+        release();
+        signal.removeEventListener("abort", close);
+        running = void 0;
+        changed();
       }
-      change(conversation2, (held) => ({ ...held, model: model2 }));
+    },
+    stop() {
+      if (running === void 0 || running.controller.signal.aborted) return;
+      running.stopping = true;
+      running.controller.abort(STOP);
+      changed();
+    },
+    current() {
+      return snapshot;
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -625,81 +626,6 @@ function createConversations(core, signal) {
       };
     }
   };
-}
-function compacted(messages, summary2, from, conversation2) {
-  if (!canCompact(messages, summary2, from)) {
-    throw new Error(
-      `The conversation "${conversation2}" holds no message "${from}" for the summary to go before, or holds a message "${summary2.id}" from it on.`
-    );
-  }
-  return [summary2, ...messages.slice(messages.findIndex((message2) => message2.id === from))];
-}
-
-// srcts/deployment/deployment.ts
-var OPENAI = "https://api.openai.com/v1";
-var APIS = ["openai-responses", "openai-completions", "anthropic-messages"];
-async function readDeployment(core) {
-  const [baseUrl, api2, key, models] = await Promise.all([
-    core.blockrOption("assistant_base_url"),
-    core.blockrOption("assistant_api"),
-    core.blockrOption("assistant_api_key"),
-    core.blockrOption("assistant_models")
-  ]);
-  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api2), credential: credentialOf(key), models: modelsOf(models) };
-}
-function baseUrlOf(sent2) {
-  if (sent2 === void 0) return OPENAI;
-  const url = typeof sent2 === "string" ? sent2.trim() : "";
-  if (!isWebUrl(url)) {
-    throw new TypeError(`The blockr option assistant_base_url is ${JSON.stringify(sent2)}, where it takes the URL that the assistant's calls go to, such as "${OPENAI}".`);
-  }
-  return url.replace(/\/+$/, "");
-}
-function apiOf(sent2) {
-  if (sent2 === void 0) return "openai-responses";
-  const api2 = typeof sent2 === "string" ? sent2.trim() : "";
-  if (!APIS.includes(api2)) {
-    throw new TypeError(
-      `The blockr option assistant_api is ${JSON.stringify(sent2)}, where it takes the API that the base URL speaks: "openai-responses", "openai-completions" or "anthropic-messages".`
-    );
-  }
-  return api2;
-}
-function credentialOf(sent2) {
-  if (sent2 === void 0) return { kind: "visitor" };
-  const key = typeof sent2 === "string" ? sent2.trim() : "";
-  if (key === "") {
-    throw new TypeError(
-      `The blockr option assistant_api_key holds ${kindOf(sent2)}, where it takes the deployment's key as a string, or "none" for a base URL that needs no key.`
-    );
-  }
-  return key === "none" ? { kind: "none" } : { kind: "deployment", key };
-}
-function modelsOf(sent2) {
-  if (sent2 === void 0) return void 0;
-  const ids = typeof sent2 === "string" ? sent2.split(",") : Array.isArray(sent2) && sent2.every((id) => typeof id === "string") ? sent2 : [];
-  const named = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
-  if (named.length === 0) {
-    throw new TypeError(
-      `The blockr option assistant_models is ${JSON.stringify(sent2)}, where it takes the ids of the models offered, the first being the default, as an array of strings or as one string that separates them by commas, such as "gpt-5.4,gpt-5.4-nano".`
-    );
-  }
-  return named;
-}
-function isWebUrl(text3) {
-  try {
-    const { protocol } = new URL(text3);
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-function kindOf(sent2) {
-  if (sent2 === null) return "null";
-  if (typeof sent2 === "string") return "an empty string";
-  if (typeof sent2 === "boolean") return "true or false";
-  if (typeof sent2 === "number") return "a number";
-  return Array.isArray(sent2) ? "an array" : "an object";
 }
 
 // srcts/loop/loop.ts
@@ -743,8 +669,12 @@ function isRecord(value) {
 
 // srcts/loop/messages.ts
 var ENDED = "The turn ended before this call returned.";
-var STOPPED = "The user stopped the turn before this call returned.";
-var SUMMARY_REQUEST = "Summarize our conversation so far.";
+var STOPPED2 = "The user stopped the turn before this call returned.";
+var SUMMARY_REQUEST = [
+  "Summarize our conversation so far, so that we can carry on with less of it in context.",
+  "Cover what I asked for and why, what you changed on the board and under which ids, what you learned about the data, and anything left open.",
+  "Write it as notes to yourself, not as a report to me."
+].join(" ");
 var FINISHED = /* @__PURE__ */ new Set(["stop", "toolUse", "length"]);
 var NO_USAGE = {
   input: 0,
@@ -1024,7 +954,7 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var PROVIDER = "blockr.assistant";
-var NO_KEY = "blockr-assistant-no-key";
+var NO_KEY2 = "blockr-assistant-no-key";
 function createLoop(pi, apis = {}) {
   const streams = {
     "anthropic-messages": pi.anthropicMessages,
@@ -1032,7 +962,12 @@ function createLoop(pi, apis = {}) {
     "openai-responses": pi.openaiResponses,
     ...apis
   };
-  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== void 0 };
+  return {
+    run: (turn) => runTurn(pi, streams, turn),
+    summarize: (call) => summarize(pi, streams, call),
+    contextWindow: (called) => modelOf(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
+    inCatalog: (id) => catalogModel(pi, id) !== void 0
+  };
 }
 async function loadLoop() {
   return createLoop(await import("./pi-73d60f71.js"));
@@ -1047,20 +982,10 @@ function runTurn(pi, streams, turn) {
 }
 async function runAgent(pi, streams, turn, span) {
   const model2 = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
-  const models = pi.createModels();
-  models.setProvider(
-    pi.createProvider({
-      id: PROVIDER,
-      baseUrl: turn.connection.baseUrl,
-      // The credential comes through getApiKey, so the provider takes none.
-      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
-      models: [model2],
-      api: streams
-    })
-  );
+  const models = modelsAt(pi, streams, turn.connection, model2);
   const given2 = /* @__PURE__ */ new Map();
   const answered = /* @__PURE__ */ new Map();
-  const answer = (id) => given2.get(id) ?? answered.get(id) ?? { text: STOPPED, isError: true, images: [] };
+  const answer = (id) => given2.get(id) ?? answered.get(id) ?? { text: STOPPED2, isError: true, images: [] };
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
@@ -1079,7 +1004,7 @@ async function runAgent(pi, streams, turn, span) {
       const messages = callMessages(transformed, kept, model2, turn.tools, prompt);
       return added === void 0 ? messages : [...messages, appMessage(added)];
     },
-    getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
+    getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY2,
     fetch: keyless,
     onPayload: (payload) => {
       const moved = model2.api === "anthropic-messages" && added !== void 0 ? markBeforeAppMessage(payload, added) : void 0;
@@ -1123,6 +1048,45 @@ async function runAgent(pi, streams, turn, span) {
     (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
   );
 }
+function modelsAt(pi, streams, connection, model2) {
+  const models = pi.createModels();
+  models.setProvider(
+    pi.createProvider({
+      id: PROVIDER,
+      baseUrl: connection.baseUrl,
+      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
+      models: [model2],
+      api: streams
+    })
+  );
+  return models;
+}
+async function summarize(pi, streams, call) {
+  const model2 = modelOf(pi, call.model, call.connection, call.settings, call.listed);
+  const models = modelsAt(pi, streams, call.connection, model2);
+  const apiKey = await call.connection.apiKey() ?? NO_KEY2;
+  const reply = await models.completeSimple(
+    model2,
+    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" }
+  );
+  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+  const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
+  const failure = summaryFailure(reply, text3);
+  return failure === void 0 ? { text: text3, usage } : { usage, failure };
+}
+function summaryFailure(reply, text3) {
+  switch (reply.stopReason) {
+    case "error":
+      return reply.errorMessage ?? "The provider gave no reason.";
+    case "aborted":
+      return "The call was stopped before the model wrote the summary.";
+    case "length":
+      return "The summary reached the model's cap for a reply, so it was cut off.";
+    default:
+      return text3 === "" ? "The model wrote no summary." : void 0;
+  }
+}
 function modelOf(pi, id, connection, given2 = {}, listed3 = {}) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, given2.like ?? id);
@@ -1156,8 +1120,8 @@ function catalogModel(pi, id) {
 }
 function keyless(input, init) {
   const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
   return globalThis.fetch(input, { ...init, headers });
 }
 function callOf(reply) {
@@ -1198,27 +1162,556 @@ function answeredOf(result, isError) {
   return { text: text3, isError, images };
 }
 
-// srcts/notifications/notifications.ts
-function heldError(core, signal, code) {
-  let withdraw;
+// srcts/compaction/prompt.ts
+var SUMMARY_SYSTEM_PROMPT = [
+  "You are compacting a conversation between a user and an assistant that edits a blockr board.",
+  "The conversation is in <conversation> tags. Do not continue it, and do not answer what it asks.",
+  "Reply with the summary alone, with no preamble and no sign-off.",
+  "Keep concrete identifiers verbatim: the ids of blocks, links, stacks and plugins, column names and file paths.",
+  "Prefer losing prose over losing a detail that the assistant would need to keep working."
+].join(" ");
+function summaryPrompt(messages) {
+  return `<conversation>
+${conversationText(messages)}
+</conversation>
+
+${SUMMARY_REQUEST}`;
+}
+function conversationText(messages) {
+  const tools = /* @__PURE__ */ new Map();
+  for (const message2 of messages) {
+    for (const part of message2.parts) if (part.type === "tool_call") tools.set(part.id, part.tool);
+  }
+  return messages.flatMap((message2) => message2.parts.flatMap((part) => paragraphOf(message2, part, tools))).join("\n\n");
+}
+function paragraphOf(message2, part, tools) {
+  switch (part.type) {
+    case "text":
+      return [`[${WRITER[message2.role]}]: ${part.text}`];
+    case "changes":
+      return [`[What others changed in the board]: ${part.text}`];
+    case "skill":
+      return [`[The skill ${part.name}, which the user called]: ${part.text}`];
+    case "attachment":
+      return [`[The user attached a file]: ${part.name}, of the type ${part.media_type}`];
+    case "tool_call":
+      return [`[The assistant called ${part.tool}]: ${JSON.stringify(part.args)}`];
+    case "tool_result":
+      return [`[${resultLabel(part, tools)}]: ${part.text}${imagesOf(part)}`];
+  }
+}
+var WRITER = {
+  user: "User",
+  assistant: "Assistant",
+  tool: "Tool",
+  summary: "Summary of the conversation before"
+};
+function resultLabel(part, tools) {
+  const tool2 = tools.get(part.id) ?? "a tool";
+  return part.error === true ? `The call of ${tool2} failed` : `The result of ${tool2}`;
+}
+function imagesOf(part) {
+  const count = part.images ?? 0;
+  if (count === 0) return "";
+  return count === 1 ? "\n(The result also held an image.)" : `
+(The result also held ${String(count)} images.)`;
+}
+
+// srcts/compaction/rule.ts
+var RESERVE = 16384;
+var IMAGE_TOKENS = 1200;
+function lastIsCurrent(conversation2) {
+  if (conversation2.usage.last === 0) return false;
+  const summary2 = conversation2.messages.find((message2) => message2.role === "summary");
+  if (summary2 === void 0) return true;
+  const summarized = Date.parse(summary2.created);
+  return conversation2.messages.some((message2) => message2.role === "assistant" && Date.parse(message2.created) > summarized);
+}
+function needsSummary(conversation2, window) {
+  return lastIsCurrent(conversation2) && conversation2.usage.last > window - RESERVE;
+}
+function keptTokens(window) {
+  return Math.floor(window / 4);
+}
+function firstKept(messages, kept) {
+  const reply = messages.findIndex((message2) => message2.role === "assistant");
+  if (reply < 0) return void 0;
+  let tokens3 = 0;
+  let first = messages.length;
+  for (let i = messages.length - 1; i > reply; i -= 1) {
+    const message2 = messages[i];
+    if (message2 === void 0) continue;
+    tokens3 += estimatedTokens(message2);
+    if (tokens3 > kept) break;
+    if (opensExchange(message2)) first = i;
+  }
+  return first;
+}
+function estimatedTokens(message2) {
+  let characters = 0;
+  let images = 0;
+  for (const part of message2.parts) {
+    switch (part.type) {
+      case "text":
+      case "changes":
+        characters += part.text.length;
+        break;
+      case "skill":
+        characters += part.name.length + part.text.length;
+        break;
+      case "tool_call":
+        characters += part.tool.length + JSON.stringify(part.args).length;
+        break;
+      case "tool_result":
+        characters += part.text.length;
+        images += part.images ?? 0;
+        break;
+      case "attachment":
+        characters += part.name.length + part.media_type.length;
+        break;
+    }
+  }
+  return Math.ceil(characters / 4) + images * IMAGE_TOKENS;
+}
+
+// srcts/compaction/compaction.ts
+function createCompaction(core, signal, options) {
+  const { conversations, turns } = options;
+  const runs = /* @__PURE__ */ new Map();
+  const writes = /* @__PURE__ */ new Set();
+  const listeners = /* @__PURE__ */ new Set();
+  const warnings = /* @__PURE__ */ new Map();
+  function closed2() {
+    return signal.aborted;
+  }
+  function changed() {
+    for (const listener of listeners) listener();
+  }
+  function warn(conversation2, why) {
+    if (closed2()) return;
+    let warning = warnings.get(conversation2);
+    if (warning === void 0) {
+      warning = heldError(core, signal, "assistant_compaction_failed", "warning");
+      warnings.set(conversation2, warning);
+    }
+    const title2 = conversations.get(conversation2)?.title ?? conversation2;
+    warning.raise(`The assistant could not summarize the earlier messages of the conversation "${title2}": ${why}`);
+  }
+  function withdraw(conversation2) {
+    warnings.get(conversation2)?.withdraw();
+    warnings.delete(conversation2);
+  }
+  const unfollowConversations = conversations.subscribe(() => {
+    for (const conversation2 of [...warnings.keys()]) {
+      if (conversations.get(conversation2) === void 0) withdraw(conversation2);
+    }
+  });
+  let turnIn = turns.current()?.conversation;
+  const unfollowTurns = turns.subscribe(() => {
+    const now = turns.current()?.conversation;
+    if (turnIn !== void 0 && turnIn !== now) void start(turnIn, false);
+    turnIn = now;
+  });
   signal.addEventListener(
     "abort",
     () => {
-      withdraw = void 0;
+      unfollowConversations();
+      unfollowTurns();
+      listeners.clear();
     },
     { once: true }
   );
-  return {
-    raise(message2) {
-      if (signal.aborted) return;
-      withdraw?.();
-      withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code, message: message2 });
+  conversations.opened.then(
+    () => {
+      for (const conversation2 of Object.keys(conversations.all())) void start(conversation2, false);
     },
-    withdraw() {
-      withdraw?.();
-      withdraw = void 0;
+    // The assistant logs why the conversations cannot open.
+    () => void 0
+  );
+  function start(conversation2, forced) {
+    const running = runs.get(conversation2);
+    if (running !== void 0) {
+      running.asked.forced ||= forced;
+      return running.done;
+    }
+    const asked = { forced };
+    const done = compactIn(conversation2, asked).finally(() => {
+      runs.delete(conversation2);
+    });
+    runs.set(conversation2, { asked, done });
+    return done;
+  }
+  async function compactIn(conversation2, asked) {
+    try {
+      await conversations.opened;
+      const held = conversations.get(conversation2);
+      if (held === void 0 || closed2() || !asked.forced && !lastIsCurrent(held)) return;
+      const prepared = await prepareCall(options, () => conversations.get(conversation2)?.model ?? null, closed2);
+      if (prepared.kind === "stopped") return;
+      if (prepared.kind === "failed") {
+        if (prepared.raise) warn(conversation2, prepared.why);
+        return;
+      }
+      const { loop, model: model2 } = prepared;
+      const window = loop.contextWindow(model2);
+      const now = conversations.get(conversation2);
+      if (now === void 0 || !asked.forced && !needsSummary(now, window)) return;
+      if (turns.current()?.conversation === conversation2) return;
+      const first = firstKept(now.messages, keptTokens(window));
+      const through = first === void 0 ? void 0 : now.messages[first - 1];
+      if (through === void 0) return;
+      writes.add(conversation2);
+      changed();
+      try {
+        const older = now.messages.slice(0, first);
+        const summarized = await loop.summarize({ ...model2, systemPrompt: SUMMARY_SYSTEM_PROMPT, prompt: summaryPrompt(older), signal });
+        if (closed2() || conversations.get(conversation2) === void 0) return;
+        const { input, output, total } = summarized.usage;
+        if (input > 0 || output > 0 || total > 0) await conversations.addUsage(conversation2, input, output, total);
+        if (summarized.text === void 0) {
+          warn(conversation2, summarized.failure ?? "The model wrote no summary.");
+          return;
+        }
+        const summary2 = { id: newId(), role: "summary", parts: [{ type: "text", text: summarized.text }], created: (/* @__PURE__ */ new Date()).toISOString() };
+        await conversations.compactConversation(conversation2, summary2, through.id);
+        withdraw(conversation2);
+      } finally {
+        writes.delete(conversation2);
+        changed();
+      }
+    } catch (error) {
+      if (closed2() || conversations.get(conversation2) === void 0) return;
+      warn(conversation2, error instanceof Error ? error.message : String(error));
+    }
+  }
+  return {
+    judge: (conversation2) => start(conversation2, false),
+    compact: (conversation2) => start(conversation2, true),
+    writing: (conversation2) => writes.has(conversation2),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     }
   };
+}
+
+// srcts/blockr-options/numbers.ts
+function sentNumber(sent2) {
+  if (typeof sent2 === "number") return sent2;
+  if (typeof sent2 !== "string" || sent2.trim() === "") return Number.NaN;
+  return Number(sent2);
+}
+
+// srcts/conversations/cap.ts
+async function readCap(core) {
+  const sent2 = await core.blockrOption("chat_save_turns");
+  if (sent2 === void 0) return 50;
+  const value = sentNumber(sent2);
+  if (value === -1) return Infinity;
+  if (Number.isInteger(value) && value >= 0) return value;
+  throw new RangeError(
+    `The blockr option chat_save_turns is ${JSON.stringify(sent2)}, where it takes a whole number of 0 or more, or -1 for every message.`
+  );
+}
+
+// srcts/conversations/conversations.ts
+var ORIGIN = "assistant";
+function createConversations(core, signal) {
+  let cap;
+  const memory = /* @__PURE__ */ new Map();
+  const older = /* @__PURE__ */ new Map();
+  const keptOf = /* @__PURE__ */ new Map();
+  const listeners = /* @__PURE__ */ new Set();
+  let changes = 0;
+  let given2;
+  const merged = /* @__PURE__ */ new Map();
+  function notify() {
+    for (const listener of listeners) listener();
+  }
+  function changed() {
+    changes += 1;
+    notify();
+  }
+  let state = assistantState(core.store.board());
+  const stop = core.store.subscribe((_change, board) => {
+    const now = assistantState(board);
+    if (now === state) return;
+    state = now;
+    if (cap !== 0) {
+      const held = now?.conversations ?? {};
+      for (const id of older.keys()) {
+        if (!Object.hasOwn(held, id)) older.delete(id);
+      }
+      for (const id of keptOf.keys()) {
+        if (!Object.hasOwn(held, id)) keptOf.delete(id);
+      }
+      for (const id of merged.keys()) {
+        if (!Object.hasOwn(held, id)) merged.delete(id);
+      }
+    }
+    notify();
+  });
+  signal.addEventListener(
+    "abort",
+    () => {
+      stop();
+      listeners.clear();
+    },
+    { once: true }
+  );
+  const capped = readCap(core).then(async (read) => {
+    cap = read;
+    changed();
+    await open2(read);
+    return read;
+  });
+  function run(id, args) {
+    return core.commands.run(id, args, ORIGIN);
+  }
+  async function open2(read) {
+    const conversations = assistantState(core.store.board())?.conversations ?? {};
+    if (read === 0) {
+      for (const [id, conversation2] of Object.entries(conversations)) memory.set(id, conversation2);
+      changed();
+      await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
+      return;
+    }
+    if (!Object.values(conversations).some((conversation2) => messagesToDrop(conversation2.messages, read) > 0)) return;
+    const done = run("blockr.assistant-trim_conversations", { keep: read });
+    for (const [id, conversation2] of Object.entries(conversations)) keepCut(id, conversation2.messages);
+    await done;
+  }
+  function keepCut(conversation2, before) {
+    const after = findConversation(core.store.board(), conversation2);
+    if (after === void 0) return;
+    const kept = new Set(after.messages.map((message2) => message2.id));
+    const cut = before.filter((message2) => !kept.has(message2.id));
+    if (cut.length === 0) return;
+    older.set(conversation2, [...older.get(conversation2) ?? [], ...cut]);
+    changed();
+  }
+  function withOlder(id, held) {
+    const cut = older.get(id);
+    if (cut === void 0) return held;
+    const last = merged.get(id);
+    if (last?.held === held && last.cut === cut) return last.conversation;
+    const conversation2 = { ...held, messages: [...cut, ...held.messages] };
+    merged.set(id, { held, cut, conversation: conversation2 });
+    return conversation2;
+  }
+  function change(conversation2, changing) {
+    const held = memory.get(conversation2);
+    if (held === void 0) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
+    memory.set(conversation2, changing(held));
+    changed();
+  }
+  function get(conversation2) {
+    if (cap === 0) return memory.get(conversation2);
+    const held = findConversation(core.store.board(), conversation2);
+    return held === void 0 ? void 0 : withOlder(conversation2, held);
+  }
+  function keep2(conversation2, message2, kept) {
+    const held = keptOf.get(conversation2) ?? /* @__PURE__ */ new Map();
+    held.set(message2, { ...held.get(message2), ...kept });
+    keptOf.set(conversation2, held);
+    changed();
+  }
+  function unkeep(conversation2, message2) {
+    if (keptOf.get(conversation2)?.delete(message2) === true) changed();
+  }
+  function forget(conversation2) {
+    const held = keptOf.get(conversation2);
+    if (held === void 0) return;
+    const ids = new Set(get(conversation2)?.messages.map((message2) => message2.id) ?? []);
+    const gone = [...held.keys()].filter((id) => !ids.has(id));
+    for (const id of gone) held.delete(id);
+    if (gone.length > 0) changed();
+  }
+  return {
+    opened: capped.then(() => void 0),
+    all() {
+      const now = cap === 0 ? void 0 : assistantState(core.store.board());
+      if (given2 !== void 0 && given2.state === now && given2.changes === changes) return given2.all;
+      const all = cap === 0 ? Object.fromEntries(memory) : Object.fromEntries(Object.entries(now?.conversations ?? {}).map(([id, conversation2]) => [id, withOlder(id, conversation2)]));
+      given2 = { state: now, changes, all };
+      return all;
+    },
+    get,
+    kept(conversation2, message2) {
+      return keptOf.get(conversation2)?.get(message2);
+    },
+    keep(conversation2, message2, kept) {
+      if (get(conversation2)?.messages.some((held) => held.id === message2) !== true) {
+        throw new Error(`The conversation "${conversation2}" holds no message "${message2}".`);
+      }
+      keep2(conversation2, message2, kept);
+    },
+    async addConversation(id, title2, model2 = null) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-add_conversation", { id, title: title2, model: model2 });
+        return;
+      }
+      if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
+      memory.set(id, newConversation(title2, model2));
+      changed();
+    },
+    async renameConversation(conversation2, title2) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-rename_conversation", { conversation: conversation2, title: title2 });
+        return;
+      }
+      change(conversation2, (held) => ({ ...held, title: title2 }));
+    },
+    async removeConversation(conversation2) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-remove_conversation", { conversation: conversation2 });
+        return;
+      }
+      if (!memory.delete(conversation2)) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
+      keptOf.delete(conversation2);
+      changed();
+    },
+    async addMessage(conversation2, message2, kept) {
+      const read = await capped;
+      if (kept !== void 0) keep2(conversation2, message2.id, kept);
+      try {
+        if (read !== 0) {
+          const before = findConversation(core.store.board(), conversation2)?.messages ?? [];
+          const done = run("blockr.assistant-add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
+          keepCut(conversation2, before);
+          await done;
+        } else {
+          change(conversation2, (held) => {
+            if (holdsMessage(held, message2.id)) {
+              throw new Error(`The conversation "${conversation2}" holds a message "${message2.id}" already.`);
+            }
+            return { ...held, messages: [...held.messages, message2], updated: message2.created };
+          });
+        }
+      } catch (error) {
+        if (kept !== void 0) unkeep(conversation2, message2.id);
+        throw error;
+      }
+    },
+    async compactConversation(conversation2, summary2, through) {
+      const read = await capped;
+      if (read === 0) {
+        change(conversation2, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary2, through, conversation2) }));
+        forget(conversation2);
+        return;
+      }
+      const held = findConversation(core.store.board(), conversation2);
+      const left = held === void 0 ? [] : compacted(withOlder(conversation2, held).messages, summary2, through, conversation2);
+      const from = left[1]?.id;
+      if (held === void 0 || from === void 0 || holdsMessage(held, from)) {
+        await run("blockr.assistant-compact_conversation", { conversation: conversation2, summary: summary2, ...from === void 0 ? {} : { from } });
+        if (older.delete(conversation2)) changed();
+      } else {
+        older.set(conversation2, left.slice(0, left.length - held.messages.length));
+        changed();
+      }
+      forget(conversation2);
+    },
+    async addUsage(conversation2, input, output, total) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-add_usage", { conversation: conversation2, input, output, total });
+        return;
+      }
+      change(conversation2, (held) => ({ ...held, usage: addedUsage(held.usage, input, output, total) }));
+    },
+    async setModel(conversation2, model2) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-set_model", { conversation: conversation2, model: model2 });
+        return;
+      }
+      change(conversation2, (held) => ({ ...held, model: model2 }));
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+}
+function compacted(messages, summary2, through, conversation2) {
+  const index = messages.findIndex((message2) => message2.id === through);
+  const kept = messages.slice(index + 1);
+  if (index < 0 || kept.some((message2) => message2.id === summary2.id)) {
+    throw new Error(
+      `The conversation "${conversation2}" holds no message "${through}" for the summary to take the place of, or holds a message "${summary2.id}" after it.`
+    );
+  }
+  return [summary2, ...kept];
+}
+
+// srcts/deployment/deployment.ts
+var OPENAI = "https://api.openai.com/v1";
+var APIS = ["openai-responses", "openai-completions", "anthropic-messages"];
+async function readDeployment(core) {
+  const [baseUrl, api2, key, models] = await Promise.all([
+    core.blockrOption("assistant_base_url"),
+    core.blockrOption("assistant_api"),
+    core.blockrOption("assistant_api_key"),
+    core.blockrOption("assistant_models")
+  ]);
+  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api2), credential: credentialOf(key), models: modelsOf(models) };
+}
+function baseUrlOf(sent2) {
+  if (sent2 === void 0) return OPENAI;
+  const url = typeof sent2 === "string" ? sent2.trim() : "";
+  if (!isWebUrl(url)) {
+    throw new TypeError(`The blockr option assistant_base_url is ${JSON.stringify(sent2)}, where it takes the URL that the assistant's calls go to, such as "${OPENAI}".`);
+  }
+  return url.replace(/\/+$/, "");
+}
+function apiOf(sent2) {
+  if (sent2 === void 0) return "openai-responses";
+  const api2 = typeof sent2 === "string" ? sent2.trim() : "";
+  if (!APIS.includes(api2)) {
+    throw new TypeError(
+      `The blockr option assistant_api is ${JSON.stringify(sent2)}, where it takes the API that the base URL speaks: "openai-responses", "openai-completions" or "anthropic-messages".`
+    );
+  }
+  return api2;
+}
+function credentialOf(sent2) {
+  if (sent2 === void 0) return { kind: "visitor" };
+  const key = typeof sent2 === "string" ? sent2.trim() : "";
+  if (key === "") {
+    throw new TypeError(
+      `The blockr option assistant_api_key holds ${kindOf(sent2)}, where it takes the deployment's key as a string, or "none" for a base URL that needs no key.`
+    );
+  }
+  return key === "none" ? { kind: "none" } : { kind: "deployment", key };
+}
+function modelsOf(sent2) {
+  if (sent2 === void 0) return void 0;
+  const ids = typeof sent2 === "string" ? sent2.split(",") : Array.isArray(sent2) && sent2.every((id) => typeof id === "string") ? sent2 : [];
+  const named = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
+  if (named.length === 0) {
+    throw new TypeError(
+      `The blockr option assistant_models is ${JSON.stringify(sent2)}, where it takes the ids of the models offered, the first being the default, as an array of strings or as one string that separates them by commas, such as "gpt-5.4,gpt-5.4-nano".`
+    );
+  }
+  return named;
+}
+function isWebUrl(text3) {
+  try {
+    const { protocol } = new URL(text3);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+function kindOf(sent2) {
+  if (sent2 === null) return "null";
+  if (typeof sent2 === "string") return "an empty string";
+  if (typeof sent2 === "boolean") return "true or false";
+  if (typeof sent2 === "number") return "a number";
+  return Array.isArray(sent2) ? "an array" : "an object";
 }
 
 // srcts/requests/requests.ts
@@ -1282,15 +1775,15 @@ var WITHOUT = "The assistant goes on without the deployment's model settings";
 var FILE = "the file that the blockr option assistant_model_settings names";
 var CATALOGS = "pi's catalogs of OpenAI's and Anthropic's models";
 function createModelSettings(core, signal) {
-  const failed = heldError(core, signal, "assistant_model_settings_failed");
-  const read = readSettings(core, signal, failed);
+  const failed2 = heldError(core, signal, "assistant_model_settings_failed");
+  const read = readSettings(core, signal, failed2);
   let checking;
   return {
     checked(inCatalog) {
       checking ??= read.then((settings) => {
         for (const [id, given2] of settings) {
           if (given2.like !== void 0 && !inCatalog(given2.like)) {
-            failed.raise(`${WITHOUT}, since ${FILE} gives the model ${id} the like ${JSON.stringify(given2.like)}, which names no model of ${CATALOGS}.`);
+            failed2.raise(`${WITHOUT}, since ${FILE} gives the model ${id} the like ${JSON.stringify(given2.like)}, which names no model of ${CATALOGS}.`);
             return NONE;
           }
         }
@@ -1300,18 +1793,18 @@ function createModelSettings(core, signal) {
     }
   };
 }
-async function readSettings(core, signal, failed) {
+async function readSettings(core, signal, failed2) {
   let answer;
   try {
     ({ answer } = await sendUntilReplied(core, "read_model_settings", {}, { signal }));
   } catch (error) {
-    if (!signal.aborted) failed.raise(`${WITHOUT}, since R could not read them: ${failureMessage(error)}`);
+    if (!signal.aborted) failed2.raise(`${WITHOUT}, since R could not read them: ${failureMessage(error)}`);
     return NONE;
   }
   try {
     return settingsOf(answer);
   } catch (error) {
-    failed.raise(`${WITHOUT}, since ${error instanceof Error ? error.message : String(error)}`);
+    failed2.raise(`${WITHOUT}, since ${error instanceof Error ? error.message : String(error)}`);
     return NONE;
   }
 }
@@ -1415,7 +1908,7 @@ async function askList(deployment, key, fetch, signal) {
   try {
     response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
   } catch (error) {
-    return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
+    return none(`it could not reach the list of models at ${url}: ${messageOf2(error)}`);
   }
   if (response.status === 401 || response.status === 403) {
     return { kind: "refused", message: `The base URL refused the assistant's key for its list of models at ${url}: it answered ${await answerOf(response)}.` };
@@ -1428,7 +1921,7 @@ async function askList(deployment, key, fetch, signal) {
     const body = await response.json();
     entries = isRecord2(body) ? body.data : void 0;
   } catch (error) {
-    return none(`the answer at ${url} is no list of models: ${messageOf(error)}`);
+    return none(`the answer at ${url} is no list of models: ${messageOf2(error)}`);
   }
   if (!Array.isArray(entries)) {
     return none(`the answer at ${url} holds no list of models in its data. An app on such a base URL names its models in the blockr option assistant_models.`);
@@ -1453,7 +1946,7 @@ function listedSettings(entries, models) {
 function settingsOf2(entry) {
   const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
   const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
-  const images = imagesOf(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
+  const images = imagesOf2(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf2(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
   return {
     ...contextWindow === void 0 ? {} : { contextWindow },
     ...maxTokens === void 0 ? {} : { maxTokens },
@@ -1466,7 +1959,7 @@ function fieldOf(value, name) {
 function tokensOf(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
 }
-function imagesOf(value) {
+function imagesOf2(value) {
   return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : void 0;
 }
 function flagOf(value) {
@@ -1516,7 +2009,7 @@ async function answerOf(response) {
 function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function messageOf(error) {
+function messageOf2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -1790,21 +2283,25 @@ var assistantCommands = [
   command({
     id: "blockr.assistant-compact_conversation",
     label: "Compact conversation",
-    description: "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
+    description: "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps, or in place of every message where `from` is left out. It fails its preflight where the conversation no longer holds `from`.",
     args: object(
       {
         conversation,
         summary,
-        from: { type: "string", description: "The id of the first message that the conversation keeps after the summary." }
+        from: {
+          type: "string",
+          description: "The id of the first message that the conversation keeps after the summary. Where it is left out, the summary takes the place of every message."
+        }
       },
-      ["conversation", "summary", "from"]
+      ["conversation", "summary"]
     ),
     preflight: (board, { conversation: conversation2, summary: summary2, from }) => {
       const held = findConversation(board, conversation2);
       return held !== void 0 && canCompact(held.messages, summary2, from);
     },
     run: (board, { conversation: conversation2, summary: summary2, from }) => {
-      const index = (findConversation(board, conversation2)?.messages ?? []).findIndex((message2) => message2.id === from);
+      const messages = findConversation(board, conversation2)?.messages ?? [];
+      const index = from === void 0 ? messages.length : messages.findIndex((message2) => message2.id === from);
       return {
         patches: [
           ...drops(conversation2, Math.max(index, 0)),
@@ -3036,211 +3533,6 @@ function flag2(fields, name) {
   throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
 }
 
-// srcts/turns/lock.ts
-var NAME = `blockr.assistant-turn-${newId()}`;
-function pageLocks() {
-  return globalThis.navigator?.locks ?? void 0;
-}
-function holdLock(locks) {
-  if (locks === void 0) return Promise.resolve(nothing);
-  return new Promise((resolve) => {
-    let release = nothing;
-    const held = new Promise((done) => {
-      release = done;
-    });
-    locks.request(NAME, () => {
-      resolve(release);
-      return held;
-    }).catch(() => {
-      resolve(nothing);
-    });
-  });
-}
-function nothing() {
-}
-
-// srcts/turns/turns.ts
-var STOP = new DOMException("The user stopped the turn.", "AbortError");
-var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
-var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
-var NO_KEY2 = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
-var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
-function createTurns(core, signal, options) {
-  const { conversations, callFailed } = options;
-  const locks = "locks" in options ? options.locks : pageLocks();
-  const listeners = /* @__PURE__ */ new Set();
-  let running;
-  let snapshot;
-  function closed2() {
-    return signal.aborted;
-  }
-  function stopped(turn) {
-    return closed2() || turn.controller.signal.aborted;
-  }
-  function changed() {
-    snapshot = running === void 0 ? void 0 : { conversation: running.conversation, reply: running.reply, results: running.results, stopping: running.stopping };
-    for (const listener of listeners) listener();
-  }
-  function fail(conversation2, why) {
-    callFailed.raise(why);
-    keep2(conversation2, why);
-  }
-  function keep2(conversation2, why) {
-    const last = conversations.get(conversation2)?.messages.at(-1);
-    if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
-  }
-  function succeeded() {
-    callFailed.withdraw();
-  }
-  function handlers(turn) {
-    let writes = true;
-    const write = async (change) => {
-      if (!writes || closed2()) return;
-      try {
-        await change();
-      } catch (error) {
-        writes = false;
-        turn.controller.abort(GONE);
-        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf2(error)}`);
-      }
-    };
-    return {
-      streaming(reply) {
-        turn.reply = reply;
-        changed();
-      },
-      async called(call) {
-        turn.reply = void 0;
-        if (call.reply !== void 0) {
-          const { message: message2, kept } = call.reply;
-          await write(() => conversations.addMessage(turn.conversation, message2, kept));
-        }
-        const { input, output, total } = call.usage;
-        if (input > 0 || output > 0 || total > 0) {
-          await write(() => conversations.addUsage(turn.conversation, input, output, total));
-        }
-        if (call.failure !== void 0) {
-          if (writes && !closed2()) fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
-        } else if (!turn.controller.signal.aborted) {
-          succeeded();
-        }
-        changed();
-      },
-      returned(id, result) {
-        turn.results = { ...turn.results, [id]: result };
-        changed();
-      },
-      async results(message2, kept) {
-        await write(() => conversations.addMessage(turn.conversation, message2, kept));
-        turn.results = {};
-        changed();
-      }
-    };
-  }
-  async function runTurn2(turn) {
-    if (conversations.get(turn.conversation) === void 0) return;
-    let deployment;
-    try {
-      deployment = await options.deployment;
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant cannot call a model: ${messageOf2(error)}`);
-      return;
-    }
-    if (deployment.credential.kind === "visitor") {
-      fail(turn.conversation, NO_KEY2);
-      return;
-    }
-    const offered = await options.models.offered();
-    if (stopped(turn)) return;
-    const picked = conversations.get(turn.conversation)?.model ?? null;
-    const model2 = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
-    if (model2 === void 0) {
-      keep2(turn.conversation, offered.failure ?? NO_MODEL);
-      return;
-    }
-    let systemPrompt2;
-    try {
-      systemPrompt2 = await options.prompt.system();
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf2(error)}`);
-      return;
-    }
-    if (stopped(turn)) return;
-    let loop;
-    try {
-      loop = await options.load();
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
-      return;
-    }
-    if (stopped(turn)) return;
-    const settings = await options.settings.checked((id) => loop.inCatalog(id));
-    if (stopped(turn)) return;
-    await loop.run({
-      connection: connectionOf(deployment),
-      model: model2,
-      settings: settings.get(model2),
-      listed: offered.settings?.get(model2),
-      tools: options.tools,
-      messages: () => conversations.get(turn.conversation)?.messages ?? [],
-      kept: (message2) => conversations.kept(turn.conversation, message2),
-      systemPrompt: systemPrompt2,
-      appMessage: () => options.prompt.appMessage(),
-      signal: turn.controller.signal,
-      on: handlers(turn)
-    });
-  }
-  return {
-    async run(conversation2) {
-      if (closed2()) throw new Error("The board that the assistant's turns ran on is closed.");
-      if (running !== void 0) {
-        throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
-      }
-      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, controller: new AbortController() };
-      const close = () => {
-        turn.controller.abort(CLOSED);
-      };
-      signal.addEventListener("abort", close, { once: true });
-      running = turn;
-      changed();
-      const release = await holdLock(locks);
-      try {
-        await runTurn2(turn);
-      } catch (error) {
-        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf2(error)}`);
-      } finally {
-        release();
-        signal.removeEventListener("abort", close);
-        running = void 0;
-        changed();
-      }
-    },
-    stop() {
-      if (running === void 0 || running.controller.signal.aborted) return;
-      running.stopping = true;
-      running.controller.abort(STOP);
-      changed();
-    },
-    current() {
-      return snapshot;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    }
-  };
-}
-function connectionOf(deployment) {
-  const { credential } = deployment;
-  const key = credential.kind === "deployment" ? credential.key : void 0;
-  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
-}
-function messageOf2(error) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 // srcts/assistant/assistant.ts
 var opened = /* @__PURE__ */ new WeakMap();
 var waiting = /* @__PURE__ */ new WeakMap();
@@ -3256,6 +3548,7 @@ function openAssistant(core, signal, options = {}) {
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
+  const load = options.load ?? loadLoop;
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -3264,10 +3557,11 @@ function openAssistant(core, signal, options = {}) {
     settings,
     callFailed,
     prompt,
-    load: options.load ?? loadLoop,
+    load,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  const assistant = { conversations, skills, models, turns, signal };
+  const compaction = createCompaction(core, signal, { conversations, turns, deployment, models, settings, load });
+  const assistant = { conversations, skills, models, turns, compaction, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
@@ -3425,6 +3719,11 @@ function useConversations(conversations) {
   const subscribe = useCallback((changed) => conversations.subscribe(changed), [conversations]);
   const all = useCallback(() => conversations.all(), [conversations]);
   return useSyncExternalStore(subscribe, all);
+}
+function useCompacting(compaction, conversation2) {
+  const subscribe = useCallback((changed) => compaction.subscribe(changed), [compaction]);
+  const writing = useCallback(() => conversation2 !== void 0 && compaction.writing(conversation2), [compaction, conversation2]);
+  return useSyncExternalStore(subscribe, writing);
 }
 function useRunning(turns) {
   const subscribe = useCallback((changed) => turns.subscribe(changed), [turns]);
@@ -3957,6 +4256,7 @@ function Transcript() {
     /* @__PURE__ */ jsx5(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx5(Greeting, {}) }),
     /* @__PURE__ */ jsx5(ThreadPrimitive.Messages, { children: drawMessage }),
     /* @__PURE__ */ jsx5(Working, {}),
+    /* @__PURE__ */ jsx5(Compacting, {}),
     /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx5(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx5("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx5("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
   ] });
 }
@@ -4054,6 +4354,11 @@ function Working() {
     /* @__PURE__ */ jsx5("span", {})
   ] });
 }
+function Compacting() {
+  const { compacting } = useChat();
+  if (!compacting) return null;
+  return /* @__PURE__ */ jsx5("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
+}
 function fileName(data) {
   const name = typeof data === "object" && data !== null ? data.name : void 0;
   return typeof name === "string" ? name : "";
@@ -4063,7 +4368,7 @@ function fileName(data) {
 import { jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 function Chat({ core, assistant }) {
   const { AssistantRuntimeProvider, useExternalStoreRuntime } = libraries();
-  const { conversations, turns } = assistant;
+  const { conversations, turns, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const [chosen, setChosen] = useState2(storedConversation);
@@ -4072,6 +4377,7 @@ function Chat({ core, assistant }) {
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
   const messages = conversation2?.messages ?? NO_MESSAGES;
   const runsHere = running !== void 0 && running.conversation === open2;
+  const compacting = useCompacting(compaction, open2);
   const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const send = useCallback2(
     (text3) => {
@@ -4123,11 +4429,12 @@ function Chat({ core, assistant }) {
     () => ({
       running,
       runsHere,
+      compacting,
       waiting: waiting2,
       history,
       titleOf: (id) => Object.hasOwn(all, id) ? all[id]?.title : void 0
     }),
-    [all, history, running, runsHere, waiting2]
+    [all, compacting, history, running, runsHere, waiting2]
   );
   const escape = (event) => {
     if (event.key !== "Escape" || event.defaultPrevented || running === void 0) return;

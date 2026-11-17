@@ -157,21 +157,41 @@ describe("the conversations under a cap above 0", () => {
     expect(ids(conversations.get("c1"))).toEqual([]);
   });
 
-  test("compact a conversation in the state while it holds from, and drop the memory's messages before it", async () => {
+  test("compact a conversation in the state while it holds the message after the summary's last, and drop the memory's messages", async () => {
     const { core, conversations } = await opened({ conversations: { c1: three } }, 4);
     await conversations.opened;
 
-    await conversations.compactConversation("c1", message("s1", "summary"), "u3");
+    await conversations.compactConversation("c1", message("s1", "summary"), "a2");
 
     expect(ids(stateIn(core).conversations.c1)).toEqual(["s1", "u3", "a3"]);
     expect(ids(conversations.get("c1"))).toEqual(["s1", "u3", "a3"]);
   });
 
-  test("compact a conversation in the memory where the cap cut it past from, and leave the state as it is", async () => {
+  test("compact every message of a conversation where the summary covers its last message", async () => {
+    const { core, conversations } = await opened({ conversations: { c1: three } }, 4);
+    await conversations.opened;
+
+    await conversations.compactConversation("c1", message("s1", "summary"), "a3");
+
+    expect(ids(stateIn(core).conversations.c1)).toEqual(["s1"]);
+    expect(ids(conversations.get("c1"))).toEqual(["s1"]);
+  });
+
+  test("keep after the summary the messages that entered the conversation after its last", async () => {
+    const { core, conversations } = await opened({ conversations: { c1: three } }, 50);
+    await conversations.opened;
+
+    await conversations.addMessage("c1", message("u4", "user"));
+    await conversations.compactConversation("c1", message("s1", "summary"), "a3");
+
+    expect(ids(stateIn(core).conversations.c1)).toEqual(["s1", "u4"]);
+  });
+
+  test("compact a conversation in the memory where the cap cut it past the message after the summary's last, and leave the state as it is", async () => {
     const { core, conversations } = await opened({ conversations: { c1: three } }, 2);
     await conversations.opened;
 
-    await conversations.compactConversation("c1", message("s1", "summary"), "a1");
+    await conversations.compactConversation("c1", message("s1", "summary"), "u1");
 
     expect(ids(stateIn(core).conversations.c1)).toEqual(["u3", "a3"]);
     expect(ids(conversations.get("c1"))).toEqual(["s1", "a1", "u2", "a2", "u3", "a3"]);
@@ -207,7 +227,10 @@ describe("the conversations under a cap of 0", () => {
     await conversations.addMessage("c2", message("u1", "user"));
     await conversations.renameConversation("c2", "Plots");
     await conversations.addUsage("c2", 100, 20, 130);
-    await conversations.compactConversation("c1", message("s1", "summary"), "u3");
+    await conversations.compactConversation("c1", message("s1", "summary"), "a2");
+    expect(ids(conversations.get("c1"))).toEqual(["s1", "u3", "a3"]);
+    await conversations.compactConversation("c1", message("s2", "summary"), "a3");
+    expect(ids(conversations.get("c1"))).toEqual(["s2"]);
     await conversations.removeConversation("c1");
 
     expect(stateIn(core)).toEqual({ conversations: {} });
@@ -277,7 +300,7 @@ describe("what the memory keeps of a message", () => {
     await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
     await conversations.addMessage("c1", message("u2", "user"), { failure: "Kept." });
 
-    await conversations.compactConversation("c1", message("s1", "summary"), "u2");
+    await conversations.compactConversation("c1", message("s1", "summary"), "a1");
 
     expect(conversations.kept("c1", "a1")).toBeUndefined();
     expect(conversations.kept("c1", "u2")).toEqual({ failure: "Kept." });

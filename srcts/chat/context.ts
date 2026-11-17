@@ -25,6 +25,8 @@ export interface ChatState {
   readonly running: Running | undefined;
   // Whether that turn runs in the open conversation.
   readonly runsHere: boolean;
+  // Whether the model writes a summary of the open conversation.
+  readonly compacting: boolean;
   // The tool calls that the turn waits for, which show as running. A call of
   // the open conversation that has no result and is not among them shows that
   // the turn ended before it returned.

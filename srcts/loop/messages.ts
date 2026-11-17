@@ -62,9 +62,14 @@ export const ENDED = "The turn ended before this call returned.";
 // The result of a tool call that the user stopped.
 export const STOPPED = "The user stopped the turn before this call returned.";
 
-// What the user asked for, in pi's messages, where a summary replaced older
-// messages.
-export const SUMMARY_REQUEST = "Summarize our conversation so far.";
+// The request for a summary, which the call that writes a summary sends after
+// the older messages (../compaction), and which a summary that replaced older
+// messages goes after in pi's messages, as the user's message.
+export const SUMMARY_REQUEST = [
+  "Summarize our conversation so far, so that we can carry on with less of it in context.",
+  "Cover what I asked for and why, what you changed on the board and under which ids, what you learned about the data, and anything left open.",
+  "Write it as notes to yourself, not as a report to me.",
+].join(" ");
 
 // The ends of a reply that finished, which pi takes back as it wrote it.
 // Where a reply ended otherwise, pi drops it whole, with the reasoning that

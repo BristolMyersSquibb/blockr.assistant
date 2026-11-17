@@ -2,10 +2,10 @@
 // pi-agent-core, the models and providers of pi-ai, the three APIs that the
 // assistant speaks, and pi's catalogs of OpenAI's and Anthropic's models.
 // The build bundles them, minified, into a file of their own, pi-<hash>.js,
-// which the loop imports by that name as a board's first turn starts
-// (../build/build.ts).
+// which the loop imports by that name as the page prepares its first call
+// (../turns/prepare.ts, ../build/build.ts).
 // So the assistant's own bundle holds the plugin's code alone, and a page
-// where nobody asks the assistant anything loads no pi
+// that prepares no call loads no pi
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 // The models come through the subpath that pi names for bundles, since pi's
 // root entry point breaks a bundle with "ModelsImpl is not a constructor".

@@ -14,6 +14,8 @@
 //   does (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 // - While the turn runs in the conversation and shows nothing new, as before
 //   its reply starts, the transcript says that it runs at its end.
+// - While the model writes a summary of the conversation, the transcript says
+//   so at its end (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 
 import { useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -35,6 +37,7 @@ export function Transcript(): ReactElement {
       </AuiIf>
       <ThreadPrimitive.Messages>{drawMessage}</ThreadPrimitive.Messages>
       <Working />
+      <Compacting />
       <div className="blockr-assistant-transcript-end">
         <ThreadPrimitive.ScrollToBottom className="blockr-assistant-to-bottom" title="Scroll to the newest message" aria-label="Scroll to the newest message">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -190,6 +193,18 @@ function Working(): ReactElement | null {
       <span />
       <span />
       <span />
+    </p>
+  );
+}
+
+// What the transcript shows at its end while the model writes a summary of
+// the open conversation, which a turn may run beside.
+function Compacting(): ReactElement | null {
+  const { compacting } = useChat();
+  if (!compacting) return null;
+  return (
+    <p className="blockr-assistant-compacting" role="status">
+      Writing a summary of the earlier messages
     </p>
   );
 }

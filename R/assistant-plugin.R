@@ -140,8 +140,23 @@
 #' setting does not take, the assistant raises the error
 #' `assistant_model_settings_failed`.
 #' It then goes on without the file until the next board opens.
-#' The assistant finds a `like` that names no model of pi's catalogs only as
-#' the board's first turn starts, since it loads the catalogs then.
+#' The assistant finds a `like` that names no model of pi's catalogs only once
+#' it loads the catalogs.
+#' It loads them as the board's first turn starts, or as a board opens whose
+#' conversations spent tokens, since compaction reads the windows then.
+#'
+#' @section Compaction:
+#' The assistant compacts a conversation once the tokens of its last call pass
+#' the model's context window less 16,384 tokens.
+#' A call to the conversation's model then writes a summary of the older
+#' messages, which takes their place in the conversation.
+#' The newest exchanges stay as they were, up to a quarter of the window.
+#' The window is the one that the model settings, pi's catalogs or the base
+#' URL's list give the model, or else 128,000 tokens.
+#' So a deployment sets when compaction runs through a model's
+#' `context_window`.
+#' Where a compaction fails, the conversation stays as it was, and the
+#' assistant raises the warning `assistant_compaction_failed`.
 #'
 #' @section Requests:
 #' The class answers six requests in R, through its method of

@@ -9,25 +9,10 @@
 //    conversation, since two turns would each edit the board under the other
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs).
 // 2. It takes the tab's Web Lock, which it holds until it ends (./lock.ts).
-// 3. It loads the loop and its provider code with a dynamic import, which the
-//    browser does once, as the board's first turn starts, since a page where
-//    nobody asks the assistant anything never needs them.
-// 4. It runs on the model that the conversation picked, where the deployment
-//    offers it, and on the default otherwise, while the pick stays in the
-//    state, so that the conversation talks to its model again under a
-//    deployment that offers it
-//    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
-//    Where the deployment names no models, it asks the models for the base
-//    URL's list again, where the last list offered none (../models).
-// 5. Its calls go to the deployment's base URL, in the API that the base URL
-//    speaks, with the deployment's key, or with no key where the key is
-//    "none" (../deployment).
-//    The model takes the settings that the deployment's model settings give
-//    it, and those that the base URL's list gives it, where either gives any
-//    (../model-settings). Once the board's first turn has loaded the loop,
-//    which holds pi's catalogs, the model settings check that each like names
-//    a model of the catalogs.
-//    Each call sends the system prompt of the open board, and after the
+// 3. It prepares its calls (./prepare.ts): where they go, the model that they
+//    talk to, which the conversation picked where the deployment offers it,
+//    with the model's settings, and the loop, which the browser loads once.
+// 4. Each call sends the system prompt of the open board, and after the
 //    conversation's last message the message of the app's, as it is when the
 //    call goes out, with the board and what the user has on screen
 //    (../prompt).
@@ -35,7 +20,7 @@
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
 //    reasoning, by message.
-// 6. After each call, it adds the call's input and output tokens, and every
+// 5. After each call, it adds the call's input and output tokens, and every
 //    token of the call as the total, through blockr.assistant-add_usage.
 //
 // A turn has a signal of its own, which stop() aborts, as the chat's stop
@@ -68,37 +53,25 @@
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
-import type { Deployment } from "../deployment/index.ts";
-import type { Answered, Connection, Handlers, Loop, Streamed } from "../loop/index.ts";
-import type { ModelSettingsFile } from "../model-settings/index.ts";
-import type { Models } from "../models/index.ts";
+import type { Answered, Handlers, Streamed } from "../loop/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
 import type { ConversationId } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { holdLock, pageLocks } from "./lock.ts";
 import type { Locks } from "./lock.ts";
+import { messageOf, prepareCall } from "./prepare.ts";
+import type { CallOptions } from "./prepare.ts";
 
-export interface TurnsOptions {
+export interface TurnsOptions extends CallOptions {
   readonly conversations: Conversations;
   readonly tools: readonly Tool[];
-  // What the deployment chose through the assistant's blockr options, which
-  // the assistant reads as the board opens. It rejects where an option holds
-  // a value that it does not take.
-  readonly deployment: Promise<Deployment>;
-  // The models that the deployment offers.
-  readonly models: Pick<Models, "offered">;
-  // The settings that the deployment gives its models, in the file that the
-  // blockr option assistant_model_settings names.
-  readonly settings: Pick<ModelSettingsFile, "checked">;
   // The error assistant_call_failed, which the models raise as well, for a
   // list of models that the base URL refuses for its key.
   readonly callFailed: HeldError;
   // The system prompt of the open board, and the message of the app's for
   // each call.
   readonly prompt: Prompt;
-  // Loads the loop, which imports pi's bundle.
-  readonly load: () => Promise<Loop>;
   // The tab's Web Locks, the page's by default.
   readonly locks?: Locks | undefined;
 }
@@ -143,9 +116,6 @@ interface State {
 const STOP = new DOMException("The user stopped the turn.", "AbortError");
 const CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
 const GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
-
-const NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
-const NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 
 export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOptions): Turns {
   const { conversations, callFailed } = options;
@@ -241,24 +211,11 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   async function runTurn(turn: State): Promise<void> {
     if (conversations.get(turn.conversation) === undefined) return;
 
-    let deployment: Deployment;
-    try {
-      deployment = await options.deployment;
-    } catch (error) {
-      if (!closed()) fail(turn.conversation, `The assistant cannot call a model: ${messageOf(error)}`);
-      return;
-    }
-    if (deployment.credential.kind === "visitor") {
-      fail(turn.conversation, NO_KEY);
-      return;
-    }
-
-    const offered = await options.models.offered();
-    if (stopped(turn)) return;
-    const picked = conversations.get(turn.conversation)?.model ?? null;
-    const model = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
-    if (model === undefined) {
-      keep(turn.conversation, offered.failure ?? NO_MODEL);
+    const prepared = await prepareCall(options, () => conversations.get(turn.conversation)?.model ?? null, () => stopped(turn));
+    if (prepared.kind === "stopped") return;
+    if (prepared.kind === "failed") {
+      if (!prepared.raise) keep(turn.conversation, prepared.why);
+      else if (!closed()) fail(turn.conversation, prepared.why);
       return;
     }
 
@@ -271,22 +228,8 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     }
     if (stopped(turn)) return;
 
-    let loop: Loop;
-    try {
-      loop = await options.load();
-    } catch (error) {
-      if (!closed()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf(error)}`);
-      return;
-    }
-    if (stopped(turn)) return;
-    const settings = await options.settings.checked((id) => loop.inCatalog(id));
-    if (stopped(turn)) return;
-
-    await loop.run({
-      connection: connectionOf(deployment),
-      model,
-      settings: settings.get(model),
-      listed: offered.settings?.get(model),
+    await prepared.loop.run({
+      ...prepared.model,
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message) => conversations.kept(turn.conversation, message),
@@ -344,14 +287,3 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   };
 }
 
-// Where the loop's calls go, and the key that each carries: the deployment's,
-// or none.
-function connectionOf(deployment: Deployment): Connection {
-  const { credential } = deployment;
-  const key = credential.kind === "deployment" ? credential.key : undefined;
-  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

@@ -48,7 +48,6 @@ import type { CoreApi, Json } from "@blockr/core";
 import {
   addedUsage,
   assistantState,
-  canCompact,
   findConversation,
   holdsMessage,
   messagesToDrop,
@@ -98,11 +97,17 @@ export interface Conversations {
   // Each of these changes a conversation as the command of its name does.
   // A message that addMessage() adds takes with it what the memory keeps of
   // it, where it is given.
+  // The summary of compactConversation() takes the place of the messages up to
+  // `through`, the last message that it covers. The command gets the message
+  // after `through` as `from`, as the conversation holds it when the command
+  // runs, or no `from` where `through` is the conversation's last message. So
+  // the messages that entered the conversation while the model wrote the
+  // summary stay.
   addConversation(id: ConversationId, title: string, model?: string | null): Promise<void>;
   renameConversation(conversation: ConversationId, title: string): Promise<void>;
   removeConversation(conversation: ConversationId): Promise<void>;
   addMessage(conversation: ConversationId, message: Message, kept?: Kept): Promise<void>;
-  compactConversation(conversation: ConversationId, summary: Message, from: MessageId): Promise<void>;
+  compactConversation(conversation: ConversationId, summary: Message, through: MessageId): Promise<void>;
   addUsage(conversation: ConversationId, input: number, output: number, total: number): Promise<void>;
   setModel(conversation: ConversationId, model: string | null): Promise<void>;
   // Calls the listener whenever what all() or kept() gives may have changed,
@@ -342,23 +347,28 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
       }
     },
 
-    async compactConversation(conversation, summary, from) {
+    async compactConversation(conversation, summary, through) {
       const read = await capped;
-      const held = findConversation(core.store.board(), conversation);
       if (read === 0) {
-        change(conversation, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary, from, conversation) }));
-      } else if (held === undefined || holdsMessage(held, from)) {
-        // The memory holds only messages before `from`, which the summary
-        // replaces. Where the state lacks the conversation, the command
-        // refuses.
-        await run("blockr.assistant-compact_conversation", { conversation, summary, from });
+        change(conversation, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary, through, conversation) }));
+        forget(conversation);
+        return;
+      }
+      // From here on, nothing awaits until the command has applied, so no
+      // message enters the conversation between reading `from` and the
+      // command.
+      const held = findConversation(core.store.board(), conversation);
+      const left = held === undefined ? [] : compacted(withOlder(conversation, held).messages, summary, through, conversation);
+      const from = left[1]?.id;
+      if (held === undefined || from === undefined || holdsMessage(held, from)) {
+        // The memory holds only messages that the summary covers. Where the
+        // state lacks the conversation, the command refuses.
+        await run("blockr.assistant-compact_conversation", { conversation, summary, ...(from === undefined ? {} : { from }) });
         if (older.delete(conversation)) changed();
       } else {
         // The cap has cut the conversation past `from`, so the state keeps
         // what it holds, every message of it newer than what the summary
         // covers.
-        const cut = older.get(conversation) ?? [];
-        const left = compacted([...cut, ...held.messages], summary, from, conversation);
         older.set(conversation, left.slice(0, left.length - held.messages.length));
         changed();
       }
@@ -390,13 +400,16 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
   };
 }
 
-// The messages with the summary in place of those before `from`, or an error
-// where the messages lack `from` or one from it on has the summary's id.
-function compacted(messages: readonly Message[], summary: Message, from: MessageId, conversation: ConversationId): Message[] {
-  if (!canCompact(messages, summary, from)) {
+// The messages with the summary in place of those up to `through`, or an
+// error where the messages lack `through` or one after it has the summary's
+// id.
+function compacted(messages: readonly Message[], summary: Message, through: MessageId, conversation: ConversationId): Message[] {
+  const index = messages.findIndex((message) => message.id === through);
+  const kept = messages.slice(index + 1);
+  if (index < 0 || kept.some((message) => message.id === summary.id)) {
     throw new Error(
-      `The conversation "${conversation}" holds no message "${from}" for the summary to go before, or holds a message "${summary.id}" from it on.`,
+      `The conversation "${conversation}" holds no message "${through}" for the summary to take the place of, or holds a message "${summary.id}" after it.`,
     );
   }
-  return [summary, ...messages.slice(messages.findIndex((message) => message.id === from))];
+  return [summary, ...kept];
 }

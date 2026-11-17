@@ -63,8 +63,10 @@ export function holdsMessage(conversation: Conversation, id: MessageId): boolean
 }
 
 // Whether a summary can take the place of the messages before `from`: the
-// messages hold `from`, and none from it on has the summary's id.
-export function canCompact(messages: readonly Message[], summary: Message, from: MessageId): boolean {
+// messages hold `from`, and none from it on has the summary's id. Without
+// `from`, the summary takes the place of every message, which it always can.
+export function canCompact(messages: readonly Message[], summary: Message, from?: MessageId): boolean {
+  if (from === undefined) return true;
   const index = messages.findIndex((message) => message.id === from);
   return index >= 0 && messages.slice(index).every((message) => message.id !== summary.id);
 }
@@ -98,7 +100,7 @@ export function messagesToDrop(messages: readonly Message[], keep: number): numb
 }
 
 // Whether a message opens an exchange: one that the user sent, or a summary.
-function opensExchange(message: Message): boolean {
+export function opensExchange(message: Message): boolean {
   return message.role === "summary" || (message.role === "user" && !isNote(message));
 }
 

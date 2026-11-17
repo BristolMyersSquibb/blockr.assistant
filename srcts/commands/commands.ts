@@ -40,7 +40,7 @@ interface AddMessage {
 interface CompactConversation {
   readonly conversation: ConversationId;
   readonly summary: Message;
-  readonly from: MessageId;
+  readonly from?: MessageId;
 }
 
 interface AddUsage {
@@ -150,21 +150,25 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-compact_conversation",
     label: "Compact conversation",
     description:
-      "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
+      "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps, or in place of every message where `from` is left out. It fails its preflight where the conversation no longer holds `from`.",
     args: schemas.object(
       {
         conversation: schemas.conversation,
         summary: schemas.summary,
-        from: { type: "string", description: "The id of the first message that the conversation keeps after the summary." },
+        from: {
+          type: "string",
+          description: "The id of the first message that the conversation keeps after the summary. Where it is left out, the summary takes the place of every message.",
+        },
       },
-      ["conversation", "summary", "from"],
+      ["conversation", "summary"],
     ),
     preflight: (board, { conversation, summary, from }) => {
       const held = findConversation(board, conversation);
       return held !== undefined && canCompact(held.messages, summary, from);
     },
     run: (board, { conversation, summary, from }) => {
-      const index = (findConversation(board, conversation)?.messages ?? []).findIndex((message) => message.id === from);
+      const messages = findConversation(board, conversation)?.messages ?? [];
+      const index = from === undefined ? messages.length : messages.findIndex((message) => message.id === from);
       return {
         patches: [
           ...drops(conversation, Math.max(index, 0)),

@@ -66,6 +66,15 @@
 //    or else inside context.with() of the context that it kept from before
 //    that await. So core puts its spans of them under the tool's span.
 // 5. The turn's span ends once the turn ends.
+//
+// The loop also makes the call that writes a summary for compaction, outside
+// any turn (../compaction). That call goes to the model through the same
+// provider, with the same credential, identity and thinking level, but with
+// the caller's system prompt and one message of the role user. It declares
+// no tools and holds no message of the app's
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+// The loop also gives the context window of a model as pi takes it, by which
+// compaction judges when a conversation needs a summary.
 
 import { context } from "@opentelemetry/api";
 import type { Json } from "@blockr/core";
@@ -103,14 +112,19 @@ export interface Connection {
 // loop's fetch takes off the request.
 const NO_KEY = "blockr-assistant-no-key";
 
-export interface Turn {
+// The model that a call talks to, which a turn and a summary both name: where
+// the call goes, the model's id, and its settings.
+export interface CallModel {
   readonly connection: Connection;
-  // The id of the model that the turn talks to, such as "gpt-5.4".
+  // The id of the model, such as "gpt-5.4".
   readonly model: string;
   // The settings that the deployment's model settings give the model, and
   // those that the base URL's list gives it, where either gives any.
   readonly settings?: ModelSettings | undefined;
   readonly listed?: ListedSettings | undefined;
+}
+
+export interface Turn extends CallModel {
   readonly tools: readonly Tool[];
   // The conversation as the plugin holds it, as a call goes out: the messages
   // that the memory holds, then those of the state.
@@ -164,11 +178,37 @@ export interface Call {
   readonly failure?: string;
 }
 
+// The call that writes a summary for compaction: one message of the role
+// user, under a system prompt of its own, with no tools
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#compaction).
+export interface SummaryCall extends CallModel {
+  readonly systemPrompt: string;
+  // The text of the message of the role user.
+  readonly prompt: string;
+  readonly signal: AbortSignal;
+}
+
+// A call that wrote a summary, or that ended without one.
+export interface Summarized {
+  // The summary, where the call wrote one.
+  readonly text?: string;
+  // The tokens of the call, as a turn's call gives them.
+  readonly usage: Call["usage"];
+  // Why the call wrote no summary, where it wrote none.
+  readonly failure?: string;
+}
+
 export interface Loop {
   // Runs the turn, and resolves once the turn ends, however it ends. It
   // rejects where the turn cannot go on, as where the credential cannot be
   // read.
   run(turn: Turn): Promise<void>;
+  // Makes the call that writes a summary, and resolves once the call ends,
+  // however it ends. It rejects where the call cannot go out, as where the
+  // credential cannot be read.
+  summarize(call: SummaryCall): Promise<Summarized>;
+  // The context window of the model, in tokens, as the loop gives it to pi.
+  contextWindow(model: CallModel): number;
   // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
   // of the id given, whose settings a model of the deployment's model
   // settings may take through its like.
@@ -185,11 +225,17 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
     "openai-responses": pi.openaiResponses,
     ...apis,
   };
-  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== undefined };
+  return {
+    run: (turn) => runTurn(pi, streams, turn),
+    summarize: (call) => summarize(pi, streams, call),
+    contextWindow: (called) => modelOf(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
+    inCatalog: (id) => catalogModel(pi, id) !== undefined,
+  };
 }
 
 // The loop, once the page has imported pi's bundle.
-// The browser imports the bundle once, as the board's first turn starts.
+// The browser imports the bundle once, as the page prepares its first call
+// (../turns/prepare.ts).
 export async function loadLoop(): Promise<Loop> {
   return createLoop(await import("./vendor.ts"));
 }
@@ -207,17 +253,7 @@ function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, tur
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
   const model = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
-  const models = pi.createModels();
-  models.setProvider(
-    pi.createProvider({
-      id: PROVIDER,
-      baseUrl: turn.connection.baseUrl,
-      // The credential comes through getApiKey, so the provider takes none.
-      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
-      models: [model],
-      api: streams,
-    }),
-  );
+  const models = modelsAt(pi, streams, turn.connection, model);
 
   // The results that the tools gave, and those that pi gave in place of a
   // tool before the signal aborted, as for args that the tool's schema
@@ -289,6 +325,58 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   await pi.runAgentLoopContinue(begun, config, emit, turn.signal, (called, messages, options) =>
     models.streamSimple(called, messages, { ...options, telemetry: span }),
   );
+}
+
+// The models of pi, with the plugin's provider at the connection's base URL,
+// which serves the model given. The credential comes with each call, so the provider
+// takes none.
+function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, connection: Connection, model: Model<Api>): ReturnType<Pi["createModels"]> {
+  const models = pi.createModels();
+  models.setProvider(
+    pi.createProvider({
+      id: PROVIDER,
+      baseUrl: connection.baseUrl,
+      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
+      models: [model],
+      api: streams,
+    }),
+  );
+  return models;
+}
+
+// Makes the call that writes a summary, with the settings of a turn's calls:
+// the same model, credential, identity and thinking level. It asks the
+// provider to cache nothing, since no later call starts as this one does, as
+// pi's own CLI asks for its summaries.
+async function summarize(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: SummaryCall): Promise<Summarized> {
+  const model = modelOf(pi, call.model, call.connection, call.settings, call.listed);
+  const models = modelsAt(pi, streams, call.connection, model);
+  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+  const reply = await models.completeSimple(
+    model,
+    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
+  );
+  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
+  const failure = summaryFailure(reply, text);
+  return failure === undefined ? { text, usage } : { usage, failure };
+}
+
+// Why a call wrote no summary, or undefined where it wrote one. A reply that
+// the model's cap for a reply cut off is no summary, since it may end
+// mid-sentence, as pi's CLI has it.
+function summaryFailure(reply: AssistantMessage, text: string): string | undefined {
+  switch (reply.stopReason) {
+    case "error":
+      return reply.errorMessage ?? "The provider gave no reason.";
+    case "aborted":
+      return "The call was stopped before the model wrote the summary.";
+    case "length":
+      return "The summary reached the model's cap for a reply, so it was cut off.";
+    default:
+      return text === "" ? "The model wrote no summary." : undefined;
+  }
 }
 
 // The model of the id given, at the connection's base URL, in its API,

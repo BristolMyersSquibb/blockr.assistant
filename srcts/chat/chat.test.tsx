@@ -310,6 +310,38 @@ describe("the assistant's chat", () => {
     expect(row?.querySelector("strong")?.textContent).toBe("sales");
   });
 
+  test("says at the transcript's end that the model writes a summary, while a turn may run and stop beside it, and then shows the summary", async () => {
+    localStorage.setItem(KEY, "c1");
+    const summary = heldReply("We built a sales chart.");
+    const turn = heldReply("Two blocks.");
+    const { el, assistant } = await chat({
+      state: { conversations: { c1: conversation("Sales", message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant")) } },
+      replies: [summary.reply, turn.reply],
+    });
+
+    let compacted = Promise.resolve();
+    act(() => {
+      compacted = assistant.compaction.compact("c1");
+    });
+    await until(() => el.querySelector(".blockr-assistant-compacting") !== null, "the line that says that the model writes a summary");
+    expect(el.querySelector(".blockr-assistant-compacting")?.textContent).toBe("Writing a summary of the earlier messages");
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => assistant.turns.current() !== undefined, "the turn");
+    press(field(el), "Escape");
+    await until(() => assistant.turns.current() === undefined, "the turn's stop");
+    expect(el.querySelector(".blockr-assistant-compacting")).not.toBeNull();
+
+    summary.release();
+    await act(() => compacted);
+    await settle();
+
+    expect(el.querySelector(".blockr-assistant-compacting")).toBeNull();
+    expect(el.querySelector(".blockr-assistant-summary summary")?.textContent).toBe("Summary of the earlier messages");
+    expect([...el.querySelectorAll(".blockr-assistant-user-text")].map((node) => node.textContent)).toEqual(["u2", "How many blocks?"]);
+  });
+
   test("shows the model's reasoning as a row that folds, while the board stays open", async () => {
     const { el } = await chat({ replies: [fauxAssistantMessage([fauxThinking("Counting the **blocks**."), fauxText("None.")])] });
 
