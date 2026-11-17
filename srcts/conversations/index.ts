@@ -4,4 +4,4 @@
 
 export { readCap } from "./cap.ts";
 export { createConversations } from "./conversations.ts";
-export type { Conversations, Kept, KeptImage } from "./conversations.ts";
+export type { Conversations, Kept, KeptFile, KeptImage } from "./conversations.ts";

@@ -135,7 +135,8 @@
 #'   assistant asks it to, at the thinking level `medium`.
 #' * The setting `images` says whether the model takes images.
 #'   For a model that takes none, the assistant sends a note in place of each
-#'   plot of `inspect_results`.
+#'   plot of `inspect_results`, and of each image and PDF that the user
+#'   attaches.
 #' * The setting `context_window` gives the tokens that the model's context
 #'   window holds, and `max_tokens` the most tokens that each call asks for
 #'   the reply.
@@ -164,6 +165,34 @@
 #' `context_window`.
 #' Where a compaction fails, the conversation stays as it was, and the
 #' assistant raises the warning `assistant_compaction_failed`.
+#'
+#' @section Attachments:
+#' The user attaches images in PNG, JPEG, GIF or WebP, PDFs and text files to
+#' a message, through the button beside the message field, by dropping them
+#' on the chat or by pasting them.
+#' The files of one message take up to 30 MiB together.
+#' An image whose longer side passes 1568 pixels is scaled down to it.
+#' A paste of more than 1,000 characters becomes a text file, "Pasted Text".
+#'
+#' The board keeps the name and the media type of each file, but not its
+#' content.
+#' The browser keeps a copy of the content while the board stays open, so that
+#' the file stays attached once the user deletes or edits it on disk.
+#' The assistant sends the content to the model with the message and with each
+#' later call of the conversation.
+#' It sends a text file as its text, an image as an image, and a PDF in the
+#' block of the API for a file.
+#' Once the board opens again, the model learns only that the user attached
+#' the file.
+#'
+#' A provider may refuse a file, as one that it cannot read or one larger than
+#' it takes.
+#' Anthropic's API, for one, takes a PDF of up to 32 MB as base64, which a
+#' PDF of about 24 MiB reaches.
+#' The turn then ends, and the assistant raises the error
+#' `assistant_attachment_refused`, which names the file and says why.
+#' The conversation's later calls go without the file, and a later call of the
+#' conversation that succeeds withdraws the error.
 #'
 #' @section Requests:
 #' The class answers six requests in R, through its method of

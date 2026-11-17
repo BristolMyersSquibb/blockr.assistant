@@ -5,4 +5,4 @@
 export { createLoop, loadLoop, PROVIDER } from "./loop.ts";
 export type { Call, CallModel, Connection, Handlers, Loop, ModelCall, ModelReply, Pi, Streamed, Turn } from "./loop.ts";
 export { ENDED, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
-export type { Answered } from "./messages.ts";
+export type { Answered, CarriedFile } from "./messages.ts";

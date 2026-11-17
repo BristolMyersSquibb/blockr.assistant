@@ -284,6 +284,24 @@
   A compaction that fails leaves the conversation as it was, and raises the
   warning `assistant_compaction_failed`.
 
+* The chat's message field takes images, PDFs and text files, up to 30 MiB
+  together, which the user picks with its button, drops on the chat or pastes
+  (#231).
+  A click on a file of a message that the user sent opens it large.
+  The board keeps each file's name and media type, while the browser keeps a
+  copy of its content as long as the board stays open, so that the file stays
+  attached once the user deletes or edits it on disk.
+  The assistant sends that content to the model with the message and with
+  each later call of the conversation.
+  An image larger than 1568 pixels on its longer side is scaled down, and a
+  paste of more than 1,000 characters becomes a text file, as in shinychat's
+  chat.
+
+* A file that the provider refuses ends the turn with the error
+  `assistant_attachment_refused`, which names the file and says why (#231).
+  The conversation's later calls go without the file, and a later call of the
+  conversation that succeeds withdraws the error.
+
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).
   The drawer opens over the chat, in the element that the frontend gives the

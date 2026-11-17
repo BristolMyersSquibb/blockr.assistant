@@ -58,7 +58,7 @@ export function boardSection(core: Core, max: number): string {
       : [
           counts,
           "",
-          ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${listedAfter(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
+          ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
           ...part("Links", links.map(([id, { from, to, input }]) => `- ${id}: ${from} -> ${to}${input === "" ? "" : `$${input}`}`), "list_links"),
           ...part("Stacks", stacks.map(([id, { name, blocks: held }]) => `- ${id} "${name}"${held.length === 0 ? "" : `: ${held.join(", ")}`}`), "list_stacks"),
           ...optionPart(core, Object.keys(board.options), part),
@@ -67,7 +67,7 @@ export function boardSection(core: Core, max: number): string {
 }
 
 // The names given after a space, separated by commas, or nothing for none.
-function listedAfter(names: readonly string[]): string {
+function joinNames(names: readonly string[]): string {
   return names.length === 0 ? "" : ` ${names.join(", ")}`;
 }
 

@@ -104,7 +104,7 @@ interface Naming {
 
 function startSpan<T>(parent: Context, options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
   const naming = namingOf(options);
-  const span = tracer().startSpan(naming.name, { kind: naming.kind, attributes: naming.attributes, links: linksOf(options.links ?? []) }, parent);
+  const span = tracer().startSpan(naming.name, { kind: naming.kind, attributes: naming.attributes, links: convertLinks(options.links ?? []) }, parent);
   const active = trace.setSpan(parent, span);
   let ended = false;
   let status: SpanStatus | undefined;
@@ -112,7 +112,7 @@ function startSpan<T>(parent: Context, options: SpanOptions, callback: (span: Te
   const given: TelemetrySpan = {
     startSpan: (childOptions, childCallback) => (ended ? startInert(childCallback) : startSpan(active, childOptions, childCallback)),
     addLink(link) {
-      const linked = ended ? undefined : linkOf(link);
+      const linked = ended ? undefined : convertLink(link);
       if (linked !== undefined) span.addLink(linked);
     },
     addEvent(name, attributes) {
@@ -183,13 +183,13 @@ async function startInert<T>(callback: (span: TelemetrySpan) => T | Promise<T>):
 // The link to a span that the module started, or undefined for a link to
 // anything else, such as the context of telemetryUnder() itself, which pi's
 // contract ignores.
-function linkOf(link: SpanLink): Link | undefined {
+function convertLink(link: SpanLink): Link | undefined {
   const linked = started.get(link.context);
   return linked === undefined ? undefined : { context: linked, attributes: defined(link.attributes ?? {}) };
 }
 
-function linksOf(links: readonly SpanLink[]): Link[] {
-  return links.flatMap((link) => linkOf(link) ?? []);
+function convertLinks(links: readonly SpanLink[]): Link[] {
+  return links.flatMap((link) => convertLink(link) ?? []);
 }
 
 // The attributes that hold a value, with each array copied, so that a change
