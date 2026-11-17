@@ -5,7 +5,8 @@
 // - Where the deployment names models in the blockr option assistant_models,
 //   the assistant offers those (../deployment).
 // - Where it names none, the assistant offers the models of the base URL's
-//   list that take tools (./list.ts). It asks for the list with the
+//   list that take tools, with the settings that the list gives each, such as
+//   its context window (./list.ts). It asks for the list with the
 //   deployment's key, or with none where the key is "none". Where the visitor
 //   authenticates, it asks for no list, since it holds no key of the
 //   visitor's.
@@ -25,6 +26,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import type { Deployment } from "../deployment/index.ts";
+import type { ListedSettings } from "../model-settings/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import { askList } from "./list.ts";
@@ -34,6 +36,9 @@ import type { Fetch } from "./list.ts";
 // none, where it offers none.
 export interface Offered {
   readonly models: readonly string[];
+  // The settings that the base URL's list gives each model offered, by the
+  // model's id, where the models come from the list and it gives any.
+  readonly settings?: ReadonlyMap<string, ListedSettings>;
   readonly failure?: string;
 }
 
@@ -82,9 +87,11 @@ export function createModels(core: { readonly notifications: Pick<CoreApi["notif
     const listed = await askList(deployment, credential.kind === "deployment" ? credential.key : undefined, fetch, signal);
     if (signal.aborted) return NONE;
     switch (listed.kind) {
-      case "listed":
+      case "listed": {
         modelsFailed.withdraw();
-        return { offered: { models: listed.models }, again: false };
+        const { models, settings } = listed;
+        return { offered: { models, ...(settings.size === 0 ? {} : { settings }) }, again: false };
+      }
       case "refused":
         modelsFailed.withdraw();
         options.callFailed.raise(listed.message);

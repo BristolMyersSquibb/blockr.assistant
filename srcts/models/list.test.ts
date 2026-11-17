@@ -1,12 +1,12 @@
 // The base URL's list of models (./list.ts): where each API's list is, what
-// the request for it carries, which models of each list take tools, and what
-// a request that fails gives. The entries follow the lists as OpenAI,
+// the request for it carries, which models of each list take tools, the
+// settings that each list gives a model, and what a request that fails gives. The entries follow the lists as OpenAI,
 // Anthropic, OpenRouter and Vercel's AI Gateway gave them on 2026-11-16,
 // with the fields that the assistant reads.
 
 import { describe, expect, test } from "vitest";
 import type { Deployment } from "../deployment/index.ts";
-import { askList, listUrl, toolModels } from "./list.ts";
+import { askList, listedSettings, listUrl, toolModels } from "./list.ts";
 import type { Fetch } from "./list.ts";
 
 function deployment(baseUrl: string, api: string): Deployment {
@@ -105,13 +105,92 @@ describe("the list of models", () => {
   });
 });
 
+describe("the settings that the list gives a model", () => {
+  test("are the window, the cap and the inputs of OpenRouter's entries, the cap of the provider that it routes to first", () => {
+    const entries = [
+      {
+        id: "openai/gpt-5.4",
+        context_length: 1050000,
+        architecture: { modality: "text+image+file->text", input_modalities: ["text", "image", "file"], output_modalities: ["text"] },
+        top_provider: { context_length: 1050000, max_completion_tokens: 128000, is_moderated: true },
+      },
+      {
+        id: "deepseek/deepseek-v3.2",
+        context_length: 163840,
+        architecture: { modality: "text->text", input_modalities: ["text"], output_modalities: ["text"] },
+        top_provider: { context_length: 163840, max_completion_tokens: 147456, is_moderated: false },
+      },
+    ];
+
+    expect(listedSettings(entries, ["openai/gpt-5.4", "deepseek/deepseek-v3.2"])).toEqual(
+      new Map([
+        ["openai/gpt-5.4", { contextWindow: 1050000, maxTokens: 128000, images: true }],
+        ["deepseek/deepseek-v3.2", { contextWindow: 163840, maxTokens: 147456, images: false }],
+      ]),
+    );
+  });
+
+  test("are the window, the cap and the inputs of Vercel's entries", () => {
+    const entries = [
+      {
+        id: "anthropic/claude-sonnet-5.5",
+        context_window: 1000000,
+        max_tokens: 128000,
+        type: "language",
+        tags: ["tool-use", "vision"],
+        modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+      },
+      { id: "deepseek/deepseek-v3.2", context_window: 128000, max_tokens: 8000, type: "language", tags: ["tool-use"], modalities: { input: ["text"], output: ["text"] } },
+    ];
+
+    expect(listedSettings(entries, ["anthropic/claude-sonnet-5.5", "deepseek/deepseek-v3.2"])).toEqual(
+      new Map([
+        ["anthropic/claude-sonnet-5.5", { contextWindow: 1000000, maxTokens: 128000, images: true }],
+        ["deepseek/deepseek-v3.2", { contextWindow: 128000, maxTokens: 8000, images: false }],
+      ]),
+    );
+  });
+
+  test("are the input tokens, the cap and the image input of Anthropic's entries", () => {
+    const entries = [
+      { type: "model", id: "claude-sonnet-5-5", capabilities: { image_input: { supported: true }, thinking: { supported: true } }, max_input_tokens: 1000000, max_tokens: 128000 },
+    ];
+
+    expect(listedSettings(entries, ["claude-sonnet-5-5"])).toEqual(new Map([["claude-sonnet-5-5", { contextWindow: 1000000, maxTokens: 128000, images: true }]]));
+  });
+
+  test("are none for OpenAI's entries, which give none of them", () => {
+    expect(listedSettings([{ id: "gpt-5.4", object: "model", created: 1782254706, owned_by: "system" }], ["gpt-5.4"])).toEqual(new Map());
+  });
+
+  test("say nothing of a field that holds no whole number of tokens above 0, no list of inputs, or no true or false", () => {
+    const entries = [
+      { id: "a", context_length: 0, top_provider: { max_completion_tokens: null }, architecture: { input_modalities: "text" } },
+      { id: "b", context_window: 1.5, max_tokens: "8000", modalities: { input: [1] }, capabilities: { image_input: { supported: "yes" } } },
+      { id: "c", context_length: -1, max_tokens: 8000 },
+    ];
+
+    expect(listedSettings(entries, ["a", "b", "c"])).toEqual(new Map([["c", { maxTokens: 8000 }]]));
+  });
+
+  test("are those of the models given, each from its first entry", () => {
+    const entries = [
+      { id: "kept", context_length: 200000 },
+      { id: "dropped", context_length: 100000 },
+      { id: "kept", context_length: 300000 },
+    ];
+
+    expect(listedSettings(entries, ["kept"])).toEqual(new Map([["kept", { contextWindow: 200000 }]]));
+  });
+});
+
 describe("a request for the list", () => {
   test("carries the key in Authorization for OpenAI's APIs, and gives the models that take tools", async () => {
     const { fetch, asked } = fetching(() => Response.json({ object: "list", data: [{ id: "whisper-1" }, { id: "gpt-5.4" }] }));
 
     const listed = await askList(deployment("https://api.openai.com/v1", "openai-responses"), "sk-test", fetch, signal);
 
-    expect(listed).toEqual({ kind: "listed", models: ["gpt-5.4"] });
+    expect(listed).toEqual({ kind: "listed", models: ["gpt-5.4"], settings: new Map() });
     expect(asked.map(({ url, headers }) => [url, Object.fromEntries(headers)])).toEqual([["https://api.openai.com/v1/models", { authorization: "Bearer sk-test" }]]);
   });
 
@@ -147,6 +226,23 @@ describe("a request for the list", () => {
     await expect(askList(deployment("https://api.openai.com/v1", "openai-responses"), "sk-wrong", fetch, signal)).resolves.toEqual({
       kind: "refused",
       message: 'The base URL refused the assistant\'s key for its list of models at https://api.openai.com/v1/models: it answered 401, "Incorrect API key provided.".',
+    });
+  });
+
+  test("gives the settings that the list gives each model that it keeps", async () => {
+    const { fetch } = fetching(() =>
+      Response.json({
+        data: [
+          { id: "openai/gpt-5.4", context_length: 1050000, top_provider: { max_completion_tokens: 128000 }, supported_parameters: ["tools"] },
+          { id: "some/model-without-tools", context_length: 8192, supported_parameters: ["max_tokens"] },
+        ],
+      }),
+    );
+
+    await expect(askList(deployment("https://openrouter.ai/api/v1", "openai-completions"), "sk-or-test", fetch, signal)).resolves.toEqual({
+      kind: "listed",
+      models: ["openai/gpt-5.4"],
+      settings: new Map([["openai/gpt-5.4", { contextWindow: 1050000, maxTokens: 128000 }]]),
     });
   });
 

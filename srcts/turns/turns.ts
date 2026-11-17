@@ -22,6 +22,11 @@
 // 5. Its calls go to the deployment's base URL, in the API that the base URL
 //    speaks, with the deployment's key, or with no key where the key is
 //    "none" (../deployment).
+//    The model takes the settings that the deployment's model settings give
+//    it, and those that the base URL's list gives it, where either gives any
+//    (../model-settings). Once the board's first turn has loaded the loop,
+//    which holds pi's catalogs, the model settings check that each like names
+//    a model of the catalogs.
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
@@ -59,6 +64,7 @@ import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import type { Answered, Connection, Handlers, Loop, Streamed } from "../loop/index.ts";
+import type { ModelSettingsFile } from "../model-settings/index.ts";
 import type { Models } from "../models/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { ConversationId } from "../state/index.ts";
@@ -75,6 +81,9 @@ export interface TurnsOptions {
   readonly deployment: Promise<Deployment>;
   // The models that the deployment offers.
   readonly models: Pick<Models, "offered">;
+  // The settings that the deployment gives its models, in the file that the
+  // blockr option assistant_model_settings names.
+  readonly settings: Pick<ModelSettingsFile, "checked">;
   // The error assistant_call_failed, which the models raise as well, for a
   // list of models that the base URL refuses for its key.
   readonly callFailed: HeldError;
@@ -251,10 +260,14 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       return;
     }
     if (stopped(turn)) return;
+    const settings = await options.settings.checked((id) => loop.inCatalog(id));
+    if (stopped(turn)) return;
 
     await loop.run({
       connection: connectionOf(deployment),
       model,
+      settings: settings.get(model),
+      listed: offered.settings?.get(model),
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message) => conversations.kept(turn.conversation, message),

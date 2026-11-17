@@ -61,6 +61,7 @@ import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@e
 import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Kept, KeptImage } from "../conversations/index.ts";
+import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
@@ -93,6 +94,10 @@ export interface Turn {
   readonly connection: Connection;
   // The id of the model that the turn talks to, such as "gpt-5.4".
   readonly model: string;
+  // The settings that the deployment's model settings give the model, and
+  // those that the base URL's list gives it, where either gives any.
+  readonly settings?: ModelSettings | undefined;
+  readonly listed?: ListedSettings | undefined;
   readonly tools: readonly Tool[];
   // The conversation as the plugin holds it, as a call goes out: the messages
   // that the memory holds, then those of the state.
@@ -147,6 +152,10 @@ export interface Loop {
   // rejects where the turn cannot go on, as where the credential cannot be
   // read.
   run(turn: Turn): Promise<void>;
+  // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
+  // of the id given, whose settings a model of the deployment's model
+  // settings may take through its like.
+  inCatalog(id: string): boolean;
 }
 
 // The loop on the parts of pi given, with the three APIs that the assistant
@@ -159,7 +168,7 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
     "openai-responses": pi.openaiResponses,
     ...apis,
   };
-  return { run: (turn) => runTurn(pi, streams, turn) };
+  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== undefined };
 }
 
 // The loop, once the page has imported pi's bundle.
@@ -180,7 +189,7 @@ function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, tur
 
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
-  const model = modelOf(pi, turn.model, turn.connection);
+  const model = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = pi.createModels();
   models.setProvider(
     pi.createProvider({
@@ -257,40 +266,62 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
 }
 
 // The model of the id given, at the connection's base URL, in its API,
-// through the plugin's provider.
-// - Where pi's catalog of OpenAI's or of Anthropic's models holds a model of
-//   the id, the model takes the catalog's settings, such as the thinking that
-//   it takes, which Anthropic's current models refuse in any other form. It
-//   takes the catalog's settings for the API alone where the catalog's model
-//   speaks the connection's API.
-// - Any other model, such as one that a company's own proxy serves under a
-//   name of its own, gets settings that every API takes:
-//   - It does not reason, so that pi sends no reasoning effort and asks for no
-//     thinking, which a model that does not reason refuses, and the model
-//     reasons as its provider has it, as today's calls leave it to.
-//   - It takes images, so that the plots of inspect_results reach the model,
-//     as today's assistant sends them to every model.
-//   - Its context window holds 128,000 tokens, as gpt-4o's does, and each call
-//     asks for up to 16,384 tokens for its reply, the most that gpt-4o takes.
-//     The cap goes out with every call, and pi lowers it only as the input
-//     nears the window.
-//   - Its cost is unknown, so pi counts none.
-function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
+// through the plugin's provider. It takes each setting from the first of these
+// that gives it
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
+// 1. The deployment's model settings, which give the model's settings by its
+//    id (../model-settings).
+// 2. The model of pi's catalog of OpenAI's or of Anthropic's models that the
+//    model settings name in like, or else the catalog's model of the same id.
+//    Such a model takes the catalog's settings, such as the thinking that it
+//    takes, which Anthropic's current models refuse in any other form. It
+//    takes the catalog's settings for the API alone where the catalog's model
+//    speaks the connection's API.
+// 3. The base URL's list of models, which may give the model's context window,
+//    its cap for a reply and whether it takes images (../models).
+// 4. Settings that every API takes:
+//    - The model does not reason, so that pi sends no reasoning effort and
+//      asks for no thinking, which a model that does not reason refuses, and
+//      the model reasons as its provider has it, as today's calls leave it
+//      to.
+//    - It takes images, so that the plots of inspect_results reach the model,
+//      as today's assistant sends them to every model.
+//    - Its context window holds 128,000 tokens, as gpt-4o's does, and each
+//      call asks for up to 16,384 tokens for its reply, the most that gpt-4o
+//      takes. The cap goes out with every call, and pi lowers it only as the
+//      input nears the window.
+//    - Its cost is unknown, so pi counts none.
+function modelOf(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
   const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
-  const known = catalogModel(pi, id);
-  if (known === undefined) {
-    return {
-      ...at,
-      name: id,
-      reasoning: false,
-      input: ["text", "image"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128_000,
-      maxTokens: 16_384,
-    };
-  }
+  const known = catalogModel(pi, given.like ?? id);
   // The catalog's headers belong to the catalog's provider, so they go.
-  return { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
+  const base: Model<Api> =
+    known === undefined
+      ? {
+          ...at,
+          name: id,
+          reasoning: false,
+          input: inputOf(["text", "image"], listed.images),
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: listed.contextWindow ?? 128_000,
+          maxTokens: listed.maxTokens ?? 16_384,
+        }
+      : { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
+  return {
+    ...base,
+    reasoning: given.reasoning ?? base.reasoning,
+    input: inputOf(base.input, given.images),
+    contextWindow: given.contextWindow ?? base.contextWindow,
+    maxTokens: given.maxTokens ?? base.maxTokens,
+  };
+}
+
+// The inputs of a model, with images or without them, as the setting given
+// says, or as they are where it says nothing.
+function inputOf(input: Model<Api>["input"], images: boolean | undefined): Model<Api>["input"] {
+  if (images === undefined) return input;
+  const others = input.filter((kind) => kind !== "image");
+  return images ? [...others, "image"] : others;
 }
 
 // The model of the id given in pi's catalog of OpenAI's or of Anthropic's
