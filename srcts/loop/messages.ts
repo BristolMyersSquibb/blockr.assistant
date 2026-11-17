@@ -9,8 +9,26 @@
 // On the way into pi's messages:
 // - A message that the user sent, a note of what others changed and the
 //   text of a skill that the user called become text in a message of pi's
-//   role user. A file that the user attached reads as its name and its media
-//   type, since the memory keeps no file's bytes yet.
+//   role user.
+// - A file that the user attached goes with its message, from the memory
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments):
+//   - A text file goes as its text, in a <file-attachment> tag that names
+//     the file and its media type, as today's chat wraps it, since every
+//     model takes text.
+//   - An image goes as pi's image, after a line that names it.
+//   - A PDF goes as pi's image of the type application/pdf, after a line
+//     that names it, since pi's messages hold no other file. The loop turns
+//     it into the block of the call's API for a file, in the request that pi
+//     writes (./files.ts).
+//   - Where the model takes no images, an image and a PDF read as their names
+//     and their media types, since both providers read a PDF's pages as
+//     images too.
+//   - A file whose content the memory lacks, as once the board opens again,
+//     reads as its name and its media type, and so does a file that the
+//     provider refused.
+//   The loop notes each file that a call carries, where no call carried it
+//   with success before, so that the turns can tell which files a provider
+//   refused, and the name of each PDF, in the order of pi's messages.
 // - A reply that finished goes as pi wrote it, where the memory keeps it, so
 //   that its reasoning goes with it. Where another model wrote the reply, pi
 //   leaves the reasoning out itself.
@@ -42,9 +60,10 @@ import type {
   ToolResultMessage,
   Usage,
 } from "@earendil-works/pi-ai";
-import type { Kept, KeptImage } from "../conversations/index.ts";
+import { kindOf } from "../attachments/index.ts";
+import type { Kept, KeptFile, KeptImage } from "../conversations/index.ts";
 import { newId } from "../state/index.ts";
-import type { Message, MessageId, Part, ToolCallPart, ToolResultPart } from "../state/index.ts";
+import type { AttachmentPart, Message, MessageId, Part, ToolCallPart, ToolResultPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 
 // The result of a tool call that has no result, as in a board saved during a
@@ -79,16 +98,35 @@ export interface Answered {
   readonly images: readonly KeptImage[];
 }
 
+// A file that a call carries, which no call carried with success before: the
+// message that holds it, its index among the message's files, and its name.
+export interface CarriedFile {
+  readonly message: MessageId;
+  readonly index: number;
+  readonly name: string;
+}
+
+// What a call carries of the files that the user attached, which the loop
+// notes as it builds pi's messages for the call: each file that no call
+// carried with success before, and the name of each PDF, in the order in
+// which pi's messages hold the PDFs.
+export interface Carried {
+  readonly files: CarriedFile[];
+  readonly pdfs: string[];
+}
+
 // The messages of pi for a call: the system prompt with the tools, which pi
-// declares to the model, then the conversation.
+// declares to the model, then the conversation. What the call carries of the
+// files that the user attached goes into `carried`, where it is given.
 export function callMessages(
   messages: readonly Message[],
   kept: (message: MessageId) => Kept | undefined,
   model: Model<Api>,
   tools: readonly Tool[],
   systemPrompt: string,
+  carried?: Carried,
 ): PiMessage[] {
-  return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model)];
+  return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model, carried)];
 }
 
 // The system prompt with the declarations of the tools, as pi's message of the
@@ -98,15 +136,17 @@ function systemMessage(prompt: string, tools: readonly Tool[]): SystemMessage {
   return { role: "system", content: prompt, ...(declared.length > 0 ? { toolsAdded: declared } : {}), timestamp: Date.now() };
 }
 
-// The conversation as pi's messages, for a call to the model given.
-export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>): PiMessage[] {
+// The conversation as pi's messages, for a call to the model given. What the
+// call carries of the files that the user attached goes into `carried`, where
+// it is given.
+export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>, carried?: Carried): PiMessage[] {
   const out: PiMessage[] = [];
   for (let i = 0; i < messages.length; i += 1) {
     const message = messages[i];
     if (message === undefined) continue;
     const at = Date.parse(message.created);
     if (message.role === "user") {
-      const content = userContent(message.parts);
+      const content = userContent(message, kept(message.id)?.files ?? [], model, carried);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at });
     } else if (message.role === "summary") {
       out.push({ role: "user", content: [text(SUMMARY_REQUEST)], timestamp: at }, otherReply(message.parts, model, at));
@@ -126,20 +166,59 @@ export function piMessages(messages: readonly Message[], kept: (message: Message
   return out;
 }
 
-// What a message that the user sent holds, as text.
-function userContent(parts: readonly Part[]): TextContent[] {
-  return parts.flatMap((part) => {
+// What a message that the user sent holds, as pi's content, with the files
+// that the memory keeps of it, one for each of its parts of the type
+// attachment.
+function userContent(message: Message, files: readonly KeptFile[], model: Model<Api>, carried: Carried | undefined): (TextContent | ImageContent)[] {
+  let index = -1;
+  return message.parts.flatMap((part): (TextContent | ImageContent)[] => {
     switch (part.type) {
       case "text":
       case "changes":
       case "skill":
         return [text(part.text)];
       case "attachment":
-        return [text(`The user attached the file "${part.name}", of the type ${part.media_type}, whose content is no longer available.`)];
+        index += 1;
+        return fileContent(part, files[index], { message: message.id, index, name: part.name }, model, carried);
       default:
         return [];
     }
   });
+}
+
+// A file that the user attached, as pi's content, which `carried` notes where
+// the content goes.
+function fileContent(
+  part: AttachmentPart,
+  file: KeptFile | undefined,
+  at: CarriedFile,
+  model: Model<Api>,
+  carried: Carried | undefined,
+): (TextContent | ImageContent)[] {
+  const attached = `The user attached the file "${part.name}", of the type ${part.media_type}`;
+  if (file === undefined) return [text(`${attached}, whose content is no longer available.`)];
+  if ("refused" in file) return [text(`${attached}, which the provider refused, so the conversation goes on without its content.`)];
+  if ("text" in file) {
+    note(file, at, carried);
+    return [text(`<file-attachment name="${attribute(part.name)}" type="${attribute(part.media_type)}">\n${file.text}\n</file-attachment>`)];
+  }
+  const kind = kindOf(part.media_type);
+  if (kind !== "image" && kind !== "pdf") return [text(`${attached}, which the app cannot send to the model.`)];
+  if (!model.input.includes("image")) return [text(`${attached}, which the app did not send, since the model takes no images.`)];
+  note(file, at, carried);
+  if (kind === "pdf") carried?.pdfs.push(part.name);
+  return [text(`${attached}.`), { type: "image", data: file.data, mimeType: part.media_type }];
+}
+
+// Notes a file whose content a call carries, where no call carried it with
+// success before.
+function note(file: KeptFile, at: CarriedFile, carried: Carried | undefined): void {
+  if (!("taken" in file) || file.taken !== true) carried?.files.push(at);
+}
+
+// A value in an attribute of the tag around a text file.
+function attribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 // The reply as pi wrote it, where the memory kept it, which only a reply that

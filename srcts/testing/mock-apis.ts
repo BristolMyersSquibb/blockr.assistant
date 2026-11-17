@@ -23,8 +23,11 @@
 // A call to a model streams a call of the tool list_blocks where the request
 // holds no result of a tool, and the reply DONE once it holds one, each in
 // the events of the call's API.
-// The mock records each request, which the tests read at /__requests and
-// clear with a POST to /__reset. The setup gives the tests the mock's origin,
+// A call whose request holds a file named refused.pdf, in the block of any
+// API for a file, gets an answer of 400 that says that the file could not be
+// processed, with a CORS header, as a provider refuses a file.
+// The mock records each request, with the body of a POST, which the tests
+// read at /__requests and clear with a POST to /__reset. The setup gives the tests the mock's origin,
 // its key and the reply DONE through Vitest's inject(), since the tests run in
 // the browser, which cannot import this file.
 
@@ -56,7 +59,12 @@ export interface RecordedRequest {
   readonly method: string;
   readonly path: string;
   readonly headers: Readonly<Record<string, string>>;
+  // The JSON of a POST's body.
+  readonly body?: unknown;
 }
+
+// The name of the file that the mock refuses.
+const REFUSED_FILE = "refused.pdf";
 
 type Body = Readonly<Record<string, unknown>>;
 
@@ -162,16 +170,21 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
 
-  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request) });
   if (request.method === "OPTIONS") {
+    recorded.push({ method: request.method, path: url.pathname, headers: headersOf(request) });
     preflight(request, response, base, origin);
     return;
   }
 
   const body = request.method === "POST" ? await bodyOf(request) : {};
+  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), ...(request.method === "POST" ? { body } : {}) });
   const refusal = refused(request, base);
   if (refusal !== undefined) {
     respond(response, 401, origin, { error: { message: refusal, type: "invalid_request_error" } });
+    return;
+  }
+  if (holdsFile(body, REFUSED_FILE)) {
+    respond(response, 400, origin, { type: "error", error: { type: "invalid_request_error", message: `The file ${REFUSED_FILE} could not be processed.` } });
     return;
   }
 
@@ -261,6 +274,22 @@ function answered(body: Body): boolean {
     const { type, role, content } = item as Readonly<Record<string, unknown>>;
     if (type === "function_call_output" || role === "tool") return true;
     return Array.isArray(content) && content.some((part: unknown) => typeof part === "object" && part !== null && (part as { type?: unknown }).type === "tool_result");
+  });
+}
+
+// Whether the request holds a file of the name given, in the block of any
+// API for a file: a document's title on Anthropic's API, and a file's name on
+// OpenAI's.
+function holdsFile(body: Body, name: string): boolean {
+  const listed = (value: unknown): readonly unknown[] => (Array.isArray(value) ? (value as unknown[]) : []);
+  return [...listed(body.input), ...listed(body.messages)].some((item) => {
+    const content = typeof item === "object" && item !== null ? (item as Body).content : undefined;
+    return listed(content).some((part) => {
+      if (typeof part !== "object" || part === null) return false;
+      const { title, filename, file } = part as Body;
+      const nested = typeof file === "object" && file !== null ? (file as Body).filename : undefined;
+      return title === name || filename === name || nested === name;
+    });
   });
 }
 

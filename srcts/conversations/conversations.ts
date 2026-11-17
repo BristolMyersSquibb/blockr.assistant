@@ -31,6 +31,10 @@
 //   loop's library wrote it, which the loop sends back to the model.
 // - The images that the results of a message of the role tool carried, which
 //   the loop sends to the model and the chat shows.
+// - The files that the user attached to a message, which the loop sends to
+//   the model and the chat opens. Once the provider refuses a file, the
+//   memory keeps only that it did, so that the conversation's later calls go
+//   without the file.
 // - Why the turn that ended at the message failed, which the chat shows.
 //
 // What the memory holds follows its conversation: it goes with a conversation
@@ -70,6 +74,9 @@ export interface Kept {
   // The images that the results of a message of the role tool carried, by the
   // id of each call.
   readonly images?: Readonly<Record<string, readonly KeptImage[]>>;
+  // The files that the user attached to a message, one for each of the
+  // message's parts of the type attachment, in their order.
+  readonly files?: readonly KeptFile[];
   // Why the turn that ended at the message failed.
   readonly failure?: string;
 }
@@ -79,6 +86,15 @@ export interface KeptImage {
   readonly data: string;
   readonly mimeType: string;
 }
+
+// A file that the user attached, as the memory keeps it: an image's or a
+// PDF's bytes, as base64, or a text file's text. It is taken once a call that
+// carried it succeeded, so that the provider took it. A file that the
+// provider refused keeps no content.
+export type KeptFile =
+  | { readonly data: string; readonly taken?: true }
+  | { readonly text: string; readonly taken?: true }
+  | { readonly refused: true };
 
 export interface Conversations {
   // Resolves once the conversations have opened, and rejects where the

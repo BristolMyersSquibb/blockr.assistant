@@ -24,7 +24,22 @@
 //   The transformContext takes the conversation in the state's shape, and the
 //   onPayload the request as the provider takes it.
 // - Before each call, it builds pi's messages from the conversation as the
-//   plugin holds it then (./messages.ts).
+//   plugin holds it then (./messages.ts), with the files that the user
+//   attached, which the memory keeps.
+// - It hands pi each PDF as an image, and turns it into the block of the
+//   call's API for a file in the request that pi writes (./files.ts). It does
+//   so through pi's onPayload, before the caller's onPayload sees the request.
+//
+// A provider may refuse a file that a call carries, as an image that it
+// cannot read, a PDF on an API that takes none, or a file larger than it
+// takes. It then answers the call with 400, 413, 415 or 422, as Anthropic's
+// and OpenAI's APIs answer a request that they refuse for what it holds. Both
+// put a CORS header on such an answer, so that the page reads its status
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
+// Pi writes the status into the text of its error alone, so the loop's fetch
+// keeps the status of each call's answer. A call that fails with one of those
+// statuses reports that the provider refused the request, with the files
+// that it carried and no call carried with success before.
 //
 // It reports to its caller as the turn runs, and pi waits for each report
 // before it goes on, so that a reply is in the conversation before the next
@@ -64,8 +79,9 @@ import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
+import { withFiles } from "./files.ts";
 import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
-import type { Answered } from "./messages.ts";
+import type { Answered, Carried, CarriedFile } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
 
@@ -145,6 +161,12 @@ export interface Call {
   // Why the call failed, where it failed. A call that the turn's signal
   // stopped did not fail.
   readonly failure?: string;
+  // The files that the user attached which the call carried, and no call
+  // carried with success before.
+  readonly files: readonly CarriedFile[];
+  // Whether the provider refused the request for what it held, as a failed
+  // call that the provider answered with 400, 413, 415 or 422.
+  readonly refused: boolean;
 }
 
 export interface Loop {
@@ -211,6 +233,10 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+  // What the call that goes out carries of the files that the user attached,
+  // and the status of the provider's answer to it, once it answered.
+  let carried: Carried = { files: [], pdfs: [] };
+  let status: number | undefined;
 
   const config: AgentLoopConfig = {
     model,
@@ -222,11 +248,21 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     transformContext: async (_messages, signal) => {
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
-      return callMessages(transformed, kept, model, turn.tools, prompt);
+      carried = { files: [], pdfs: [] };
+      status = undefined;
+      return callMessages(transformed, kept, model, turn.tools, prompt, carried);
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
-    fetch: keyless,
-    ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
+    fetch: async (input, init) => {
+      const response = await keyless(input, init);
+      status = response.status;
+      return response;
+    },
+    onPayload: (payload) => {
+      const filed = carried.pdfs.length === 0 ? undefined : withFiles(model.api, payload, carried.pdfs);
+      if (turn.onPayload === undefined) return filed;
+      return turn.onPayload(filed ?? payload) ?? filed;
+    },
   };
 
   const emit = async (event: AgentEvent): Promise<void> => {
@@ -236,7 +272,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(event.message));
+        if (event.message.role === "assistant") await turn.on.called(callOf(event.message, carried, status));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -343,13 +379,21 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
   return globalThis.fetch(input, { ...init, headers });
 }
 
-// A call that ended, with the reply that pi wrote.
-function callOf(reply: AssistantMessage): Call {
+// The statuses with which a provider refuses a request for what it holds.
+const REFUSED: ReadonlySet<number> = new Set([400, 413, 415, 422]);
+
+// A call that ended, with the reply that pi wrote, what the call carried of
+// the files that the user attached, and the status of the provider's answer,
+// where it answered.
+function callOf(reply: AssistantMessage, carried: Carried, status: number | undefined): Call {
   const written = replyOf(reply);
+  const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
-    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(failed ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    files: carried.files,
+    refused: failed && status !== undefined && REFUSED.has(status),
   };
 }
 

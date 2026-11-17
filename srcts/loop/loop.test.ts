@@ -324,14 +324,15 @@ describe("a turn on the loop", () => {
     expect(messages.map((m) => m.id)).not.toContain("board");
   });
 
-  test("hands pi the caller's onPayload", async () => {
+  test("hands the caller's onPayload each request, whose return replaces it", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
-    const onPayload = (payload: unknown): unknown => payload;
+    const onPayload = (payload: unknown): unknown => ({ ...(payload as object), replaced: true });
     const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { onPayload });
 
     await run();
 
-    expect(calls[0]?.options?.onPayload).toBe(onPayload);
+    const given = calls[0]?.options?.onPayload;
+    await expect(Promise.resolve(given?.({ model: "faux-1" }, ANTHROPIC_MODELS["claude-sonnet-5-5"]))).resolves.toEqual({ model: "faux-1", replaced: true });
   });
 
   test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {
@@ -340,6 +341,93 @@ describe("a turn on the loop", () => {
     await run();
 
     expect(messages[2]?.parts).toEqual([{ type: "tool_result", id: "c1", text: "Tool list_views not found", error: true }]);
+  });
+});
+
+describe("the files that a call carries", () => {
+  const pdf: Message = {
+    id: "u1",
+    role: "user",
+    parts: [
+      { type: "text", text: "Read the report." },
+      { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+      { type: "attachment", name: "plot.png", media_type: "image/png" },
+    ],
+    created: CREATED,
+  };
+
+  // A reply of pi's fake provider that first asks the page's fetch, as pi's
+  // APIs ask it for each call, and so meets the answer of the status given.
+  function answered(status: number, reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
+    return async (_context, options) => {
+      await options?.fetch?.("https://faux.invalid/v1/messages", { method: "POST" });
+      return reply;
+    };
+  }
+
+  // A turn of the conversation that holds the user's message with a PDF and
+  // an image, of which the memory keeps the PDF as taken where `taken` says
+  // so, on replies that the page's fetch meets with the statuses given.
+  function filed(replies: FauxResponseStep[], statuses: number[], taken = false) {
+    const queue = [...statuses];
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: queue.shift() ?? 200 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const turn = turnWith(replies);
+    turn.messages[0] = pdf;
+    turn.kept.set("u1", { files: [{ data: "JVBERi0=", ...(taken ? { taken: true as const } : {}) }, { data: "iVBORw0KGgo=" }] });
+    return turn;
+  }
+
+  test("reports each file that the call carried, which no call carried with success before", async () => {
+    const turn = filed([answered(200, fauxAssistantMessage("Read."))], [200], true);
+
+    await turn.run();
+
+    expect(turn.calls).toHaveLength(1);
+    expect(turn.calls[0]?.files).toEqual([{ message: "u1", index: 1, name: "plot.png" }]);
+    expect(turn.calls[0]?.refused).toBe(false);
+  });
+
+  test("reports that the provider refused the request where a failed call met an answer of 400, 413, 415 or 422", async () => {
+    for (const status of [400, 413, 415, 422]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: `${String(status)} Could not process the file` }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]).toMatchObject({ failure: `${String(status)} Could not process the file`, refused: true });
+      expect(turn.calls[0]?.files.map((file) => file.name)).toEqual(["report.pdf", "plot.png"]);
+    }
+  });
+
+  test("reports no refusal for a call that failed otherwise, as on an answer of 401, 429 or 500 or a failed connection", async () => {
+    for (const status of [401, 429, 500]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: "No." }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]?.refused).toBe(false);
+    }
+    const unasked = filed([fauxAssistantMessage("", { stopReason: "error", errorMessage: "Failed to fetch" })], []);
+    await unasked.run();
+    expect(unasked.calls[0]?.refused).toBe(false);
+  });
+
+  test("hands pi the PDF as an image of its type, after a line that names it", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const turn = filed([seen(calls, fauxAssistantMessage("Read."))], []);
+
+    await turn.run();
+
+    const user = calls[0]?.context?.messages.find((m) => m.role === "user");
+    expect(user?.content).toEqual([
+      { type: "text", text: "Read the report." },
+      { type: "text", text: 'The user attached the file "report.pdf", of the type application/pdf.' },
+      { type: "image", data: "JVBERi0=", mimeType: "application/pdf" },
+      { type: "text", text: 'The user attached the file "plot.png", of the type image/png.' },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+    ]);
   });
 });
 
