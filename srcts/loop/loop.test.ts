@@ -2,9 +2,9 @@
 // scripts: a turn as it streams, its tool calls, its calls to the model, what
 // each call sends, the settings of the model that it talks to, the message
 // of the app's after the conversation and the mark of Anthropic's cache
-// before it, a stop, a failed call and the tree of a turn's spans. The test
-// plays the turns, which keep each message that the loop reports in a
-// conversation of their own.
+// before it, a stop, a failed call, the tree of a turn's spans and the span of
+// a model call of the plugin's own. The test plays the turns, which keep each
+// message that the loop reports in a conversation of their own.
 // One test runs a call on pi's own code for Chat Completions instead, and
 // stops the call before it goes out, to read the marks of Anthropic's cache
 // that pi puts in the request.
@@ -112,6 +112,11 @@ function seen(into: { context?: TranscriptContext; options?: SimpleStreamOptions
     into.push({ context, ...(options === undefined ? {} : { options }) });
     return reply;
   };
+}
+
+// The id of the span's parent, or undefined for a root.
+function parentOf(span: ReadableSpan): string | undefined {
+  return span.parentSpanContext?.spanId;
 }
 
 describe("a turn on the loop", () => {
@@ -533,6 +538,22 @@ describe("a model call of the plugin's own", () => {
 
     expect(failures).toEqual(["Rate limited.", "The reply reached the model's cap for a reply, so it was cut off.", "The model wrote no text."]);
   });
+
+  test("runs in a span invoke_agent of its own, under which pi records the span of the call", async () => {
+    const recorded = recordSpans();
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([fauxAssistantMessage("The user said hi.")]);
+
+    await loop.callModel({ ...call, connection });
+
+    const made = recorded.span("invoke_agent");
+    const called = recorded.span("chat faux-1");
+    expect(parentOf(made)).toBeUndefined();
+    expect(made.attributes).toEqual({ "gen_ai.operation.name": "invoke_agent", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1" });
+    expect(parentOf(called)).toBe(made.spanContext().spanId);
+    expect(called.kind).toBe(SpanKind.CLIENT);
+    expect(called.attributes).toMatchObject({ "gen_ai.operation.name": "chat", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1" });
+  });
 });
 
 describe("a turn that stops or fails", () => {
@@ -681,11 +702,6 @@ describe("before each call", () => {
 });
 
 describe("the spans of a turn", () => {
-  // The id of the span's parent, or undefined for a root.
-  function parentOf(span: ReadableSpan): string | undefined {
-    return span.parentSpanContext?.spanId;
-  }
-
   test("hold each call to the model and each tool call under the turn's span, and core's span of a tool's request under the tool's span", async () => {
     const recorded = recordSpans();
     const stub = await startAssistant({ answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) } });

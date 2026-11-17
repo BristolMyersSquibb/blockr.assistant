@@ -1866,14 +1866,18 @@ async function loadLoop() {
   return createLoop(await import("./pi-62fb936b.js"));
 }
 function runTurn(pi, streams, turn) {
+  return startAgentSpan(turn, (span) => runAgent(pi, streams, turn, span));
+}
+function startAgentSpan(call, callback) {
   const attributes = {
     "gen_ai.operation.name": "invoke_agent",
-    "gen_ai.provider.name": providerName(turn.connection.api),
-    "gen_ai.request.model": turn.model
+    "gen_ai.provider.name": providerName(call.connection.api),
+    "gen_ai.request.model": call.model
   };
-  return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
+  return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, callback);
 }
 async function runAgent(pi, streams, turn, span) {
+  const turnContext = context2.active();
   const model2 = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = modelsAt(pi, streams, turn.connection, model2);
   const given2 = /* @__PURE__ */ new Map();
@@ -1891,7 +1895,7 @@ async function runAgent(pi, streams, turn, span) {
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
-      await turn.beforeCall?.(signal ?? turn.signal);
+      await context2.with(turnContext, () => turn.beforeCall?.(signal ?? turn.signal));
       const conversation2 = turn.messages();
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
       added = turn.appMessage === void 0 ? void 0 : await turn.appMessage();
@@ -1955,19 +1959,21 @@ function modelsAt(pi, streams, connection, model2) {
   );
   return models;
 }
-async function callModel(pi, streams, call) {
-  const model2 = buildModel(pi, call.model, call.connection, call.settings, call.listed);
-  const models = modelsAt(pi, streams, call.connection, model2);
-  const apiKey = await call.connection.apiKey() ?? NO_KEY2;
-  const reply = await models.completeSimple(
-    model2,
-    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" }
-  );
-  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
-  const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
-  const failure = findFailure(reply, text3);
-  return failure === void 0 ? { text: text3, usage } : { usage, failure };
+function callModel(pi, streams, call) {
+  return startAgentSpan(call, async (span) => {
+    const model2 = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+    const models = modelsAt(pi, streams, call.connection, model2);
+    const apiKey = await call.connection.apiKey() ?? NO_KEY2;
+    const reply = await models.completeSimple(
+      model2,
+      { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+      { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span }
+    );
+    const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+    const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
+    const failure = findFailure(reply, text3);
+    return failure === void 0 ? { text: text3, usage } : { usage, failure };
+  });
 }
 function findFailure(reply, text3) {
   switch (reply.stopReason) {

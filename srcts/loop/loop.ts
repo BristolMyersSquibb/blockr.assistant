@@ -73,7 +73,11 @@
 // 4. A tool runs its commands and sends its requests before its first await,
 //    or else inside context.with() of the context that it kept from before
 //    that await. So core puts its spans of them under the tool's span.
-// 5. The turn's span ends once the turn ends.
+// 5. The turn's span is active again as the loop calls what the caller does
+//    before a call. Compaction makes the calls that write a summary before
+//    its first await, so the spans of a summary that the call waits for go
+//    under the turn's span.
+// 6. The turn's span ends once the turn ends.
 //
 // The loop also makes the model calls of the plugin's own, which run on pi's
 // models alone, not on its agent loop: the call that writes a summary for
@@ -83,6 +87,11 @@
 // with the caller's system prompt and one message of the role user. It
 // declares no tools and holds no message of the app's
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+// Such a call runs in a span invoke_agent of its own, under the context that
+// is active as callModel() is called, and the loop gives pi that span, so
+// that pi records the span of the call under it, as ellmer records today's
+// title calls. A title, which the plugin asks for once a turn ended, starts a
+// trace of its own.
 // The loop also gives the context window of a model as pi takes it, by which
 // compaction judges when a conversation needs a summary.
 
@@ -265,16 +274,26 @@ export async function loadLoop(): Promise<Loop> {
 
 // Runs the turn in its span, invoke_agent.
 function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+  return startAgentSpan(turn, (span) => runAgent(pi, streams, turn, span));
+}
+
+// Runs the callback in a span invoke_agent under the context that is active
+// as it is called, with the provider and the model that the call talks to, as
+// ellmer's span of a turn has them.
+function startAgentSpan<T>(call: CallModel, callback: (span: TelemetrySpan) => Promise<T>): Promise<T> {
   const attributes = {
     "gen_ai.operation.name": "invoke_agent",
-    "gen_ai.provider.name": providerName(turn.connection.api),
-    "gen_ai.request.model": turn.model,
+    "gen_ai.provider.name": providerName(call.connection.api),
+    "gen_ai.request.model": call.model,
   };
-  return telemetryUnder(context.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
+  return telemetryUnder(context.active()).startSpan({ name: "invoke_agent", attributes }, callback);
 }
 
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
+  // The context in which the turn's span is active, which the loop can read
+  // only before its first await.
+  const turnContext = context.active();
   const model = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = modelsAt(pi, streams, turn.connection, model);
 
@@ -299,7 +318,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
-      await turn.beforeCall?.(signal ?? turn.signal);
+      await context.with(turnContext, () => turn.beforeCall?.(signal ?? turn.signal));
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
@@ -368,23 +387,25 @@ function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, co
   return models;
 }
 
-// Makes a model call of the plugin's own, with the settings of a turn's calls:
-// the same model, credential, identity and thinking level. It asks the
-// provider to cache nothing, since no later call starts as this one does, as
-// pi's own CLI asks for its summaries.
-async function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
-  const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
-  const models = modelsAt(pi, streams, call.connection, model);
-  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
-  const reply = await models.completeSimple(
-    model,
-    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
-  );
-  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
-  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
-  const failure = findFailure(reply, text);
-  return failure === undefined ? { text, usage } : { usage, failure };
+// Makes a model call of the plugin's own in its span, invoke_agent, with the
+// settings of a turn's calls: the same model, credential, identity and
+// thinking level. It asks the provider to cache nothing, since no later call
+// starts as this one does, as pi's own CLI asks for its summaries.
+function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
+  return startAgentSpan(call, async (span) => {
+    const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+    const models = modelsAt(pi, streams, call.connection, model);
+    const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+    const reply = await models.completeSimple(
+      model,
+      { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+      { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span },
+    );
+    const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+    const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
+    const failure = findFailure(reply, text);
+    return failure === undefined ? { text, usage } : { usage, failure };
+  });
 }
 
 // Why the model wrote no text, or undefined where it wrote one. A reply that
