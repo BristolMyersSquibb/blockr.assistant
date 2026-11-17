@@ -1,10 +1,12 @@
-// The spans of a turn, which go into core's traces through the OpenTelemetry
-// API that core maps on the page, under the names that ellmer gives the spans
-// of today's turns (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
+// The spans of a turn and of a model call of the plugin's own, which go into
+// core's traces through the OpenTelemetry API that core maps on the page,
+// under the names that ellmer gives the spans of today's turns
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 // The loop records the turn's span, invoke_agent, and a span
-// execute_tool <tool> under it for each tool call (./loop.ts). It records
-// them through the TelemetryContext of pi-telemetry that telemetryUnder()
-// gives. The loop also gives pi the turn's span, and pi then records the span
+// execute_tool <tool> under it for each tool call, and a span invoke_agent
+// for each model call of the plugin's own (./loop.ts). It records them
+// through the TelemetryContext of pi-telemetry that telemetryUnder() gives.
+// The loop also gives pi each span invoke_agent, and pi then records the span
 // of each call to the model under it.
 //
 // - The TelemetryContext starts each span under its parent's context. While
