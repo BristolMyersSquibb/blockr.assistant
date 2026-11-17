@@ -9,6 +9,7 @@
 import { createContext, useContext } from "react";
 import type { CoreApi } from "@blockr/core";
 import type { Running } from "../turns/index.ts";
+import type { KeyState } from "../visitor-key/index.ts";
 import type { OpenedFile } from "./files.tsx";
 
 export interface ChatActions {
@@ -24,6 +25,15 @@ export interface ChatActions {
   readonly addFiles: (files: readonly File[]) => void;
   // Opens a file of a message that the user sent large, in a dialog.
   readonly openFile: (file: OpenedFile) => void;
+  // Gives the visitor's own key, which the calls carry from then on.
+  readonly giveKey: (key: string) => void;
+}
+
+// What the field for the visitor's key shows: why the chat asks for a key,
+// and the host of the base URL that the key is for, such as api.openai.com.
+export interface KeyField {
+  readonly state: Exclude<KeyState, { readonly kind: "given" }>;
+  readonly host: string;
 }
 
 export interface ChatState {
@@ -45,6 +55,12 @@ export interface ChatState {
   // What the chat says of the files that it left out of the message field as
   // the user last added files, if any.
   readonly filesNote: string | undefined;
+  // What the field for the visitor's key shows, where the chat asks for a
+  // key, or undefined where it shows no such field.
+  readonly keyField: KeyField | undefined;
+  // Whether the chat lacks the visitor's key, which it then asks for, and so
+  // sends nothing.
+  readonly noKey: boolean;
 }
 
 export const ChatActionsContext = createContext<ChatActions | undefined>(undefined);

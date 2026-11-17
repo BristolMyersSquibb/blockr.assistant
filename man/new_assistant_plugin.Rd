@@ -94,8 +94,8 @@ The assistant reads a key from this option alone, never from a variable
 such as \code{OPENAI_API_KEY}, so that a key set for code in R reaches no
 browser unless the deployment sets it here.
 Any visitor who can use the assistant can read the key from the page.
-Where the option is unset, each turn fails with the error
-\code{assistant_call_failed}.
+Where the option is unset, the chat asks each visitor for a key of their
+own.
 \item The blockr option \code{assistant_models} gives the ids of the models offered,
 the first being the default, as a character vector or as one string that
 separates them by commas, such as \code{"gpt-5.4,gpt-5.4-nano"}.
@@ -104,7 +104,7 @@ of models that take tools, the first being the default.
 }
 
 The assistant asks for the base URL's list with the key as each board
-opens.
+opens, and with the visitor's key as soon as the visitor gives it.
 Where the base URL refuses the key, it raises the error
 \code{assistant_call_failed}.
 Where the list fails otherwise, or holds no model that takes tools, it
@@ -112,6 +112,27 @@ raises the error \code{assistant_models_failed}, and asks again as the user
 sends.
 A conversation talks to its pick of the model where the deployment offers
 it, and to the default otherwise.
+
+OpenAI's refusal of a call's key reaches the page as a failed connection.
+So where a call with a key fails that way, the assistant asks the base URL
+for its list of models with the same key, which tells a refused key from a
+lost connection.
+The error \code{assistant_call_failed} then says that the base URL refused the
+key, or, where the list fails as well, that the connection was lost and
+that the key may be wrong.
+
+The plugin keeps the visitor's own key in the page's memory, and writes it
+to neither the board, R nor the browser's storage.
+So another board that opens in the page keeps the key, and a reload asks
+for it again.
+The browser takes the field for the key for a login, with the host of the
+base URL as the user name, so that its password manager can save the key,
+where the visitor lets it, and fill it in after a reload.
+Until the visitor gives a key, the chat sends nothing.
+Where the base URL refuses the key, for a call or for its list of models,
+the chat asks for a key again.
+Where the connection was lost and the key may be wrong, the chat shows the
+field for the key again, holding the key.
 }
 
 \section{Model settings}{

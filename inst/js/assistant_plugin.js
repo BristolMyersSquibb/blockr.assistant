@@ -556,18 +556,59 @@ function holdLock(locks) {
 function nothing() {
 }
 
+// srcts/visitor-key/visitor-key.ts
+var MISSING = { kind: "missing" };
+function keyOf(state) {
+  return state.kind === "given" || state.kind === "lost" ? state.key : void 0;
+}
+function createVisitorKey() {
+  let state = MISSING;
+  const listeners = /* @__PURE__ */ new Set();
+  function set(next) {
+    state = next;
+    for (const listener of [...listeners]) listener();
+  }
+  return {
+    current() {
+      return state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    give(key) {
+      if (state.kind !== "given" || state.key !== key) set({ kind: "given", key });
+    },
+    refused(key) {
+      if (keyOf(state) === key) set({ kind: "refused" });
+    },
+    lost(key) {
+      if (keyOf(state) === key && state.kind !== "lost") set({ kind: "lost", key });
+    },
+    took(key) {
+      if (state.kind === "lost" && state.key === key) set({ kind: "given", key });
+    }
+  };
+}
+var page = createVisitorKey();
+function pageKey() {
+  return page;
+}
+
 // srcts/turns/prepare.ts
-var NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+var NO_KEY = "The assistant has no key for its calls, since the visitor has given none, and the app sets none in the blockr option assistant_api_key.";
 var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 var STOPPED = { kind: "stopped" };
-async function prepareCall(options, picked, stopped) {
+async function prepareCall(options, picked, stopped, carried = () => void 0) {
   let deployment;
   try {
     deployment = await options.deployment;
   } catch (error) {
     return failed(`The assistant cannot call a model: ${messageOf(error)}`);
   }
-  if (deployment.credential.kind === "visitor") return failed(NO_KEY);
+  if (deployment.credential.kind === "visitor" && keyOf(options.key.current()) === void 0) return failed(NO_KEY);
   const offered = await options.models.offered();
   if (stopped()) return STOPPED;
   const pick = picked();
@@ -585,16 +626,38 @@ async function prepareCall(options, picked, stopped) {
   return {
     kind: "prepared",
     loop,
-    model: { connection: connectionOf(deployment), model: model2, settings: settings.get(model2), listed: offered.settings?.get(model2) }
+    model: { connection: connectionOf(deployment, options.key, carried), model: model2, settings: settings.get(model2), listed: offered.settings?.get(model2) }
   };
 }
 function failed(why) {
   return { kind: "failed", why, raise: true };
 }
-function connectionOf(deployment) {
-  const { credential } = deployment;
-  const key = credential.kind === "deployment" ? credential.key : void 0;
-  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
+function connectionOf(deployment, visitor, carried) {
+  const { baseUrl, api: api2, credential } = deployment;
+  switch (credential.kind) {
+    case "none":
+      return { baseUrl, api: api2, apiKey: () => Promise.resolve(void 0) };
+    case "deployment":
+      return {
+        baseUrl,
+        api: api2,
+        apiKey() {
+          carried({ key: credential.key, visitor: false });
+          return Promise.resolve(credential.key);
+        }
+      };
+    case "visitor":
+      return {
+        baseUrl,
+        api: api2,
+        apiKey() {
+          const key = keyOf(visitor.current());
+          if (key === void 0) return Promise.reject(new Error(NO_KEY));
+          carried({ key, visitor: true });
+          return Promise.resolve(key);
+        }
+      };
+  }
 }
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
@@ -604,6 +667,7 @@ function messageOf(error) {
 var STOP = new DOMException("The user stopped the turn.", "AbortError");
 var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
 var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
+var LOST = "The connection was lost, and the key may be wrong.";
 function createTurns(core, signal, options) {
   const { conversations, callFailed } = options;
   const locks = "locks" in options ? options.locks : pageLocks();
@@ -639,13 +703,44 @@ function createTurns(core, signal, options) {
     keep2(conversation2, message2);
     change(conversation2, files, () => ({ refused: true }));
   }
-  function succeeded(conversation2, files) {
+  function succeeded(turn, files) {
     callFailed.withdraw();
-    if (refusedIn === conversation2) {
+    if (refusedIn === turn.conversation) {
       attachmentRefused.withdraw();
       refusedIn = void 0;
     }
-    change(conversation2, files, taken);
+    change(turn.conversation, files, taken);
+    if (turn.carried?.visitor === true) options.key.took(turn.carried.key);
+  }
+  async function failed2(turn, call) {
+    const why = `The assistant's call to the model failed: ${call.failure}`;
+    const { carried } = turn;
+    if (carried === void 0 || call.answer === void 0) {
+      fail(turn.conversation, why);
+      return;
+    }
+    const { key, visitor } = carried;
+    if (call.answer === "refused") {
+      fail(turn.conversation, why);
+      if (visitor) options.key.refused(key);
+      return;
+    }
+    const checked = await options.models.check(key);
+    if (closed2()) return;
+    switch (checked.kind) {
+      case "refused":
+        fail(turn.conversation, `${sentence(why)} ${checked.message}`);
+        if (visitor) options.key.refused(key);
+        return;
+      case "listed":
+        fail(turn.conversation, why);
+        if (visitor) options.key.took(key);
+        return;
+      case "failed":
+        fail(turn.conversation, `${sentence(why)} ${LOST}`);
+        if (visitor) options.key.lost(key);
+        return;
+    }
   }
   function change(conversation2, files, changing) {
     const byMessage = /* @__PURE__ */ new Map();
@@ -687,16 +782,17 @@ function createTurns(core, signal, options) {
         if (input > 0 || output > 0 || total > 0) {
           await write(() => conversations.addUsage(turn.conversation, input, output, total));
         }
-        if (call.failure !== void 0) {
+        const { failure } = call;
+        if (failure !== void 0) {
           if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
-            turn.overflow = call.failure;
+            turn.overflow = failure;
             turn.overflowed = call.files;
           } else if (writes && !closed2()) {
-            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, call.failure);
-            else fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, failure);
+            else await failed2(turn, { ...call, failure });
           }
         } else if (!turn.controller.signal.aborted) {
-          succeeded(turn.conversation, call.files);
+          succeeded(turn, call.files);
         }
         changed();
       },
@@ -713,7 +809,14 @@ function createTurns(core, signal, options) {
   }
   async function runTurn2(turn) {
     if (conversations.get(turn.conversation) === void 0) return;
-    const prepared = await prepareCall(options, () => conversations.get(turn.conversation)?.model ?? null, () => stopped(turn));
+    const prepared = await prepareCall(
+      options,
+      () => conversations.get(turn.conversation)?.model ?? null,
+      () => stopped(turn),
+      (carried) => {
+        turn.carried = carried;
+      }
+    );
     if (prepared.kind === "stopped") return;
     if (prepared.kind === "failed") {
       if (!prepared.raise) keep2(turn.conversation, prepared.why);
@@ -757,7 +860,7 @@ function createTurns(core, signal, options) {
       if (running !== void 0) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, overflow: void 0, overflowed: [], retried: false, controller: new AbortController() };
+      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, carried: void 0, overflow: void 0, overflowed: [], retried: false, controller: new AbortController() };
       const close = () => {
         turn.controller.abort(CLOSED);
       };
@@ -795,6 +898,9 @@ function createTurns(core, signal, options) {
 }
 function taken(file) {
   return "refused" in file || file.taken === true ? file : { ...file, taken: true };
+}
+function sentence(text3) {
+  return /[.!?]$/.test(text3) ? text3 : `${text3}.`;
 }
 
 // srcts/compaction/prompt.ts
@@ -1930,7 +2036,18 @@ async function runAgent(pi, streams, turn, span) {
   const encodings = /* @__PURE__ */ new Map();
   let carried = { files: [], pdfs: [] };
   let status;
+  let unread = false;
   let added;
+  const fetch = async (input, init) => {
+    try {
+      const response = await keyless(input, init);
+      status = response.status;
+      return response;
+    } catch (error) {
+      if (error instanceof TypeError) unread = true;
+      throw error;
+    }
+  };
   const config = {
     model: model2,
     ...level2 === void 0 ? {} : { reasoning: level2 },
@@ -1944,17 +2061,14 @@ async function runAgent(pi, streams, turn, span) {
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
       status = void 0;
+      unread = false;
       await encodeFiles(transformed, kept, encodings);
       added = turn.appMessage === void 0 ? void 0 : await turn.appMessage();
       const messages = callMessages(transformed, kept, model2, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === void 0 ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY2,
-    fetch: async (input, init) => {
-      const response = await keyless(input, init);
-      status = response.status;
-      return response;
-    },
+    fetch,
     // The loop turns the PDFs into the API's blocks for a file, then moves
     // the cache mark, and then hands the request to the caller's onPayload.
     onPayload: (payload) => {
@@ -1972,7 +2086,7 @@ async function runAgent(pi, streams, turn, span) {
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model2, carried, status));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model2, carried, status, unread));
         return;
       case "tool_execution_end":
         if (!given2.has(event.toolCallId) && !turn.signal.aborted) {
@@ -2087,8 +2201,9 @@ function keyless(input, init) {
   return globalThis.fetch(input, { ...init, headers });
 }
 var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
-function callOf(pi, reply, model2, carried, status) {
+function callOf(pi, reply, model2, carried, status, unread) {
   const written = convertReply(reply);
+  const answer = unread ? "unread" : status === 401 || status === 403 ? "refused" : void 0;
   const failed2 = reply.stopReason === "error";
   return {
     ...written === void 0 ? {} : { reply: written },
@@ -2096,7 +2211,8 @@ function callOf(pi, reply, model2, carried, status) {
     ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
     refused: failed2 && status !== void 0 && REFUSED.has(status),
-    ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {}
+    ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {},
+    ...failed2 && answer !== void 0 ? { answer } : {}
   };
 }
 function agentTool(tool2, given2, turn) {
@@ -2443,6 +2559,9 @@ var NONE2 = { offered: { models: [] }, again: false };
 function createModels(core, signal, options) {
   const modelsFailed = heldError(core, signal, "assistant_models_failed");
   const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const visitor = options.key;
+  let visitorAuthenticates = false;
+  let askedWith;
   async function ask() {
     let deployment;
     try {
@@ -2452,18 +2571,32 @@ function createModels(core, signal, options) {
     }
     if (deployment.models !== void 0) return { offered: { models: deployment.models }, again: false };
     const { credential } = deployment;
-    if (credential.kind === "visitor") return NONE2;
-    const listed3 = await askList(deployment, credential.kind === "deployment" ? credential.key : void 0, fetch, signal);
-    if (signal.aborted) return NONE2;
+    let key;
+    if (credential.kind === "visitor") {
+      visitorAuthenticates = true;
+      key = keyOf(visitor.current());
+      if (key === void 0) return NONE2;
+      askedWith = key;
+    } else if (credential.kind === "deployment") {
+      key = credential.key;
+    }
+    const visitorKey = credential.kind === "visitor" ? key : void 0;
+    const listed3 = await askList(deployment, key, fetch, signal);
+    if (signal.aborted || visitorKey !== void 0 && keyOf(visitor.current()) !== visitorKey) return NONE2;
     switch (listed3.kind) {
       case "listed": {
         modelsFailed.withdraw();
+        if (visitorKey !== void 0) visitor.took(visitorKey);
         const { models, settings } = listed3;
         return { offered: { models, ...settings.size === 0 ? {} : { settings } }, again: false };
       }
       case "refused":
         modelsFailed.withdraw();
         options.callFailed.raise(listed3.message);
+        if (visitorKey !== void 0) {
+          if (askedWith === visitorKey) askedWith = void 0;
+          visitor.refused(visitorKey);
+        }
         return { offered: { models: [], failure: listed3.message }, again: true };
       case "failed":
         modelsFailed.raise(listed3.message);
@@ -2471,10 +2604,25 @@ function createModels(core, signal, options) {
     }
   }
   let last = ask();
+  const unsubscribe = visitor.subscribe(() => {
+    const key = keyOf(visitor.current());
+    if (!visitorAuthenticates || signal.aborted || key === void 0 || key === askedWith) return;
+    last = ask();
+  });
+  signal.addEventListener("abort", unsubscribe, { once: true });
   return {
     offered() {
       last = last.then((asked) => asked.again && !signal.aborted ? ask() : asked);
       return last.then((asked) => asked.offered);
+    },
+    async check(key) {
+      let deployment;
+      try {
+        deployment = await options.deployment;
+      } catch (error) {
+        return { kind: "failed", message: `The assistant cannot call a model: ${error instanceof Error ? error.message : String(error)}` };
+      }
+      return askList(deployment, key, fetch, signal);
     }
   };
 }
@@ -3967,10 +4115,11 @@ function openAssistant(core, signal, options = {}) {
   const deployment = options.deployment ?? readDeployment(core);
   deployment.catch(() => void 0);
   const callFailed = heldError(core, signal, "assistant_call_failed");
-  const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
+  const key = options.key ?? pageKey();
+  const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
-  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, load });
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -3978,12 +4127,13 @@ function openAssistant(core, signal, options = {}) {
     models,
     settings,
     callFailed,
+    key,
     prompt,
     compaction,
     load,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  const assistant = { conversations, skills, models, turns, compaction, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
@@ -4011,12 +4161,12 @@ function nextAssistant(core) {
 }
 
 // srcts/chat/panel.tsx
-import { useEffect as useEffect4, useState as useState4 } from "react";
+import { useEffect as useEffect5, useState as useState5 } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo3, useRef as useRef4, useState as useState3 } from "react";
+import { useCallback as useCallback2, useMemo as useMemo3, useRef as useRef4, useState as useState4 } from "react";
 
 // srcts/chat/attach.ts
 function attachmentAdapter() {
@@ -4270,7 +4420,7 @@ var PLACEHOLDER = "Ask about your board";
 function Composer() {
   const { ComposerPrimitive, useAui, useAuiState } = libraries();
   const { addFiles: addFiles2, stop } = useChatActions();
-  const { filesNote, history, running, runsHere, titleOf } = useChat();
+  const { filesNote, history, noKey, running, runsHere, titleOf } = useChat();
   const aui = useAui();
   const text3 = useAuiState(({ composer }) => composer.text);
   const field = useRef2(null);
@@ -4307,7 +4457,7 @@ function Composer() {
     addFiles2([pastedFile(pasted)]);
   };
   const waitsFor = running === void 0 || runsHere ? void 0 : titleOf(running.conversation) ?? "another conversation";
-  const sendLabel = waitsFor === void 0 ? "Send" : `Sends once the turn in \u201C${waitsFor}\u201D ends`;
+  const sendLabel = noKey ? "Sends once you enter your key" : waitsFor === void 0 ? "Send" : `Sends once the turn in \u201C${waitsFor}\u201D ends`;
   return /* @__PURE__ */ jsxs2(ComposerPrimitive.Root, { className: "blockr-assistant-composer", children: [
     waitsFor === void 0 ? null : /* @__PURE__ */ jsxs2("p", { className: "blockr-assistant-composer-note", children: [
       "A turn runs in \u201C",
@@ -4368,7 +4518,7 @@ function Composer() {
 }
 
 // srcts/chat/hooks.ts
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect as useEffect2, useState as useState2, useSyncExternalStore } from "react";
 function useBoard(core) {
   const subscribe = useCallback((changed) => core.store.subscribe(changed), [core]);
   const board = useCallback(() => core.store.board(), [core]);
@@ -4389,22 +4539,93 @@ function useRunning(turns) {
   const current = useCallback(() => turns.current(), [turns]);
   return useSyncExternalStore(subscribe, current);
 }
+function useVisitorKey(key) {
+  const subscribe = useCallback((changed) => key.subscribe(changed), [key]);
+  const current = useCallback(() => key.current(), [key]);
+  return useSyncExternalStore(subscribe, current);
+}
+function useDeployment(deployment) {
+  const [read, setRead] = useState2(void 0);
+  useEffect2(() => {
+    let live = true;
+    deployment.then(
+      (given2) => {
+        if (live) setRead({ of: deployment, deployment: given2 });
+      },
+      () => void 0
+    );
+    return () => {
+      live = false;
+    };
+  }, [deployment]);
+  return read?.of === deployment ? read.deployment : void 0;
+}
+
+// srcts/chat/key.tsx
+import { useId } from "react";
+import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
+function KeyForm() {
+  const { keyField } = useChat();
+  if (keyField === void 0) return null;
+  return /* @__PURE__ */ jsx3(Field, { field: keyField }, keyField.state.kind);
+}
+function Field({ field }) {
+  const { giveKey } = useChatActions();
+  const note2 = useId();
+  const { state } = field;
+  const submit = (event) => {
+    event.preventDefault();
+    const given2 = new FormData(event.currentTarget).get("key");
+    const key = typeof given2 === "string" ? given2.trim() : "";
+    if (key !== "") giveKey(key);
+  };
+  return /* @__PURE__ */ jsxs3("form", { className: "blockr-assistant-key", "data-asks": state.kind, onSubmit: submit, children: [
+    /* @__PURE__ */ jsx3("p", { id: note2, className: "blockr-assistant-key-note", role: state.kind === "missing" ? void 0 : "alert", children: noteOf(field) }),
+    /* @__PURE__ */ jsxs3("div", { className: "blockr-assistant-key-field", children: [
+      /* @__PURE__ */ jsx3("input", { type: "text", name: "username", value: field.host, autoComplete: "username", readOnly: true, hidden: true }),
+      /* @__PURE__ */ jsx3(
+        "input",
+        {
+          type: "password",
+          name: "key",
+          defaultValue: state.kind === "lost" ? state.key : "",
+          placeholder: "API key",
+          "aria-label": "Your API key",
+          "aria-describedby": note2,
+          autoComplete: "current-password",
+          spellCheck: false
+        }
+      ),
+      /* @__PURE__ */ jsx3("button", { type: "submit", children: "Use key" })
+    ] })
+  ] });
+}
+function noteOf({ state, host }) {
+  switch (state.kind) {
+    case "missing":
+      return `Enter your API key for ${host}. The assistant keeps it only until the page reloads.`;
+    case "refused":
+      return `The server at ${host} refused your key. Enter another one.`;
+    case "lost":
+      return `The connection to ${host} was lost, and your key may be wrong. Change it, or send your message again.`;
+  }
+}
 
 // srcts/chat/links.tsx
-import { useEffect as useEffect2, useRef as useRef3 } from "react";
-import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
+import { useEffect as useEffect3, useRef as useRef3 } from "react";
+import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var always = false;
-function leavesSite(href, page) {
+function leavesSite(href, page2) {
   try {
-    const url = new URL(href, page);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin !== new URL(page).origin;
+    const url = new URL(href, page2);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin !== new URL(page2).origin;
   } catch {
     return false;
   }
 }
 function TextLink({ href, title: title2, children }) {
   const { openLink } = useChatActions();
-  return /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsx4(
     "a",
     {
       href,
@@ -4422,7 +4643,7 @@ function TextLink({ href, title: title2, children }) {
 }
 function LinkDialog({ url, onClose }) {
   const ref = useRef3(null);
-  useEffect2(() => {
+  useEffect3(() => {
     const dialog = ref.current;
     if (dialog === null) return;
     if (url !== void 0 && !dialog.open) {
@@ -4436,12 +4657,12 @@ function LinkDialog({ url, onClose }) {
     if (url !== void 0) globalThis.open(url, "_blank", "noopener,noreferrer");
     onClose();
   };
-  return /* @__PURE__ */ jsxs3("dialog", { ref, className: "blockr-assistant-dialog", "aria-labelledby": "blockr-assistant-dialog-title", onClose, children: [
-    /* @__PURE__ */ jsx3("h2", { id: "blockr-assistant-dialog-title", children: "External Link" }),
-    /* @__PURE__ */ jsx3("p", { children: "This link will take you to an external website:" }),
-    /* @__PURE__ */ jsx3("p", { className: "blockr-assistant-dialog-url", children: url }),
-    /* @__PURE__ */ jsxs3("div", { className: "blockr-assistant-dialog-buttons", children: [
-      /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsxs4("dialog", { ref, className: "blockr-assistant-dialog", "aria-labelledby": "blockr-assistant-dialog-title", onClose, children: [
+    /* @__PURE__ */ jsx4("h2", { id: "blockr-assistant-dialog-title", children: "External Link" }),
+    /* @__PURE__ */ jsx4("p", { children: "This link will take you to an external website:" }),
+    /* @__PURE__ */ jsx4("p", { className: "blockr-assistant-dialog-url", children: url }),
+    /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-dialog-buttons", children: [
+      /* @__PURE__ */ jsx4(
         "button",
         {
           type: "button",
@@ -4452,7 +4673,7 @@ function LinkDialog({ url, onClose }) {
           children: "Always open external links"
         }
       ),
-      /* @__PURE__ */ jsx3(
+      /* @__PURE__ */ jsx4(
         "button",
         {
           type: "button",
@@ -4463,7 +4684,7 @@ function LinkDialog({ url, onClose }) {
           children: "Open Link"
         }
       ),
-      /* @__PURE__ */ jsx3("button", { type: "button", className: "blockr-assistant-dialog-cancel", onClick: onClose, children: "Cancel" })
+      /* @__PURE__ */ jsx4("button", { type: "button", className: "blockr-assistant-dialog-cancel", onClick: onClose, children: "Cancel" })
     ] })
   ] });
 }
@@ -4663,8 +4884,8 @@ function greetingOf(board) {
 }
 
 // srcts/chat/markdown.tsx
-import { useEffect as useEffect3, useState as useState2 } from "react";
-import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
+import { useEffect as useEffect4, useState as useState3 } from "react";
+import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
   a: TextLink,
@@ -4675,18 +4896,18 @@ var plugins;
 function MarkdownText() {
   const { MarkdownTextPrimitive, remarkGfm } = libraries();
   plugins ??= [remarkGfm];
-  return /* @__PURE__ */ jsx4(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
+  return /* @__PURE__ */ jsx5(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
 }
 function Markdown({ text: text3, running = false }) {
   const { TextMessagePartProvider } = libraries();
-  return /* @__PURE__ */ jsx4(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx4(MarkdownText, {}) });
+  return /* @__PURE__ */ jsx5(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx5(MarkdownText, {}) });
 }
 function Table({ children }) {
-  return /* @__PURE__ */ jsx4("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx4("table", { children }) });
+  return /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx5("table", { children }) });
 }
 function CodeHeader({ language, code }) {
-  const [copied, setCopied] = useState2(false);
-  useEffect3(() => {
+  const [copied, setCopied] = useState3(false);
+  useEffect4(() => {
     if (!copied) return;
     const timer = setTimeout(() => {
       setCopied(false);
@@ -4695,9 +4916,9 @@ function CodeHeader({ language, code }) {
       clearTimeout(timer);
     };
   }, [copied]);
-  return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-code-header", children: [
-    /* @__PURE__ */ jsx4("span", { children: language ?? "" }),
-    /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsxs5("div", { className: "blockr-assistant-code-header", children: [
+    /* @__PURE__ */ jsx5("span", { children: language ?? "" }),
+    /* @__PURE__ */ jsx5(
       "button",
       {
         type: "button",
@@ -4837,24 +5058,24 @@ function dotColor(status, dot) {
 }
 
 // srcts/chat/tools.tsx
-import { Fragment, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var EDITS = /* @__PURE__ */ new Set(["edit", "undo_edit"]);
 function ToolRows({ rows }) {
-  return /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx5(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
+  return /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx6(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
 }
 function ToolRow({ row }) {
   const { waiting: waiting2 } = useChat();
   const states = row.calls.map((call) => stateOf(call, waiting2));
   const state = rowState(states);
-  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx5(Edits, { calls: row.calls }) : null;
-  return /* @__PURE__ */ jsxs5("details", { className: "blockr-assistant-tool", "data-state": state, children: [
-    /* @__PURE__ */ jsxs5("summary", { children: [
-      /* @__PURE__ */ jsx5(StateMark, { state }),
-      /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
-      row.calls.length > 1 ? /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
+  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx6(Edits, { calls: row.calls }) : null;
+  return /* @__PURE__ */ jsxs6("details", { className: "blockr-assistant-tool", "data-state": state, children: [
+    /* @__PURE__ */ jsxs6("summary", { children: [
+      /* @__PURE__ */ jsx6(StateMark, { state }),
+      /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
+      row.calls.length > 1 ? /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
       edits
     ] }),
-    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx5(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
+    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx6(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
   ] });
 }
 function Edits({ calls }) {
@@ -4865,10 +5086,10 @@ function Edits({ calls }) {
   const blocks = /* @__PURE__ */ new Map();
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);
   const refused2 = views.flatMap((view) => view.refused === void 0 ? [] : [view.refused]);
-  return /* @__PURE__ */ jsxs5("span", { className: "blockr-assistant-edit", children: [
-    commands.length > 0 ? /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
-    blocks.size > 0 ? /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx5(Block, { block }, block.id)) }) : null,
-    refused2.map((refusal, index) => /* @__PURE__ */ jsxs5("span", { className: "blockr-assistant-edit-refused", children: [
+  return /* @__PURE__ */ jsxs6("span", { className: "blockr-assistant-edit", children: [
+    commands.length > 0 ? /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
+    blocks.size > 0 ? /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx6(Block, { block }, block.id)) }) : null,
+    refused2.map((refusal, index) => /* @__PURE__ */ jsxs6("span", { className: "blockr-assistant-edit-refused", children: [
       refusal.command === void 0 ? "Refused" : `Refused by ${refusal.command}`,
       refusal.failures.length > 0 ? `: ${refusal.failures.join(" ")}` : ""
     ] }, index))
@@ -4877,26 +5098,26 @@ function Edits({ calls }) {
 function Block({ block }) {
   const dot = block.status === void 0 ? void 0 : dotOf(block.status);
   const style = dot === void 0 || block.status === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(block.status, dot) };
-  return /* @__PURE__ */ jsxs5("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
-    dot === void 0 ? null : /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
-    /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-block-name", children: block.name })
+  return /* @__PURE__ */ jsxs6("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
+    dot === void 0 ? null : /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
+    /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-block-name", children: block.name })
   ] });
 }
 function CallDetails({ call, state }) {
-  return /* @__PURE__ */ jsxs5("div", { className: "blockr-assistant-call", "data-state": state, children: [
-    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-call-label", children: "Args" }),
-    /* @__PURE__ */ jsx5("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
-    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-call-label", children: "Result" }),
-    /* @__PURE__ */ jsx5(Result, { call, state })
+  return /* @__PURE__ */ jsxs6("div", { className: "blockr-assistant-call", "data-state": state, children: [
+    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-call-label", children: "Args" }),
+    /* @__PURE__ */ jsx6("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
+    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-call-label", children: "Result" }),
+    /* @__PURE__ */ jsx6(Result, { call, state })
   ] });
 }
 function Result({ call, state }) {
-  if (state === "running") return /* @__PURE__ */ jsx5("p", { className: "blockr-assistant-call-note", children: "Running" });
-  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx5("p", { className: "blockr-assistant-call-note", children: ENDED });
+  if (state === "running") return /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-call-note", children: "Running" });
+  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-call-note", children: ENDED });
   const { text: text3, images, count } = call.result;
-  return /* @__PURE__ */ jsxs5(Fragment, { children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx5("pre", { className: "blockr-assistant-call-result", children: text3 }),
-    images.map((image2, index) => /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsxs6(Fragment, { children: [
+    text3 === "" ? null : /* @__PURE__ */ jsx6("pre", { className: "blockr-assistant-call-result", children: text3 }),
+    images.map((image2, index) => /* @__PURE__ */ jsx6(
       "img",
       {
         className: "blockr-assistant-call-image",
@@ -4905,12 +5126,12 @@ function Result({ call, state }) {
       },
       index
     )),
-    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx5("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
+    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
   ] });
 }
 function StateMark({ state }) {
   const label = { running: "Running", done: "Done", failed: "Failed", ended: "Ended before it returned" }[state];
-  return /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
+  return /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
 }
 function stateOf(call, waiting2) {
   if (call.result === void 0) return waiting2.has(call.id) ? "running" : "ended";
@@ -4927,15 +5148,15 @@ function argsText(args) {
 }
 
 // srcts/chat/transcript.tsx
-import { jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
+import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
 function Transcript() {
   const { AuiIf, ThreadPrimitive } = libraries();
-  return /* @__PURE__ */ jsxs6(ThreadPrimitive.Viewport, { className: "blockr-assistant-transcript", children: [
-    /* @__PURE__ */ jsx6(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx6(Greeting, {}) }),
-    /* @__PURE__ */ jsx6(ThreadPrimitive.Messages, { children: drawMessage }),
-    /* @__PURE__ */ jsx6(Working, {}),
-    /* @__PURE__ */ jsx6(Compacting, {}),
-    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx6(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx6("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx6("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
+  return /* @__PURE__ */ jsxs7(ThreadPrimitive.Viewport, { className: "blockr-assistant-transcript", children: [
+    /* @__PURE__ */ jsx7(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx7(Greeting, {}) }),
+    /* @__PURE__ */ jsx7(ThreadPrimitive.Messages, { children: drawMessage }),
+    /* @__PURE__ */ jsx7(Working, {}),
+    /* @__PURE__ */ jsx7(Compacting, {}),
+    /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx7(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx7("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx7("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
   ] });
 }
 function isEmpty(state) {
@@ -4944,27 +5165,27 @@ function isEmpty(state) {
 function drawMessage({ message: message2 }) {
   switch (message2.role) {
     case "user":
-      return /* @__PURE__ */ jsx6(UserMessage, {});
+      return /* @__PURE__ */ jsx7(UserMessage, {});
     case "system":
-      return /* @__PURE__ */ jsx6(Summary, {});
+      return /* @__PURE__ */ jsx7(Summary, {});
     default:
-      return /* @__PURE__ */ jsx6(Reply, {});
+      return /* @__PURE__ */ jsx7(Reply, {});
   }
 }
 function Greeting() {
   const { core, send } = useChatActions();
-  const { running } = useChat();
+  const { noKey, running } = useChat();
   const board = useBoard(core);
   const { lead, note: note2, suggestions } = greetingOf(board);
-  return /* @__PURE__ */ jsxs6("div", { className: "blockr-assistant-greeting", children: [
-    /* @__PURE__ */ jsx6("h3", { children: lead }),
-    /* @__PURE__ */ jsx6("p", { children: note2 }),
-    /* @__PURE__ */ jsx6("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx6("li", { children: /* @__PURE__ */ jsx6(
+  return /* @__PURE__ */ jsxs7("div", { className: "blockr-assistant-greeting", children: [
+    /* @__PURE__ */ jsx7("h3", { children: lead }),
+    /* @__PURE__ */ jsx7("p", { children: note2 }),
+    /* @__PURE__ */ jsx7("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx7("li", { children: /* @__PURE__ */ jsx7(
       "button",
       {
         type: "button",
         className: "blockr-assistant-suggestion",
-        disabled: running !== void 0,
+        disabled: running !== void 0 || noKey,
         onClick: () => {
           send(suggestion);
         },
@@ -4978,9 +5199,9 @@ function UserMessage() {
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
   const files = parts.flatMap((part) => part.type === "data" && part.name === ATTACHMENT ? [sentFile(part.data)] : []);
-  return /* @__PURE__ */ jsxs6(MessagePrimitive.Root, { className: "blockr-assistant-user", children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-user-text", children: text3 }),
-    files.length === 0 ? null : /* @__PURE__ */ jsx6(SentFiles, { files })
+  return /* @__PURE__ */ jsxs7(MessagePrimitive.Root, { className: "blockr-assistant-user", children: [
+    text3 === "" ? null : /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-user-text", children: text3 }),
+    files.length === 0 ? null : /* @__PURE__ */ jsx7(SentFiles, { files })
   ] });
 }
 function Reply() {
@@ -4988,37 +5209,37 @@ function Reply() {
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const running = useAuiState(({ message: message2 }) => message2.status?.type === "running");
   const segments = useMemo2(() => segmentsOf(parts), [parts]);
-  return /* @__PURE__ */ jsx6(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
+  return /* @__PURE__ */ jsx7(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
     switch (segment.kind) {
       case "text":
-        return /* @__PURE__ */ jsx6(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx7(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
       case "reasoning": {
         const part = parts[segment.index];
         const text3 = part?.type === "reasoning" ? part.text : "";
         const last = segment.index === parts.length - 1;
-        return /* @__PURE__ */ jsx6(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx7(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
       }
       case "tools":
-        return /* @__PURE__ */ jsx6(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
+        return /* @__PURE__ */ jsx7(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
       case "failure":
-        return /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
+        return /* @__PURE__ */ jsx7("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
     }
   }) });
 }
 var TEXT = { Text: MarkdownText };
 function Reasoning({ text: text3, running }) {
-  return /* @__PURE__ */ jsxs6("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
-    /* @__PURE__ */ jsx6("summary", { children: /* @__PURE__ */ jsx6("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
-    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx6(Markdown, { text: text3, running }) })
+  return /* @__PURE__ */ jsxs7("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
+    /* @__PURE__ */ jsx7("summary", { children: /* @__PURE__ */ jsx7("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
+    /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx7(Markdown, { text: text3, running }) })
   ] });
 }
 function Summary() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
-  return /* @__PURE__ */ jsx6(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs6("details", { children: [
-    /* @__PURE__ */ jsx6("summary", { children: "Summary of the earlier messages" }),
-    /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx6(Markdown, { text: text3 }) })
+  return /* @__PURE__ */ jsx7(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs7("details", { children: [
+    /* @__PURE__ */ jsx7("summary", { children: "Summary of the earlier messages" }),
+    /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx7(Markdown, { text: text3 }) })
   ] }) });
 }
 function Working() {
@@ -5026,16 +5247,16 @@ function Working() {
   if (running === void 0 || !runsHere || running.stopping || compacting) return null;
   const streamed = running.reply !== void 0 && (running.reply.parts.length > 0 || running.reply.reasoning.length > 0);
   if (streamed || waiting2.size > 0) return null;
-  return /* @__PURE__ */ jsxs6("p", { className: "blockr-assistant-working", "aria-label": "The assistant is working", children: [
-    /* @__PURE__ */ jsx6("span", {}),
-    /* @__PURE__ */ jsx6("span", {}),
-    /* @__PURE__ */ jsx6("span", {})
+  return /* @__PURE__ */ jsxs7("p", { className: "blockr-assistant-working", "aria-label": "The assistant is working", children: [
+    /* @__PURE__ */ jsx7("span", {}),
+    /* @__PURE__ */ jsx7("span", {}),
+    /* @__PURE__ */ jsx7("span", {})
   ] });
 }
 function Compacting() {
   const { compacting } = useChat();
   if (!compacting) return null;
-  return /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
+  return /* @__PURE__ */ jsx7("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
 }
 function sentFile(data) {
   const given2 = typeof data === "object" && data !== null ? data : {};
@@ -5047,17 +5268,19 @@ function sentFile(data) {
 }
 
 // srcts/chat/chat.tsx
-import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
+import { jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
 function Chat({ core, assistant }) {
   const { AssistantRuntimeProvider, MessageNotSentError, useExternalStoreRuntime } = libraries();
   const { conversations, turns, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
-  const [chosen, setChosen] = useState3(storedConversation);
-  const [link, setLink] = useState3(void 0);
-  const [file, setFile] = useState3(void 0);
-  const [filesNote, setFilesNote] = useState3(void 0);
-  const [dragging, setDragging] = useState3(false);
+  const deployment = useDeployment(assistant.deployment);
+  const visitorKey = useVisitorKey(assistant.key);
+  const [chosen, setChosen] = useState4(storedConversation);
+  const [link, setLink] = useState4(void 0);
+  const [file, setFile] = useState4(void 0);
+  const [filesNote, setFilesNote] = useState4(void 0);
+  const [dragging, setDragging] = useState4(false);
   const attachments = useMemo3(() => attachmentAdapter(), []);
   const adding = useRef4(Promise.resolve());
   const open2 = chosen !== void 0 && Object.hasOwn(all, chosen) ? chosen : void 0;
@@ -5065,22 +5288,28 @@ function Chat({ core, assistant }) {
   const messages = conversation2?.messages ?? NO_MESSAGES;
   const runsHere = running !== void 0 && running.conversation === open2;
   const compacting = useCompacting(compaction, open2);
+  const visitorAuthenticates = deployment?.credential.kind === "visitor";
+  const noKey = visitorAuthenticates && keyOf(visitorKey) === void 0;
+  const keyField = useMemo3(
+    () => deployment !== void 0 && visitorAuthenticates && visitorKey.kind !== "given" ? { state: visitorKey, host: new URL(deployment.baseUrl).host } : void 0,
+    [deployment, visitorAuthenticates, visitorKey]
+  );
   const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const send = useCallback2(
     (text3, files = []) => {
-      if (text3.trim() === "" && files.length === 0 || turns.current() !== void 0) return Promise.resolve();
+      if (text3.trim() === "" && files.length === 0 || turns.current() !== void 0 || noKey) return Promise.resolve();
       return sendMessage(assistant, open2, text3, files, (added) => {
         storeConversation(added);
         setChosen(added);
       });
     },
-    [assistant, open2, turns]
+    [assistant, noKey, open2, turns]
   );
   const runtime = useExternalStoreRuntime({
     messages: shown3,
     convertMessage: threadMessageOf,
     isRunning: runsHere,
-    isSendDisabled: running !== void 0,
+    isSendDisabled: running !== void 0 || noKey,
     adapters: { attachments },
     onNew: async (message2) => {
       setFilesNote(void 0);
@@ -5117,9 +5346,12 @@ function Chat({ core, assistant }) {
           core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
         });
       },
-      openFile: setFile
+      openFile: setFile,
+      giveKey: (key) => {
+        assistant.key.give(key);
+      }
     }),
-    [core, runtime, send, turns]
+    [assistant, core, runtime, send, turns]
   );
   const history = useMemo3(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(typedText).filter((text3) => text3 !== ""), [messages]);
   const waiting2 = useMemo3(() => waitingCalls(messages, runsHere ? running : void 0), [messages, running, runsHere]);
@@ -5131,9 +5363,11 @@ function Chat({ core, assistant }) {
       waiting: waiting2,
       history,
       titleOf: (id) => Object.hasOwn(all, id) ? all[id]?.title : void 0,
-      filesNote
+      filesNote,
+      keyField,
+      noKey
     }),
-    [all, compacting, filesNote, history, running, runsHere, waiting2]
+    [all, compacting, filesNote, history, keyField, noKey, running, runsHere, waiting2]
   );
   const closeFile = useCallback2(() => {
     setFile(void 0);
@@ -5159,7 +5393,7 @@ function Chat({ core, assistant }) {
     event.preventDefault();
     actions.addFiles([...event.dataTransfer.files]);
   };
-  return /* @__PURE__ */ jsx7(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx7(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx7(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs7(
+  return /* @__PURE__ */ jsx8(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx8(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx8(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs8(
     "div",
     {
       className: "blockr-assistant-chat",
@@ -5169,9 +5403,10 @@ function Chat({ core, assistant }) {
       onDragLeave: dragLeave,
       onDrop: drop,
       children: [
-        /* @__PURE__ */ jsx7(Transcript, {}),
-        /* @__PURE__ */ jsx7(Composer, {}),
-        /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx8(Transcript, {}),
+        /* @__PURE__ */ jsx8(KeyForm, {}),
+        /* @__PURE__ */ jsx8(Composer, {}),
+        /* @__PURE__ */ jsx8(
           LinkDialog,
           {
             url: link,
@@ -5180,7 +5415,7 @@ function Chat({ core, assistant }) {
             }
           }
         ),
-        /* @__PURE__ */ jsx7(FileDialog, { file, onClose: closeFile })
+        /* @__PURE__ */ jsx8(FileDialog, { file, onClose: closeFile })
       ]
     }
   ) }) }) });
@@ -5194,11 +5429,11 @@ function typedText(message2) {
 }
 
 // srcts/chat/panel.tsx
-import { jsx as jsx8 } from "react/jsx-runtime";
+import { jsx as jsx9 } from "react/jsx-runtime";
 function renderChat({ el, core }) {
   const root = createRoot(el);
   flushSync(() => {
-    root.render(/* @__PURE__ */ jsx8(Panel, { core }));
+    root.render(/* @__PURE__ */ jsx9(Panel, { core }));
   });
   return () => {
     root.unmount();
@@ -5207,11 +5442,11 @@ function renderChat({ el, core }) {
 function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
-  return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && assistant !== void 0 ? /* @__PURE__ */ jsx8(Chat, { core, assistant }, assistantKey(assistant)) : null });
+  return /* @__PURE__ */ jsx9("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && assistant !== void 0 ? /* @__PURE__ */ jsx9(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
-  const [assistant, setAssistant] = useState4(() => open(assistantOf(core)));
-  useEffect4(() => {
+  const [assistant, setAssistant] = useState5(() => open(assistantOf(core)));
+  useEffect5(() => {
     if (assistant !== void 0 && !assistant.signal.aborted) {
       const closed2 = () => {
         setAssistant(void 0);
@@ -5232,8 +5467,8 @@ function useAssistant(core) {
   return open(assistant);
 }
 function useLibraries(core) {
-  const [loaded2, setLoaded] = useState4(librariesLoaded);
-  useEffect4(() => {
+  const [loaded2, setLoaded] = useState5(librariesLoaded);
+  useEffect5(() => {
     if (loaded2 !== false) return;
     let live = true;
     loadLibraries().then(

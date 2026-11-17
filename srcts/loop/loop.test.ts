@@ -7,7 +7,9 @@
 // conversation of their own.
 // One test runs a call on pi's own code for Chat Completions instead, and
 // stops the call before it goes out, to read the marks of Anthropic's cache
-// that pi puts in the request.
+// that pi puts in the request. The tests of what a failed call's request got
+// back run on pi's own code for OpenAI's Responses API, through the page's
+// fetch, which they stub.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
@@ -940,5 +942,58 @@ describe("the spans of a turn", () => {
     const called = recorded.span("execute_tool describe_block");
     expect(called.status).toEqual({ code: SpanStatusCode.ERROR, message: "The user stopped the turn." });
     expect(called.attributes["error.type"]).toBe("AbortError");
+  });
+});
+
+describe("a failed call's request", () => {
+  // The calls that the loop reports of a turn on OpenAI's Responses API, at a
+  // base URL that the page's fetch given answers.
+  async function called(fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): Promise<Call[]> {
+    vi.stubGlobal("fetch", fetch);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const calls: Call[] = [];
+    await createLoop(pi).run({
+      connection: { baseUrl: "https://api.invalid/v1", api: "openai-responses", apiKey: () => Promise.resolve("sk-test") },
+      model: "gpt-5.4",
+      tools: [],
+      messages: () => [asked],
+      kept: () => undefined,
+      signal: new AbortController().signal,
+      on: {
+        streaming: () => undefined,
+        called: (call) => {
+          calls.push(call);
+          return Promise.resolve();
+        },
+        returned: () => undefined,
+        results: () => Promise.resolve(),
+      },
+    });
+    return calls;
+  }
+
+  test.each([401, 403])("reports an answer of %i as a refusal of the key", async (status) => {
+    const calls = await called(() => Promise.resolve(Response.json({ error: { message: "Incorrect API key provided." } }, { status })));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.answer).toBe("refused");
+    expect(calls[0]?.failure).toContain("Incorrect API key provided.");
+  });
+
+  test("reports a request that the page read no answer to, as where the answer carries no CORS header", async () => {
+    const calls = await called(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.answer).toBe("unread");
+    expect(calls[0]?.failure).toContain("Failed to fetch");
+  });
+
+  test("reports nothing of the key for an answer of another status", async () => {
+    const calls = await called(() => Promise.resolve(Response.json({ error: { message: "Rate limit reached." } }, { status: 429 })));
+
+    expect(calls[0]?.failure).toContain("Rate limit reached.");
+    expect(calls[0]).not.toHaveProperty("answer");
   });
 });

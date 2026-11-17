@@ -25,6 +25,7 @@ import { heldError } from "../notifications/index.ts";
 import type { AssistantState, Conversation, Message, Role } from "../state/index.ts";
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
+import { createVisitorKey } from "../visitor-key/index.ts";
 import { createCompaction } from "./compaction.ts";
 import { historyPrompt, mergedSummary, SUMMARY_SYSTEM_PROMPT, turnStartPrompt } from "./prompt.ts";
 
@@ -108,8 +109,12 @@ async function opened(options: OpenOptions) {
   faux.setResponses(options.replies ?? [fauxAssistantMessage(SUMMARY)]);
   const calls = {
     deployment: Promise.resolve(deployed()),
-    models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }) },
+    models: {
+      offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }),
+      check: () => Promise.resolve({ kind: "failed" as const, message: "The list failed." }),
+    },
     settings: { checked: () => Promise.resolve(new Map([["faux-1", { contextWindow: WINDOW }]])) },
+    key: createVisitorKey(),
     load: () => Promise.resolve(loop),
   };
   const compaction = createCompaction(stubbed.core, controller.signal, { conversations, ...calls });

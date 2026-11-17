@@ -5,7 +5,9 @@
 // board of core's fixture hello, with R played from the fixtures of core's
 // wire protocol, so that the tests need neither R nor a browser. Core draws no
 // frontend, so nothing demands a block, and every block reads unevaluated
-// until something evaluates it. Core stops as the test finishes.
+// until something evaluates it. Core stops as the test finishes, and the page
+// forgets the visitor's key that the class's start shares across boards, as a
+// reload does.
 // R answers each of the assistant's requests with what the test gives under
 // its name, list_skills with no skill and read_template with no template
 // unless the test gives one, and read_model_settings with null, as for an
@@ -32,6 +34,7 @@ import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { Skill, Skills } from "../skills/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
+import { reloadPageKey } from "../visitor-key/index.ts";
 
 export { recordSpans } from "./spans.ts";
 export type { Recorded } from "./spans.ts";
@@ -127,6 +130,7 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
   });
   onTestFinished(() => {
     stubbed.stop();
+    reloadPageKey();
   });
   return Object.assign(stubbed, {
     requests: (name: string) => stubbed.sent.flatMap((request) => assistantRequest(request) ?? []).filter((asked) => asked.name === name),
@@ -149,6 +153,17 @@ export function callTool(
 // What a tool's result gives as JSON.
 export function parsed(result: ToolResult): unknown {
   return JSON.parse(result.text);
+}
+
+// What the browser's storage given holds, as text, which a test reads to tell
+// that the visitor's key is not in it.
+export function storedIn(storage: Storage): string {
+  return JSON.stringify(
+    Array.from({ length: storage.length }, (_, index) => {
+      const name = storage.key(index) ?? "";
+      return [name, storage.getItem(name)];
+    }),
+  );
 }
 
 // The notifications that core holds for the conditions of R's replies to the

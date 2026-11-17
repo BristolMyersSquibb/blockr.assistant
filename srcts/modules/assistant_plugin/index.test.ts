@@ -10,6 +10,7 @@ import { act } from "react";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
+import { reloadPageKey } from "../../visitor-key/index.ts";
 import * as assistant from "./index.tsx";
 
 // React warns where an update in a test runs outside act().
@@ -71,11 +72,12 @@ const three = withState({
 // Starts core with the module of the assistant's class, on the board of the
 // reply given, where core's basic frontend draws the page in `el` where a test
 // gives one, and where R holds the blockr options given. Core stops as the
-// test finishes.
+// test finishes, and the page forgets the visitor's key, as a reload does.
 async function started(el?: HTMLElement, reply = hello, blockrOptions: Readonly<Record<string, Json>> = {}) {
   const stubbed = await act(() => stubCore({ hello: reply, modules: { [ASSISTANT]: assistant }, el, blockrOptions }));
   onTestFinished(() => {
     act(stubbed.stop);
+    reloadPageKey();
   });
   return stubbed;
 }
@@ -219,15 +221,29 @@ describe("the start of the assistant's plugin class", () => {
     expect(after).toBe(reopened);
   });
 
-  test("fails each turn with the error assistant_call_failed where the app sets no key", async () => {
+  test("fails a turn with the error assistant_call_failed where the app sets no key and the visitor has given none", async () => {
     const { core, settled } = await started(undefined, three);
     await act(() => settled());
 
     await assistantOf(core)?.turns.run("c1");
 
     expect(raised(core, "assistant_call_failed")).toEqual([
-      ["error", "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key."],
+      ["error", "The assistant has no key for its calls, since the visitor has given none, and the app sets none in the blockr option assistant_api_key."],
     ]);
+  });
+
+  test("keeps the visitor's key for the next board that opens in the page, which starts the class again on a CoreApi of its own", async () => {
+    // The app names its model, so that no key asks for a list of models.
+    const named = { assistant_models: "gpt-5.4" };
+    const first = await started(undefined, three, named);
+    await act(() => first.settled());
+    assistantOf(first.core)?.key.give("sk-visitor");
+
+    const next = await started(undefined, three, named);
+    await act(() => next.settled());
+
+    expect(next.core).not.toBe(first.core);
+    expect(assistantOf(next.core)?.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
   });
 
   test("offers the models that the app names in its blockr options, the first being the default", async () => {

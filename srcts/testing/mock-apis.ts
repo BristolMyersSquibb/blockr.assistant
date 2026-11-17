@@ -8,7 +8,9 @@
 // The first segment of a request's path names the base URL that it goes to:
 // - /openai/v1 speaks OpenAI's Responses and Chat Completions APIs and gives
 //   OpenAI's list of models. It takes the key test-key in Authorization, and
-//   answers another key with a 401, as OpenAI's list does. Its Chat
+//   answers another key with a 401. As OpenAI's do, the 401 of its list
+//   carries a CORS header, while the 401 of a call carries none, so that the
+//   page reads the call's refusal as a failed connection. Its Chat
 //   Completions API answers a call to a GPT-5.4 model that carries function
 //   tools and a reasoning effort other than none with a 400, in OpenAI's
 //   words, as OpenAI does (blockr.assistant#260).
@@ -22,6 +24,10 @@
 //   asks for Authorization or x-api-key, so that a request that carries a key
 //   fails as it would at such a proxy, which allows no header that it does
 //   not need.
+// - /drops/v1 gives OpenAI's list for any key, and answers each call with no
+//   CORS header, so that the page reads each call as a failed connection.
+// - /unreachable/v1 answers nothing with a CORS header, its preflights
+//   included, so that the page reads every request as a failed connection.
 //
 // A call to a model streams a call of the tool list_blocks where the request
 // holds no result of a tool, and the reply DONE once it holds one, each in
@@ -176,6 +182,11 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
 
   const body = request.method === "POST" ? await bodyOf(request) : {};
   recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), body });
+  if (base === "unreachable") {
+    response.writeHead(502);
+    response.end();
+    return;
+  }
   if (request.method === "OPTIONS") {
     preflight(request, response, base, origin);
     return;
@@ -183,7 +194,14 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
 
   const refusal = refused(request, base);
   if (refusal !== undefined) {
-    respond(response, 401, origin, { error: { message: refusal, type: "invalid_request_error" } });
+    // OpenAI's 401 for a call carries no CORS header, while its list's does.
+    const readable = !(base === "openai" && request.method === "POST");
+    respond(response, 401, readable ? origin : undefined, { error: { message: refusal, type: "invalid_request_error" } });
+    return;
+  }
+  if (base === "drops" && request.method === "POST") {
+    response.writeHead(502);
+    response.end();
     return;
   }
   if (holdsFile(body, REFUSED_FILE)) {
@@ -192,7 +210,7 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
   }
 
   if (request.method === "GET" && (path === "/v1/models" || path === "/api/v1/models")) {
-    const list = LISTS[base === "keyless" ? "openai" : base];
+    const list = LISTS[base === "keyless" || base === "drops" ? "openai" : base];
     if (list === undefined) respond(response, 404, origin, { error: { message: "No list here." } });
     else respond(response, 200, origin, list);
     return;
@@ -243,8 +261,10 @@ function refused(request: IncomingMessage, base: string): string | undefined {
   return undefined;
 }
 
-function respond(response: ServerResponse, status: number, origin: string, body: unknown): void {
-  response.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": origin });
+// Answers with the status and the body given, with a CORS header that allows
+// the origin given, or with none.
+function respond(response: ServerResponse, status: number, origin: string | undefined, body: unknown): void {
+  response.writeHead(status, { "content-type": "application/json", ...(origin === undefined ? {} : { "access-control-allow-origin": origin }) });
   response.end(JSON.stringify(body));
 }
 
