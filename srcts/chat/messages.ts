@@ -2,9 +2,10 @@
 // draws (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn).
 // The chat hands assistant-ui three kinds of item, in the order of the
 // conversation:
-// - A message that the user sent, which shows its text and the name of each
-//   file that it holds. It leaves out the text of a skill that the user called
-//   with /name, so that a slash command shows as the user typed it.
+// - A message that the user sent, which shows its text and each file that it
+//   holds, with the file's content where the memory keeps it. It leaves out
+//   the text of a skill that the user called with /name, so that a slash
+//   command shows as the user typed it.
 // - A summary, which shows as a message of its own, of assistant-ui's role
 //   system.
 // - A turn: the replies and the results of their tool calls after a message
@@ -28,13 +29,31 @@
 // assistant-ui converts only what changed as a reply streams.
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
-import type { Kept, KeptImage } from "../conversations/index.ts";
+import type { Kept, KeptFile, KeptImage } from "../conversations/index.ts";
 import type { Answered, Streamed } from "../loop/index.ts";
 import { isNote } from "../state/index.ts";
 import type { Message, MessageId, Part } from "../state/index.ts";
 import type { Running } from "../turns/index.ts";
 
 type Content = Exclude<ThreadMessageLike["content"], string>[number];
+
+// A message that the user sent, with the files that the memory keeps of it,
+// one for each of its parts of the type attachment.
+export interface Sent {
+  readonly kind: "sent";
+  // The id of the message.
+  readonly id: MessageId;
+  readonly message: Message;
+  readonly files: readonly KeptFile[];
+}
+
+// A file that a message that the user sent holds, as the chat shows it: its
+// name, its media type and its content, where the memory keeps it.
+export interface SentFile {
+  readonly name: string;
+  readonly media_type: string;
+  readonly file?: KeptFile;
+}
 
 // The replies of a turn and the results of their tool calls, with what the
 // memory keeps of each, and what the turn that runs holds that the
@@ -53,9 +72,9 @@ export interface Turn {
   readonly reply: Streamed | undefined;
 }
 
-// An item that the chat shows: a message that the user sent, a summary, or a
-// turn.
-export type Shown = Message | Turn;
+// An item that the chat shows: a message that the user sent, with its files
+// where the memory keeps any, a summary, or a turn.
+export type Shown = Message | Sent | Turn;
 
 // The result of a tool call, as the chat shows it.
 export interface ShownResult {
@@ -72,8 +91,10 @@ export const FAILURE = "failure";
 // The data part that names a file that the user attached.
 export const ATTACHMENT = "attachment";
 
-// The turns that the chat gave last, by the message that opened each.
+// The turns that the chat gave last, by the message that opened each, and the
+// messages that the user sent with their files.
 const given = new WeakMap<Message, Turn>();
+const sent = new WeakMap<Message, Sent>();
 
 // What the chat shows of a conversation, given its messages, the turn that
 // runs in it, if any, and what the memory keeps of each message.
@@ -99,7 +120,7 @@ export function shownOf(messages: readonly Message[], running: Running | undefin
       failure = held?.failure ?? failure;
     } else if (message.role === "user" || message.role === "summary") {
       end(false);
-      shown.push(message);
+      shown.push(held?.files === undefined ? message : sentOf(message, held.files));
       opener = message;
       failure = held?.failure;
     } else {
@@ -113,10 +134,21 @@ export function shownOf(messages: readonly Message[], running: Running | undefin
 
 // The message that assistant-ui draws of an item.
 export function threadMessageOf(shown: Shown): ThreadMessageLike {
-  if ("kind" in shown) return turnMessage(shown);
-  const createdAt = new Date(shown.created);
-  if (shown.role === "summary") return { role: "system", id: shown.id, createdAt, content: [{ type: "text", text: textOf(shown.parts) }] };
-  return { role: "user", id: shown.id, createdAt, content: userContent(shown.parts) };
+  if ("kind" in shown && shown.kind === "turn") return turnMessage(shown);
+  const [message, files] = "kind" in shown ? [shown.message, shown.files] : [shown, []];
+  const createdAt = new Date(message.created);
+  if (message.role === "summary") return { role: "system", id: message.id, createdAt, content: [{ type: "text", text: textOf(message.parts) }] };
+  return { role: "user", id: message.id, createdAt, content: userContent(message.parts, files) };
+}
+
+// The message that the user sent with its files, the same object as last time
+// where neither changed.
+function sentOf(message: Message, files: readonly KeptFile[]): Sent {
+  const last = sent.get(message);
+  if (last?.files === files) return last;
+  const next: Sent = { kind: "sent", id: message.id, message, files };
+  sent.set(message, next);
+  return next;
 }
 
 // The tool calls that the turn that runs waits for: those of the reply as it
@@ -215,13 +247,20 @@ function replyContent(reasoning: readonly string[], parts: readonly Part[], resu
   return [...thought, ...said];
 }
 
-function userContent(parts: readonly Part[]): Content[] {
+// What a message that the user sent shows: its text, and each file that it
+// holds, with the file's content where the memory keeps it.
+function userContent(parts: readonly Part[], files: readonly KeptFile[]): Content[] {
+  let index = -1;
   return parts.flatMap((part): Content[] => {
     switch (part.type) {
       case "text":
         return [{ type: "text", text: part.text }];
-      case "attachment":
-        return [{ type: `data-${ATTACHMENT}`, data: { name: part.name, media_type: part.media_type } }];
+      case "attachment": {
+        index += 1;
+        const file = files[index];
+        const data: SentFile = { name: part.name, media_type: part.media_type, ...(file === undefined ? {} : { file }) };
+        return [{ type: `data-${ATTACHMENT}`, data }];
+      }
       default:
         return [];
     }

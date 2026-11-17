@@ -3,8 +3,8 @@
 // scrolls up. A button then scrolls back to it, as in today's chat
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn).
 // - A conversation with no message shows the greeting (./greeting.ts).
-// - A message that the user sent shows its text as the user typed it, with the
-//   name of each file that it holds.
+// - A message that the user sent shows its text as the user typed it, with
+//   each file that it holds, which a click opens large (./files.tsx).
 // - A turn shows as one reply (./messages.ts), whose pieces show in the order
 //   in which they came (./rows.ts): its text as Markdown, its reasoning as a
 //   row that folds, its tool calls as rows (./tools.tsx), and why it failed,
@@ -18,11 +18,13 @@
 import { useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useChat, useChatActions } from "./context.ts";
+import { SentFiles } from "./files.tsx";
 import { greetingOf } from "./greeting.ts";
 import { useBoard } from "./hooks.ts";
 import { libraries } from "./libraries.ts";
 import { Markdown, MarkdownText } from "./markdown.tsx";
 import { ATTACHMENT } from "./messages.ts";
+import type { SentFile } from "./messages.ts";
 import { segmentsOf } from "./rows.ts";
 import { ToolRows } from "./tools.tsx";
 
@@ -97,17 +99,11 @@ function UserMessage(): ReactElement {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message }) => message.parts);
   const text = parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
-  const files = parts.flatMap((part) => (part.type === "data" && part.name === ATTACHMENT ? [fileName(part.data)] : []));
+  const files = parts.flatMap((part) => (part.type === "data" && part.name === ATTACHMENT ? [sentFile(part.data)] : []));
   return (
     <MessagePrimitive.Root className="blockr-assistant-user">
       {text === "" ? null : <div className="blockr-assistant-user-text">{text}</div>}
-      {files.length === 0 ? null : (
-        <ul className="blockr-assistant-files">
-          {files.map((name, index) => (
-            <li key={index}>{name}</li>
-          ))}
-        </ul>
-      )}
+      {files.length === 0 ? null : <SentFiles files={files} />}
     </MessagePrimitive.Root>
   );
 }
@@ -194,7 +190,13 @@ function Working(): ReactElement | null {
   );
 }
 
-function fileName(data: unknown): string {
-  const name = typeof data === "object" && data !== null ? (data as { readonly name?: unknown }).name : undefined;
-  return typeof name === "string" ? name : "";
+// A file of a message that the user sent, from the part that the chat gave
+// assistant-ui (./messages.ts).
+function sentFile(data: unknown): SentFile {
+  const given = typeof data === "object" && data !== null ? (data as Partial<SentFile>) : {};
+  return {
+    name: typeof given.name === "string" ? given.name : "",
+    media_type: typeof given.media_type === "string" ? given.media_type : "",
+    ...(given.file === undefined ? {} : { file: given.file }),
+  };
 }
