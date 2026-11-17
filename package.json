@@ -17,8 +17,11 @@
     "build": "node srcts/build/build.ts"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.15.36",
+    "@assistant-ui/react-markdown": "0.14.26",
     "@earendil-works/pi-agent-core": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2"
+    "@earendil-works/pi-ai": "1.5.2",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@earendil-works/pi-telemetry": "1.5.2",

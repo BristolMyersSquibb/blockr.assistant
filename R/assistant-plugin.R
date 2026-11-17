@@ -37,8 +37,10 @@
 #' So [blockr.core::available_plugins()] gives the class wherever
 #' blockr.assistant is available, and [blockr.core::serve()] runs the
 #' assistant in every app that does not narrow its plugins.
-#' The class's `ui` draws the assistant's panel, an empty one, wherever the
-#' frontend places the plugin.
+#' The class's `ui` draws the assistant's chat wherever the frontend places
+#' the plugin: the transcript of the open conversation, the message field and
+#' the stop button.
+#' The browser's local storage keeps which conversation is open.
 #'
 #' @section Model access:
 #' The assistant calls its model from the browser, never through R.

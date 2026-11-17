@@ -36,6 +36,13 @@
 // What the memory holds follows its conversation: it goes with a conversation
 // that the state no longer holds, whoever removed it, and with the messages
 // that a summary replaces.
+//
+// The chat follows the conversations through subscribe(), which calls it
+// whenever what all() or kept() gives may have changed: as the assistant's
+// state changes, and as the memory changes, which no change of the board
+// shows (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-panel).
+// Until then all() gives the same object, as React's useSyncExternalStore()
+// asks of a snapshot, and so does each conversation in it that did not change.
 
 import type { CoreApi, Json } from "@blockr/core";
 import {
@@ -47,7 +54,7 @@ import {
   messagesToDrop,
   newConversation,
 } from "../state/index.ts";
-import type { Conversation, ConversationId, Message, MessageId } from "../state/index.ts";
+import type { AssistantState, Conversation, ConversationId, Message, MessageId } from "../state/index.ts";
 import { readCap } from "./cap.ts";
 
 // The origin of the steps that the conversations take through the commands.
@@ -78,7 +85,8 @@ export interface Conversations {
   // opening fails.
   readonly opened: Promise<void>;
   // Every conversation by id, each with every message that the plugin holds of
-  // it: those in the memory, then those in the state.
+  // it: those in the memory, then those in the state. It gives the same object
+  // until something that it or kept() gives changes.
   all(): Readonly<Record<ConversationId, Conversation>>;
   // The conversation under the id, as all() gives it, or undefined.
   get(conversation: ConversationId): Conversation | undefined;
@@ -97,6 +105,9 @@ export interface Conversations {
   compactConversation(conversation: ConversationId, summary: Message, from: MessageId): Promise<void>;
   addUsage(conversation: ConversationId, input: number, output: number, total: number): Promise<void>;
   setModel(conversation: ConversationId, model: string | null): Promise<void>;
+  // Calls the listener whenever what all() or kept() gives may have changed,
+  // until the function that it returns is called.
+  subscribe(listener: () => void): () => void;
 }
 
 export function createConversations(core: CoreApi, signal: AbortSignal): Conversations {
@@ -110,22 +121,61 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
   // What the memory keeps of each message, by conversation and message.
   const keptOf = new Map<ConversationId, Map<MessageId, Kept>>();
 
+  // Whoever follows the conversations, and how often the memory has changed.
+  const listeners = new Set<() => void>();
+  let changes = 0;
+  // What all() gave last, with the assistant's state and the count of changes
+  // that it read, and each conversation that it gave with the messages of the
+  // memory first, with the conversation of the state and the messages that it
+  // read.
+  let given:
+    | { readonly state: AssistantState | undefined; readonly changes: number; readonly all: Readonly<Record<ConversationId, Conversation>> }
+    | undefined;
+  const merged = new Map<ConversationId, { readonly held: Conversation; readonly cut: readonly Message[]; readonly conversation: Conversation }>();
+
+  function notify(): void {
+    for (const listener of listeners) listener();
+  }
+
+  // Counts a change of the memory and tells whoever follows.
+  function changed(): void {
+    changes += 1;
+    notify();
+  }
+
   // Under a cap of 0, the state holds no conversation, and the memory alone
   // says which conversations there are.
+  let state = assistantState(core.store.board());
   const stop = core.store.subscribe((_change, board) => {
-    if (cap === 0) return;
-    const held = assistantState(board)?.conversations ?? {};
-    for (const id of older.keys()) {
-      if (!Object.hasOwn(held, id)) older.delete(id);
+    const now = assistantState(board);
+    if (now === state) return;
+    state = now;
+    if (cap !== 0) {
+      const held = now?.conversations ?? {};
+      for (const id of older.keys()) {
+        if (!Object.hasOwn(held, id)) older.delete(id);
+      }
+      for (const id of keptOf.keys()) {
+        if (!Object.hasOwn(held, id)) keptOf.delete(id);
+      }
+      for (const id of merged.keys()) {
+        if (!Object.hasOwn(held, id)) merged.delete(id);
+      }
     }
-    for (const id of keptOf.keys()) {
-      if (!Object.hasOwn(held, id)) keptOf.delete(id);
-    }
+    notify();
   });
-  signal.addEventListener("abort", stop, { once: true });
+  signal.addEventListener(
+    "abort",
+    () => {
+      stop();
+      listeners.clear();
+    },
+    { once: true },
+  );
 
   const capped = readCap(core).then(async (read) => {
     cap = read;
+    changed();
     await open(read);
     return read;
   });
@@ -138,6 +188,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     const conversations = assistantState(core.store.board())?.conversations ?? {};
     if (read === 0) {
       for (const [id, conversation] of Object.entries(conversations)) memory.set(id, conversation);
+      changed();
       await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
       return;
     }
@@ -156,20 +207,29 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     if (after === undefined) return;
     const kept = new Set(after.messages.map((message) => message.id));
     const cut = before.filter((message) => !kept.has(message.id));
-    if (cut.length > 0) older.set(conversation, [...(older.get(conversation) ?? []), ...cut]);
+    if (cut.length === 0) return;
+    older.set(conversation, [...(older.get(conversation) ?? []), ...cut]);
+    changed();
   }
 
-  // The conversation with the messages that the memory holds of it first.
-  function withOlder(id: ConversationId, conversation: Conversation): Conversation {
+  // The conversation with the messages that the memory holds of it first,
+  // the same object as last time where neither changed since.
+  function withOlder(id: ConversationId, held: Conversation): Conversation {
     const cut = older.get(id);
-    return cut === undefined ? conversation : { ...conversation, messages: [...cut, ...conversation.messages] };
+    if (cut === undefined) return held;
+    const last = merged.get(id);
+    if (last?.held === held && last.cut === cut) return last.conversation;
+    const conversation = { ...held, messages: [...cut, ...held.messages] };
+    merged.set(id, { held, cut, conversation });
+    return conversation;
   }
 
   // Changes a conversation in the memory, under a cap of 0.
-  function change(conversation: ConversationId, changed: (held: Conversation) => Conversation): void {
+  function change(conversation: ConversationId, changing: (held: Conversation) => Conversation): void {
     const held = memory.get(conversation);
     if (held === undefined) throw new Error(`The plugin's memory holds no conversation "${conversation}".`);
-    memory.set(conversation, changed(held));
+    memory.set(conversation, changing(held));
+    changed();
   }
 
   function get(conversation: ConversationId): Conversation | undefined {
@@ -182,6 +242,13 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     const held = keptOf.get(conversation) ?? new Map<MessageId, Kept>();
     held.set(message, { ...held.get(message), ...kept });
     keptOf.set(conversation, held);
+    changed();
+  }
+
+  // Drops what the memory keeps of a message, as of one that did not enter its
+  // conversation.
+  function unkeep(conversation: ConversationId, message: MessageId): void {
+    if (keptOf.get(conversation)?.delete(message) === true) changed();
   }
 
   // Drops what the memory keeps of the messages that the conversation no
@@ -190,18 +257,23 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     const held = keptOf.get(conversation);
     if (held === undefined) return;
     const ids = new Set(get(conversation)?.messages.map((message) => message.id) ?? []);
-    for (const id of held.keys()) {
-      if (!ids.has(id)) held.delete(id);
-    }
+    const gone = [...held.keys()].filter((id) => !ids.has(id));
+    for (const id of gone) held.delete(id);
+    if (gone.length > 0) changed();
   }
 
   return {
     opened: capped.then(() => undefined),
 
     all() {
-      if (cap === 0) return Object.fromEntries(memory);
-      const conversations = assistantState(core.store.board())?.conversations ?? {};
-      return Object.fromEntries(Object.entries(conversations).map(([id, conversation]) => [id, withOlder(id, conversation)]));
+      const now = cap === 0 ? undefined : assistantState(core.store.board());
+      if (given !== undefined && given.state === now && given.changes === changes) return given.all;
+      const all =
+        cap === 0
+          ? Object.fromEntries(memory)
+          : Object.fromEntries(Object.entries(now?.conversations ?? {}).map(([id, conversation]) => [id, withOlder(id, conversation)]));
+      given = { state: now, changes, all };
+      return all;
     },
 
     get,
@@ -224,6 +296,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
       memory.set(id, newConversation(title, model));
+      changed();
     },
 
     async renameConversation(conversation, title) {
@@ -241,24 +314,32 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
       }
       if (!memory.delete(conversation)) throw new Error(`The plugin's memory holds no conversation "${conversation}".`);
       keptOf.delete(conversation);
+      changed();
     },
 
     async addMessage(conversation, message, kept) {
       const read = await capped;
-      if (read !== 0) {
-        const before = findConversation(core.store.board(), conversation)?.messages ?? [];
-        const done = run("blockr.assistant-add_message", { conversation, message, ...(read === Infinity ? {} : { keep: read }) });
-        keepCut(conversation, before);
-        await done;
-      } else {
-        change(conversation, (held) => {
-          if (holdsMessage(held, message.id)) {
-            throw new Error(`The conversation "${conversation}" holds a message "${message.id}" already.`);
-          }
-          return { ...held, messages: [...held.messages, message], updated: message.created };
-        });
-      }
+      // What the memory keeps of the message goes in first, so that whoever
+      // follows the conversations reads the message with it.
       if (kept !== undefined) keep(conversation, message.id, kept);
+      try {
+        if (read !== 0) {
+          const before = findConversation(core.store.board(), conversation)?.messages ?? [];
+          const done = run("blockr.assistant-add_message", { conversation, message, ...(read === Infinity ? {} : { keep: read }) });
+          keepCut(conversation, before);
+          await done;
+        } else {
+          change(conversation, (held) => {
+            if (holdsMessage(held, message.id)) {
+              throw new Error(`The conversation "${conversation}" holds a message "${message.id}" already.`);
+            }
+            return { ...held, messages: [...held.messages, message], updated: message.created };
+          });
+        }
+      } catch (error) {
+        if (kept !== undefined) unkeep(conversation, message.id);
+        throw error;
+      }
     },
 
     async compactConversation(conversation, summary, from) {
@@ -271,7 +352,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
         // replaces. Where the state lacks the conversation, the command
         // refuses.
         await run("blockr.assistant-compact_conversation", { conversation, summary, from });
-        older.delete(conversation);
+        if (older.delete(conversation)) changed();
       } else {
         // The cap has cut the conversation past `from`, so the state keeps
         // what it holds, every message of it newer than what the summary
@@ -279,6 +360,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
         const cut = older.get(conversation) ?? [];
         const left = compacted([...cut, ...held.messages], summary, from, conversation);
         older.set(conversation, left.slice(0, left.length - held.messages.length));
+        changed();
       }
       forget(conversation);
     },
@@ -297,6 +379,13 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
         return;
       }
       change(conversation, (held) => ({ ...held, model }));
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }

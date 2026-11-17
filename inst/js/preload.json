@@ -1,0 +1,14 @@
+{
+  "assistant_plugin.js": [
+    "@opentelemetry/api",
+    "react",
+    "react-dom",
+    "react-dom/client",
+    "react/jsx-runtime"
+  ],
+  "chat-af068126.js": [
+    "react",
+    "react/jsx-runtime",
+    "react-dom"
+  ]
+}
