@@ -218,13 +218,23 @@ function choose(select: Element | null, value: string): void {
   });
 }
 
+// The footer's button that opens the drawer of conversations.
+function opener(el: HTMLElement): HTMLButtonElement | null {
+  return el.querySelector<HTMLButtonElement>('.blockr-assistant-footer-button[aria-label="Conversations"]');
+}
+
 // Opens the drawer of conversations through the footer's button, and gives
 // the drawer.
-function openDrawer(el: HTMLElement): HTMLDialogElement {
-  click(el.querySelector('.blockr-assistant-footer-button[aria-label="Conversations"]'));
-  const drawer = el.querySelector<HTMLDialogElement>(".blockr-assistant-drawer");
+function openDrawer(el: HTMLElement): HTMLElement {
+  click(opener(el));
+  const drawer = el.querySelector<HTMLElement>(".blockr-assistant-drawer");
   if (drawer === null) throw new Error("The chat draws no drawer.");
   return drawer;
+}
+
+// Whether the chat shows the drawer.
+function drawerShown(el: HTMLElement): boolean {
+  return el.querySelector(".blockr-assistant-drawer") !== null;
 }
 
 // The titles of the drawer's rows, in order.
@@ -641,7 +651,6 @@ describe("the chat's drawer of conversations", () => {
     const { el } = await chat({ state });
 
     const drawer = openDrawer(el);
-    expect(drawer.open).toBe(true);
     expect(document.activeElement?.className).toBe("blockr-assistant-drawer-search");
     expect([...drawer.querySelectorAll(".blockr-assistant-drawer-group h3")].map((heading) => heading.textContent)).toEqual(["Today", "Last 7 days", "Previous"]);
     expect(rows(drawer)).toEqual(["Sales today", "Regions", "Costs", "Old sales"]);
@@ -655,6 +664,26 @@ describe("the chat's drawer of conversations", () => {
     expect(rows(drawer)).toEqual(["Sales today", "Old sales"]);
   });
 
+  test("shows over the chat, whose rest is inert meanwhile, and closes on Escape or a click beside it, giving the focus back to the footer's button", async () => {
+    const { el } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } } });
+    const main = el.querySelector<HTMLElement>(".blockr-assistant-chat-main");
+
+    const drawer = openDrawer(el);
+    expect(drawer.parentElement?.className).toBe("blockr-assistant-chat");
+    expect(drawer.querySelector('[role="dialog"]')?.getAttribute("aria-labelledby")).toBe(drawer.querySelector("h2")?.id);
+    expect(main?.hasAttribute("inert")).toBe(true);
+    press(drawer.querySelector(".blockr-assistant-drawer-search") ?? drawer, "Escape");
+    await settle();
+    expect(drawerShown(el)).toBe(false);
+    expect(main?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(opener(el));
+
+    click(openDrawer(el).querySelector(".blockr-assistant-drawer-scrim"));
+    await settle();
+    expect(drawerShown(el)).toBe(false);
+    expect(document.activeElement).toBe(opener(el));
+  });
+
   test("opens the conversation that the user clicks, and closes", async () => {
     const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user", text("How are the sales?"))), c2: conversation("Costs", message("u2", "user", text("And the costs?"))) } };
     const { el } = await chat({ state });
@@ -663,7 +692,7 @@ describe("the chat's drawer of conversations", () => {
     click([...drawer.querySelectorAll(".blockr-assistant-drawer-select")].find((row) => row.textContent.includes("Costs")) ?? null);
     await settle();
 
-    expect(drawer.open).toBe(false);
+    expect(drawerShown(el)).toBe(false);
     expect(localStorage.getItem(KEY)).toBe("c2");
     expect(el.querySelector(".blockr-assistant-user-text")?.textContent).toBe("And the costs?");
   });
@@ -677,7 +706,7 @@ describe("the chat's drawer of conversations", () => {
     click(drawer.querySelector(".blockr-assistant-drawer-new"));
     await settle();
 
-    expect(drawer.open).toBe(false);
+    expect(drawerShown(el)).toBe(false);
     expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
     expect(localStorage.getItem(KEY)).toBeNull();
     expect(Object.keys(inState(assistant))).toEqual(["c1"]);
@@ -713,7 +742,7 @@ describe("the chat's drawer of conversations", () => {
     press(drawer.querySelector(".blockr-assistant-drawer-rename") ?? drawer, "Escape");
     await settle();
     expect(rows(drawer)).toEqual(["Sales by region"]);
-    expect(drawer.open).toBe(true);
+    expect(drawerShown(el)).toBe(true);
   });
 
   test("deletes a conversation once the user confirms in its row, and the open one opens the greeting", async () => {
@@ -816,7 +845,7 @@ describe("the chat's text", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
 
     click(link);
-    const dialog = el.querySelector<HTMLDialogElement>("dialog:not(.blockr-assistant-drawer)");
+    const dialog = el.querySelector("dialog");
     expect(dialog?.open).toBe(true);
     expect(dialog?.querySelector(".blockr-assistant-dialog-url")?.textContent).toBe("https://example.org/docs");
     expect(document.activeElement?.className).toBe("blockr-assistant-dialog-open");

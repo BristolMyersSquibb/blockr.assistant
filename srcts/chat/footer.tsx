@@ -1,7 +1,7 @@
 // The chat's footer, one row under the message field, as today's footer
 // (R/ext-server.R#L164-L207 at fcbdb27), with three things:
-// - The button that opens the drawer of conversations in the browser's top
-//   layer (./drawer.tsx).
+// - The button that opens the drawer of conversations over the chat
+//   (./drawer.tsx).
 // - The model that the open conversation's next turn talks to, beside the
 //   meter (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model).
 //   It shows where the deployment names several models or names none, as a
@@ -17,7 +17,7 @@
 //   The usage counts the tokens of the conversation's titles and summaries
 //   too.
 
-import type { ReactElement } from "react";
+import type { ReactElement, RefObject } from "react";
 import { resolveModel } from "../models/index.ts";
 import type { Offered } from "../models/index.ts";
 import type { Usage } from "../state/index.ts";
@@ -31,13 +31,16 @@ export interface FooterProps {
   // The models offered, or undefined until the first answer comes.
   readonly offered: Offered | undefined;
   readonly onPick: (model: string) => void;
+  // The button that opens the drawer, which takes the focus back once the
+  // drawer closes.
+  readonly opener: RefObject<HTMLButtonElement | null>;
   readonly onDrawer: () => void;
 }
 
-export function Footer({ usage, pick, offered, onPick, onDrawer }: FooterProps): ReactElement {
+export function Footer({ usage, pick, offered, onPick, opener, onDrawer }: FooterProps): ReactElement {
   return (
     <div className="blockr-assistant-footer">
-      <button type="button" className="blockr-assistant-footer-button" title="Conversations" aria-label="Conversations" onClick={onDrawer}>
+      <button ref={opener} type="button" className="blockr-assistant-footer-button" title="Conversations" aria-label="Conversations" onClick={onDrawer}>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 3v3h3" />
           <path d="M2.75 6A5.5 5.5 0 1 1 3 9.6" />

@@ -82,11 +82,22 @@
   color: var(--blockr-assistant-text-muted);
 }
 
-/* The chat: the transcript, which scrolls, above the message field. */
+/*
+ * The chat: the transcript, which scrolls, above the message field and the
+ * footer, and over them the drawer of conversations while it shows.
+ */
 .blockr-assistant-chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.blockr-assistant-chat-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -1030,16 +1041,46 @@
 }
 
 /*
- * The drawer of conversations, a dialog in the top layer as tall as the list
- * needs, up to most of the window, whose list scrolls.
+ * The drawer of conversations, over the chat in the chat's element, as
+ * today's drawer lies over its chat (shinychat's _history.scss at 6cb1417):
+ * a scrim over the whole chat, and a sheet at the chat's inline start, as
+ * tall as the chat, whose list scrolls.
  */
-.blockr-assistant-drawer[open] {
+.blockr-assistant-drawer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.blockr-assistant-drawer-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.25);
+}
+
+.blockr-assistant-drawer-sheet {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(360px, calc(100vw - 32px));
-  max-height: min(560px, calc(100dvh - 64px));
+  width: min(20rem, 85%);
   padding: 12px;
+  border-inline-end: 1px solid var(--blockr-assistant-border);
+  background: var(--blockr-assistant-bg-raised);
+  box-shadow: 0 0 20px rgb(0 0 0 / 0.12);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .blockr-assistant-drawer-scrim {
+    animation: blockr-assistant-fade-in 0.2s ease;
+  }
+
+  .blockr-assistant-drawer-sheet {
+    animation: blockr-assistant-slide-in 0.2s ease;
+  }
 }
 
 .blockr-assistant-drawer-top {
@@ -1048,8 +1089,10 @@
   justify-content: space-between;
 }
 
-.blockr-assistant-dialog .blockr-assistant-drawer-top h2 {
+.blockr-assistant-drawer-top h2 {
   margin: 0;
+  font-size: 15px;
+  font-weight: var(--bc-font-weight-semibold, 600);
 }
 
 .blockr-assistant-drawer-close,
@@ -1115,10 +1158,12 @@
   color: var(--blockr-assistant-text);
 }
 
+/* Scrolling the list scrolls nothing behind the drawer. */
 .blockr-assistant-drawer-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .blockr-assistant-drawer-empty {
@@ -1233,9 +1278,15 @@
 
 /*
  * In a panel as narrow as a rail, the chat trims its padding, so that the
- * message field keeps its room.
+ * message field keeps its room, and the drawer's rows leave out when each
+ * conversation was updated, which their groups tell, so that the titles keep
+ * theirs.
  */
 @container blockr-assistant (width < 260px) {
+  .blockr-assistant-drawer-time {
+    display: none;
+  }
+
   .blockr-assistant-transcript {
     padding: 8px 8px 0;
   }
@@ -1260,6 +1311,18 @@
 @keyframes blockr-assistant-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes blockr-assistant-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes blockr-assistant-slide-in {
+  from {
+    translate: -100% 0;
   }
 }
 

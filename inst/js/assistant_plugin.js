@@ -3818,7 +3818,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo3, useState as useState3 } from "react";
+import { useCallback as useCallback2, useMemo as useMemo3, useRef as useRef4, useState as useState3 } from "react";
 
 // srcts/chat/composer.tsx
 import { useLayoutEffect, useRef } from "react";
@@ -3937,82 +3937,72 @@ import { useEffect, useId, useMemo, useRef as useRef2, useState } from "react";
 import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var DAY = 24 * 60 * 60 * 1e3;
 function Drawer(props) {
-  const { shown: shown3, onClose, conversations, open: open2, running } = props;
-  const ref = useRef2(null);
+  const { onClose, opener, conversations, open: open2, running } = props;
   const search = useRef2(null);
   const heading = useId();
   const [query, setQuery] = useState("");
-  const dismiss = useLightDismiss();
   useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (shown3 && !dialog.open) {
-      dialog.showModal();
-      search.current?.focus();
-    }
-    if (!shown3 && dialog.open) dialog.close();
-  }, [shown3]);
+    const button = opener.current;
+    search.current?.focus();
+    return () => {
+      button?.focus();
+    };
+  }, [opener]);
   const groups = useMemo(() => groupConversations(conversations, query), [conversations, query]);
   const empty = Object.keys(conversations).length === 0;
-  return /* @__PURE__ */ jsxs2(
-    "dialog",
-    {
-      ref,
-      className: "blockr-assistant-dialog blockr-assistant-drawer",
-      "aria-labelledby": heading,
-      closedby: "any",
-      onClose: () => {
-        setQuery("");
-        onClose();
-      },
-      ...dismiss,
-      children: [
-        /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-top", children: [
-          /* @__PURE__ */ jsx2("h2", { id: heading, children: "Conversations" }),
-          /* @__PURE__ */ jsx2("button", { type: "button", className: "blockr-assistant-drawer-close", title: "Close", "aria-label": "Close", onClick: onClose, children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M4 4l8 8M12 4l-8 8" }) }) })
+  const keys2 = (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    onClose();
+  };
+  return /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer", onKeyDown: keys2, children: [
+    /* @__PURE__ */ jsx2("div", { className: "blockr-assistant-drawer-scrim", onClick: onClose }),
+    /* @__PURE__ */ jsxs2("section", { className: "blockr-assistant-drawer-sheet", role: "dialog", "aria-labelledby": heading, children: [
+      /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-top", children: [
+        /* @__PURE__ */ jsx2("h2", { id: heading, children: "Conversations" }),
+        /* @__PURE__ */ jsx2("button", { type: "button", className: "blockr-assistant-drawer-close", title: "Close", "aria-label": "Close", onClick: onClose, children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M4 4l8 8M12 4l-8 8" }) }) })
+      ] }),
+      /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-tools", children: [
+        /* @__PURE__ */ jsxs2("button", { type: "button", className: "blockr-assistant-drawer-new", onClick: props.onNew, children: [
+          /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M8 3.5v9M3.5 8h9" }) }),
+          "New"
         ] }),
-        /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-tools", children: [
-          /* @__PURE__ */ jsxs2("button", { type: "button", className: "blockr-assistant-drawer-new", onClick: props.onNew, children: [
-            /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M8 3.5v9M3.5 8h9" }) }),
-            "New"
-          ] }),
-          /* @__PURE__ */ jsx2(
-            "input",
-            {
-              ref: search,
-              type: "search",
-              className: "blockr-assistant-drawer-search",
-              placeholder: "Search\u2026",
-              "aria-label": "Search conversations",
-              value: query,
-              onChange: (event) => {
-                setQuery(event.currentTarget.value);
-              }
+        /* @__PURE__ */ jsx2(
+          "input",
+          {
+            ref: search,
+            type: "search",
+            className: "blockr-assistant-drawer-search",
+            placeholder: "Search\u2026",
+            "aria-label": "Search conversations",
+            value: query,
+            onChange: (event) => {
+              setQuery(event.currentTarget.value);
             }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-list", children: [
-          groups.length === 0 ? /* @__PURE__ */ jsx2("p", { className: "blockr-assistant-drawer-empty", children: empty ? "No conversations yet" : "No conversations found" }) : null,
-          groups.map(({ label, items }) => /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-group", children: [
-            /* @__PURE__ */ jsx2("h3", { children: label }),
-            /* @__PURE__ */ jsx2("ul", { children: items.map(([id, conversation2]) => /* @__PURE__ */ jsx2(
-              Row,
-              {
-                id,
-                conversation: conversation2,
-                open: id === open2,
-                running: id === running,
-                onSelect: props.onSelect,
-                onRename: props.onRename,
-                onDelete: props.onDelete
-              },
-              id
-            )) })
-          ] }, label))
-        ] })
-      ]
-    }
-  );
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-list", children: [
+        groups.length === 0 ? /* @__PURE__ */ jsx2("p", { className: "blockr-assistant-drawer-empty", children: empty ? "No conversations yet" : "No conversations found" }) : null,
+        groups.map(({ label, items }) => /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-drawer-group", children: [
+          /* @__PURE__ */ jsx2("h3", { children: label }),
+          /* @__PURE__ */ jsx2("ul", { children: items.map(([id, conversation2]) => /* @__PURE__ */ jsx2(
+            Row,
+            {
+              id,
+              conversation: conversation2,
+              open: id === open2,
+              running: id === running,
+              onSelect: props.onSelect,
+              onRename: props.onRename,
+              onDelete: props.onDelete
+            },
+            id
+          )) })
+        ] }, label))
+      ] })
+    ] })
+  ] });
 }
 function Row({ id, conversation: conversation2, open: open2, running, onSelect, onRename, onDelete }) {
   const [mode, setMode] = useState("shown");
@@ -4165,30 +4155,12 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
   today.setHours(0, 0, 0, 0);
   return then >= today ? then.toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" }) : then.toLocaleDateString(void 0, { month: "short", day: "numeric" });
 }
-var CLOSED_BY = typeof HTMLDialogElement !== "undefined" && "closedBy" in HTMLDialogElement.prototype;
-function useLightDismiss() {
-  const downOutside = useRef2(false);
-  if (CLOSED_BY) return {};
-  return {
-    onPointerDown: (event) => {
-      downOutside.current = outside(event);
-    },
-    onPointerUp: (event) => {
-      if (downOutside.current && outside(event)) event.currentTarget.close();
-      downOutside.current = false;
-    }
-  };
-}
-function outside(event) {
-  const box = event.currentTarget.getBoundingClientRect();
-  return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
-}
 
 // srcts/chat/footer.tsx
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
-function Footer({ usage, pick, offered, onPick, onDrawer }) {
+function Footer({ usage, pick, offered, onPick, opener, onDrawer }) {
   return /* @__PURE__ */ jsxs3("div", { className: "blockr-assistant-footer", children: [
-    /* @__PURE__ */ jsx3("button", { type: "button", className: "blockr-assistant-footer-button", title: "Conversations", "aria-label": "Conversations", onClick: onDrawer, children: /* @__PURE__ */ jsxs3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsx3("button", { ref: opener, type: "button", className: "blockr-assistant-footer-button", title: "Conversations", "aria-label": "Conversations", onClick: onDrawer, children: /* @__PURE__ */ jsxs3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
       /* @__PURE__ */ jsx3("path", { d: "M2.5 3v3h3" }),
       /* @__PURE__ */ jsx3("path", { d: "M2.75 6A5.5 5.5 0 1 1 3 9.6" }),
       /* @__PURE__ */ jsx3("path", { d: "M8 5v3.2l2.2 1.3" })
@@ -4911,6 +4883,7 @@ function Chat({ core, assistant }) {
   const [chosen, setChosen] = useState3(storedConversation);
   const [nextPick, setNextPick] = useNextPick(assistant);
   const [drawer, setDrawer] = useState3(false);
+  const opener = useRef4(null);
   const [link, setLink] = useState3(void 0);
   const open2 = chosen !== void 0 && Object.hasOwn(all, chosen) ? chosen : void 0;
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
@@ -5014,27 +4987,30 @@ function Chat({ core, assistant }) {
     turns.stop();
   };
   return /* @__PURE__ */ jsx8(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx8(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx8(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs8("div", { className: "blockr-assistant-chat", onKeyDown: escape, children: [
-    /* @__PURE__ */ jsx8(Transcript, {}),
-    /* @__PURE__ */ jsx8(Composer, {}),
-    /* @__PURE__ */ jsx8(
-      Footer,
-      {
-        usage: conversation2?.usage,
-        pick: conversation2 === void 0 ? nextPick : conversation2.model,
-        offered,
-        onPick: pick,
-        onDrawer: () => {
-          setDrawer(true);
+    /* @__PURE__ */ jsxs8("div", { className: "blockr-assistant-chat-main", inert: drawer, children: [
+      /* @__PURE__ */ jsx8(Transcript, {}),
+      /* @__PURE__ */ jsx8(Composer, {}),
+      /* @__PURE__ */ jsx8(
+        Footer,
+        {
+          usage: conversation2?.usage,
+          pick: conversation2 === void 0 ? nextPick : conversation2.model,
+          offered,
+          onPick: pick,
+          opener,
+          onDrawer: () => {
+            setDrawer(true);
+          }
         }
-      }
-    ),
-    /* @__PURE__ */ jsx8(
+      )
+    ] }),
+    drawer ? /* @__PURE__ */ jsx8(
       Drawer,
       {
-        shown: drawer,
         onClose: () => {
           setDrawer(false);
         },
+        opener,
         conversations: all,
         open: open2,
         running: running?.conversation,
@@ -5048,7 +5024,7 @@ function Chat({ core, assistant }) {
         },
         onDelete: remove
       }
-    ),
+    ) : null,
     /* @__PURE__ */ jsx8(
       LinkDialog,
       {

@@ -1,5 +1,8 @@
-// The drawer of conversations, which the button in the chat's footer opens in
-// the browser's top layer, as a modal dialog
+// The drawer of conversations, which the button in the chat's footer opens
+// over the chat, in the chat's own element, as today's drawer opens over its
+// chat (shinychat's _history.scss at 6cb1417). So it shows wherever a
+// frontend puts the chat, at the chat's size, and needs nothing of the
+// frontend
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#conversations).
 // It carries today's drawer over (shinychat's ChatHistoryDrawer.tsx at
 // 6cb1417):
@@ -20,19 +23,22 @@
 //   come back to.
 // - All of it stays open while a turn runs
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs).
-// The dialog closes on Escape, on its close button, and on a click outside
-// it, through closedby="any", or through the drawer's own check of where the
-// pointer went down and up, where the browser lacks closedby.
+// While it shows, the chat makes the rest of the chat inert, so that the focus
+// stays in the drawer, while the board around the chat stays as it was. The
+// drawer takes the focus to its search as it opens. It closes on Escape, on
+// its close button and on a click on the chat beside it, and gives the focus
+// back to the footer's button once it closes.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent, ReactElement } from "react";
+import type { KeyboardEvent, ReactElement, RefObject } from "react";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import { normalizeTitle } from "../titles/index.ts";
 
 export interface DrawerProps {
-  // Whether the drawer shows.
-  readonly shown: boolean;
   readonly onClose: () => void;
+  // The button that opened the drawer, which takes the focus back once the
+  // drawer closes.
+  readonly opener: RefObject<HTMLButtonElement | null>;
   readonly conversations: Readonly<Record<ConversationId, Conversation>>;
   // The conversation that the chat shows, and the one whose turn runs.
   readonly open: ConversationId | undefined;
@@ -47,91 +53,87 @@ export interface DrawerProps {
 const DAY = 24 * 60 * 60 * 1000;
 
 export function Drawer(props: DrawerProps): ReactElement {
-  const { shown, onClose, conversations, open, running } = props;
-  const ref = useRef<HTMLDialogElement>(null);
+  const { onClose, opener, conversations, open, running } = props;
   const search = useRef<HTMLInputElement>(null);
   const heading = useId();
   const [query, setQuery] = useState("");
-  const dismiss = useLightDismiss();
 
-  // The dialog focuses the search as it opens. React focuses an element with
-  // autoFocus as it mounts, while the dialog is closed, so the drawer focuses
-  // the field itself.
+  // The chat mounts the drawer as it opens and drops it as it closes, and the
+  // focus goes back once the rest of the chat is no longer inert. The footer,
+  // and so its button, stays while the drawer shows.
   useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (shown && !dialog.open) {
-      dialog.showModal();
-      search.current?.focus();
-    }
-    if (!shown && dialog.open) dialog.close();
-  }, [shown]);
+    const button = opener.current;
+    search.current?.focus();
+    return () => {
+      button?.focus();
+    };
+  }, [opener]);
 
   const groups = useMemo(() => groupConversations(conversations, query), [conversations, query]);
   const empty = Object.keys(conversations).length === 0;
 
+  // Escape closes the drawer, but where the rename field took it.
+  const keys = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    onClose();
+  };
+
   return (
-    <dialog
-      ref={ref}
-      className="blockr-assistant-dialog blockr-assistant-drawer"
-      aria-labelledby={heading}
-      closedby="any"
-      onClose={() => {
-        setQuery("");
-        onClose();
-      }}
-      {...dismiss}
-    >
-      <div className="blockr-assistant-drawer-top">
-        <h2 id={heading}>Conversations</h2>
-        <button type="button" className="blockr-assistant-drawer-close" title="Close" aria-label="Close" onClick={onClose}>
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      </div>
-      <div className="blockr-assistant-drawer-tools">
-        <button type="button" className="blockr-assistant-drawer-new" onClick={props.onNew}>
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 3.5v9M3.5 8h9" />
-          </svg>
-          New
-        </button>
-        <input
-          ref={search}
-          type="search"
-          className="blockr-assistant-drawer-search"
-          placeholder="Search…"
-          aria-label="Search conversations"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-          }}
-        />
-      </div>
-      <div className="blockr-assistant-drawer-list">
-        {groups.length === 0 ? <p className="blockr-assistant-drawer-empty">{empty ? "No conversations yet" : "No conversations found"}</p> : null}
-        {groups.map(({ label, items }) => (
-          <div key={label} className="blockr-assistant-drawer-group">
-            <h3>{label}</h3>
-            <ul>
-              {items.map(([id, conversation]) => (
-                <Row
-                  key={id}
-                  id={id}
-                  conversation={conversation}
-                  open={id === open}
-                  running={id === running}
-                  onSelect={props.onSelect}
-                  onRename={props.onRename}
-                  onDelete={props.onDelete}
-                />
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    </dialog>
+    <div className="blockr-assistant-drawer" onKeyDown={keys}>
+      <div className="blockr-assistant-drawer-scrim" onClick={onClose} />
+      <section className="blockr-assistant-drawer-sheet" role="dialog" aria-labelledby={heading}>
+        <div className="blockr-assistant-drawer-top">
+          <h2 id={heading}>Conversations</h2>
+          <button type="button" className="blockr-assistant-drawer-close" title="Close" aria-label="Close" onClick={onClose}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+        <div className="blockr-assistant-drawer-tools">
+          <button type="button" className="blockr-assistant-drawer-new" onClick={props.onNew}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+            New
+          </button>
+          <input
+            ref={search}
+            type="search"
+            className="blockr-assistant-drawer-search"
+            placeholder="Search…"
+            aria-label="Search conversations"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.currentTarget.value);
+            }}
+          />
+        </div>
+        <div className="blockr-assistant-drawer-list">
+          {groups.length === 0 ? <p className="blockr-assistant-drawer-empty">{empty ? "No conversations yet" : "No conversations found"}</p> : null}
+          {groups.map(({ label, items }) => (
+            <div key={label} className="blockr-assistant-drawer-group">
+              <h3>{label}</h3>
+              <ul>
+                {items.map(([id, conversation]) => (
+                  <Row
+                    key={id}
+                    id={id}
+                    conversation={conversation}
+                    open={id === open}
+                    running={id === running}
+                    onSelect={props.onSelect}
+                    onRename={props.onRename}
+                    onDelete={props.onDelete}
+                  />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -326,36 +328,4 @@ function formatUpdated(updated: string, now = new Date()): string {
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   return then >= today ? then.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-// Whether the browser closes a dialog on a click outside it, as closedby="any"
-// asks.
-const CLOSED_BY = typeof HTMLDialogElement !== "undefined" && "closedBy" in HTMLDialogElement.prototype;
-
-// Where the browser lacks closedby, the handlers that close the drawer on a
-// click outside it: the pointer went down and up outside the dialog's box, so
-// that a selection that ends outside closes nothing. The dialog is the target
-// of a click on its backdrop too, so the handlers test where the pointer is,
-// rather than the target.
-function useLightDismiss(): {
-  readonly onPointerDown?: (event: PointerEvent<HTMLDialogElement>) => void;
-  readonly onPointerUp?: (event: PointerEvent<HTMLDialogElement>) => void;
-} {
-  const downOutside = useRef(false);
-  if (CLOSED_BY) return {};
-  return {
-    onPointerDown: (event) => {
-      downOutside.current = outside(event);
-    },
-    onPointerUp: (event) => {
-      if (downOutside.current && outside(event)) event.currentTarget.close();
-      downOutside.current = false;
-    },
-  };
-}
-
-// Whether the pointer is outside the dialog's box.
-function outside(event: PointerEvent<HTMLDialogElement>): boolean {
-  const box = event.currentTarget.getBoundingClientRect();
-  return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
 }

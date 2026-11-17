@@ -286,7 +286,8 @@
 
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).
-  The drawer opens in the browser's top layer.
+  The drawer opens over the chat, in the element that the frontend gives the
+  chat.
   It lists the board's conversations, the last updated first, grouped by when
   each was last updated, and searches their titles.
   It opens, renames and deletes a conversation, and marks the conversation

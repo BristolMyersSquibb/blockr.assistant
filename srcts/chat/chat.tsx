@@ -46,7 +46,7 @@
 //    to the conversation, as after any stop.
 // 3. It removes the conversation.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement } from "react";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { CoreApi } from "@blockr/core";
@@ -76,6 +76,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const [chosen, setChosen] = useState(storedConversation);
   const [nextPick, setNextPick] = useNextPick(assistant);
   const [drawer, setDrawer] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
   const [link, setLink] = useState<string | undefined>(undefined);
 
   // The open conversation, which the board may lack, as where another plugin
@@ -198,8 +199,9 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== "Escape" || event.defaultPrevented || running === undefined) return;
-    // Escape in a dialog, the drawer or the one before a link, closes the
-    // dialog alone, and Escape in the pick of the model closes its list.
+    // Escape in the drawer closes the drawer alone, which takes it first,
+    // Escape in the dialog before a link closes the dialog alone, and Escape
+    // in the pick of the model closes its list.
     if (event.target instanceof Element && event.target.closest("dialog, select") !== null) return;
     event.preventDefault();
     turns.stop();
@@ -210,35 +212,40 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       <ChatActionsContext value={actions}>
         <ChatStateContext value={state}>
           <div className="blockr-assistant-chat" onKeyDown={escape}>
-            <Transcript />
-            <Composer />
-            <Footer
-              usage={conversation?.usage}
-              pick={conversation === undefined ? nextPick : conversation.model}
-              offered={offered}
-              onPick={pick}
-              onDrawer={() => {
-                setDrawer(true);
-              }}
-            />
-            <Drawer
-              shown={drawer}
-              onClose={() => {
-                setDrawer(false);
-              }}
-              conversations={all}
-              open={open}
-              running={running?.conversation}
-              onSelect={(id) => {
-                openConversation(id);
-                setDrawer(false);
-              }}
-              onNew={startNew}
-              onRename={(id, title) => {
-                conversations.renameConversation(id, title).catch(logError);
-              }}
-              onDelete={remove}
-            />
+            <div className="blockr-assistant-chat-main" inert={drawer}>
+              <Transcript />
+              <Composer />
+              <Footer
+                usage={conversation?.usage}
+                pick={conversation === undefined ? nextPick : conversation.model}
+                offered={offered}
+                onPick={pick}
+                opener={opener}
+                onDrawer={() => {
+                  setDrawer(true);
+                }}
+              />
+            </div>
+            {drawer ? (
+              <Drawer
+                onClose={() => {
+                  setDrawer(false);
+                }}
+                opener={opener}
+                conversations={all}
+                open={open}
+                running={running?.conversation}
+                onSelect={(id) => {
+                  openConversation(id);
+                  setDrawer(false);
+                }}
+                onNew={startNew}
+                onRename={(id, title) => {
+                  conversations.renameConversation(id, title).catch(logError);
+                }}
+                onDelete={remove}
+              />
+            ) : null}
             <LinkDialog
               url={link}
               onClose={() => {
