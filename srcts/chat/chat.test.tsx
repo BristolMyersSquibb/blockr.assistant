@@ -59,6 +59,8 @@ interface Options {
   readonly replies?: FauxResponseStep[];
   readonly tokensPerSecond?: number;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
+  // The models that the deployment names, faux-1 alone unless given.
+  readonly models?: readonly string[];
 }
 
 // Core on a board that holds the assistant's state given, with the assistant
@@ -91,7 +93,7 @@ async function chat(options: Options = {}) {
   const { faux, loop, connection } = fauxLoop(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond });
   faux.setResponses(options.replies ?? [fauxAssistantMessage("The board holds **no** block.")]);
   const assistant = openAssistant(stubbed.core, controller.signal, {
-    deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: { kind: "deployment", key: "test-key" }, models: ["faux-1"] }),
+    deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: { kind: "deployment", key: "test-key" }, models: options.models ?? ["faux-1"] }),
     load: () => Promise.resolve(loop),
     locks: undefined,
   });
@@ -205,6 +207,34 @@ function field(el: HTMLElement): HTMLTextAreaElement {
 
 function inState(assistant: Assistant): AssistantState["conversations"] {
   return assistant.conversations.all();
+}
+
+// Picks the option of the value given in the select, as the user would.
+function choose(select: Element | null, value: string): void {
+  if (!(select instanceof HTMLSelectElement)) throw new Error("Nothing to choose from.");
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+// Opens the drawer of conversations through the footer's button, and gives
+// the drawer.
+function openDrawer(el: HTMLElement): HTMLDialogElement {
+  click(el.querySelector('.blockr-assistant-footer-button[aria-label="Conversations"]'));
+  const drawer = el.querySelector<HTMLDialogElement>(".blockr-assistant-drawer");
+  if (drawer === null) throw new Error("The chat draws no drawer.");
+  return drawer;
+}
+
+// The titles of the drawer's rows, in order.
+function rows(drawer: HTMLElement): string[] {
+  return [...drawer.querySelectorAll(".blockr-assistant-drawer-title")].map((title) => title.textContent);
+}
+
+// The time, as ISO 8601, that lies the days given before now.
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 describe("the assistant's chat", () => {
@@ -499,6 +529,194 @@ describe("the chat while a turn runs", () => {
   });
 });
 
+describe("the chat's footer", () => {
+  test("shows the tokens that the open conversation spent, input and output, and none on the greeting", async () => {
+    localStorage.setItem(KEY, "c1");
+    const spent = { ...conversation("Sales", message("u1", "user")), usage: { input: 12_345, output: 678, last: 20_000 } };
+    const { el } = await chat({ state: { conversations: { c1: spent } } });
+
+    const meter = el.querySelector(".blockr-assistant-meter");
+    expect([...(meter?.children ?? [])].map((item) => item.getAttribute("title"))).toEqual([
+      `Input tokens (this conversation): ${(12_345).toLocaleString()}`,
+      "Output tokens (this conversation): 678",
+    ]);
+
+    click(openDrawer(el).querySelector(".blockr-assistant-drawer-new"));
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+    expect([...(el.querySelector(".blockr-assistant-meter")?.children ?? [])].map((item) => item.textContent)).toEqual(["Input tokens: 0", "Output tokens: 0"]);
+  });
+
+  test("offers no pick of the model where the deployment names one model", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } } });
+
+    expect(el.querySelector(".blockr-assistant-model")).toBeNull();
+  });
+
+  test("offers the models that the deployment names, and a pick sets the open conversation's, with no undo step", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el, assistant, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } }, models: ["faux-1", "faux-2"] });
+
+    const select = el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select");
+    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual(["faux-1", "faux-2"]);
+    expect(select?.value).toBe("faux-1");
+
+    choose(select, "faux-2");
+    await settle();
+
+    expect(inState(assistant).c1?.model).toBe("faux-2");
+    expect(core.store.canUndo()).toBe(false);
+    expect(el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select")?.value).toBe("faux-2");
+  });
+
+  test("gives a pick made while no conversation is open to the conversation that the first message adds", async () => {
+    const { el, assistant } = await chat({ models: ["faux-1", "faux-2"] });
+
+    choose(el.querySelector(".blockr-assistant-model-select"), "faux-2");
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => Object.keys(inState(assistant)).length === 1, "the conversation");
+
+    expect(Object.values(inState(assistant))[0]?.model).toBe("faux-2");
+  });
+
+  test("names a pick that the deployment does not offer beside the model that the calls go to, even where it offers one model", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el } = await chat({ state: { conversations: { c1: { ...conversation("Sales", message("u1", "user")), model: "gpt-4o" } } } });
+
+    expect(el.querySelector(".blockr-assistant-model-unoffered s")?.textContent).toBe("gpt-4o");
+    expect(el.querySelector(".blockr-assistant-model-unoffered")?.getAttribute("title")).toBe("The app does not offer gpt-4o, so the calls go to faux-1.");
+    expect(el.querySelector(".blockr-assistant-model-name")?.textContent).toBe("faux-1");
+    expect(el.querySelector(".blockr-assistant-model-select")).toBeNull();
+  });
+});
+
+describe("the chat's drawer of conversations", () => {
+  test("lists the conversations, the last updated first, grouped by when each was updated, and searches their titles", async () => {
+    const at = (title: string, updated: string): Conversation => ({ ...conversation(title, message(`u-${title}`, "user")), updated });
+    const state: AssistantState = {
+      conversations: { c1: at("Old sales", daysAgo(30)), c2: at("Costs", daysAgo(3)), c3: at("Sales today", daysAgo(0)), c4: at("Regions", daysAgo(2)) },
+    };
+    const { el } = await chat({ state });
+
+    const drawer = openDrawer(el);
+    expect(drawer.open).toBe(true);
+    expect(document.activeElement?.className).toBe("blockr-assistant-drawer-search");
+    expect([...drawer.querySelectorAll(".blockr-assistant-drawer-group h3")].map((heading) => heading.textContent)).toEqual(["Today", "Last 7 days", "Previous"]);
+    expect(rows(drawer)).toEqual(["Sales today", "Regions", "Costs", "Old sales"]);
+
+    const search = drawer.querySelector<HTMLInputElement>(".blockr-assistant-drawer-search");
+    act(() => {
+      if (search === null) return;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "SALES");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(rows(drawer)).toEqual(["Sales today", "Old sales"]);
+  });
+
+  test("opens the conversation that the user clicks, and closes", async () => {
+    const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user", text("How are the sales?"))), c2: conversation("Costs", message("u2", "user", text("And the costs?"))) } };
+    const { el } = await chat({ state });
+
+    const drawer = openDrawer(el);
+    click([...drawer.querySelectorAll(".blockr-assistant-drawer-select")].find((row) => row.textContent.includes("Costs")) ?? null);
+    await settle();
+
+    expect(drawer.open).toBe(false);
+    expect(localStorage.getItem(KEY)).toBe("c2");
+    expect(el.querySelector(".blockr-assistant-user-text")?.textContent).toBe("And the costs?");
+  });
+
+  test("starts a conversation from the greeting, with the pick of the one that was open, once the first message is sent", async () => {
+    localStorage.setItem(KEY, "c1");
+    const state: AssistantState = { conversations: { c1: { ...conversation("Sales", message("u1", "user")), model: "faux-2" } } };
+    const { el, assistant } = await chat({ state, models: ["faux-1", "faux-2"] });
+
+    const drawer = openDrawer(el);
+    click(drawer.querySelector(".blockr-assistant-drawer-new"));
+    await settle();
+
+    expect(drawer.open).toBe(false);
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(Object.keys(inState(assistant))).toEqual(["c1"]);
+    expect(el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select")?.value).toBe("faux-2");
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => Object.keys(inState(assistant)).length === 2, "the new conversation");
+    const added = Object.entries(inState(assistant)).find(([id]) => id !== "c1")?.[1];
+    expect(added).toMatchObject({ title: "New conversation", model: "faux-2" });
+  });
+
+  test("renames a conversation in its row on Enter, and keeps its title on Escape, with the drawer still open", async () => {
+    const { el, assistant, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } } });
+    const drawer = openDrawer(el);
+
+    click(drawer.querySelector('[aria-label="Rename “Sales”"]'));
+    const field = drawer.querySelector<HTMLInputElement>(".blockr-assistant-drawer-rename");
+    expect(field?.value).toBe("Sales");
+    act(() => {
+      if (field === null) return;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "  Sales   by region ");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    press(field ?? drawer, "Enter");
+    await settle();
+
+    expect(inState(assistant).c1?.title).toBe("Sales by region");
+    expect(core.store.canUndo()).toBe(false);
+    expect(rows(drawer)).toEqual(["Sales by region"]);
+
+    click(drawer.querySelector('[aria-label="Rename “Sales by region”"]'));
+    press(drawer.querySelector(".blockr-assistant-drawer-rename") ?? drawer, "Escape");
+    await settle();
+    expect(rows(drawer)).toEqual(["Sales by region"]);
+    expect(drawer.open).toBe(true);
+  });
+
+  test("deletes a conversation once the user confirms in its row, and the open one opens the greeting", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el, assistant } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } } });
+    const drawer = openDrawer(el);
+
+    click(drawer.querySelector('[aria-label="Delete “Sales”"]'));
+    expect(drawer.querySelector(".blockr-assistant-drawer-confirm")?.textContent).toBe("Delete?");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Keep “Sales”");
+    click(drawer.querySelector('[aria-label="Keep “Sales”"]'));
+    expect(Object.keys(inState(assistant))).toEqual(["c1", "c2"]);
+
+    click(drawer.querySelector('[aria-label="Delete “Sales”"]'));
+    click(drawer.querySelector(".blockr-assistant-drawer-confirm-yes"));
+    await until(() => !Object.hasOwn(inState(assistant), "c1"), "the deletion");
+
+    expect(rows(drawer)).toEqual(["Costs"]);
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+  });
+
+  test("marks the conversation whose turn runs, and stops the turn before it deletes the conversation", async () => {
+    localStorage.setItem(KEY, "c1");
+    const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } };
+    const { el, assistant, logged } = await chat({ state, replies: [heldReply("A reply that the turn holds until it stops.").reply] });
+    act(() => {
+      void assistant.turns.run("c2");
+    });
+    await until(() => assistant.turns.current()?.conversation === "c2", "the turn in c2");
+
+    const drawer = openDrawer(el);
+    const marked = [...drawer.querySelectorAll(".blockr-assistant-drawer-row")].filter((row) => row.querySelector(".blockr-assistant-drawer-running") !== null);
+    expect(marked.map((row) => row.querySelector(".blockr-assistant-drawer-title")?.textContent)).toEqual(["Costs"]);
+
+    click(drawer.querySelector('[aria-label="Delete “Costs”"]'));
+    click(drawer.querySelector(".blockr-assistant-drawer-confirm-yes"));
+    await until(() => !Object.hasOwn(inState(assistant), "c2"), "the deletion");
+
+    expect(assistant.turns.current()).toBeUndefined();
+    expect(logged.filter((line) => line.message.includes("took no more messages"))).toEqual([]);
+    expect(rows(drawer)).toEqual(["Sales"]);
+  });
+});
+
 describe("the chat's message field", () => {
   test("brings back the user's earlier messages with Up and Down into an empty field", async () => {
     localStorage.setItem(KEY, "c1");
@@ -557,7 +775,7 @@ describe("the chat's text", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
 
     click(link);
-    const dialog = el.querySelector("dialog");
+    const dialog = el.querySelector<HTMLDialogElement>("dialog:not(.blockr-assistant-drawer)");
     expect(dialog?.open).toBe(true);
     expect(dialog?.querySelector(".blockr-assistant-dialog-url")?.textContent).toBe("https://example.org/docs");
     expect(document.activeElement?.className).toBe("blockr-assistant-dialog-open");

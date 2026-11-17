@@ -39,6 +39,12 @@
 // call left without a result gets one that says the user stopped the turn.
 // The tools stop waiting themselves, since each takes the signal.
 //
+// It also makes the model calls of the plugin's own, which run beside the
+// turns rather than as turns, as the call that titles a conversation
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
+// Such a call has no tools, and goes out as a turn's calls go, through the
+// plugin's provider, with the same credential, identity and thinking level.
+//
 // The loop records the turn's spans, under the names that ellmer gives the
 // spans of today's turns (./telemetry.ts):
 // 1. As a turn starts, the loop starts its span, invoke_agent, under the
@@ -147,11 +153,39 @@ export interface Call {
   readonly failure?: string;
 }
 
+// A model call of the plugin's own, beside the turns: one call with no tools,
+// which sends the system prompt and the text given as the user's message.
+export interface ModelCall {
+  readonly connection: Connection;
+  // The id of the model that the call talks to, such as "gpt-5.4".
+  readonly model: string;
+  // The settings that the deployment's model settings give the model, and
+  // those that the base URL's list gives it, where either gives any.
+  readonly settings?: ModelSettings | undefined;
+  readonly listed?: ListedSettings | undefined;
+  readonly systemPrompt: string;
+  // The user's message.
+  readonly text: string;
+  readonly signal: AbortSignal;
+}
+
+// What a model call of the plugin's own gave: the text of its reply, its
+// tokens, as a turn's call gives them, and why it failed, where it failed.
+export interface ModelReply {
+  readonly text: string;
+  readonly usage: Call["usage"];
+  readonly failure?: string;
+}
+
 export interface Loop {
   // Runs the turn, and resolves once the turn ends, however it ends. It
   // rejects where the turn cannot go on, as where the credential cannot be
   // read.
   run(turn: Turn): Promise<void>;
+  // Makes a model call of the plugin's own, and resolves once the call ends,
+  // however it ends. It rejects where the call cannot go out, as where the
+  // credential cannot be read.
+  callModel(call: ModelCall): Promise<ModelReply>;
   // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
   // of the id given, whose settings a model of the deployment's model
   // settings may take through its like.
@@ -168,7 +202,11 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
     "openai-responses": pi.openaiResponses,
     ...apis,
   };
-  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== undefined };
+  return {
+    run: (turn) => runTurn(pi, streams, turn),
+    callModel: (call) => callModel(pi, streams, call),
+    inCatalog: (id) => catalogModel(pi, id) !== undefined,
+  };
 }
 
 // The loop, once the page has imported pi's bundle.
@@ -190,17 +228,7 @@ function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, tur
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
   const model = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
-  const models = pi.createModels();
-  models.setProvider(
-    pi.createProvider({
-      id: PROVIDER,
-      baseUrl: turn.connection.baseUrl,
-      // The credential comes through getApiKey, so the provider takes none.
-      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
-      models: [model],
-      api: streams,
-    }),
-  );
+  const models = modelsAt(pi, streams, turn.connection, model);
 
   // The results that the tools gave, and those that pi gave in place of a
   // tool before the signal aborted, as for args that the tool's schema
@@ -263,6 +291,38 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   await pi.runAgentLoopContinue(begun, config, emit, turn.signal, (called, messages, options) =>
     models.streamSimple(called, messages, { ...options, telemetry: span }),
   );
+}
+
+// Makes a model call of the plugin's own, as one call of pi's with no tools.
+async function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
+  const model = modelOf(pi, call.model, call.connection, call.settings, call.listed);
+  const models = modelsAt(pi, streams, call.connection, model);
+  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+  const reply = await models.completeSimple(
+    model,
+    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: call.text, timestamp: Date.now() }] },
+    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal },
+  );
+  const { usage } = callOf(reply);
+  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+  return { text, usage, ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}) };
+}
+
+// Pi's models, with the plugin's provider at the connection's base URL, which
+// serves the model given.
+function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, connection: Connection, model: Model<Api>): ReturnType<Pi["createModels"]> {
+  const models = pi.createModels();
+  models.setProvider(
+    pi.createProvider({
+      id: PROVIDER,
+      baseUrl: connection.baseUrl,
+      // The credential comes with each call, so the provider takes none.
+      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
+      models: [model],
+      api: streams,
+    }),
+  );
+  return models;
 }
 
 // The model of the id given, at the connection's base URL, in its API,

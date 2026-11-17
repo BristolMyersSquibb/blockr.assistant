@@ -19,6 +19,8 @@
 // take, each turn fails with the error assistant_call_failed, which says why.
 // The assistant also has R read the deployment's model settings as the board
 // opens, which the turns hand the loop (../model-settings).
+// Once a conversation's first exchange that the model answered ends, the
+// assistant has a model call of its own title the conversation (../titles).
 
 import type { CoreApi } from "@blockr/core";
 import { createConversations } from "../conversations/index.ts";
@@ -33,6 +35,7 @@ import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
+import { titleConversations } from "../titles/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
@@ -78,6 +81,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
+  const load = options.load ?? loadLoop;
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -85,9 +89,10 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     models,
     settings,
     callFailed,
-    load: options.load ?? loadLoop,
+    load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
+  titleConversations(core, signal, { conversations, turns, deployment, models, settings, load });
 
   const assistant = { conversations, skills, models, turns, signal };
   opened.set(core, assistant);

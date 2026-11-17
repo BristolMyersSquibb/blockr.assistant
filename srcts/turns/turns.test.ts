@@ -124,7 +124,7 @@ async function opened(options: OpenOptions = {}) {
     conversations,
     tools: options.tools ?? [],
     deployment,
-    models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }) },
+    models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"], named: true }) },
     settings: options.settings ?? { checked: () => Promise.resolve(new Map()) },
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     load: options.load ?? (() => Promise.resolve(loop)),
@@ -187,7 +187,7 @@ describe("a turn of the assistant", () => {
 
   test("runs on the default model where the conversation picked none", async () => {
     const seen: { model: string; key: string | undefined }[] = [];
-    const { core, turns } = await opened({ offered: { models: ["faux-default", "faux-1"] }, replies: [recording(seen)] });
+    const { core, turns } = await opened({ offered: { models: ["faux-default", "faux-1"], named: true }, replies: [recording(seen)] });
 
     await turns.run("c2");
 
@@ -197,7 +197,7 @@ describe("a turn of the assistant", () => {
 
   test("runs on the conversation's pick where the deployment offers it", async () => {
     const seen: { model: string; key: string | undefined }[] = [];
-    const { turns } = await opened({ offered: { models: ["faux-default", "faux-1"] }, replies: [recording(seen)] });
+    const { turns } = await opened({ offered: { models: ["faux-default", "faux-1"], named: true }, replies: [recording(seen)] });
 
     await turns.run("c1");
 
@@ -206,7 +206,7 @@ describe("a turn of the assistant", () => {
 
   test("runs on the default where the deployment does not offer the conversation's pick, which stays in the state", async () => {
     const seen: { model: string; key: string | undefined }[] = [];
-    const { core, turns } = await opened({ offered: { models: ["faux-default"] }, replies: [recording(seen)] });
+    const { core, turns } = await opened({ offered: { models: ["faux-default"], named: true }, replies: [recording(seen)] });
 
     await turns.run("c1");
 
@@ -217,7 +217,7 @@ describe("a turn of the assistant", () => {
   test("hands the loop the settings that the deployment's model settings give its model, and those that the base URL's list gives it", async () => {
     const models: Model<Api>[] = [];
     const { turns } = await opened({
-      offered: { models: ["faux-1", "faux-2"], settings: new Map([["faux-1", { contextWindow: 400_000, images: false }]]) },
+      offered: { models: ["faux-1", "faux-2"], named: true, settings: new Map([["faux-1", { contextWindow: 400_000, images: false }]]) },
       settings: {
         checked: () =>
           Promise.resolve(
@@ -432,7 +432,7 @@ describe("a turn that fails", () => {
 
   test("keeps why the deployment offers no model by the conversation's last message, and raises nothing of its own", async () => {
     const why = "The assistant offers no model, since the list of models at https://proxy.invalid/v1/models holds none that takes tools.";
-    const { core, turns, conversations } = await opened({ offered: { models: [], failure: why } });
+    const { core, turns, conversations } = await opened({ offered: { models: [], named: false, failure: why } });
 
     await turns.run("c2");
 

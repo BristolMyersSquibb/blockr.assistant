@@ -343,6 +343,37 @@ describe("a turn on the loop", () => {
   });
 });
 
+describe("a model call of the plugin's own on the loop", () => {
+  test("sends the system prompt and the text as the user's message, with no tools, as a turn's calls go, and gives the reply's text and tokens", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([seen(calls, fauxAssistantMessage("Counting the blocks"))]);
+
+    const reply = await loop.callModel({ connection, model: "faux-1", systemPrompt: "You title chat conversations.", text: "user: How many blocks?", signal: new AbortController().signal });
+
+    expect(reply.text).toBe("Counting the blocks");
+    expect(reply.failure).toBeUndefined();
+    expect(reply.usage.output).toBeGreaterThan(0);
+    expect(reply.usage.total).toBeGreaterThanOrEqual(reply.usage.input + reply.usage.output);
+    const sent = calls[0]?.context?.messages ?? [];
+    expect(sent).toMatchObject([
+      { role: "system", content: "You title chat conversations." },
+      { role: "user", content: "user: How many blocks?" },
+    ]);
+    expect(sent[0]).not.toHaveProperty("toolsAdded");
+    expect(calls[0]?.options).toMatchObject({ apiKey: "test-key", reasoning: "medium", identity: { attribution: null } });
+  });
+
+  test("gives why the call failed, where it failed", async () => {
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "The model is overloaded." })]);
+
+    const reply = await loop.callModel({ connection, model: "faux-1", systemPrompt: "You title chat conversations.", text: "user: Hello.", signal: new AbortController().signal });
+
+    expect(reply).toMatchObject({ text: "", failure: "The model is overloaded." });
+  });
+});
+
 describe("the catalogs of the loop", () => {
   test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
     const { loop } = fauxLoop();

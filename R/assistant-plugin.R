@@ -40,7 +40,12 @@
 #' The class's `ui` draws the assistant's chat wherever the frontend places
 #' the plugin: the transcript of the open conversation, the message field and
 #' the stop button.
+#' Under the message field, a footer holds the button that opens the drawer of
+#' conversations, the pick of the model and the meter of the tokens that the
+#' open conversation spent.
 #' The browser's local storage keeps which conversation is open.
+#' A conversation takes its title from a call to the model, once its first
+#' exchange that the model answered ends.
 #'
 #' @section Model access:
 #' The assistant calls its model from the browser, never through R.

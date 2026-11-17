@@ -7,7 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { Deployment } from "../deployment/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { Fetch } from "./list.ts";
-import { createModels } from "./models.ts";
+import { createModels, talksTo } from "./models.ts";
 
 // A core that holds the notifications that the assistant raises.
 function holding() {
@@ -59,7 +59,7 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models } = opened(proxy({ models: ["company-gpt", "company-claude"] }), fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: ["company-gpt", "company-claude"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["company-gpt", "company-claude"], named: true });
     expect(asked()).toBe(0);
   });
 
@@ -67,8 +67,8 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models, raised } = opened(proxy(), fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(asked()).toBe(1);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -86,6 +86,7 @@ describe("the models that the assistant offers", () => {
 
     await expect(models.offered()).resolves.toEqual({
       models: ["openai/gpt-5.4", "openai/gpt-5.4-nano"],
+      named: false,
       settings: new Map([["openai/gpt-5.4", { contextWindow: 1050000, maxTokens: 128000, images: true }]]),
     });
   });
@@ -94,7 +95,7 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models } = opened(proxy({ credential: { kind: "visitor" } }), fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: [] });
+    await expect(models.offered()).resolves.toEqual({ models: [], named: false });
     expect(asked()).toBe(0);
   });
 
@@ -109,7 +110,7 @@ describe("the models that the assistant offers", () => {
       "The assistant offers no model, since the base URL gives no list of models at https://proxy.invalid/v1/models: it answered 404. An app on such a base URL names its models in the blockr option assistant_models.",
     );
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(asked()).toBe(2);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -134,7 +135,7 @@ describe("the models that the assistant offers", () => {
     const offered = await models.offered();
 
     const why = 'The base URL refused the assistant\'s key for its list of models at https://proxy.invalid/v1/models: it answered 401, "User not found.".';
-    expect(offered).toEqual({ models: [], failure: why });
+    expect(offered).toEqual({ models: [], named: false, failure: why });
     expect(raised("assistant_call_failed")).toEqual([why]);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -145,7 +146,7 @@ describe("the models that the assistant offers", () => {
     wrong.catch(() => undefined);
     const { models, raised } = opened(wrong, fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: [] });
+    await expect(models.offered()).resolves.toEqual({ models: [], named: false });
     expect(asked()).toBe(0);
     expect([...raised("assistant_call_failed"), ...raised("assistant_models_failed")]).toEqual([]);
   });
@@ -166,7 +167,38 @@ describe("the models that the assistant offers", () => {
     controller.abort();
     answer(missing());
 
-    await expect(offered).resolves.toEqual({ models: [] });
+    await expect(offered).resolves.toEqual({ models: [], named: false });
     expect(raised("assistant_models_failed")).toEqual([]);
+  });
+});
+
+describe("what the chat reads of the models offered", () => {
+  test("is the last answer, without asking for the list again, and changes as an answer comes", async () => {
+    const { fetch, asked } = answering(missing, listed);
+    const { models } = opened(proxy(), fetch);
+    const changes: unknown[] = [];
+    models.subscribe(() => {
+      changes.push(models.current());
+    });
+
+    expect(models.current()).toBeUndefined();
+    await vi.waitFor(() => {
+      expect(models.current()?.failure).toMatch(/gives no list of models/);
+    });
+    expect(asked()).toBe(1);
+
+    await models.offered();
+    expect(models.current()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
+    expect(changes).toHaveLength(2);
+    expect(asked()).toBe(2);
+  });
+
+  test("gives the model that a conversation talks to: its pick where the models offered hold it, and the default otherwise", () => {
+    const offered = { models: ["gpt-5.4", "gpt-5.4-nano"], named: true };
+
+    expect(talksTo(offered, "gpt-5.4-nano")).toBe("gpt-5.4-nano");
+    expect(talksTo(offered, null)).toBe("gpt-5.4");
+    expect(talksTo(offered, "gpt-4o")).toBe("gpt-5.4");
+    expect(talksTo({ models: [], named: false }, "gpt-5.4")).toBeUndefined();
   });
 });

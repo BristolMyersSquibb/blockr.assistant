@@ -234,7 +234,7 @@ describe("the start of the assistant's plugin class", () => {
     const { core, settled } = await started(undefined, three, { assistant_api_key: "test-key", assistant_models: "gpt-5.4, gpt-5.4-nano" });
     await act(() => settled());
 
-    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: true });
   });
 
   test("asks the app's base URL for its list of models, with the app's key, as the board opens, where the app names none", async () => {
@@ -249,7 +249,7 @@ describe("the start of the assistant's plugin class", () => {
     const { core, settled } = await started(undefined, three, { assistant_base_url: "https://proxy.invalid/v1/", assistant_api_key: "test-key" });
     await act(() => settled());
 
-    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-mini"] });
+    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-mini"], named: false });
     expect(asked.map(({ url, headers }) => [url, headers.get("authorization")])).toEqual([["https://proxy.invalid/v1/models", "Bearer test-key"]]);
     expect(raised(core, "assistant_models_failed")).toEqual([]);
   });

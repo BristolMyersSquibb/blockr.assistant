@@ -65,6 +65,7 @@ import type { Conversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import type { Answered, Connection, Handlers, Loop, Streamed } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
+import { talksTo } from "../models/index.ts";
 import type { Models } from "../models/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { ConversationId } from "../state/index.ts";
@@ -245,8 +246,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 
     const offered = await options.models.offered();
     if (stopped(turn)) return;
-    const picked = conversations.get(turn.conversation)?.model ?? null;
-    const model = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
+    const model = talksTo(offered, conversations.get(turn.conversation)?.model ?? null);
     if (model === undefined) {
       keep(turn.conversation, offered.failure ?? NO_MODEL);
       return;
@@ -324,8 +324,9 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 }
 
 // Where the loop's calls go, and the key that each carries: the deployment's,
-// or none.
-function connectionOf(deployment: Deployment): Connection {
+// or none. The model calls of the plugin's own go there too, as the call that
+// titles a conversation (../titles).
+export function connectionOf(deployment: Deployment): Connection {
   const { credential } = deployment;
   const key = credential.kind === "deployment" ? credential.key : undefined;
   return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };

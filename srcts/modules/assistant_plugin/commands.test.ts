@@ -119,6 +119,15 @@ describe("the assistant's commands", () => {
     expect(heldIn(core, "c1")?.model).toBeNull();
   });
 
+  test("add_usage without a total, as for a call that titles the conversation, leaves the conversation's last as it was", async () => {
+    const core = await started();
+
+    await core.commands.run("blockr.assistant-add_usage", { conversation: "c1", input: 100, output: 20, total: 130 });
+    await core.commands.run("blockr.assistant-add_usage", { conversation: "c1", input: 40, output: 8 });
+
+    expect(heldIn(core, "c1")?.usage).toEqual({ input: 150, output: 30, last: 130 });
+  });
+
   test("remove_conversation removes the conversation", async () => {
     const core = await started();
 
