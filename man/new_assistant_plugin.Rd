@@ -63,8 +63,10 @@ with its name, "Assistant", and its module, \code{js/assistant_plugin.js} (see
 So \code{\link[blockr.core:available_plugins]{blockr.core::available_plugins()}} gives the class wherever
 blockr.assistant is available, and \code{\link[blockr.core:serve]{blockr.core::serve()}} runs the
 assistant in every app that does not narrow its plugins.
-The class's \code{ui} draws the assistant's panel, an empty one, wherever the
-frontend places the plugin.
+The class's \code{ui} draws the assistant's chat wherever the frontend places
+the plugin: the transcript of the open conversation, the message field and
+the stop button.
+The browser's local storage keeps which conversation is open.
 }
 \section{Model access}{
 

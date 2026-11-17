@@ -8,7 +8,7 @@ import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
-import { assistantOf } from "../../assistant/index.ts";
+import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
 import * as assistant from "./index.tsx";
 
@@ -99,7 +99,10 @@ describe("the assistant's plugin class", () => {
     expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
   });
 
-  test("draws an empty panel in the element that a frontend gives mountPlugin()", async () => {
+  // The page imports the chat's libraries as the chat first mounts, and the
+  // first import of libraries that large can take longer than a test's usual
+  // time on a busy machine, so the test waits for them for up to 30 seconds.
+  test("draws the chat in the element that a frontend gives mountPlugin(), once the chat's libraries have loaded", { timeout: 60_000 }, async () => {
     const { core, settled } = await started();
     const el = element();
 
@@ -110,11 +113,17 @@ describe("the assistant's plugin class", () => {
       });
       await settled();
     });
+    const start = Date.now();
+    while (el.querySelector(".blockr-assistant-greeting") === null && Date.now() - start < 30_000) {
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    }
 
-    expect(el.innerHTML).toBe("<div></div>");
+    expect(el.firstElementChild?.className).toBe("blockr-assistant");
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+    expect(el.querySelector(".blockr-assistant textarea")?.getAttribute("placeholder")).toBe("Ask about your board");
   });
 
-  test("unmounts the panel in the cleanup that its render() returns", async () => {
+  test("draws the panel's root before its render() returns, and removes it in the cleanup that render() returns", async () => {
     const { core } = await started();
     const el = element();
 
@@ -122,7 +131,7 @@ describe("the assistant's plugin class", () => {
     act(() => {
       cleanup = assistant.default.ui.render({ el, core, plugin: ASSISTANT, signal: new AbortController().signal });
     });
-    expect(el.innerHTML).toBe("<div></div>");
+    expect(el.firstElementChild?.className).toBe("blockr-assistant");
 
     act(cleanup);
     expect(el.childElementCount).toBe(0);
@@ -133,11 +142,8 @@ describe("the assistant's plugin class", () => {
     const { settled } = await started(el, empty);
     await act(() => settled());
 
-    // The section holds the panel inside the markup that core puts around
-    // the element it mounts the panel in, which holds nothing where core
-    // mounts no panel.
     const section = [...el.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Assistant");
-    expect(section?.lastElementChild?.innerHTML).toContain("<div></div>");
+    expect(section?.querySelector(".blockr-assistant")).not.toBeNull();
   });
 });
 
@@ -178,6 +184,39 @@ describe("the start of the assistant's plugin class", () => {
 
     act(stop);
     expect(assistantOf(core)).toBeUndefined();
+  });
+
+  test("lets the chat wait for the assistant that start opens, which a closed board's assistant does not stand in for", async () => {
+    const stubbed = await act(() => stubCore({ hello: empty, modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } } }));
+    onTestFinished(() => {
+      act(stubbed.stop);
+    });
+    let next: unknown;
+    void nextAssistant(stubbed.core).then((given) => {
+      next = given;
+    });
+
+    const first = new AbortController();
+    const opened = openAssistant(stubbed.core, first.signal);
+    await act(() => Promise.resolve());
+    expect(next).toBe(opened);
+    await expect(nextAssistant(stubbed.core)).resolves.toBe(opened);
+
+    first.abort();
+    let after: unknown;
+    void nextAssistant(stubbed.core).then((given) => {
+      after = given;
+    });
+    await act(() => Promise.resolve());
+    expect(after).toBeUndefined();
+
+    const second = new AbortController();
+    onTestFinished(() => {
+      second.abort();
+    });
+    const reopened = openAssistant(stubbed.core, second.signal);
+    await act(() => Promise.resolve());
+    expect(after).toBe(reopened);
   });
 
   test("fails each turn with the error assistant_call_failed where the app sets no key", async () => {

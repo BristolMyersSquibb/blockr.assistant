@@ -20,8 +20,6 @@
   The package lists the class in the `._BLOCKR_MODULES_` that it exports.
   So `blockr.core::serve()` runs the assistant in every app that does not
   narrow its plugins.
-  The class's `ui` draws an empty panel in React wherever the frontend places
-  the plugin.
 
 * The assistant keeps its conversations in the board, as its plugin state,
   which a JSON board saves with the rest of the board (#221).
@@ -208,6 +206,38 @@
   So core's spans of the commands that a tool runs and of the requests that it
   sends sit under the tool's span.
   The metrics that ellmer recorded go, since core records none in the client.
+
+* The class's `ui` draws the assistant's chat wherever the frontend places the
+  plugin, in React on assistant-ui 0.15.36, in place of shinychat's chat
+  (#229).
+  The chat draws only in the element that the frontend gives it and in the
+  browser's top layer, and it fits a panel as narrow as a rail.
+  It shows the open conversation as the plugin holds it, whichever command
+  changed it last, and the browser's local storage keeps which conversation
+  is open.
+  What today's chat offers carries over: the message field with its keys, the
+  greeting with its suggestions, replies as Markdown with tables and with code
+  blocks that a button copies, a dialog before a link opens another site, and
+  the model's reasoning as a row that folds.
+  A summary shows as one row that opens to its text.
+  A message goes into the open conversation, or into one that the chat adds,
+  titled "New conversation", where none is open.
+
+* While a turn runs, the user can type in any conversation but sends only once
+  the turn ends, and the send button says which conversation's turn it waits
+  for (#229).
+  The stop button and Escape stop the turn, and a failure that ended a turn
+  shows at that turn.
+  Each tool call shows as a row titled from the tool's name, and the calls to
+  one tool with no text between them share a row.
+  The row of the edit tool names its commands by their labels, and each block
+  of its review with its status dot, or the command that refused and why.
+
+* The build bundles the chat's libraries, assistant-ui, its Markdown and
+  remark-gfm, minified, into `inst/js/chat-<hash>.js` (#229).
+  The browser loads the file as the chat first mounts, so that no board waits
+  for it to open.
+  The chat's stylesheet is `inst/js/assistant_plugin.css`.
 
 * Each call to the model sends the system prompt, then the conversation, and
   then a message of the app's, which holds the board and what the user has on

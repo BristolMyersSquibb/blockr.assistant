@@ -1,0 +1,117 @@
+// The panel of the assistant's chat, which the class's `ui` renders in the
+// element that a frontend gives mountPlugin(), in React, on the one copy of
+// React that core puts on the page, in a root of its own
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-panel):
+// 1. The panel draws its root before render() returns. The root fills the
+//    element, and the chat sizes itself from it, as a container.
+// 2. It waits for the assistant of the open board, which the class's start
+//    opens, and for the chat's libraries, which the page imports as the chat
+//    first mounts (./libraries.ts).
+// 3. Then it draws the chat. As the next board opens, it draws the chat again
+//    for that board's assistant.
+// Where the libraries fail to load, the panel says so and logs why.
+
+import { useEffect, useState } from "react";
+import type { ReactElement } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import type { CoreApi } from "@blockr/core";
+import { assistantOf, nextAssistant } from "../assistant/index.ts";
+import type { Assistant } from "../assistant/index.ts";
+import { Chat } from "./chat.tsx";
+import { librariesLoaded, loadLibraries } from "./libraries.ts";
+
+// Draws the chat in the element, and gives the function that removes it.
+export function renderChat({ el, core }: { readonly el: HTMLElement; readonly core: CoreApi }): () => void {
+  const root = createRoot(el);
+  flushSync(() => {
+    root.render(<Panel core={core} />);
+  });
+  return () => {
+    root.unmount();
+  };
+}
+
+function Panel({ core }: { readonly core: CoreApi }): ReactElement {
+  const assistant = useAssistant(core);
+  const loaded = useLibraries(core);
+  return (
+    <div className="blockr-assistant">
+      {loaded === "failed" ? (
+        <p className="blockr-assistant-unloaded">The chat could not load. Reload the page to try again.</p>
+      ) : loaded && assistant !== undefined ? (
+        <Chat key={assistantKey(assistant)} core={core} assistant={assistant} />
+      ) : null}
+    </div>
+  );
+}
+
+// The assistant of the board that the CoreApi has open, once the class's
+// start has opened it, and undefined while the panel waits for it.
+function useAssistant(core: CoreApi): Assistant | undefined {
+  const [assistant, setAssistant] = useState(() => open(assistantOf(core)));
+
+  useEffect(() => {
+    if (assistant !== undefined && !assistant.signal.aborted) {
+      const closed = (): void => {
+        setAssistant(undefined);
+      };
+      assistant.signal.addEventListener("abort", closed, { once: true });
+      return () => {
+        assistant.signal.removeEventListener("abort", closed);
+      };
+    }
+    let live = true;
+    void nextAssistant(core).then((next) => {
+      if (live) setAssistant(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [assistant, core]);
+
+  return open(assistant);
+}
+
+// Whether the chat's libraries have loaded, or "failed".
+function useLibraries(core: CoreApi): boolean | "failed" {
+  const [loaded, setLoaded] = useState<boolean | "failed">(librariesLoaded);
+
+  useEffect(() => {
+    if (loaded !== false) return;
+    let live = true;
+    loadLibraries().then(
+      () => {
+        if (live) setLoaded(true);
+      },
+      (error: unknown) => {
+        core.log("blockr.assistant").error(new Error(`The assistant's chat could not load its libraries: ${String(error)}`, { cause: error }));
+        if (live) setLoaded("failed");
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [core, loaded]);
+
+  return loaded;
+}
+
+// The assistant, where its board is open.
+function open(assistant: Assistant | undefined): Assistant | undefined {
+  return assistant?.signal.aborted === false ? assistant : undefined;
+}
+
+// A key that tells the assistants of two boards apart, so that the chat of the
+// next board starts afresh.
+const keys = new WeakMap<Assistant, string>();
+let drawn = 0;
+function assistantKey(assistant: Assistant): string {
+  let key = keys.get(assistant);
+  if (key === undefined) {
+    drawn += 1;
+    key = String(drawn);
+    keys.set(assistant, key);
+  }
+  return key;
+}

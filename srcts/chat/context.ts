@@ -1,0 +1,53 @@
+// What the chat's components share, which the chat gives them through React's
+// context, since assistant-ui draws each message and so passes no props of
+// the chat's.
+// The actions change only as another conversation opens, while the state
+// changes with every change of the turn, as each token of a reply streams.
+// So a component that only acts, as a link does, takes the actions alone and
+// draws again only as another conversation opens.
+
+import { createContext, useContext } from "react";
+import type { CoreApi } from "@blockr/core";
+import type { Running } from "../turns/index.ts";
+
+export interface ChatActions {
+  readonly core: CoreApi;
+  // Sends the text as the user's message.
+  readonly send: (text: string) => void;
+  // Stops the turn that runs.
+  readonly stop: () => void;
+  // Asks before a link opens another site.
+  readonly openLink: (url: string) => void;
+}
+
+export interface ChatState {
+  // The turn that runs on the board, in whichever conversation, or undefined.
+  readonly running: Running | undefined;
+  // Whether that turn runs in the open conversation.
+  readonly runsHere: boolean;
+  // The tool calls that the turn waits for, which show as running. A call of
+  // the open conversation that has no result and is not among them shows that
+  // the turn ended before it returned.
+  readonly waiting: ReadonlySet<string>;
+  // The user's earlier messages in the open conversation, oldest first, as
+  // the user typed them.
+  readonly history: readonly string[];
+  // The title of a conversation, or undefined for one that the board lacks.
+  readonly titleOf: (conversation: string) => string | undefined;
+}
+
+export const ChatActionsContext = createContext<ChatActions | undefined>(undefined);
+
+export const ChatStateContext = createContext<ChatState | undefined>(undefined);
+
+export function useChatActions(): ChatActions {
+  const actions = useContext(ChatActionsContext);
+  if (actions === undefined) throw new Error("The chat's components draw only inside the chat.");
+  return actions;
+}
+
+export function useChat(): ChatState {
+  const state = useContext(ChatStateContext);
+  if (state === undefined) throw new Error("The chat's components draw only inside the chat.");
+  return state;
+}

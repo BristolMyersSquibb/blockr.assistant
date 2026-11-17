@@ -5,6 +5,9 @@
 // What has to outlive a mount of the chat, the turn above all, runs from
 // start, so the chat finds the assistant through the CoreApi that core gives
 // both (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-panel).
+// A frontend may mount the chat before core calls start, as core calls it once
+// the frontend has drawn the board, so the chat waits for the assistant with
+// nextAssistant().
 //
 // The turns offer the read tools and the edit tools, which take the
 // plugin's signal to tell another board opening from a stop.
@@ -45,6 +48,8 @@ export interface Assistant {
   readonly skills: Skills;
   readonly models: Models;
   readonly turns: Turns;
+  // The signal that aborts as the next board opens, which ends the assistant.
+  readonly signal: AbortSignal;
 }
 
 export interface AssistantOptions {
@@ -61,6 +66,8 @@ export interface AssistantOptions {
 }
 
 const opened = new WeakMap<CoreApi, Assistant>();
+// Those who wait for the next assistant that opens on a CoreApi.
+const waiting = new WeakMap<CoreApi, Set<(assistant: Assistant) => void>>();
 
 // Opens the assistant of the board that opens, and keeps it where
 // assistantOf() finds it until the signal aborts. Where the conversations
@@ -90,8 +97,11 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     ...("locks" in options ? { locks: options.locks } : {}),
   });
 
-  const assistant = { conversations, skills, models, turns };
+  const assistant = { conversations, skills, models, turns, signal };
   opened.set(core, assistant);
+  const waiters = waiting.get(core);
+  waiting.delete(core);
+  for (const waiter of waiters ?? []) waiter(assistant);
   signal.addEventListener(
     "abort",
     () => {
@@ -106,4 +116,18 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
 // the class's start has opened it.
 export function assistantOf(core: CoreApi): Assistant | undefined {
   return opened.get(core);
+}
+
+// Resolves with the assistant of the board that the CoreApi has open, at once
+// where the class's start has opened it, and otherwise once start opens it.
+// An assistant whose board has closed does not count, so the promise waits for
+// the next one.
+export function nextAssistant(core: CoreApi): Promise<Assistant> {
+  const open = opened.get(core);
+  if (open !== undefined && !open.signal.aborted) return Promise.resolve(open);
+  return new Promise((resolve) => {
+    const waiters = waiting.get(core) ?? new Set();
+    waiters.add(resolve);
+    waiting.set(core, waiters);
+  });
 }
