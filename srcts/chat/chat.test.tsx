@@ -218,7 +218,7 @@ function inState(assistant: Assistant): AssistantState["conversations"] {
 // Types the key into the field for the visitor's key, as the visitor would,
 // and gives it with the field's button.
 function giveKey(el: HTMLElement, key: string): void {
-  const input = el.querySelector<HTMLInputElement>(".blockr-assistant-key input");
+  const input = el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]");
   if (input === null) throw new Error("The chat draws no field for the key.");
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, key);
@@ -406,14 +406,19 @@ describe("the assistant's chat", () => {
 });
 
 describe("the chat's field for the visitor's key", () => {
-  test("asks for the key above the message field where the app sets none, and sends nothing until the visitor gives one", async () => {
+  test("asks for the key above the message field where the app sets none, as a login to the host for the browser's password manager, and sends nothing until the visitor gives one", async () => {
     const keys: (string | undefined)[] = [];
     const { el, assistant, core, sent } = await chat({ credential: VISITOR, replies: [keyed(keys)] });
 
     const note = el.querySelector(".blockr-assistant-key-note");
     expect(note?.textContent).toBe("Enter your API key for faux.invalid. The assistant keeps it only until the page reloads.");
     expect(el.querySelector(".blockr-assistant-key + .blockr-assistant-composer")).not.toBeNull();
-    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.type).toBe("password");
+    const key = el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]");
+    expect(key?.type).toBe("password");
+    expect(key?.autocomplete).toBe("current-password");
+    const login = el.querySelector<HTMLInputElement>(".blockr-assistant-key input[autocomplete=username]");
+    expect(login?.value).toBe("faux.invalid");
+    expect(login?.hidden).toBe(true);
     expect([...el.querySelectorAll<HTMLButtonElement>(".blockr-assistant-suggestion")].every((button) => button.disabled)).toBe(true);
     expect(el.querySelector(".blockr-assistant-send")?.getAttribute("aria-label")).toBe("Sends once you enter your key");
 
@@ -448,7 +453,7 @@ describe("the chat's field for the visitor's key", () => {
     const note = el.querySelector(".blockr-assistant-key-note");
     expect(note?.textContent).toBe("The server at faux.invalid refused your key. Enter another one.");
     expect(note?.getAttribute("role")).toBe("alert");
-    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.value).toBe("");
+    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]")?.value).toBe("");
     expect(el.querySelector<HTMLButtonElement>(".blockr-assistant-send")?.disabled).toBe(true);
   });
 
@@ -462,7 +467,7 @@ describe("the chat's field for the visitor's key", () => {
     expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(
       "The connection to faux.invalid was lost, and your key may be wrong. Change it, or send your message again.",
     );
-    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.value).toBe("sk-visitor");
+    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]")?.value).toBe("sk-visitor");
 
     type(el, "How many blocks?");
     press(field(el), "Enter");

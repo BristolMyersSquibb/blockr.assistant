@@ -287,10 +287,13 @@
 * Where the app sets no key in the blockr option `assistant_api_key`, the
   chat asks each visitor for a key of their own, in a field above the message
   field, and sends nothing until the visitor gives one (#236).
-  The key stays in the page's memory and reaches neither the board, R nor the
-  browser's storage.
+  The plugin keeps the key in the page's memory, and writes it to neither the
+  board, R nor the browser's storage.
   So another board that opens in the page keeps the key, and a reload asks
   for it again.
+  The browser takes the field for a login, with the host of the base URL as
+  the user name, so that its password manager can save the key, where the
+  visitor lets it, and fill it in after a reload.
   Where the app names no models, the assistant asks for the base URL's list
   of models with the key as soon as the visitor gives it.
   Where the base URL refuses the key, for a call or for its list, the

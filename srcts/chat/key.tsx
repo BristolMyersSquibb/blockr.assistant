@@ -11,9 +11,11 @@
 //   message field sends with the key meanwhile, so that the visitor can change
 //   the key or send again.
 // The field names the host of the base URL, so that the visitor knows whose
-// key it takes. It shows the key as dots, and asks the browser to fill in
-// nothing. The key goes to the plugin's memory alone, as the visitor gives it
-// (../visitor-key).
+// key it takes, and shows the key as dots. The browser takes it for a login
+// form, with the host as the user name and the key as the password, so that
+// its password manager can save the key, where the visitor lets it, and fill
+// it in after a reload or in another tab. The plugin keeps the key in its
+// memory alone, as the visitor gives it (../visitor-key).
 
 import { useId } from "react";
 import type { ReactElement, SubmitEvent } from "react";
@@ -46,6 +48,7 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
         {noteOf(field)}
       </p>
       <div className="blockr-assistant-key-field">
+        <input type="text" name="username" value={field.host} autoComplete="username" readOnly hidden />
         <input
           type="password"
           name="key"
@@ -53,7 +56,7 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
           placeholder="API key"
           aria-label="Your API key"
           aria-describedby={note}
-          autoComplete="off"
+          autoComplete="current-password"
           spellCheck={false}
         />
         <button type="submit">Use key</button>

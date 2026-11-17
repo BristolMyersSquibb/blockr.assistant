@@ -633,6 +633,9 @@
   font-size: 13px;
   color: var(--blockr-assistant-text);
 }
+.blockr-assistant-key-field input[hidden] {
+  display: none;
+}
 .blockr-assistant-key-field input:focus {
   outline: 2px solid var(--blockr-assistant-border-accent);
   outline-offset: 1px;

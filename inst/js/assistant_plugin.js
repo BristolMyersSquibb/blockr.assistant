@@ -4052,6 +4052,7 @@ function Field({ field }) {
   return /* @__PURE__ */ jsxs2("form", { className: "blockr-assistant-key", "data-asks": state.kind, onSubmit: submit, children: [
     /* @__PURE__ */ jsx2("p", { id: note, className: "blockr-assistant-key-note", role: state.kind === "missing" ? void 0 : "alert", children: noteOf(field) }),
     /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-key-field", children: [
+      /* @__PURE__ */ jsx2("input", { type: "text", name: "username", value: field.host, autoComplete: "username", readOnly: true, hidden: true }),
       /* @__PURE__ */ jsx2(
         "input",
         {
@@ -4061,7 +4062,7 @@ function Field({ field }) {
           placeholder: "API key",
           "aria-label": "Your API key",
           "aria-describedby": note,
-          autoComplete: "off",
+          autoComplete: "current-password",
           spellCheck: false
         }
       ),

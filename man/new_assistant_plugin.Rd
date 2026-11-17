@@ -121,10 +121,13 @@ The error \code{assistant_call_failed} then says that the base URL refused the
 key, or, where the list fails as well, that the connection was lost and
 that the key may be wrong.
 
-The visitor's own key stays in the page's memory, and reaches neither the
-board, R nor the browser's storage.
+The plugin keeps the visitor's own key in the page's memory, and writes it
+to neither the board, R nor the browser's storage.
 So another board that opens in the page keeps the key, and a reload asks
 for it again.
+The browser takes the field for the key for a login, with the host of the
+base URL as the user name, so that its password manager can save the key,
+where the visitor lets it, and fill it in after a reload.
 Until the visitor gives a key, the chat sends nothing.
 Where the base URL refuses the key, for a call or for its list of models,
 the chat asks for a key again.
