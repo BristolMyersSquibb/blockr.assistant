@@ -41,7 +41,9 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload" | "beforeCall">> & {
+    readonly key?: string | undefined;
+  } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -623,6 +625,53 @@ describe("the catalogs of the loop", () => {
 
     expect(["gpt-5.4", "claude-sonnet-5-5", "company-gpt", "openai/gpt-5.4"].map((id) => loop.inCatalog(id))).toEqual([true, true, false, false]);
   });
+
+  test("give the context window of a model as pi takes it, from the model settings, the catalog, the list or the default", () => {
+    const { loop, connection } = fauxLoop();
+
+    expect(loop.contextWindow({ connection, model: "gpt-5.4" })).toBe(OPENAI_MODELS["gpt-5.4"].contextWindow);
+    expect(loop.contextWindow({ connection, model: "gpt-5.4", settings: { contextWindow: 100_000 } })).toBe(100_000);
+    expect(loop.contextWindow({ connection, model: "deepseek/deepseek-v3.2", listed: { contextWindow: 163_840 } })).toBe(163_840);
+    expect(loop.contextWindow({ connection, model: "company-gpt" })).toBe(128_000);
+  });
+});
+
+describe("the call that writes a summary", () => {
+  const call = { model: "faux-1", systemPrompt: "Summarize.", prompt: "<conversation>[User]: Hi.</conversation>", signal: new AbortController().signal };
+
+  test("sends the system prompt and one message of the role user, with no tools, and gives the summary with the call's tokens", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([seen(calls, fauxAssistantMessage([fauxThinking("Short."), fauxText("The user said hi.")]))]);
+
+    const summarized = await loop.summarize({ ...call, connection });
+
+    expect(summarized.text).toBe("The user said hi.");
+    expect(summarized.failure).toBeUndefined();
+    expect(summarized.usage.input).toBeGreaterThan(0);
+    expect(summarized.usage.total).toBe(summarized.usage.input + summarized.usage.output);
+    const messages = calls[0]?.context?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ role: "system", content: "Summarize." });
+    expect(messages[0]).not.toHaveProperty("toolsAdded");
+    expect(messages[1]).toMatchObject({ role: "user", content: [{ type: "text", text: call.prompt }] });
+    expect(calls[0]?.options).toMatchObject({ apiKey: "test-key", reasoning: "medium", cacheRetention: "none" });
+    expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("gives why it wrote no summary, as for a failed call, a reply that the cap cut off or an empty one", async () => {
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "Rate limited." }),
+      fauxAssistantMessage("The user", { stopReason: "length" }),
+      fauxAssistantMessage(" "),
+    ]);
+
+    const failures = [];
+    for (let i = 0; i < 3; i += 1) failures.push((await loop.summarize({ ...call, connection })).failure);
+
+    expect(failures).toEqual(["Rate limited.", "The summary reached the model's cap for a reply, so it was cut off.", "The model wrote no summary."]);
+  });
 });
 
 describe("a turn that stops or fails", () => {
@@ -733,8 +782,40 @@ describe("a turn that stops or fails", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.failure).toBe("401 Unauthorized");
+    expect(calls[0]?.overflow).toBeUndefined();
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+
+  test("reports a call that failed since the conversation outgrew the window, as pi tells it from the provider's error", async () => {
+    const { run, calls } = turnWith([fauxAssistantMessage([], { stopReason: "error", errorMessage: "Your input exceeds the context window of this model." })]);
+
+    await run();
+
+    expect(calls[0]?.overflow).toBe(true);
+  });
+});
+
+describe("before each call", () => {
+  test("the loop waits for what the caller does, and then reads the conversation", async () => {
+    const contexts: TranscriptContext[] = [];
+    const record: FauxResponseStep = (context) => {
+      contexts.push(context);
+      return fauxAssistantMessage("Two.");
+    };
+    let before = 0;
+    const turn = turnWith([record], {
+      beforeCall: async () => {
+        before += 1;
+        await Promise.resolve();
+        turn.messages.splice(0, 1, { ...asked, parts: [{ type: "text", text: "How many blocks now?" }] });
+      },
+    });
+
+    await turn.run();
+
+    expect(before).toBe(1);
+    expect(contexts[0]?.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "How many blocks now?" }] });
   });
 });
 

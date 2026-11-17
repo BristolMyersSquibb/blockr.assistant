@@ -265,6 +265,25 @@
   Through OpenRouter, Anthropic's cache serves only what a call marks, so
   until now it served none of these calls.
 
+* The assistant compacts a conversation as pi's own CLI compacts a session
+  (#232).
+  Before each call to the model, it estimates the tokens that the call would
+  send: those of the last call, and four characters to a token for the
+  messages after its reply.
+  Where they pass the model's context window less 16,384 tokens, the call
+  waits while a call of the assistant's own writes a summary of the older
+  messages, which then takes their place.
+  The newest messages stay, up to a quarter of the window.
+  Where the cut falls inside an exchange, a summary of the exchange's start
+  goes with it, and a later summary updates the one before it.
+  A call that the provider refuses since the conversation outgrew the window
+  gets a summary too, and the assistant makes the call once more.
+  No board option sets when compaction runs, since `chat_compact_tokens` and
+  `chat_compact_keep` went with today's compaction (#219).
+  While the model writes, the transcript says so at its end.
+  A compaction that fails leaves the conversation as it was, and raises the
+  warning `assistant_compaction_failed`.
+
 * The chat's message field takes images, PDFs and text files, up to 30 MiB
   together, which the user picks with its button, drops on the chat or pastes
   (#231).

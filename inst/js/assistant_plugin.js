@@ -335,25 +335,6 @@ var assistant_plugin_schema_default = {
   }
 };
 
-// srcts/blockr-options/numbers.ts
-function sentNumber(sent3) {
-  if (typeof sent3 === "number") return sent3;
-  if (typeof sent3 !== "string" || sent3.trim() === "") return Number.NaN;
-  return Number(sent3);
-}
-
-// srcts/conversations/cap.ts
-async function readCap(core) {
-  const sent3 = await core.blockrOption("chat_save_turns");
-  if (sent3 === void 0) return 50;
-  const value = sentNumber(sent3);
-  if (value === -1) return Infinity;
-  if (Number.isInteger(value) && value >= 0) return value;
-  throw new RangeError(
-    `The blockr option chat_save_turns is ${JSON.stringify(sent3)}, where it takes a whole number of 0 or more, or -1 for every message.`
-  );
-}
-
 // srcts/state/state.ts
 var ASSISTANT = "blockr.assistant-assistant_plugin";
 function assistantState(board) {
@@ -407,6 +388,782 @@ function opensExchange(message2) {
 }
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// srcts/notifications/notifications.ts
+function heldError(core, signal, code, severity = "error") {
+  let withdraw;
+  signal.addEventListener(
+    "abort",
+    () => {
+      withdraw = void 0;
+    },
+    { once: true }
+  );
+  return {
+    raise(message2) {
+      if (signal.aborted) return;
+      withdraw?.();
+      withdraw = core.notifications.notify(ASSISTANT, { severity, code, message: message2 });
+    },
+    withdraw() {
+      withdraw?.();
+      withdraw = void 0;
+    }
+  };
+}
+
+// srcts/attachments/attachments.ts
+var PDF = "application/pdf";
+var IMAGES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+var TEXT_EXTENSIONS = {
+  md: "text/markdown",
+  markdown: "text/markdown",
+  txt: "text/plain",
+  csv: "text/csv",
+  json: "application/json",
+  py: "text/x-python",
+  js: "text/javascript",
+  ts: "text/typescript",
+  r: "text/x-r",
+  yaml: "text/yaml",
+  yml: "text/yaml",
+  toml: "text/x-toml",
+  qmd: "text/markdown",
+  rmd: "text/markdown",
+  ipynb: "application/x-ipynb+json",
+  rst: "text/x-rst",
+  tex: "text/x-tex",
+  sql: "text/x-sql",
+  sh: "text/x-sh",
+  html: "text/html",
+  htm: "text/html",
+  css: "text/css",
+  xml: "application/xml",
+  ini: "text/x-ini",
+  cfg: "text/x-ini",
+  log: "text/plain"
+};
+var TEXTS = new Set(Object.values(TEXT_EXTENSIONS));
+var MAX_BYTES = 30 * 1024 * 1024;
+var MAX_EDGE = 1568;
+var PASTE_AS_FILE = 1e3;
+var PASTED_TEXT = "Pasted Text";
+function kindOf(mediaType) {
+  if (IMAGES.includes(mediaType)) return "image";
+  if (mediaType === PDF) return "pdf";
+  return TEXTS.has(mediaType) ? "text" : void 0;
+}
+function mediaTypeOf(file) {
+  if (IMAGES.includes(file.type) || file.type === PDF) return file.type;
+  const extension = extensionOf(file.name);
+  if (extension !== "") return Object.hasOwn(TEXT_EXTENSIONS, extension) ? TEXT_EXTENSIONS[extension] : void 0;
+  return TEXTS.has(file.type) ? file.type : void 0;
+}
+var ACCEPT = [...IMAGES, PDF, ...TEXTS, ...Object.keys(TEXT_EXTENSIONS).map((extension) => `.${extension}`)].join(",");
+function scaledSize(width, height, bound = MAX_EDGE) {
+  const longer = Math.max(width, height);
+  if (longer <= bound) return void 0;
+  const scale = bound / longer;
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+}
+function namesOf(names) {
+  const quoted = names.map((name) => `"${name}"`);
+  return quoted.length <= 1 ? quoted.join("") : `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1) ?? ""}`;
+}
+function pastedFile(text3) {
+  return new File([text3], PASTED_TEXT, { type: "text/plain" });
+}
+function sizeOf(bytes) {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
+  return `${String(Math.round(bytes / (1024 * 1024)))} MB`;
+}
+function extensionOf(name) {
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
+}
+
+// srcts/attachments/read.ts
+async function attachedFile(file, mediaType) {
+  const typed = file.type === mediaType ? file : new File([file], file.name, { type: mediaType });
+  return kindOf(mediaType) === "image" ? scaledDown(typed) : typed;
+}
+async function copiedFile(file) {
+  return new File([await file.arrayBuffer()], file.name, { type: file.type });
+}
+async function encodedFile(file, mediaType) {
+  if (kindOf(mediaType) === "text") return { text: await file.text() };
+  return { data: await base64Of(file) };
+}
+function base64Of(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = typeof reader.result === "string" ? reader.result : "";
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("The browser could not read the file."));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function scaledDown(file) {
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return file;
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
+  try {
+    const size = scaledSize(bitmap.width, bitmap.height);
+    if (size === void 0) return file;
+    const canvas = new OffscreenCanvas(size.width, size.height);
+    const context6 = canvas.getContext("2d");
+    if (context6 === null) return file;
+    context6.drawImage(bitmap, 0, 0, size.width, size.height);
+    const blob = await canvas.convertToBlob({ type: file.type === "image/gif" ? "image/png" : file.type });
+    return new File([blob], file.name, { type: blob.type });
+  } catch {
+    return file;
+  } finally {
+    bitmap.close();
+  }
+}
+
+// srcts/turns/lock.ts
+var NAME = `blockr.assistant-turn-${newId()}`;
+function pageLocks() {
+  return globalThis.navigator?.locks ?? void 0;
+}
+function holdLock(locks) {
+  if (locks === void 0) return Promise.resolve(nothing);
+  return new Promise((resolve) => {
+    let release = nothing;
+    const held = new Promise((done) => {
+      release = done;
+    });
+    locks.request(NAME, () => {
+      resolve(release);
+      return held;
+    }).catch(() => {
+      resolve(nothing);
+    });
+  });
+}
+function nothing() {
+}
+
+// srcts/turns/prepare.ts
+var NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
+var STOPPED = { kind: "stopped" };
+async function prepareCall(options, picked, stopped) {
+  let deployment;
+  try {
+    deployment = await options.deployment;
+  } catch (error) {
+    return failed(`The assistant cannot call a model: ${messageOf(error)}`);
+  }
+  if (deployment.credential.kind === "visitor") return failed(NO_KEY);
+  const offered = await options.models.offered();
+  if (stopped()) return STOPPED;
+  const pick = picked();
+  const model2 = pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
+  if (model2 === void 0) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
+  let loop;
+  try {
+    loop = await options.load();
+  } catch (error) {
+    return failed(`The assistant could not load the code that runs its turns: ${messageOf(error)}`);
+  }
+  if (stopped()) return STOPPED;
+  const settings = await options.settings.checked((id) => loop.inCatalog(id));
+  if (stopped()) return STOPPED;
+  return {
+    kind: "prepared",
+    loop,
+    model: { connection: connectionOf(deployment), model: model2, settings: settings.get(model2), listed: offered.settings?.get(model2) }
+  };
+}
+function failed(why) {
+  return { kind: "failed", why, raise: true };
+}
+function connectionOf(deployment) {
+  const { credential } = deployment;
+  const key = credential.kind === "deployment" ? credential.key : void 0;
+  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
+}
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// srcts/turns/turns.ts
+var STOP = new DOMException("The user stopped the turn.", "AbortError");
+var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
+var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
+function createTurns(core, signal, options) {
+  const { conversations, callFailed } = options;
+  const locks = "locks" in options ? options.locks : pageLocks();
+  const listeners = /* @__PURE__ */ new Set();
+  let running;
+  let snapshot;
+  const attachmentRefused = heldError(core, signal, "assistant_attachment_refused");
+  let refusedIn;
+  function closed2() {
+    return signal.aborted;
+  }
+  function stopped(turn) {
+    return closed2() || turn.controller.signal.aborted;
+  }
+  function changed() {
+    snapshot = running === void 0 ? void 0 : { conversation: running.conversation, reply: running.reply, results: running.results, stopping: running.stopping };
+    for (const listener of listeners) listener();
+  }
+  function fail(conversation2, why) {
+    callFailed.raise(why);
+    keep2(conversation2, why);
+  }
+  function keep2(conversation2, why) {
+    const last = conversations.get(conversation2)?.messages.at(-1);
+    if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
+  }
+  function refuse(conversation2, files, why) {
+    const names = namesOf(files.map((file) => file.name));
+    const which = files.length === 1 ? `the file ${names}, so the conversation goes on without it` : `the files ${names}, so the conversation goes on without them`;
+    const message2 = `The provider refused ${which}: ${why}`;
+    attachmentRefused.raise(message2);
+    refusedIn = conversation2;
+    keep2(conversation2, message2);
+    change(conversation2, files, () => ({ refused: true }));
+  }
+  function succeeded(conversation2, files) {
+    callFailed.withdraw();
+    if (refusedIn === conversation2) {
+      attachmentRefused.withdraw();
+      refusedIn = void 0;
+    }
+    change(conversation2, files, taken);
+  }
+  function change(conversation2, files, changing) {
+    const byMessage = /* @__PURE__ */ new Map();
+    for (const file of files) byMessage.set(file.message, (byMessage.get(file.message) ?? /* @__PURE__ */ new Set()).add(file.index));
+    for (const [message2, indices] of byMessage) {
+      const held = conversations.kept(conversation2, message2)?.files;
+      if (held === void 0) continue;
+      const next = held.map((file, index) => indices.has(index) ? changing(file) : file);
+      try {
+        conversations.keep(conversation2, message2, { files: next });
+      } catch {
+      }
+    }
+  }
+  function handlers(turn) {
+    let writes = true;
+    const write = async (change2) => {
+      if (!writes || closed2()) return;
+      try {
+        await change2();
+      } catch (error) {
+        writes = false;
+        turn.controller.abort(GONE);
+        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf(error)}`);
+      }
+    };
+    return {
+      streaming(reply) {
+        turn.reply = reply;
+        changed();
+      },
+      async called(call) {
+        turn.reply = void 0;
+        if (call.reply !== void 0) {
+          const { message: message2, kept } = call.reply;
+          await write(() => conversations.addMessage(turn.conversation, message2, kept));
+        }
+        const { input, output, total } = call.usage;
+        if (input > 0 || output > 0 || total > 0) {
+          await write(() => conversations.addUsage(turn.conversation, input, output, total));
+        }
+        if (call.failure !== void 0) {
+          if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
+            turn.overflow = call.failure;
+            turn.overflowed = call.files;
+          } else if (writes && !closed2()) {
+            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, call.failure);
+            else fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+          }
+        } else if (!turn.controller.signal.aborted) {
+          succeeded(turn.conversation, call.files);
+        }
+        changed();
+      },
+      returned(id, result) {
+        turn.results = { ...turn.results, [id]: result };
+        changed();
+      },
+      async results(message2, kept) {
+        await write(() => conversations.addMessage(turn.conversation, message2, kept));
+        turn.results = {};
+        changed();
+      }
+    };
+  }
+  async function runTurn2(turn) {
+    if (conversations.get(turn.conversation) === void 0) return;
+    const prepared = await prepareCall(options, () => conversations.get(turn.conversation)?.model ?? null, () => stopped(turn));
+    if (prepared.kind === "stopped") return;
+    if (prepared.kind === "failed") {
+      if (!prepared.raise) keep2(turn.conversation, prepared.why);
+      else if (!closed2()) fail(turn.conversation, prepared.why);
+      return;
+    }
+    let systemPrompt2;
+    try {
+      systemPrompt2 = await options.prompt.system();
+    } catch (error) {
+      if (!closed2()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf(error)}`);
+      return;
+    }
+    if (stopped(turn)) return;
+    const call = { loop: prepared.loop, model: prepared.model };
+    const loop = () => prepared.loop.run({
+      ...prepared.model,
+      tools: options.tools,
+      messages: () => conversations.get(turn.conversation)?.messages ?? [],
+      kept: (message2) => conversations.kept(turn.conversation, message2),
+      systemPrompt: systemPrompt2,
+      appMessage: () => options.prompt.appMessage(),
+      beforeCall: (stop) => options.compaction.beforeCall(turn.conversation, call, stop),
+      signal: turn.controller.signal,
+      on: handlers(turn)
+    });
+    await loop();
+    const overflow = turn.overflow;
+    if (overflow === void 0 || stopped(turn)) return;
+    turn.overflow = void 0;
+    turn.retried = true;
+    const compacted2 = await options.compaction.compact(turn.conversation, call, turn.controller.signal);
+    if (stopped(turn)) return;
+    if (compacted2) await loop();
+    else if (turn.overflowed.length > 0) refuse(turn.conversation, turn.overflowed, overflow);
+    else fail(turn.conversation, `The assistant's call to the model failed: ${overflow}`);
+  }
+  return {
+    async run(conversation2) {
+      if (closed2()) throw new Error("The board that the assistant's turns ran on is closed.");
+      if (running !== void 0) {
+        throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
+      }
+      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, overflow: void 0, overflowed: [], retried: false, controller: new AbortController() };
+      const close = () => {
+        turn.controller.abort(CLOSED);
+      };
+      signal.addEventListener("abort", close, { once: true });
+      running = turn;
+      changed();
+      const release = await holdLock(locks);
+      try {
+        await runTurn2(turn);
+      } catch (error) {
+        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf(error)}`);
+      } finally {
+        release();
+        signal.removeEventListener("abort", close);
+        running = void 0;
+        changed();
+      }
+    },
+    stop() {
+      if (running === void 0 || running.controller.signal.aborted) return;
+      running.stopping = true;
+      running.controller.abort(STOP);
+      changed();
+    },
+    current() {
+      return snapshot;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+}
+function taken(file) {
+  return "refused" in file || file.taken === true ? file : { ...file, taken: true };
+}
+
+// srcts/compaction/prompt.ts
+var RESULT_CHARACTERS = 2e3;
+var SUMMARY_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant that edits a blockr board, then produce a structured summary following the exact format specified.
+
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
+var KEEP = "Preserve the exact ids of blocks, links, stacks and plugins, column names, file paths and error messages.";
+var SUMMARY_FORMAT = `## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. ${KEEP}`;
+var SUMMARY_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+${SUMMARY_FORMAT}`;
+var UPDATE_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing structured summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE "Next Steps" based on what was accomplished
+- ${KEEP.replace("Preserve", "PRESERVE")}
+- If something is no longer relevant, you may remove it
+
+Use this EXACT format:
+
+${SUMMARY_FORMAT}`;
+var TURN_PREFIX_PROMPT = `The messages above are earlier context from an ongoing conversation. Later messages are stored separately and do not need to be reconstructed.
+
+Create a concise checkpoint of the user's request and the progress shown above. This checkpoint will be placed before the later messages so the conversation can continue with the necessary context.
+
+## Original Request
+[What did the user ask for?]
+
+## Progress So Far
+- [Key decisions and work completed in these messages]
+
+## Context Needed to Continue
+- [Information from these messages needed to understand the later work]
+
+Only summarize information explicitly present above. Do not infer or recreate later messages.`;
+function mergedSummary(history, turnStart) {
+  return `${history}
+
+---
+
+**Turn Context (split turn):**
+
+${turnStart}`;
+}
+function historyPrompt(messages, previous) {
+  const conversation2 = `<conversation>
+${conversationText(messages)}
+</conversation>
+
+`;
+  if (previous === void 0) return `${conversation2}${SUMMARY_PROMPT}`;
+  return `${conversation2}<previous-summary>
+${previous}
+</previous-summary>
+
+${UPDATE_PROMPT}`;
+}
+function turnStartPrompt(messages) {
+  return `# Conversation
+${conversationText(messages)}
+
+# Instructions
+${TURN_PREFIX_PROMPT}`;
+}
+function conversationText(messages) {
+  return messages.flatMap((message2) => paragraphsOf(message2)).join("\n\n");
+}
+function paragraphsOf(message2) {
+  const calls = message2.parts.flatMap((part) => part.type === "tool_call" ? [`${part.tool}(${argsOf(part.args)})`] : []);
+  const others = message2.parts.flatMap((part) => paragraphOf(message2, part));
+  return calls.length === 0 ? others : [...others, `[Assistant tool calls]: ${calls.join("; ")}`];
+}
+function paragraphOf(message2, part) {
+  switch (part.type) {
+    case "text":
+      return [`[${message2.role === "assistant" ? "Assistant" : "User"}]: ${part.text}`];
+    case "changes":
+      return [`[What others changed in the board]: ${part.text}`];
+    case "skill":
+      return [`[The skill ${part.name}, which the user called]: ${part.text}`];
+    case "attachment":
+      return [`[The user attached a file]: ${part.name}, of the type ${part.media_type}`];
+    case "tool_result":
+      return [`[Tool result]: ${cut(part.text)}${imagesOf(part)}${part.error === true ? "\n(The call failed.)" : ""}`];
+    case "tool_call":
+      return [];
+  }
+}
+function argsOf(args) {
+  return Object.entries(args).map(([name, value]) => `${name}=${JSON.stringify(value)}`).join(", ");
+}
+function cut(text3) {
+  if (text3.length <= RESULT_CHARACTERS) return text3;
+  return `${text3.slice(0, RESULT_CHARACTERS)}
+
+[... ${String(text3.length - RESULT_CHARACTERS)} more characters truncated]`;
+}
+function imagesOf(part) {
+  const count = part.images ?? 0;
+  if (count === 0) return "";
+  return count === 1 ? "\n(The result also held an image.)" : `
+(The result also held ${String(count)} images.)`;
+}
+
+// srcts/compaction/rule.ts
+var RESERVE = 16384;
+var IMAGE_TOKENS = 1200;
+function contextTokens(conversation2) {
+  const { messages, usage } = conversation2;
+  const summary2 = messages.find((message2) => message2.role === "summary");
+  let reply = messages.length - 1;
+  while (reply >= 0 && messages[reply]?.role !== "assistant") reply -= 1;
+  const replied = messages[reply];
+  const counts = replied !== void 0 && usage.last > 0 && (summary2 === void 0 || Date.parse(replied.created) > Date.parse(summary2.created));
+  const estimated = (from) => messages.slice(from).reduce((sum, message2) => sum + estimatedTokens(message2), 0);
+  return counts ? usage.last + estimated(reply + 1) : estimated(0);
+}
+function needsSummary(conversation2, window) {
+  return contextTokens(conversation2) > window - RESERVE;
+}
+function keptTokens(window) {
+  return Math.floor(window / 4);
+}
+function cutOf(messages, kept) {
+  const start = messages[0]?.role === "summary" ? 1 : 0;
+  const cuts = messages.flatMap((message2, index) => index >= start && message2.role !== "tool" ? [index] : []);
+  if (cuts.length === 0) return void 0;
+  let first = cuts[0] ?? start;
+  let tokens3 = 0;
+  for (let i = messages.length - 1; i >= start; i -= 1) {
+    const message2 = messages[i];
+    if (message2 === void 0) continue;
+    tokens3 += estimatedTokens(message2);
+    if (tokens3 >= kept) {
+      first = cuts.find((cut2) => cut2 >= i) ?? cuts.at(-1) ?? first;
+      break;
+    }
+  }
+  const opener = messages[first];
+  const turnStart = opener === void 0 || opensExchange(opener) ? void 0 : exchangeStart(messages, first, start);
+  const history = (turnStart ?? first) - start;
+  const prefix = turnStart === void 0 ? 0 : first - turnStart;
+  return history > 0 || prefix > 0 ? { start, first, turnStart } : void 0;
+}
+function exchangeStart(messages, index, start) {
+  for (let i = index - 1; i >= start; i -= 1) {
+    const message2 = messages[i];
+    if (message2 !== void 0 && opensExchange(message2)) return i;
+  }
+  return void 0;
+}
+function estimatedTokens(message2) {
+  let characters = 0;
+  let images = 0;
+  for (const part of message2.parts) {
+    switch (part.type) {
+      case "text":
+      case "changes":
+        characters += part.text.length;
+        break;
+      case "skill":
+        characters += part.name.length + part.text.length;
+        break;
+      case "tool_call":
+        characters += part.tool.length + JSON.stringify(part.args).length;
+        break;
+      case "tool_result":
+        characters += part.text.length;
+        images += part.images ?? 0;
+        break;
+      case "attachment":
+        characters += part.name.length + part.media_type.length;
+        break;
+    }
+  }
+  return Math.ceil(characters / 4) + images * IMAGE_TOKENS;
+}
+
+// srcts/compaction/compaction.ts
+function createCompaction(core, signal, options) {
+  const { conversations } = options;
+  const runs = /* @__PURE__ */ new Map();
+  const writes = /* @__PURE__ */ new Set();
+  const listeners = /* @__PURE__ */ new Set();
+  const warnings = /* @__PURE__ */ new Map();
+  function closed2() {
+    return signal.aborted;
+  }
+  function changed() {
+    for (const listener of listeners) listener();
+  }
+  function warn(conversation2, why) {
+    if (closed2()) return;
+    let warning = warnings.get(conversation2);
+    if (warning === void 0) {
+      warning = heldError(core, signal, "assistant_compaction_failed", "warning");
+      warnings.set(conversation2, warning);
+    }
+    const title2 = conversations.get(conversation2)?.title ?? conversation2;
+    warning.raise(`The assistant could not summarize the earlier messages of the conversation "${title2}": ${why}`);
+  }
+  function withdraw(conversation2) {
+    warnings.get(conversation2)?.withdraw();
+    warnings.delete(conversation2);
+  }
+  const unfollow = conversations.subscribe(() => {
+    for (const conversation2 of [...warnings.keys()]) {
+      if (conversations.get(conversation2) === void 0) withdraw(conversation2);
+    }
+  });
+  signal.addEventListener(
+    "abort",
+    () => {
+      unfollow();
+      listeners.clear();
+    },
+    { once: true }
+  );
+  function run(conversation2, compacting) {
+    const running = runs.get(conversation2);
+    if (running !== void 0) return running;
+    const done = compacting().finally(() => {
+      runs.delete(conversation2);
+    });
+    runs.set(conversation2, done);
+    return done;
+  }
+  async function summarize2(conversation2, { loop, model: model2 }, stop) {
+    const stopped = () => closed2() || stop.aborted || conversations.get(conversation2) === void 0;
+    const held = conversations.get(conversation2);
+    if (held === void 0 || stopped()) return false;
+    const cut2 = cutOf(held.messages, keptTokens(loop.contextWindow(model2)));
+    const kept = cut2 === void 0 ? void 0 : held.messages[cut2.first];
+    if (cut2 === void 0 || kept === void 0) return false;
+    const earlier = cut2.start === 1 ? textOf(held.messages[0]) : void 0;
+    const history = held.messages.slice(cut2.start, cut2.turnStart ?? cut2.first);
+    const turnStart = cut2.turnStart === void 0 ? [] : held.messages.slice(cut2.turnStart, cut2.first);
+    writes.add(conversation2);
+    changed();
+    try {
+      const write = (prompt) => loop.summarize({ ...model2, systemPrompt: SUMMARY_SYSTEM_PROMPT, prompt, signal: stop });
+      const [past, start] = await Promise.all([
+        history.length > 0 ? write(historyPrompt(history, earlier)) : void 0,
+        turnStart.length > 0 ? write(turnStartPrompt(turnStart)) : void 0
+      ]);
+      if (stopped()) return false;
+      const written = [past, start].filter((result) => result !== void 0);
+      const input = written.reduce((sum, result) => sum + result.usage.input, 0);
+      const output = written.reduce((sum, result) => sum + result.usage.output, 0);
+      const total = written.reduce((sum, result) => sum + result.usage.total, 0);
+      if (input > 0 || output > 0 || total > 0) await conversations.addUsage(conversation2, input, output, total);
+      const failure = written.find((result) => result.text === void 0)?.failure;
+      if (failure !== void 0) {
+        warn(conversation2, failure);
+        return false;
+      }
+      const covered = past?.text ?? earlier ?? "No prior history.";
+      const text3 = start?.text === void 0 ? covered : mergedSummary(covered, start.text);
+      const summary2 = { id: newId(), role: "summary", parts: [{ type: "text", text: text3 }], created: (/* @__PURE__ */ new Date()).toISOString() };
+      await conversations.compactConversation(conversation2, summary2, kept.id);
+      withdraw(conversation2);
+      return true;
+    } catch (error) {
+      if (!stopped()) warn(conversation2, error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      writes.delete(conversation2);
+      changed();
+    }
+  }
+  return {
+    async beforeCall(conversation2, call, stop) {
+      const running = runs.get(conversation2);
+      if (running !== void 0) {
+        await untilAborted(running, stop);
+        return;
+      }
+      const held = conversations.get(conversation2);
+      if (held === void 0 || !needsSummary(held, call.loop.contextWindow(call.model))) return;
+      await run(conversation2, () => summarize2(conversation2, call, stop));
+    },
+    compact(conversation2, call, stop = signal) {
+      return run(conversation2, async () => {
+        if (call !== void 0) return summarize2(conversation2, call, stop);
+        await conversations.opened;
+        if (conversations.get(conversation2) === void 0 || closed2()) return false;
+        const prepared = await prepareCall(options, () => conversations.get(conversation2)?.model ?? null, closed2);
+        if (prepared.kind === "stopped") return false;
+        if (prepared.kind === "failed") {
+          if (prepared.raise) warn(conversation2, prepared.why);
+          return false;
+        }
+        return summarize2(conversation2, prepared, stop);
+      });
+    },
+    writing: (conversation2) => writes.has(conversation2),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+}
+function textOf(message2) {
+  return (message2?.parts ?? []).flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
+}
+function untilAborted(promise, signal) {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    promise.then(done, done);
+  });
+}
+
+// srcts/blockr-options/numbers.ts
+function sentNumber(sent3) {
+  if (typeof sent3 === "number") return sent3;
+  if (typeof sent3 !== "string" || sent3.trim() === "") return Number.NaN;
+  return Number(sent3);
+}
+
+// srcts/conversations/cap.ts
+async function readCap(core) {
+  const sent3 = await core.blockrOption("chat_save_turns");
+  if (sent3 === void 0) return 50;
+  const value = sentNumber(sent3);
+  if (value === -1) return Infinity;
+  if (Number.isInteger(value) && value >= 0) return value;
+  throw new RangeError(
+    `The blockr option chat_save_turns is ${JSON.stringify(sent3)}, where it takes a whole number of 0 or more, or -1 for every message.`
+  );
 }
 
 // srcts/conversations/conversations.ts
@@ -480,18 +1237,18 @@ function createConversations(core, signal) {
     const after = findConversation(core.store.board(), conversation2);
     if (after === void 0) return;
     const kept = new Set(after.messages.map((message2) => message2.id));
-    const cut = before.filter((message2) => !kept.has(message2.id));
-    if (cut.length === 0) return;
-    older.set(conversation2, [...older.get(conversation2) ?? [], ...cut]);
+    const cut2 = before.filter((message2) => !kept.has(message2.id));
+    if (cut2.length === 0) return;
+    older.set(conversation2, [...older.get(conversation2) ?? [], ...cut2]);
     changed();
   }
   function withOlder(id, held) {
-    const cut = older.get(id);
-    if (cut === void 0) return held;
+    const cut2 = older.get(id);
+    if (cut2 === void 0) return held;
     const last = merged.get(id);
-    if (last?.held === held && last.cut === cut) return last.conversation;
-    const conversation2 = { ...held, messages: [...cut, ...held.messages] };
-    merged.set(id, { held, cut, conversation: conversation2 });
+    if (last?.held === held && last.cut === cut2) return last.conversation;
+    const conversation2 = { ...held, messages: [...cut2, ...held.messages] };
+    merged.set(id, { held, cut: cut2, conversation: conversation2 });
     return conversation2;
   }
   function change(conversation2, changing) {
@@ -597,8 +1354,8 @@ function createConversations(core, signal) {
         await run("blockr.assistant-compact_conversation", { conversation: conversation2, summary: summary2, from });
         if (older.delete(conversation2)) changed();
       } else {
-        const cut = older.get(conversation2) ?? [];
-        const left = compacted([...cut, ...held.messages], summary2, from, conversation2);
+        const cut2 = older.get(conversation2) ?? [];
+        const left = compacted([...cut2, ...held.messages], summary2, from, conversation2);
         older.set(conversation2, left.slice(0, left.length - held.messages.length));
         changed();
       }
@@ -670,7 +1427,7 @@ function credentialOf(sent3) {
   const key = typeof sent3 === "string" ? sent3.trim() : "";
   if (key === "") {
     throw new TypeError(
-      `The blockr option assistant_api_key holds ${kindOf(sent3)}, where it takes the deployment's key as a string, or "none" for a base URL that needs no key.`
+      `The blockr option assistant_api_key holds ${kindOf2(sent3)}, where it takes the deployment's key as a string, or "none" for a base URL that needs no key.`
     );
   }
   return key === "none" ? { kind: "none" } : { kind: "deployment", key };
@@ -694,7 +1451,7 @@ function isWebUrl(text3) {
     return false;
   }
 }
-function kindOf(sent3) {
+function kindOf2(sent3) {
   if (sent3 === null) return "null";
   if (typeof sent3 === "string") return "an empty string";
   if (typeof sent3 === "boolean") return "true or false";
@@ -746,126 +1503,6 @@ function blocksOf(message2) {
 }
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// srcts/attachments/attachments.ts
-var PDF = "application/pdf";
-var IMAGES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-var TEXT_EXTENSIONS = {
-  md: "text/markdown",
-  markdown: "text/markdown",
-  txt: "text/plain",
-  csv: "text/csv",
-  json: "application/json",
-  py: "text/x-python",
-  js: "text/javascript",
-  ts: "text/typescript",
-  r: "text/x-r",
-  yaml: "text/yaml",
-  yml: "text/yaml",
-  toml: "text/x-toml",
-  qmd: "text/markdown",
-  rmd: "text/markdown",
-  ipynb: "application/x-ipynb+json",
-  rst: "text/x-rst",
-  tex: "text/x-tex",
-  sql: "text/x-sql",
-  sh: "text/x-sh",
-  html: "text/html",
-  htm: "text/html",
-  css: "text/css",
-  xml: "application/xml",
-  ini: "text/x-ini",
-  cfg: "text/x-ini",
-  log: "text/plain"
-};
-var TEXTS = new Set(Object.values(TEXT_EXTENSIONS));
-var MAX_BYTES = 30 * 1024 * 1024;
-var MAX_EDGE = 1568;
-var PASTE_AS_FILE = 1e3;
-var PASTED_TEXT = "Pasted Text";
-function kindOf2(mediaType) {
-  if (IMAGES.includes(mediaType)) return "image";
-  if (mediaType === PDF) return "pdf";
-  return TEXTS.has(mediaType) ? "text" : void 0;
-}
-function mediaTypeOf(file) {
-  if (IMAGES.includes(file.type) || file.type === PDF) return file.type;
-  const extension = extensionOf(file.name);
-  if (extension !== "") return Object.hasOwn(TEXT_EXTENSIONS, extension) ? TEXT_EXTENSIONS[extension] : void 0;
-  return TEXTS.has(file.type) ? file.type : void 0;
-}
-var ACCEPT = [...IMAGES, PDF, ...TEXTS, ...Object.keys(TEXT_EXTENSIONS).map((extension) => `.${extension}`)].join(",");
-function scaledSize(width, height, bound = MAX_EDGE) {
-  const longer = Math.max(width, height);
-  if (longer <= bound) return void 0;
-  const scale = bound / longer;
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
-}
-function namesOf(names) {
-  const quoted = names.map((name) => `"${name}"`);
-  return quoted.length <= 1 ? quoted.join("") : `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1) ?? ""}`;
-}
-function pastedFile(text3) {
-  return new File([text3], PASTED_TEXT, { type: "text/plain" });
-}
-function sizeOf(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
-  return `${String(Math.round(bytes / (1024 * 1024)))} MB`;
-}
-function extensionOf(name) {
-  const dot = name.lastIndexOf(".");
-  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
-}
-
-// srcts/attachments/read.ts
-async function attachedFile(file, mediaType) {
-  const typed = file.type === mediaType ? file : new File([file], file.name, { type: mediaType });
-  return kindOf2(mediaType) === "image" ? scaledDown(typed) : typed;
-}
-async function copiedFile(file) {
-  return new File([await file.arrayBuffer()], file.name, { type: file.type });
-}
-async function encodedFile(file, mediaType) {
-  if (kindOf2(mediaType) === "text") return { text: await file.text() };
-  return { data: await base64Of(file) };
-}
-function base64Of(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = typeof reader.result === "string" ? reader.result : "";
-      resolve(url.slice(url.indexOf(",") + 1));
-    };
-    reader.onerror = () => {
-      reject(reader.error ?? new Error("The browser could not read the file."));
-    };
-    reader.readAsDataURL(file);
-  });
-}
-async function scaledDown(file) {
-  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return file;
-  let bitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    return file;
-  }
-  try {
-    const size = scaledSize(bitmap.width, bitmap.height);
-    if (size === void 0) return file;
-    const canvas = new OffscreenCanvas(size.width, size.height);
-    const context6 = canvas.getContext("2d");
-    if (context6 === null) return file;
-    context6.drawImage(bitmap, 0, 0, size.width, size.height);
-    const blob = await canvas.convertToBlob({ type: file.type === "image/gif" ? "image/png" : file.type });
-    return new File([blob], file.name, { type: blob.type });
-  } catch {
-    return file;
-  } finally {
-    bitmap.close();
-  }
 }
 
 // srcts/loop/files.ts
@@ -921,8 +1558,9 @@ function isRecord2(value) {
 
 // srcts/loop/messages.ts
 var ENDED = "The turn ended before this call returned.";
-var STOPPED = "The user stopped the turn before this call returned.";
-var SUMMARY_REQUEST = "Summarize our conversation so far.";
+var STOPPED2 = "The user stopped the turn before this call returned.";
+var SUMMARY_PREFIX = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
+var SUMMARY_SUFFIX = "\n</summary>";
 var FINISHED = /* @__PURE__ */ new Set(["stop", "toolUse", "length"]);
 var NO_USAGE = {
   input: 0,
@@ -980,7 +1618,8 @@ function piMessages(messages, kept, model2, files) {
       const content = userContent(message2, kept(message2.id)?.files ?? [], model2, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at2 });
     } else if (message2.role === "summary") {
-      out.push({ role: "user", content: [text(SUMMARY_REQUEST)], timestamp: at2 }, otherReply(message2.parts, model2, at2));
+      const summary2 = message2.parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
+      out.push({ role: "user", content: [text(`${SUMMARY_PREFIX}${summary2}${SUMMARY_SUFFIX}`)], timestamp: at2 });
     } else if (message2.role === "assistant") {
       out.push(asWritten(kept(message2.id)?.reply) ?? otherReply(message2.parts, model2, at2));
       const calls = message2.parts.filter(isToolCall);
@@ -1022,7 +1661,7 @@ function fileContent(part, file, at2, model2, sent3) {
 ${content.text}
 </file-attachment>`)];
   }
-  const kind = kindOf2(part.media_type);
+  const kind = kindOf(part.media_type);
   if (kind !== "image" && kind !== "pdf") return [text(`${attached}, which the app cannot send to the model.`)];
   if (!model2.input.includes("image")) return [text(`${attached}, which the app did not send, since the model takes no images.`)];
   note(file, at2, carried);
@@ -1251,7 +1890,7 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var PROVIDER = "blockr.assistant";
-var NO_KEY = "blockr-assistant-no-key";
+var NO_KEY2 = "blockr-assistant-no-key";
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 function createLoop(pi, apis = {}) {
   const streams = {
@@ -1260,10 +1899,15 @@ function createLoop(pi, apis = {}) {
     "openai-responses": pi.openaiResponses,
     ...apis
   };
-  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== void 0 };
+  return {
+    run: (turn) => runTurn(pi, streams, turn),
+    summarize: (call) => summarize(pi, streams, call),
+    contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
+    inCatalog: (id) => catalogModel(pi, id) !== void 0
+  };
 }
 async function loadLoop() {
-  return createLoop(await import("./pi-73d60f71.js"));
+  return createLoop(await import("./pi-62fb936b.js"));
 }
 function runTurn(pi, streams, turn) {
   const attributes = {
@@ -1275,20 +1919,10 @@ function runTurn(pi, streams, turn) {
 }
 async function runAgent(pi, streams, turn, span) {
   const model2 = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
-  const models = pi.createModels();
-  models.setProvider(
-    pi.createProvider({
-      id: PROVIDER,
-      baseUrl: turn.connection.baseUrl,
-      // The credential comes through getApiKey, so the provider takes none.
-      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
-      models: [model2],
-      api: streams
-    })
-  );
+  const models = modelsAt(pi, streams, turn.connection, model2);
   const given2 = /* @__PURE__ */ new Map();
   const answered = /* @__PURE__ */ new Map();
-  const answer = (id) => given2.get(id) ?? answered.get(id) ?? { text: STOPPED, isError: true, images: [] };
+  const answer = (id) => given2.get(id) ?? answered.get(id) ?? { text: STOPPED2, isError: true, images: [] };
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
@@ -1304,6 +1938,7 @@ async function runAgent(pi, streams, turn, span) {
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
+      await turn.beforeCall?.(signal ?? turn.signal);
       const conversation2 = turn.messages();
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
@@ -1313,7 +1948,7 @@ async function runAgent(pi, streams, turn, span) {
       const messages = callMessages(transformed, kept, model2, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === void 0 ? messages : [...messages, appMessage(added)];
     },
-    getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
+    getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY2,
     fetch: async (input, init) => {
       const response = await keyless(input, init);
       status = response.status;
@@ -1336,7 +1971,7 @@ async function runAgent(pi, streams, turn, span) {
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(event.message, carried, status));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model2, carried, status));
         return;
       case "tool_execution_end":
         if (!given2.has(event.toolCallId) && !turn.signal.aborted) {
@@ -1364,6 +1999,45 @@ async function runAgent(pi, streams, turn, span) {
     turn.signal,
     (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
   );
+}
+function modelsAt(pi, streams, connection, model2) {
+  const models = pi.createModels();
+  models.setProvider(
+    pi.createProvider({
+      id: PROVIDER,
+      baseUrl: connection.baseUrl,
+      auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
+      models: [model2],
+      api: streams
+    })
+  );
+  return models;
+}
+async function summarize(pi, streams, call) {
+  const model2 = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+  const models = modelsAt(pi, streams, call.connection, model2);
+  const apiKey = await call.connection.apiKey() ?? NO_KEY2;
+  const reply = await models.completeSimple(
+    model2,
+    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" }
+  );
+  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+  const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
+  const failure = summaryFailure(reply, text3);
+  return failure === void 0 ? { text: text3, usage } : { usage, failure };
+}
+function summaryFailure(reply, text3) {
+  switch (reply.stopReason) {
+    case "error":
+      return reply.errorMessage ?? "The provider gave no reason.";
+    case "aborted":
+      return "The call was stopped before the model wrote the summary.";
+    case "length":
+      return "The summary reached the model's cap for a reply, so it was cut off.";
+    default:
+      return text3 === "" ? "The model wrote no summary." : void 0;
+  }
 }
 function buildModel(pi, id, connection, given2 = {}, listed3 = {}) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
@@ -1400,20 +2074,21 @@ function catalogModel(pi, id) {
 }
 function keyless(input, init) {
   const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
   return globalThis.fetch(input, { ...init, headers });
 }
 var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
-function callOf(reply, carried, status) {
+function callOf(pi, reply, model2, carried, status) {
   const written = replyOf(reply);
-  const failed = reply.stopReason === "error";
+  const failed2 = reply.stopReason === "error";
   return {
     ...written === void 0 ? {} : { reply: written },
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
-    ...failed ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
+    ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
-    refused: failed && status !== void 0 && REFUSED.has(status)
+    refused: failed2 && status !== void 0 && REFUSED.has(status),
+    ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {}
   };
 }
 function agentTool(tool2, given2, turn) {
@@ -1444,29 +2119,6 @@ function answeredOf(result, isError) {
   const text3 = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
   const images = result.content.flatMap((block) => block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []);
   return { text: text3, isError, images };
-}
-
-// srcts/notifications/notifications.ts
-function heldError(core, signal, code) {
-  let withdraw;
-  signal.addEventListener(
-    "abort",
-    () => {
-      withdraw = void 0;
-    },
-    { once: true }
-  );
-  return {
-    raise(message2) {
-      if (signal.aborted) return;
-      withdraw?.();
-      withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code, message: message2 });
-    },
-    withdraw() {
-      withdraw?.();
-      withdraw = void 0;
-    }
-  };
 }
 
 // srcts/requests/requests.ts
@@ -1530,15 +2182,15 @@ var WITHOUT = "The assistant goes on without the deployment's model settings";
 var FILE = "the file that the blockr option assistant_model_settings names";
 var CATALOGS = "pi's catalogs of OpenAI's and Anthropic's models";
 function createModelSettings(core, signal) {
-  const failed = heldError(core, signal, "assistant_model_settings_failed");
-  const read = readSettings(core, signal, failed);
+  const failed2 = heldError(core, signal, "assistant_model_settings_failed");
+  const read = readSettings(core, signal, failed2);
   let checking;
   return {
     checked(inCatalog) {
       checking ??= read.then((settings) => {
         for (const [id, given2] of settings) {
           if (given2.like !== void 0 && !inCatalog(given2.like)) {
-            failed.raise(`${WITHOUT}, since ${FILE} gives the model ${id} the like ${JSON.stringify(given2.like)}, which names no model of ${CATALOGS}.`);
+            failed2.raise(`${WITHOUT}, since ${FILE} gives the model ${id} the like ${JSON.stringify(given2.like)}, which names no model of ${CATALOGS}.`);
             return NONE;
           }
         }
@@ -1548,18 +2200,18 @@ function createModelSettings(core, signal) {
     }
   };
 }
-async function readSettings(core, signal, failed) {
+async function readSettings(core, signal, failed2) {
   let answer;
   try {
     ({ answer } = await sendUntilReplied(core, "read_model_settings", {}, { signal }));
   } catch (error) {
-    if (!signal.aborted) failed.raise(`${WITHOUT}, since R could not read them: ${failureMessage(error)}`);
+    if (!signal.aborted) failed2.raise(`${WITHOUT}, since R could not read them: ${failureMessage(error)}`);
     return NONE;
   }
   try {
     return settingsOf(answer);
   } catch (error) {
-    failed.raise(`${WITHOUT}, since ${error instanceof Error ? error.message : String(error)}`);
+    failed2.raise(`${WITHOUT}, since ${error instanceof Error ? error.message : String(error)}`);
     return NONE;
   }
 }
@@ -1663,7 +2315,7 @@ async function askList(deployment, key, fetch, signal) {
   try {
     response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
   } catch (error) {
-    return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
+    return none(`it could not reach the list of models at ${url}: ${messageOf2(error)}`);
   }
   if (response.status === 401 || response.status === 403) {
     return { kind: "refused", message: `The base URL refused the assistant's key for its list of models at ${url}: it answered ${await answerOf(response)}.` };
@@ -1676,7 +2328,7 @@ async function askList(deployment, key, fetch, signal) {
     const body = await response.json();
     entries = isRecord3(body) ? body.data : void 0;
   } catch (error) {
-    return none(`the answer at ${url} is no list of models: ${messageOf(error)}`);
+    return none(`the answer at ${url} is no list of models: ${messageOf2(error)}`);
   }
   if (!Array.isArray(entries)) {
     return none(`the answer at ${url} holds no list of models in its data. An app on such a base URL names its models in the blockr option assistant_models.`);
@@ -1701,7 +2353,7 @@ function listedSettings(entries, models) {
 function settingsOf2(entry) {
   const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
   const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
-  const images = imagesOf(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
+  const images = imagesOf2(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf2(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
   return {
     ...contextWindow === void 0 ? {} : { contextWindow },
     ...maxTokens === void 0 ? {} : { maxTokens },
@@ -1714,7 +2366,7 @@ function fieldOf(value, name) {
 function tokensOf(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
 }
-function imagesOf(value) {
+function imagesOf2(value) {
   return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : void 0;
 }
 function flagOf(value) {
@@ -1764,7 +2416,7 @@ async function answerOf(response) {
 function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function messageOf(error) {
+function messageOf2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -3284,246 +3936,6 @@ function flag2(fields, name) {
   throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
 }
 
-// srcts/turns/lock.ts
-var NAME = `blockr.assistant-turn-${newId()}`;
-function pageLocks() {
-  return globalThis.navigator?.locks ?? void 0;
-}
-function holdLock(locks) {
-  if (locks === void 0) return Promise.resolve(nothing);
-  return new Promise((resolve) => {
-    let release = nothing;
-    const held = new Promise((done) => {
-      release = done;
-    });
-    locks.request(NAME, () => {
-      resolve(release);
-      return held;
-    }).catch(() => {
-      resolve(nothing);
-    });
-  });
-}
-function nothing() {
-}
-
-// srcts/turns/turns.ts
-var STOP = new DOMException("The user stopped the turn.", "AbortError");
-var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
-var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
-var NO_KEY2 = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
-var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
-function createTurns(core, signal, options) {
-  const { conversations, callFailed } = options;
-  const locks = "locks" in options ? options.locks : pageLocks();
-  const listeners = /* @__PURE__ */ new Set();
-  let running;
-  let snapshot;
-  const attachmentRefused = heldError(core, signal, "assistant_attachment_refused");
-  let refusedIn;
-  function closed2() {
-    return signal.aborted;
-  }
-  function stopped(turn) {
-    return closed2() || turn.controller.signal.aborted;
-  }
-  function changed() {
-    snapshot = running === void 0 ? void 0 : { conversation: running.conversation, reply: running.reply, results: running.results, stopping: running.stopping };
-    for (const listener of listeners) listener();
-  }
-  function fail(conversation2, why) {
-    callFailed.raise(why);
-    keep2(conversation2, why);
-  }
-  function keep2(conversation2, why) {
-    const last = conversations.get(conversation2)?.messages.at(-1);
-    if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
-  }
-  function refuse(conversation2, files, why) {
-    const names = namesOf(files.map((file) => file.name));
-    const which = files.length === 1 ? `the file ${names}, so the conversation goes on without it` : `the files ${names}, so the conversation goes on without them`;
-    const message2 = `The provider refused ${which}: ${why}`;
-    attachmentRefused.raise(message2);
-    refusedIn = conversation2;
-    keep2(conversation2, message2);
-    change(conversation2, files, () => ({ refused: true }));
-  }
-  function succeeded(conversation2, files) {
-    callFailed.withdraw();
-    if (refusedIn === conversation2) {
-      attachmentRefused.withdraw();
-      refusedIn = void 0;
-    }
-    change(conversation2, files, taken);
-  }
-  function change(conversation2, files, changing) {
-    const byMessage = /* @__PURE__ */ new Map();
-    for (const file of files) byMessage.set(file.message, (byMessage.get(file.message) ?? /* @__PURE__ */ new Set()).add(file.index));
-    for (const [message2, indices] of byMessage) {
-      const held = conversations.kept(conversation2, message2)?.files;
-      if (held === void 0) continue;
-      const next = held.map((file, index) => indices.has(index) ? changing(file) : file);
-      try {
-        conversations.keep(conversation2, message2, { files: next });
-      } catch {
-      }
-    }
-  }
-  function handlers(turn) {
-    let writes = true;
-    const write = async (change2) => {
-      if (!writes || closed2()) return;
-      try {
-        await change2();
-      } catch (error) {
-        writes = false;
-        turn.controller.abort(GONE);
-        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf2(error)}`);
-      }
-    };
-    return {
-      streaming(reply) {
-        turn.reply = reply;
-        changed();
-      },
-      async called(call) {
-        turn.reply = void 0;
-        if (call.reply !== void 0) {
-          const { message: message2, kept } = call.reply;
-          await write(() => conversations.addMessage(turn.conversation, message2, kept));
-        }
-        const { input, output, total } = call.usage;
-        if (input > 0 || output > 0 || total > 0) {
-          await write(() => conversations.addUsage(turn.conversation, input, output, total));
-        }
-        if (call.failure !== void 0) {
-          if (writes && !closed2()) {
-            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, call.failure);
-            else fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
-          }
-        } else if (!turn.controller.signal.aborted) {
-          succeeded(turn.conversation, call.files);
-        }
-        changed();
-      },
-      returned(id, result) {
-        turn.results = { ...turn.results, [id]: result };
-        changed();
-      },
-      async results(message2, kept) {
-        await write(() => conversations.addMessage(turn.conversation, message2, kept));
-        turn.results = {};
-        changed();
-      }
-    };
-  }
-  async function runTurn2(turn) {
-    if (conversations.get(turn.conversation) === void 0) return;
-    let deployment;
-    try {
-      deployment = await options.deployment;
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant cannot call a model: ${messageOf2(error)}`);
-      return;
-    }
-    if (deployment.credential.kind === "visitor") {
-      fail(turn.conversation, NO_KEY2);
-      return;
-    }
-    const offered = await options.models.offered();
-    if (stopped(turn)) return;
-    const picked = conversations.get(turn.conversation)?.model ?? null;
-    const model2 = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
-    if (model2 === void 0) {
-      keep2(turn.conversation, offered.failure ?? NO_MODEL);
-      return;
-    }
-    let systemPrompt2;
-    try {
-      systemPrompt2 = await options.prompt.system();
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf2(error)}`);
-      return;
-    }
-    if (stopped(turn)) return;
-    let loop;
-    try {
-      loop = await options.load();
-    } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
-      return;
-    }
-    if (stopped(turn)) return;
-    const settings = await options.settings.checked((id) => loop.inCatalog(id));
-    if (stopped(turn)) return;
-    await loop.run({
-      connection: connectionOf(deployment),
-      model: model2,
-      settings: settings.get(model2),
-      listed: offered.settings?.get(model2),
-      tools: options.tools,
-      messages: () => conversations.get(turn.conversation)?.messages ?? [],
-      kept: (message2) => conversations.kept(turn.conversation, message2),
-      systemPrompt: systemPrompt2,
-      appMessage: () => options.prompt.appMessage(),
-      signal: turn.controller.signal,
-      on: handlers(turn)
-    });
-  }
-  return {
-    async run(conversation2) {
-      if (closed2()) throw new Error("The board that the assistant's turns ran on is closed.");
-      if (running !== void 0) {
-        throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
-      }
-      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, controller: new AbortController() };
-      const close = () => {
-        turn.controller.abort(CLOSED);
-      };
-      signal.addEventListener("abort", close, { once: true });
-      running = turn;
-      changed();
-      const release = await holdLock(locks);
-      try {
-        await runTurn2(turn);
-      } catch (error) {
-        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf2(error)}`);
-      } finally {
-        release();
-        signal.removeEventListener("abort", close);
-        running = void 0;
-        changed();
-      }
-    },
-    stop() {
-      if (running === void 0 || running.controller.signal.aborted) return;
-      running.stopping = true;
-      running.controller.abort(STOP);
-      changed();
-    },
-    current() {
-      return snapshot;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    }
-  };
-}
-function connectionOf(deployment) {
-  const { credential } = deployment;
-  const key = credential.kind === "deployment" ? credential.key : void 0;
-  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
-}
-function messageOf2(error) {
-  return error instanceof Error ? error.message : String(error);
-}
-function taken(file) {
-  return "refused" in file || file.taken === true ? file : { ...file, taken: true };
-}
-
 // srcts/assistant/assistant.ts
 var opened = /* @__PURE__ */ new WeakMap();
 var waiting = /* @__PURE__ */ new WeakMap();
@@ -3539,6 +3951,8 @@ function openAssistant(core, signal, options = {}) {
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
+  const load = options.load ?? loadLoop;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -3547,10 +3961,11 @@ function openAssistant(core, signal, options = {}) {
     settings,
     callFailed,
     prompt,
-    load: options.load ?? loadLoop,
+    compaction,
+    load,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  const assistant = { conversations, skills, models, turns, signal };
+  const assistant = { conversations, skills, models, turns, compaction, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
@@ -3594,7 +4009,7 @@ function attachmentAdapter() {
       if (mediaType === void 0) return Promise.reject(new Error(`The chat takes no file "${file.name}".`));
       const pending = {
         id: newId(),
-        type: kindOf2(mediaType) === "image" ? "image" : "document",
+        type: kindOf(mediaType) === "image" ? "image" : "document",
         name: file.name,
         contentType: mediaType,
         file,
@@ -3699,7 +4114,7 @@ function StagedFiles() {
 function StagedFile({ attachment }) {
   const { AttachmentPrimitive } = libraries();
   const mediaType = attachment.contentType ?? attachment.file?.type ?? "";
-  const url = useObjectUrl(kindOf2(mediaType) === "image" ? attachment.file : void 0);
+  const url = useObjectUrl(kindOf(mediaType) === "image" ? attachment.file : void 0);
   return /* @__PURE__ */ jsxs(AttachmentPrimitive.Root, { className: "blockr-assistant-file", title: attachment.name, children: [
     /* @__PURE__ */ jsx(FileMark, { name: attachment.name, mediaType, url }),
     /* @__PURE__ */ jsx("span", { className: "blockr-assistant-file-name", children: attachment.name }),
@@ -3712,7 +4127,7 @@ function SentFiles({ files }) {
 function Sent({ file }) {
   const { openFile } = useChatActions();
   const content = file.file !== void 0 && !("refused" in file.file) ? file.file : void 0;
-  const url = useObjectUrl(content !== void 0 && kindOf2(file.media_type) === "image" ? content.blob : void 0);
+  const url = useObjectUrl(content !== void 0 && kindOf(file.media_type) === "image" ? content.blob : void 0);
   const mark = /* @__PURE__ */ jsx(FileMark, { name: file.name, mediaType: file.media_type, url });
   const name = /* @__PURE__ */ jsx("span", { className: "blockr-assistant-file-name", children: file.name });
   if (content === void 0) {
@@ -3753,7 +4168,7 @@ function FileMark({ name, mediaType, url }) {
 }
 var FileDialog = memo(function FileDialog2({ file, onClose }) {
   const ref = useRef(null);
-  const url = useObjectUrl(file === void 0 || kindOf2(file.mediaType) === "text" ? void 0 : file.content.blob);
+  const url = useObjectUrl(file === void 0 || kindOf(file.mediaType) === "text" ? void 0 : file.content.blob);
   useEffect(() => {
     const dialog = ref.current;
     if (dialog === null) return;
@@ -3781,7 +4196,7 @@ var FileDialog = memo(function FileDialog2({ file, onClose }) {
   );
 });
 function FileView({ file, url }) {
-  const kind = kindOf2(file.mediaType);
+  const kind = kindOf(file.mediaType);
   if (kind === "text") return /* @__PURE__ */ jsx(FileText, { file: file.content.blob });
   if (url === void 0) return null;
   if (kind === "image") return /* @__PURE__ */ jsx("img", { className: "blockr-assistant-file-image", src: url, alt: file.name });
@@ -3946,6 +4361,11 @@ function useConversations(conversations) {
   const all = useCallback(() => conversations.all(), [conversations]);
   return useSyncExternalStore(subscribe, all);
 }
+function useCompacting(compaction, conversation2) {
+  const subscribe = useCallback((changed) => compaction.subscribe(changed), [compaction]);
+  const writing = useCallback(() => conversation2 !== void 0 && compaction.writing(conversation2), [compaction, conversation2]);
+  return useSyncExternalStore(subscribe, writing);
+}
 function useRunning(turns) {
   const subscribe = useCallback((changed) => turns.subscribe(changed), [turns]);
   const current = useCallback(() => turns.current(), [turns]);
@@ -4070,7 +4490,7 @@ function threadMessageOf(shown3) {
   if ("kind" in shown3 && shown3.kind === "turn") return turnMessage(shown3);
   const [message2, files] = "kind" in shown3 ? [shown3.message, shown3.files] : [shown3, []];
   const createdAt = new Date(message2.created);
-  if (message2.role === "summary") return { role: "system", id: message2.id, createdAt, content: [{ type: "text", text: textOf(message2.parts) }] };
+  if (message2.role === "summary") return { role: "system", id: message2.id, createdAt, content: [{ type: "text", text: textOf2(message2.parts) }] };
   return { role: "user", id: message2.id, createdAt, content: userContent2(message2.parts, files) };
 }
 function sentOf(message2, files) {
@@ -4164,7 +4584,7 @@ function userContent2(parts, files) {
     }
   });
 }
-function textOf(parts) {
+function textOf2(parts) {
   return parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
 }
 function same(a, b) {
@@ -4496,6 +4916,7 @@ function Transcript() {
     /* @__PURE__ */ jsx6(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx6(Greeting, {}) }),
     /* @__PURE__ */ jsx6(ThreadPrimitive.Messages, { children: drawMessage }),
     /* @__PURE__ */ jsx6(Working, {}),
+    /* @__PURE__ */ jsx6(Compacting, {}),
     /* @__PURE__ */ jsx6("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx6(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx6("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx6("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
   ] });
 }
@@ -4583,8 +5004,8 @@ function Summary() {
   ] }) });
 }
 function Working() {
-  const { running, runsHere, waiting: waiting2 } = useChat();
-  if (running === void 0 || !runsHere || running.stopping) return null;
+  const { running, runsHere, waiting: waiting2, compacting } = useChat();
+  if (running === void 0 || !runsHere || running.stopping || compacting) return null;
   const streamed = running.reply !== void 0 && (running.reply.parts.length > 0 || running.reply.reasoning.length > 0);
   if (streamed || waiting2.size > 0) return null;
   return /* @__PURE__ */ jsxs6("p", { className: "blockr-assistant-working", "aria-label": "The assistant is working", children: [
@@ -4592,6 +5013,11 @@ function Working() {
     /* @__PURE__ */ jsx6("span", {}),
     /* @__PURE__ */ jsx6("span", {})
   ] });
+}
+function Compacting() {
+  const { compacting } = useChat();
+  if (!compacting) return null;
+  return /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
 }
 function sentFile(data) {
   const given2 = typeof data === "object" && data !== null ? data : {};
@@ -4606,7 +5032,7 @@ function sentFile(data) {
 import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
 function Chat({ core, assistant }) {
   const { AssistantRuntimeProvider, MessageNotSentError, useExternalStoreRuntime } = libraries();
-  const { conversations, turns } = assistant;
+  const { conversations, turns, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const [chosen, setChosen] = useState3(storedConversation);
@@ -4620,6 +5046,7 @@ function Chat({ core, assistant }) {
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
   const messages = conversation2?.messages ?? NO_MESSAGES;
   const runsHere = running !== void 0 && running.conversation === open2;
+  const compacting = useCompacting(compaction, open2);
   const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const send = useCallback2(
     (text3, files = []) => {
@@ -4640,7 +5067,7 @@ function Chat({ core, assistant }) {
     onNew: async (message2) => {
       setFilesNote(void 0);
       try {
-        await send(textOf2(message2), attachedOf(message2.attachments ?? []));
+        await send(textOf3(message2), attachedOf(message2.attachments ?? []));
       } catch (error) {
         core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
         throw new MessageNotSentError("The message did not enter the conversation.");
@@ -4682,12 +5109,13 @@ function Chat({ core, assistant }) {
     () => ({
       running,
       runsHere,
+      compacting,
       waiting: waiting2,
       history,
       titleOf: (id) => Object.hasOwn(all, id) ? all[id]?.title : void 0,
       filesNote
     }),
-    [all, filesNote, history, running, runsHere, waiting2]
+    [all, compacting, filesNote, history, running, runsHere, waiting2]
   );
   const closeFile = useCallback2(() => {
     setFile(void 0);
@@ -4740,7 +5168,7 @@ function Chat({ core, assistant }) {
   ) }) }) });
 }
 var NO_MESSAGES = [];
-function textOf2(message2) {
+function textOf3(message2) {
   return message2.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 function typedText(message2) {

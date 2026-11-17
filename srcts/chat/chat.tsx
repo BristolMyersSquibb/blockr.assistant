@@ -11,14 +11,17 @@
 //   which local storage keeps (./open.ts), and the text typed and not sent,
 //   which assistant-ui's message field holds while the chat is mounted.
 // - The user's message goes to the conversations and starts a turn
-//   (./send.ts). Sending waits while a turn runs in any conversation.
+//   (./send.ts). Sending waits while a turn runs in any conversation. While
+//   the model writes a summary that the user asked for, a turn starts, and
+//   its first call waits for the summary (../compaction).
 // - The files that the user attaches go through assistant-ui's adapter for
 //   attachments (./attach.ts). The user picks them with the message field's
 //   button, drops them anywhere on the chat, or pastes them into the field.
 //   A click on a file of a message that the user sent opens it large, in a
 //   dialog (./files.tsx).
 // - The stop button, which shows in the turn's conversation, and Escape
-//   anywhere in the chat stop the turn.
+//   anywhere in the chat stop the turn, with a summary that the turn waits
+//   for, while a summary that the user asked for goes on.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 
@@ -35,7 +38,7 @@ import { ChatActionsContext, ChatStateContext } from "./context.ts";
 import type { ChatActions, ChatState } from "./context.ts";
 import { FileDialog } from "./files.tsx";
 import type { OpenedFile } from "./files.tsx";
-import { useConversations, useRunning } from "./hooks.ts";
+import { useCompacting, useConversations, useRunning } from "./hooks.ts";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
 import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
@@ -46,7 +49,7 @@ import { Transcript } from "./transcript.tsx";
 
 export function Chat({ core, assistant }: { readonly core: CoreApi; readonly assistant: Assistant }): ReactElement {
   const { AssistantRuntimeProvider, MessageNotSentError, useExternalStoreRuntime } = libraries();
-  const { conversations, turns } = assistant;
+  const { conversations, turns, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const [chosen, setChosen] = useState(storedConversation);
@@ -65,6 +68,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const conversation = open === undefined ? undefined : all[open];
   const messages = conversation?.messages ?? NO_MESSAGES;
   const runsHere = running !== undefined && running.conversation === open;
+  const compacting = useCompacting(compaction, open);
 
   // Assistant-ui keeps what it converted of each item that the chat gives it
   // again, so a long conversation converts only what changed as a reply
@@ -137,12 +141,13 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     () => ({
       running,
       runsHere,
+      compacting,
       waiting,
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
       filesNote,
     }),
-    [all, filesNote, history, running, runsHere, waiting],
+    [all, compacting, filesNote, history, running, runsHere, waiting],
   );
 
   const closeFile = useCallback(() => {

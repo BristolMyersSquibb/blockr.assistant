@@ -1,6 +1,6 @@
 // The assistant of the open board: its conversations, its skills, the models
-// that it offers and its turns, which the class's start opens as each board
-// opens, and which last until the next board opens, as the plugin's signal
+// that it offers, its turns and its compaction, which the class's start opens
+// as each board opens, and which last until the next board opens, as the plugin's signal
 // aborts (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).
 // What has to outlive a mount of the chat, the turn above all, runs from
 // start, so the chat finds the assistant through the CoreApi that core gives
@@ -11,6 +11,11 @@
 //
 // The turns offer the read tools and the edit tools, which take the
 // plugin's signal to tell another board opening from a stop.
+//
+// The turns call on the compaction before each call and after a call that
+// outgrew the window. The compaction prepares the calls of /compact as the
+// turns prepare theirs, on the same deployment, models, model settings and
+// loop (../compaction).
 //
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
@@ -26,6 +31,8 @@
 // opens, which the turns hand the loop (../model-settings).
 
 import type { CoreApi } from "@blockr/core";
+import { createCompaction } from "../compaction/index.ts";
+import type { Compaction } from "../compaction/index.ts";
 import { createConversations } from "../conversations/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
@@ -48,6 +55,7 @@ export interface Assistant {
   readonly skills: Skills;
   readonly models: Models;
   readonly turns: Turns;
+  readonly compaction: Compaction;
   // The signal that aborts as the next board opens, which ends the assistant.
   readonly signal: AbortSignal;
 }
@@ -85,6 +93,8 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
+  const load = options.load ?? loadLoop;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -93,11 +103,12 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     settings,
     callFailed,
     prompt,
-    load: options.load ?? loadLoop,
+    compaction,
+    load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
 
-  const assistant = { conversations, skills, models, turns, signal };
+  const assistant = { conversations, skills, models, turns, compaction, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

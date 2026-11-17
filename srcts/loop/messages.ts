@@ -44,8 +44,9 @@
 //   A result whose images the memory lacks says how many it carried. A call
 //   that has no result gets one that says the turn ended before the call
 //   returned, since a provider takes a tool call only with its result.
-// - A summary goes as an exchange: a request for it as the user's message,
-//   and the summary as the reply.
+// - A summary goes as a message of the role user, which says that it holds
+//   the summary of the conversation before it, as pi's own CLI sends one. So
+//   the messages that the summary keeps may start on a reply.
 // - The message of the app's, which the loop adds after the conversation for
 //   the call alone, goes as a message of the role app, which the loop
 //   declares among the messages of pi's agent, so that pi's messages tell it
@@ -84,9 +85,10 @@ export const ENDED = "The turn ended before this call returned.";
 // The result of a tool call that the user stopped.
 export const STOPPED = "The user stopped the turn before this call returned.";
 
-// What the user asked for, in pi's messages, where a summary replaced older
-// messages.
-export const SUMMARY_REQUEST = "Summarize our conversation so far.";
+// What a summary's text goes between in pi's messages, as pi's CLI frames
+// one.
+export const SUMMARY_PREFIX = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
+export const SUMMARY_SUFFIX = "\n</summary>";
 
 // The ends of a reply that finished, which pi takes back as it wrote it.
 // Where a reply ended otherwise, pi drops it whole, with the reasoning that
@@ -224,7 +226,8 @@ export function piMessages(messages: readonly Message[], kept: (message: Message
       const content = userContent(message, kept(message.id)?.files ?? [], model, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at });
     } else if (message.role === "summary") {
-      out.push({ role: "user", content: [text(SUMMARY_REQUEST)], timestamp: at }, otherReply(message.parts, model, at));
+      const summary = message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
+      out.push({ role: "user", content: [text(`${SUMMARY_PREFIX}${summary}${SUMMARY_SUFFIX}`)], timestamp: at });
     } else if (message.role === "assistant") {
       out.push(asWritten(kept(message.id)?.reply) ?? otherReply(message.parts, model, at));
       const calls = message.parts.filter(isToolCall);

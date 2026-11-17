@@ -28,6 +28,7 @@ import type { AssistantState, Conversation, Message, Part } from "../state/index
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createTurns } from "./turns.ts";
+import type { TurnsOptions } from "./turns.ts";
 import type { Locks } from "./lock.ts";
 
 const ASSISTANT = "blockr.assistant-assistant_plugin";
@@ -98,10 +99,25 @@ interface OpenOptions {
   // The system prompt and the message of the app's, which are fixed texts
   // unless given.
   readonly prompt?: Prompt;
+  // The compaction, which puts no summary in place unless given.
+  readonly compaction?: TurnsOptions["compaction"];
 }
 
 const SYSTEM_PROMPT = "You are an assistant embedded next to a blockr data analysis board.";
 const APP_MESSAGE = "This message comes from the app, not from the user.";
+
+// Anthropic's refusal of a call whose conversation outgrew the window, which
+// pi's isContextOverflow() recognizes.
+const OVERFLOW = "prompt is too long: 213462 tokens > 200000 maximum";
+
+// A tool that lists no block.
+const listBlocks: Tool = {
+  name: "list_blocks",
+  description: "List the blocks.",
+  parameters: { type: "object", properties: {} },
+  executionMode: "parallel",
+  execute: () => Promise.resolve({ text: "[]", isError: false, images: [] }),
+};
 
 // Core on a board whose conversations c1 and c2 hold a message that the user
 // sent, c1 with the conversation's pick of the model, faux-1, and c2 with
@@ -136,6 +152,7 @@ async function opened(options: OpenOptions = {}) {
     settings: options.settings ?? { checked: () => Promise.resolve(new Map()) },
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
+    compaction: options.compaction ?? { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     load: options.load ?? (() => Promise.resolve(loop)),
     locks: locks.locks,
   });
@@ -545,6 +562,58 @@ describe("a turn that fails", () => {
 
     expect(raised(core)).toEqual(["The assistant could not load the code that runs its turns: Failed to fetch dynamically imported module"]);
   });
+
+  test("asks for a summary before each call, which the call waits for", async () => {
+    const asked: string[] = [];
+    const { turns } = await opened({
+      replies: [fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "t1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Two.")],
+      tools: [listBlocks],
+      compaction: {
+        beforeCall: (conversation) => {
+          asked.push(conversation);
+          return Promise.resolve();
+        },
+        compact: () => Promise.resolve(false),
+      },
+    });
+
+    await turns.run("c1");
+
+    expect(asked).toEqual(["c1", "c1"]);
+  });
+
+  test("tries a call that outgrew the window once more, once a summary went in, and raises nothing", async () => {
+    const compacted: string[] = [];
+    const { core, turns } = await opened({
+      replies: [fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }), fauxAssistantMessage("The board holds no block.")],
+      compaction: {
+        beforeCall: () => Promise.resolve(),
+        compact: (conversation) => {
+          compacted.push(conversation);
+          return Promise.resolve(true);
+        },
+      },
+    });
+
+    await turns.run("c1");
+
+    expect(compacted).toEqual(["c1"]);
+    expect(raised(core)).toEqual([]);
+    expect(inState(core, "c1")?.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  test("raises a call's failure that outgrew the window where no summary went in, or where the call outgrows it again", async () => {
+    const none = await opened({ replies: [fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW })] });
+    await none.turns.run("c1");
+    expect(raised(none.core)).toEqual([`The assistant's call to the model failed: ${OVERFLOW}`]);
+
+    const again = await opened({
+      replies: [fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }), fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW })],
+      compaction: { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(true) },
+    });
+    await again.turns.run("c1");
+    expect(raised(again.core)).toEqual([`The assistant's call to the model failed: ${OVERFLOW}`]);
+  });
 });
 
 describe("a file that the provider refuses", () => {
@@ -578,8 +647,8 @@ describe("a file that the provider refuses", () => {
 
   // The turns of a board whose conversation c1 ends on the user's message u3,
   // which holds a PDF and an image that the memory keeps.
-  async function attached(replies: FauxResponseStep[]) {
-    const open = await opened({ replies });
+  async function attached(replies: FauxResponseStep[], compaction?: OpenOptions["compaction"]) {
+    const open = await opened({ replies, ...(compaction === undefined ? {} : { compaction }) });
     await open.conversations.addMessage("c1", withFiles, { files: [{ blob: report }, { blob: plot }] });
     return open;
   }
@@ -643,6 +712,45 @@ describe("a file that the provider refuses", () => {
     await turns.run("c1");
 
     expect(raised(core, REFUSED)).toEqual([]);
+  });
+
+  test("counts the new files of a call that outgrew the window as refused, where no summary could go in", async () => {
+    statuses(400);
+    const { core, turns, conversations } = await attached([answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }))]);
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([`The provider refused the files "report.pdf" and "plot.png", so the conversation goes on without them: ${OVERFLOW}`]);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ refused: true }, { refused: true }]);
+  });
+
+  test("counts the new files as refused where the call outgrows the window again once a summary went in", async () => {
+    statuses(400, 400);
+    const overflow = (): FauxResponseStep => answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }));
+    const { core, turns, conversations } = await attached([overflow(), overflow()], { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(true) });
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toHaveLength(1);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ refused: true }, { refused: true }]);
+  });
+
+  test("tries a call that outgrew the window once more once a summary went in, before it counts any file as refused", async () => {
+    statuses(400, 200);
+    const { core, turns, conversations } = await attached(
+      [answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW })), answered(200, fauxAssistantMessage("Read."))],
+      { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(true) },
+    );
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
+    ]);
   });
 
   test("counts as a failed call where the provider refused the request for another reason, or where the call carried no new file", async () => {
