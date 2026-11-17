@@ -86,9 +86,9 @@
 #' it, and to the default otherwise.
 #'
 #' @section Model settings:
-#' A model's settings say whether it reasons, whether it takes images, how
-#' many tokens its context window holds, and how many tokens each call asks
-#' for the reply.
+#' A model's settings say whether it reasons and at which thinking level,
+#' whether it takes images, how many tokens its context window holds, and how
+#' many tokens each call asks for the reply.
 #' The assistant takes each setting of a model from the first of these that
 #' gives it:
 #'
@@ -113,6 +113,7 @@
 #'   like: claude-sonnet-5-5
 #' corp-gpt:
 #'   reasoning: true
+#'   thinking_level: high
 #'   images: false
 #'   context_window: 200000
 #'   max_tokens: 32000
@@ -127,13 +128,20 @@
 #'   include what pi sends that API, such as the adaptive thinking that
 #'   Anthropic's current models need.
 #' * The setting `reasoning` says whether the model reasons, so that the
-#'   assistant asks it to, at the thinking level `medium`.
-#'   On OpenAI's Chat Completions API, a model whose `like` or id names a
-#'   model of pi's catalog of OpenAI's models takes the level `off` instead.
+#'   assistant asks it to.
+#' * The setting `thinking_level` gives the thinking level at which the
+#'   assistant asks the model to reason: `off`, `minimal`, `low`, `medium`,
+#'   `high`, `xhigh` or `max`.
+#'   Where the file gives none, the level is `medium`.
+#'   But on OpenAI's Chat Completions API, a model whose `like` or id names a
+#'   model of pi's catalog of OpenAI's models takes the level `off`.
 #'   That API refuses function tools with any reasoning effort but `none` for
 #'   OpenAI's GPT-5.4 models.
 #'   For the level `off`, pi sends the effort `none` to a model that takes it,
 #'   such as `gpt-5.4`, and no effort to the others, such as `o3`.
+#'   A level that the model does not take, pi moves to the next level up that
+#'   it takes, or else to the next one down.
+#'   A model that does not reason gets no effort, whatever its level.
 #' * The setting `images` says whether the model takes images.
 #'   For a model that takes none, the assistant sends a note in place of each
 #'   plot of `inspect_results`.
@@ -142,6 +150,9 @@
 #'   the reply.
 #'
 #' R reads the file as each board opens.
+#' It reads only `true` and `false` as booleans, as YAML 1.2 does.
+#' So an unquoted `off` stays the level `off`, and `reasoning: yes` is a
+#' value that `reasoning` does not take.
 #' Where R cannot read the file, or where the file gives a value that a
 #' setting does not take, the assistant raises the error
 #' `assistant_model_settings_failed`.
@@ -186,6 +197,7 @@
 #' * The request `read_model_settings` gives what the YAML file that the
 #'   blockr option `assistant_model_settings` names holds, or `NULL` where it
 #'   names none.
+#'   It reads only `true` and `false` as booleans, as YAML 1.2 does.
 #'
 #' @section Template:
 #' Each call to the model sends the system prompt, then the conversation,

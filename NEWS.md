@@ -172,6 +172,10 @@
   OpenAI's GPT-5.4 models.
   For the level `off`, pi sends the effort `none` to a model that takes it,
   and no effort to the others.
+  A model's entry in the deployment's model settings file may give its level
+  in `thinking_level`, in place of these defaults.
+  R reads only `true` and `false` in that file as booleans, as YAML 1.2 does,
+  so that an unquoted `off` stays the level `off`.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).

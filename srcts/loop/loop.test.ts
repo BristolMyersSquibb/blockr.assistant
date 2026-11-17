@@ -184,6 +184,14 @@ describe("a turn on the loop", () => {
     { what: "the level medium on Chat Completions for a model of pi's catalog of Anthropic's models", api: "openai-completions", model: "claude-sonnet-5-5", level: "medium" },
     { what: "the level medium on the Responses API for a model of pi's catalog of OpenAI's models", api: "openai-responses", model: "gpt-5.4", level: "medium" },
     { what: "the level medium on Anthropic's API", api: "anthropic-messages", model: "claude-sonnet-5-5", level: "medium" },
+    {
+      what: "the level that the deployment's model settings give, before the level off of Chat Completions",
+      api: "openai-completions",
+      model: "gpt-5.4",
+      settings: { thinkingLevel: "high" },
+      level: "high",
+    },
+    { what: "the level off that the deployment's model settings give, before the level medium", api: "openai-responses", model: "gpt-5.4", settings: { thinkingLevel: "off" }, level: undefined },
   ])("gives pi $what", async ({ api, model, settings, level }) => {
     const faux = createFauxCore({ api, provider: PROVIDER });
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];

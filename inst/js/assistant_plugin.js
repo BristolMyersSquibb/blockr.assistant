@@ -1064,11 +1064,11 @@ async function runAgent(pi, streams, turn, span) {
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
-  const level = thinkingLevel(pi, turn);
+  const level2 = thinkingLevel(pi, turn);
   let added;
   const config = {
     model: model2,
-    ...level === void 0 ? {} : { reasoning: level },
+    ...level2 === void 0 ? {} : { reasoning: level2 },
     identity: { attribution: null },
     // Every message goes to the model as it is, but the message of the app's,
     // which goes as a message of the role user.
@@ -1156,6 +1156,8 @@ function catalogModel(pi, id) {
   return void 0;
 }
 function thinkingLevel(pi, turn) {
+  const given2 = turn.settings?.thinkingLevel;
+  if (given2 !== void 0) return given2 === "off" ? void 0 : given2;
   const openai = Object.hasOwn(pi.OPENAI_MODELS, turn.settings?.like ?? turn.model);
   return turn.connection.api === "openai-completions" && openai ? void 0 : "medium";
 }
@@ -1282,6 +1284,7 @@ function shown(answer) {
 }
 
 // srcts/model-settings/model-settings.ts
+var LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 var NONE = /* @__PURE__ */ new Map();
 var WITHOUT = "The assistant goes on without the deployment's model settings";
 var FILE = "the file that the blockr option assistant_model_settings names";
@@ -1339,6 +1342,9 @@ function entryOf(id, entry) {
       case "reasoning":
         settings = { ...settings, reasoning: flag(id, name, value) };
         break;
+      case "thinking_level":
+        settings = { ...settings, thinkingLevel: level(id, name, value) };
+        break;
       case "images":
         settings = { ...settings, images: flag(id, name, value) };
         break;
@@ -1350,7 +1356,7 @@ function entryOf(id, entry) {
         break;
       default:
         throw new TypeError(
-          `${FILE} gives the model ${id} the setting ${name}, which the assistant does not know. A model's settings are like, reasoning, images, context_window and max_tokens.`
+          `${FILE} gives the model ${id} the setting ${name}, which the assistant does not know. A model's settings are like, reasoning, thinking_level, images, context_window and max_tokens.`
         );
     }
   }
@@ -1363,6 +1369,12 @@ function text2(id, name, value) {
   const given2 = one(value);
   if (typeof given2 === "string" && given2 !== "") return given2;
   throw refused(id, name, value, `the id of a model of ${CATALOGS}, such as claude-sonnet-5-5`);
+}
+function level(id, name, value) {
+  const given2 = one(value);
+  const found = LEVELS.find((known) => known === given2);
+  if (found !== void 0) return found;
+  throw refused(id, name, value, "off, minimal, low, medium, high, xhigh or max");
 }
 function flag(id, name, value) {
   const given2 = one(value);

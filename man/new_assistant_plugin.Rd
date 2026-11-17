@@ -116,9 +116,9 @@ it, and to the default otherwise.
 
 \section{Model settings}{
 
-A model's settings say whether it reasons, whether it takes images, how
-many tokens its context window holds, and how many tokens each call asks
-for the reply.
+A model's settings say whether it reasons and at which thinking level,
+whether it takes images, how many tokens its context window holds, and how
+many tokens each call asks for the reply.
 The assistant takes each setting of a model from the first of these that
 gives it:
 \enumerate{
@@ -143,6 +143,7 @@ The file gives the settings of each model under the model's id:
   like: claude-sonnet-5-5
 corp-gpt:
   reasoning: true
+  thinking_level: high
   images: false
   context_window: 200000
   max_tokens: 32000
@@ -157,13 +158,20 @@ Where the proxy speaks the API of the model behind the name, those
 include what pi sends that API, such as the adaptive thinking that
 Anthropic's current models need.
 \item The setting \code{reasoning} says whether the model reasons, so that the
-assistant asks it to, at the thinking level \code{medium}.
-On OpenAI's Chat Completions API, a model whose \code{like} or id names a
-model of pi's catalog of OpenAI's models takes the level \code{off} instead.
+assistant asks it to.
+\item The setting \code{thinking_level} gives the thinking level at which the
+assistant asks the model to reason: \code{off}, \code{minimal}, \code{low}, \code{medium},
+\code{high}, \code{xhigh} or \code{max}.
+Where the file gives none, the level is \code{medium}.
+But on OpenAI's Chat Completions API, a model whose \code{like} or id names a
+model of pi's catalog of OpenAI's models takes the level \code{off}.
 That API refuses function tools with any reasoning effort but \code{none} for
 OpenAI's GPT-5.4 models.
 For the level \code{off}, pi sends the effort \code{none} to a model that takes it,
 such as \code{gpt-5.4}, and no effort to the others, such as \code{o3}.
+A level that the model does not take, pi moves to the next level up that
+it takes, or else to the next one down.
+A model that does not reason gets no effort, whatever its level.
 \item The setting \code{images} says whether the model takes images.
 For a model that takes none, the assistant sends a note in place of each
 plot of \code{inspect_results}.
@@ -173,6 +181,9 @@ the reply.
 }
 
 R reads the file as each board opens.
+It reads only \code{true} and \code{false} as booleans, as YAML 1.2 does.
+So an unquoted \code{off} stays the level \code{off}, and \code{reasoning: yes} is a
+value that \code{reasoning} does not take.
 Where R cannot read the file, or where the file gives a value that a
 setting does not take, the assistant raises the error
 \code{assistant_model_settings_failed}.
@@ -219,6 +230,7 @@ option \code{assistant_template} names, or \code{NULL} where it names none.
 \item The request \code{read_model_settings} gives what the YAML file that the
 blockr option \code{assistant_model_settings} names holds, or \code{NULL} where it
 names none.
+It reads only \code{true} and \code{false} as booleans, as YAML 1.2 does.
 }
 }
 
