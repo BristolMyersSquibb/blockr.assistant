@@ -29,10 +29,11 @@
 // A call to a model streams a call of the tool list_blocks where the request
 // holds no result of a tool, and the reply DONE once it holds one, each in
 // the events of the call's API.
-// The mock records each request, which the tests read at /__requests and
-// clear with a POST to /__reset. The setup gives the tests the mock's origin,
-// its key and the reply DONE through Vitest's inject(), since the tests run in
-// the browser, which cannot import this file.
+// The mock records each request, with the JSON of its body, which the tests
+// read at /__requests and clear with a POST to /__reset. The setup gives the
+// tests the mock's origin, its key and the reply DONE through Vitest's
+// inject(), since the tests run in the browser, which cannot import this
+// file.
 
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -57,14 +58,16 @@ export interface MockApis {
 const MOCK_KEY = "test-key";
 const DONE = "The board holds the blocks that list_blocks listed.";
 
-// A request as the mock recorded it.
+type Body = Readonly<Record<string, unknown>>;
+
+// A request as the mock recorded it, with the JSON of its body, which is
+// empty for a request that sends none.
 export interface RecordedRequest {
   readonly method: string;
   readonly path: string;
   readonly headers: Readonly<Record<string, string>>;
+  readonly body: Body;
 }
-
-type Body = Readonly<Record<string, unknown>>;
 
 const LISTS: Readonly<Record<string, unknown>> = {
   openai: {
@@ -168,7 +171,8 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
 
-  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request) });
+  const body = request.method === "POST" ? await bodyOf(request) : {};
+  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), body });
   if (base === "unreachable") {
     response.writeHead(502);
     response.end();
@@ -179,7 +183,6 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
 
-  const body = request.method === "POST" ? await bodyOf(request) : {};
   const refusal = refused(request, base);
   if (refusal !== undefined) {
     // OpenAI's 401 for a call carries no CORS header, while its list's does.

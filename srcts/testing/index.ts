@@ -9,10 +9,10 @@
 // forgets the visitor's key that the class's start shares across boards, as a
 // reload does.
 // R answers each of the assistant's requests with what the test gives under
-// its name, list_skills with no skill unless the test gives one, and
-// read_model_settings with null, as for an app that names no file. R's reply
-// carries the conditions that the test gives under the request's name, and
-// none unless it gives some.
+// its name, list_skills with no skill and read_template with no template
+// unless the test gives one, and read_model_settings with null, as for an
+// app that names no file. R's reply carries the conditions that the test
+// gives under the request's name, and none unless it gives some.
 // The loop runs on pi's fake provider, whose replies a test scripts, so that
 // the tests call no model.
 // A test records the spans that core and the assistant start in memory, with
@@ -93,7 +93,7 @@ export const HELLO_ASSISTANT: typeof HELLO = {
 };
 
 export async function startAssistant(options: StartOptions = {}): Promise<Started> {
-  const answers: Answers = { list_skills: () => [], read_model_settings: () => null, ...options.answers };
+  const answers: Answers = { list_skills: () => [], read_template: () => null, read_model_settings: () => null, ...options.answers };
   const answer: Answer = (request) => {
     const asked = assistantRequest(request);
     const answered = asked === undefined ? undefined : answers[asked.name];

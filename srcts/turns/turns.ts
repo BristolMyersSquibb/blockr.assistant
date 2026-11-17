@@ -29,6 +29,10 @@
 //    (../model-settings). Once the board's first turn has loaded the loop,
 //    which holds pi's catalogs, the model settings check that each like names
 //    a model of the catalogs.
+//    Each call sends the system prompt of the open board, and after the
+//    conversation's last message the message of the app's, as it is when the
+//    call goes out, with the board and what the user has on screen
+//    (../prompt).
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
@@ -54,8 +58,10 @@
 // closes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 // A turn cannot start where a blockr option of the deployment holds a value
 // that it does not take, or where the visitor authenticates and holds no key.
-// The turns withdraw the error once a later call succeeds, and core withdraws
-// it as the next board opens.
+// It fails before its first call where a cap that the system prompt or the
+// message of the app's reads holds a value that it does not take. The turns
+// withdraw the error once a later call succeeds, and core withdraws it as the
+// next board opens.
 //
 // A failed call with the visitor's key also tells the key what the base URL
 // said of it (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-credential):
@@ -85,6 +91,7 @@ import type { Answered, Call, Connection, Handlers, Loop, Streamed } from "../lo
 import type { ModelSettingsFile } from "../model-settings/index.ts";
 import type { Models } from "../models/index.ts";
 import type { HeldError } from "../notifications/index.ts";
+import type { Prompt } from "../prompt/index.ts";
 import type { ConversationId } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { keyOf } from "../visitor-key/index.ts";
@@ -111,6 +118,9 @@ export interface TurnsOptions {
   // The visitor's own key, which the calls carry where the visitor
   // authenticates.
   readonly key: VisitorKey;
+  // The system prompt of the open board, and the message of the app's for
+  // each call.
+  readonly prompt: Prompt;
   // Loads the loop, which imports pi's bundle.
   readonly load: () => Promise<Loop>;
   // The tab's Web Locks, the page's by default.
@@ -314,6 +324,15 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       return;
     }
 
+    let systemPrompt: string;
+    try {
+      systemPrompt = await options.prompt.system();
+    } catch (error) {
+      if (!closed()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf(error)}`);
+      return;
+    }
+    if (stopped(turn)) return;
+
     let loop: Loop;
     try {
       loop = await options.load();
@@ -335,6 +354,8 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message) => conversations.kept(turn.conversation, message),
+      systemPrompt,
+      appMessage: () => options.prompt.appMessage(),
       signal: turn.controller.signal,
       on: handlers(turn),
     });

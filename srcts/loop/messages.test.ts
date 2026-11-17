@@ -1,5 +1,6 @@
-// A conversation in the state's shape as pi's messages for a call, and pi's
-// messages back in the state's shape (./messages.ts).
+// A conversation in the state's shape as pi's messages for a call, the
+// message of the app's among them, and pi's messages back in the state's
+// shape (./messages.ts).
 
 import type { Api, AssistantMessage, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -7,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { Message, Part } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
-import { callMessages, ENDED, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_REQUEST } from "./messages.ts";
+import { appMessage, callMessages, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_REQUEST } from "./messages.ts";
 
 const model: Model<Api> = {
   id: "gpt-5.4",
@@ -155,6 +156,20 @@ describe("a conversation as pi's messages", () => {
       content: "Be brief.",
       toolsAdded: [{ name: "list_blocks", description: "List the blocks.", parameters: { type: "object", properties: {} } }],
     });
+  });
+});
+
+describe("the message of the app's", () => {
+  test("is a message of the role app among pi's messages, which goes to the model as a message of the role user, while every other message goes as it is", () => {
+    const [system, asked] = callMessages([message("u1", "user", text("Hi."))], nothingKept, model, [], "Be brief.");
+    const app = appMessage("The board holds two blocks.");
+
+    expect(app).toMatchObject({ role: "app", content: [{ type: "text", text: "The board holds two blocks." }] });
+    expect(llmMessages([system, asked, app] as Parameters<typeof llmMessages>[0])).toEqual([
+      system,
+      asked,
+      { role: "user", content: [{ type: "text", text: "The board holds two blocks." }], timestamp: app.timestamp },
+    ]);
   });
 });
 

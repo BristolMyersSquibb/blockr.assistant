@@ -12,6 +12,11 @@
 // The turns offer the read tools and the edit tools, which take the
 // plugin's signal to tell another board opening from a stop.
 //
+// As the board opens, the assistant has R list the skills and read the
+// deployment's template, each once (../skills, ../prompt). The turns then
+// write the system prompt from both, and the message of the app's for each
+// call (../prompt).
+//
 // As the board opens, the assistant reads the deployment's blockr options,
 // which say where the calls go, how they are authenticated and which models
 // the assistant offers (../deployment). The models and the turns read what the
@@ -34,6 +39,7 @@ import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
+import { createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
@@ -85,6 +91,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
+  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
   const deployment = options.deployment ?? readDeployment(core);
   // The turns report why the options cannot be read, as each turn starts.
   deployment.catch(() => undefined);
@@ -100,6 +107,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     settings,
     callFailed,
     key,
+    prompt,
     load: options.load ?? loadLoop,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
