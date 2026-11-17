@@ -8,7 +8,10 @@
 // The first segment of a request's path names the base URL that it goes to:
 // - /openai/v1 speaks OpenAI's Responses and Chat Completions APIs and gives
 //   OpenAI's list of models. It takes the key test-key in Authorization, and
-//   answers another key with a 401, as OpenAI's list does.
+//   answers another key with a 401, as OpenAI's list does. Its Chat
+//   Completions API answers a call to a GPT-5.4 model that carries function
+//   tools and a reasoning effort other than none with a 400, in OpenAI's
+//   words, as OpenAI does (blockr.assistant#260).
 // - /anthropic speaks Anthropic's Messages API and gives Anthropic's list. It
 //   takes the key test-key in x-api-key, and refuses a preflight that does
 //   not ask for the header by which a page opts in, as Anthropic does.
@@ -199,7 +202,9 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
   if (request.method === "POST" && path === "/v1/chat/completions") {
-    stream(response, origin, completionsEvents(body));
+    const refusedEffort = base === "openai" ? effortRefused(body) : undefined;
+    if (refusedEffort === undefined) stream(response, origin, completionsEvents(body));
+    else respond(response, 400, origin, { error: { message: refusedEffort, type: "invalid_request_error", param: "reasoning_effort" } });
     return;
   }
   if (request.method === "POST" && path === "/v1/messages") {
@@ -295,6 +300,17 @@ function holdsFile(body: Body, name: string): boolean {
 
 function modelOf(body: Body): string {
   return typeof body.model === "string" ? body.model : "mock-model";
+}
+
+// Why OpenAI's Chat Completions API refuses the call, in OpenAI's words, or
+// undefined where it takes the call. It refuses a call to a GPT-5.4 model
+// that carries function tools and a reasoning effort other than none.
+function effortRefused(body: Body): string | undefined {
+  const model = modelOf(body);
+  const tools = Array.isArray(body.tools) ? (body.tools as unknown[]) : [];
+  const effort = body.reasoning_effort;
+  if (!model.startsWith("gpt-5.4") || tools.length === 0 || effort === undefined || effort === "none") return undefined;
+  return `Function tools with reasoning_effort are not supported for ${model} in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.`;
 }
 
 function responsesEvents(body: Body): unknown[] {

@@ -16,8 +16,11 @@
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
 // - It gives pi an identity without attribution, so that pi names no app to
-//   OpenRouter, and the thinking level medium
-//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
+//   OpenRouter.
+// - It gives pi the thinking level that the deployment's model settings give
+//   the model. Otherwise it gives the level medium, but the level off on Chat
+//   Completions for a model of pi's catalog of OpenAI's models
+//   (thinkingLevel()).
 // - It hands pi the tools as they are, with each tool's executionMode, and
 //   takes from its caller the system prompt, a transformContext, the message
 //   of the app's and an onPayload.
@@ -106,7 +109,7 @@
 import { context } from "@opentelemetry/api";
 import type { Json } from "@blockr/core";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
@@ -310,6 +313,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+  const level = thinkingLevel(pi, turn);
   // The content of each file that the user attached, as the turn's calls send
   // it, which the loop encodes once for the turn and drops as the turn ends.
   const encodings = new Map<Blob, Encoded>();
@@ -323,7 +327,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
 
   const config: AgentLoopConfig = {
     model,
-    reasoning: "medium",
+    ...(level === undefined ? {} : { reasoning: level }),
     identity: { attribution: null },
     // Every message goes to the model as it is, but the message of the app's,
     // which goes as a message of the role user.
@@ -417,10 +421,11 @@ async function summarize(pi: Pi, streams: Readonly<Record<string, ProviderStream
   const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
   const models = modelsAt(pi, streams, call.connection, model);
   const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+  const level = thinkingLevel(pi, call);
   const reply = await models.completeSimple(
     model,
     { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
+    { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
   );
   const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
   const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
@@ -518,6 +523,30 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
     if (Object.hasOwn(catalog, id)) return catalog[id];
   }
   return undefined;
+}
+
+// The thinking level of a call to the model, a turn's or the one that writes a
+// summary, or undefined for the level off, which pi takes as no level
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
+// - The level that the deployment's model settings give the model, where they
+//   give one (../model-settings).
+// - Otherwise, on OpenAI's Chat Completions API, a model of pi's catalog of
+//   OpenAI's models takes the level off. There OpenAI refuses function tools
+//   with any reasoning effort but none for the GPT-5.4 models, and documents
+//   no list of the models that it refuses them for (blockr.assistant#260).
+//   The loop finds the model in the catalog as buildModel() does, by the like
+//   that the deployment's model settings give it, or else by its id.
+// - Every other call takes the level medium.
+// For the level off, pi sends the effort that the catalog gives the model for
+// off, which is none for the GPT-5.4 models. Where the catalog gives the model
+// no effort for off, as for gpt-5 and o3, pi sends no effort at all, and the
+// model reasons as OpenAI has it. A level that the model does not take, pi
+// moves to the next level up that it takes, or else to the next one down.
+function thinkingLevel(pi: Pi, call: CallModel): ThinkingLevel | undefined {
+  const given = call.settings?.thinkingLevel;
+  if (given !== undefined) return given === "off" ? undefined : given;
+  const openai = Object.hasOwn(pi.OPENAI_MODELS, call.settings?.like ?? call.model);
+  return call.connection.api === "openai-completions" && openai ? undefined : "medium";
 }
 
 // The page's fetch, but for the placeholder of a call that carries no key,

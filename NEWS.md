@@ -164,6 +164,19 @@
   So the assistant takes each setting of a model from the first of these that
   gives it: the file, pi's catalogs, the list, and the defaults above.
 
+* Each call asks the model to reason at pi's thinking level `medium`, with
+  one exception (#260).
+  On OpenAI's Chat Completions API, a model of pi's catalog of OpenAI's models
+  takes the level `off`, and so does a model whose `like` names one.
+  That API refuses function tools with any reasoning effort but `none` for
+  OpenAI's GPT-5.4 models.
+  For the level `off`, pi sends the effort `none` to a model that takes it,
+  and no effort to the others.
+  A model's entry in the deployment's model settings file may give its level
+  in `thinking_level`, in place of these defaults.
+  R reads only `true` and `false` in that file as booleans, as YAML 1.2 does,
+  so that an unquoted `off` stays the level `off`.
+
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
   The tools `get_block_result`, `inspect_results` and `read_skill` give the

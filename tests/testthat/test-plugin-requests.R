@@ -470,6 +470,37 @@ test_that("read_model_settings gives what the file holds, as YAML parses it", {
   )
 })
 
+test_that("read_model_settings reads only true and false as booleans", {
+
+  path <- withr::local_tempfile(fileext = ".yml")
+  writeLines(
+    c(
+      "corp-gpt:",
+      "  reasoning: True",
+      "  images: FALSE",
+      "  thinking_level: off",
+      "corp-mini:",
+      "  reasoning: yes",
+      "  thinking_level: \"off\""
+    ),
+    path
+  )
+
+  withr::local_options(blockr.assistant_model_settings = path)
+
+  expect_identical(
+    call_request("read_model_settings"),
+    list(
+      `corp-gpt` = list(
+        reasoning = TRUE,
+        images = FALSE,
+        thinking_level = "off"
+      ),
+      `corp-mini` = list(reasoning = "yes", thinking_level = "off")
+    )
+  )
+})
+
 test_that("read_model_settings reads the file of the environment variable", {
 
   path <- withr::local_tempfile(fileext = ".yml")

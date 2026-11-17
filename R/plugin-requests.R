@@ -211,13 +211,36 @@ request_read_template <- function() {
 # What the YAML file that the blockr option `assistant_model_settings` names
 # holds, as `yaml::read_yaml()` parses it, or `NULL` where the option names
 # none.
+# Only `true` and `false` are booleans, as in YAML 1.2, so that an unquoted
+# `off`, a thinking level, stays a string, where YAML 1.1 reads it as `FALSE`.
 # The plugin checks the settings that the file gives each model.
 request_read_model_settings <- function() {
   read_option_file(
     "assistant_model_settings",
     "model settings",
-    yaml::read_yaml
+    function(path) {
+      yaml::read_yaml(
+        path,
+        handlers = list("bool#yes" = yaml_bool, "bool#no" = yaml_bool)
+      )
+    }
   )
+}
+
+# A word that YAML 1.1 reads as a boolean, as YAML 1.2 reads it: `true` and
+# `false`, in each of the three ways that YAML 1.2 writes them, as booleans,
+# and any other word, such as `off` or `yes`, as it is written.
+yaml_bool <- function(x) {
+
+  if (x %in% c("true", "True", "TRUE")) {
+    return(TRUE)
+  }
+
+  if (x %in% c("false", "False", "FALSE")) {
+    return(FALSE)
+  }
+
+  x
 }
 
 # What `read()` reads of the file that the blockr option `option` names, by
