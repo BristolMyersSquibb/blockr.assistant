@@ -707,9 +707,13 @@ import { context as context2 } from "@opentelemetry/api";
 
 // srcts/loop/cache.ts
 var LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-var MARKABLE = /* @__PURE__ */ new Set(["text", "image", "document", "tool_use", "tool_result"]);
-function markBeforeAppMessage(payload, text3) {
-  if (!isRecord(payload) || !Array.isArray(payload.messages)) return void 0;
+var MARKABLE = /* @__PURE__ */ new Map([
+  ["anthropic-messages", /* @__PURE__ */ new Set(["text", "image", "document", "tool_use", "tool_result"])],
+  ["openai-completions", /* @__PURE__ */ new Set(["text"])]
+]);
+function markBeforeAppMessage(payload, text3, api2) {
+  const markable = MARKABLE.get(api2);
+  if (markable === void 0 || !isRecord(payload) || !Array.isArray(payload.messages)) return void 0;
   const messages = payload.messages;
   let at2 = messages.length - 1;
   while (at2 >= 0 && !(isRecord(messages[at2]) && messages[at2].role === "user")) at2 -= 1;
@@ -721,11 +725,14 @@ function markBeforeAppMessage(payload, text3) {
   for (let before = at2 - 1; before >= 0; before -= 1) {
     const blocks = blocksOf(messages[before]);
     if (blocks === void 0 || blocks.length === 0) continue;
-    const last = blocks.at(-1);
-    if (last === void 0 || !MARKABLE.has(last.type)) return void 0;
+    let last = blocks.length - 1;
+    while (last >= 0 && !markable.has(blocks[last]?.type)) last -= 1;
+    if (last < 0) return void 0;
     const { cache_control: mark, ...unmarked } = marked;
+    const content = [...blocks];
+    content[last] = { ...content[last], cache_control: mark };
     const moved = [...messages];
-    moved[before] = { ...messages[before], content: [...blocks.slice(0, -1), { ...last, cache_control: mark }] };
+    moved[before] = { ...messages[before], content };
     moved[at2] = { ...messages[at2], content: [unmarked] };
     return { ...payload, messages: moved };
   }
@@ -1025,6 +1032,7 @@ function isInput(name) {
 // srcts/loop/loop.ts
 var PROVIDER = "blockr.assistant";
 var NO_KEY = "blockr-assistant-no-key";
+var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 function createLoop(pi, apis = {}) {
   const streams = {
     "anthropic-messages": pi.anthropicMessages,
@@ -1046,7 +1054,7 @@ function runTurn(pi, streams, turn) {
   return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
 }
 async function runAgent(pi, streams, turn, span) {
-  const model2 = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
+  const model2 = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = pi.createModels();
   models.setProvider(
     pi.createProvider({
@@ -1082,7 +1090,7 @@ async function runAgent(pi, streams, turn, span) {
     getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
     fetch: keyless,
     onPayload: (payload) => {
-      const moved = model2.api === "anthropic-messages" && added !== void 0 ? markBeforeAppMessage(payload, added) : void 0;
+      const moved = added === void 0 ? void 0 : markBeforeAppMessage(payload, added, model2.api);
       if (turn.onPayload === void 0) return moved;
       return turn.onPayload(moved ?? payload) ?? moved;
     }
@@ -1123,7 +1131,7 @@ async function runAgent(pi, streams, turn, span) {
     (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
   );
 }
-function modelOf(pi, id, connection, given2 = {}, listed3 = {}) {
+function buildModel(pi, id, connection, given2 = {}, listed3 = {}) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, given2.like ?? id);
   const base = known === void 0 ? {
@@ -1135,12 +1143,14 @@ function modelOf(pi, id, connection, given2 = {}, listed3 = {}) {
     contextWindow: listed3.contextWindow ?? 128e3,
     maxTokens: listed3.maxTokens ?? 16384
   } : { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
+  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
   return {
     ...base,
     reasoning: given2.reasoning ?? base.reasoning,
     input: inputOf(base.input, given2.images),
     contextWindow: given2.contextWindow ?? base.contextWindow,
-    maxTokens: given2.maxTokens ?? base.maxTokens
+    maxTokens: given2.maxTokens ?? base.maxTokens,
+    ...anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" } } : {}
   };
 }
 function inputOf(input, images) {
