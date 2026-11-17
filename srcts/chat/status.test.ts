@@ -20,9 +20,9 @@ describe("the status dot", () => {
     expect(drawn).toEqual(TABLE.map((row) => [...row]));
   });
 
-  test("takes core's status token, then blockr.ui's token, then the token's light value", () => {
+  test("takes core's colour of the status, with the light value of the table's token as the fallback", () => {
     const dot = dotOf("failed");
-    expect(dot === undefined ? undefined : dotColor("failed", dot)).toBe("var(--bc-color-status-failed, var(--blockr-color-border-danger, #dc2626))");
+    expect(dot === undefined ? undefined : dotColor("failed", dot)).toBe("var(--bc-color-status-failed, #dc2626)");
     expect(dotOf("constructor")).toBeUndefined();
   });
 });

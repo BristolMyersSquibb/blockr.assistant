@@ -150,7 +150,9 @@ const TEXT = { Text: MarkdownText };
 function Reasoning({ text, running }: { readonly text: string; readonly running: boolean }): ReactElement {
   return (
     <details className="blockr-assistant-reasoning" data-running={running ? "" : undefined}>
-      <summary>Reasoning</summary>
+      <summary>
+        <span className="blockr-assistant-reasoning-label">Reasoning</span>
+      </summary>
       <div className="blockr-assistant-reasoning-text">
         <Markdown text={text} running={running} />
       </div>

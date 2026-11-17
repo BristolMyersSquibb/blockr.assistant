@@ -7,20 +7,21 @@
 // The chat draws the status that the review gave, which names no
 // notification, so it has no need of the rule that the dock's dot reads
 // failed while an error about the block's output concerns the block.
-// The colour reads core's status token, as --bc-color-status-stale, which
-// core is to define with the colours of the table as defaults, then
-// blockr.ui's token of the table, with its light value as the fallback.
+// The colour is core's colour of the status, as --bc-color-status-stale,
+// which core's theme gives the value of the table's token, lighter under the
+// dark theme, with the token's light value as the fallback.
 
 // How the dot of a status looks.
 export interface Dot {
   // Whether the dot is filled, or a ring.
   readonly filled: boolean;
-  // The token of blockr.ui whose colour the dot takes.
+  // The token of the table whose colour the dot takes.
   readonly token: Token;
   readonly tooltip: string;
 }
 
-// The tokens of blockr.ui that the dots take, each with its light value.
+// The tokens of the table that the dots take, each with its light value,
+// which core's theme gives the statuses that take it.
 const LIGHT = {
   "text-muted": "#6b7280",
   "border-warning": "#d97706",
@@ -47,5 +48,5 @@ export function dotOf(status: string): Dot | undefined {
 
 // The colour of a status's dot, as CSS.
 export function dotColor(status: string, dot: Dot): string {
-  return `var(--bc-color-status-${status}, var(--blockr-color-${dot.token}, ${LIGHT[dot.token]}))`;
+  return `var(--bc-color-status-${status}, ${LIGHT[dot.token]})`;
 }

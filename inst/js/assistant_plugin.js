@@ -2973,7 +2973,7 @@ function dotOf(status) {
   return Object.hasOwn(DOTS, status) ? DOTS[status] : void 0;
 }
 function dotColor(status, dot) {
-  return `var(--bc-color-status-${status}, var(--blockr-color-${dot.token}, ${LIGHT[dot.token]}))`;
+  return `var(--bc-color-status-${status}, ${LIGHT[dot.token]})`;
 }
 
 // srcts/chat/tools.tsx
@@ -3147,7 +3147,7 @@ function Reply() {
 var TEXT = { Text: MarkdownText };
 function Reasoning({ text: text2, running }) {
   return /* @__PURE__ */ jsxs5("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
-    /* @__PURE__ */ jsx5("summary", { children: "Reasoning" }),
+    /* @__PURE__ */ jsx5("summary", { children: /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
     /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx5(Markdown, { text: text2, running }) })
   ] });
 }

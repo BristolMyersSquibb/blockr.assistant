@@ -10,74 +10,60 @@
  */
 
 /*
- * The chat reads the design tokens as the dock does: each colour is a
- * variable of the chat's, which reads a token of blockr.ui's with the token's
- * value in the light scheme as the fallback, or in the dark scheme under the
- * dark theme, until the client's design system settles how blockr.ui's
- * tokens reach the page.
+ * The chat draws in core's theme, as core's own UIs do, and reads no token of
+ * blockr.ui's.
+ * Each colour is a variable of the chat's, which reads the variable of core's
+ * theme for its purpose, as --bc-color-text-muted, with core's default as the
+ * fallback, since core's stylesheet holds such a variable only where one of
+ * core's UIs uses it.
+ * The defaults follow the text around the chat and the page's background, so
+ * the chat suits a light and a dark frontend alike, and a frontend or a UI kit
+ * that sets core's theme restyles the chat along with core.
+ * A shade that core mixes from the text, such as text-muted, takes the colour
+ * of the element that it is used on.
+ * So an element in such a shade holds no other one, and the rows of the
+ * transcript, whose titles are in the colour of the text, hold their muted
+ * parts as elements of their own.
+ * The links take the theme's blue, which is lighter under the dark theme, as
+ * the links of core's cards do.
+ * The radii, the weights of the face and the transitions come from core's
+ * theme as well, and the shadows are those of Tailwind's theme, which core's
+ * UIs use.
  */
 .blockr-assistant {
-  --blockr-assistant-text: var(--blockr-color-text-default, #111827);
-  --blockr-assistant-text-secondary: var(--blockr-color-text-secondary, #374151);
-  --blockr-assistant-text-muted: var(--blockr-color-text-muted, #6b7280);
-  --blockr-assistant-text-subtle: var(--blockr-color-text-disabled, #9ca3af);
-  --blockr-assistant-text-accent: var(--blockr-color-text-accent, #2563eb);
-  --blockr-assistant-text-danger: var(--blockr-color-text-danger, #b91c1c);
-  --blockr-assistant-bg-surface: var(--blockr-color-bg-surface, #ffffff);
-  --blockr-assistant-bg-raised: var(--blockr-color-bg-raised, #ffffff);
-  --blockr-assistant-bg-field: var(--blockr-color-bg-field, #f9fafb);
-  --blockr-assistant-bg-subtle: var(--blockr-color-bg-subtle, #f9fafb);
-  --blockr-assistant-bg-hover: var(--blockr-color-bg-hover, #f3f4f6);
-  --blockr-assistant-bg-danger: var(--blockr-color-bg-danger, #fef2f2);
-  --blockr-assistant-border: var(--blockr-color-border-default, #e5e7eb);
-  --blockr-assistant-border-strong: var(--blockr-color-border-strong, #d1d5db);
-  --blockr-assistant-border-accent: var(--blockr-color-border-accent, #2563eb);
-  --blockr-assistant-border-danger: var(--blockr-color-border-danger, #dc2626);
-  --blockr-assistant-accent: var(--blockr-accent-600, #2563eb);
-  --blockr-assistant-accent-hover: var(--blockr-accent-700, #1d4ed8);
-  --blockr-assistant-on-accent: #ffffff;
-  --blockr-assistant-stop: var(--blockr-grey-900, #111827);
-  --blockr-assistant-shadow: var(--blockr-shadow-md, 0 4px 12px rgb(0 0 0 / 0.1));
-  --blockr-assistant-focus-ring: var(--blockr-focus-ring, 0 0 0 3px rgb(37 99 235 / 0.12));
-  --blockr-assistant-radius: var(--blockr-radius-lg, 8px);
-  --blockr-assistant-radius-sm: var(--blockr-radius-md, 6px);
-  --blockr-assistant-transition: var(--blockr-transition, 0.15s ease);
+  --blockr-assistant-text: var(--bc-color-text-default, currentColor);
+  --blockr-assistant-text-muted: var(--bc-color-text-muted, color-mix(in oklab, currentColor 65%, transparent));
+  --blockr-assistant-text-danger: var(--bc-color-text-danger, oklch(57.7% 0.245 27.325));
+  --blockr-assistant-text-on-accent: var(--bc-color-text-on-accent, #fff);
+  --blockr-assistant-border: var(--bc-color-border-default, color-mix(in oklab, currentColor 25%, transparent));
+  --blockr-assistant-border-accent: var(--bc-color-border-accent, oklch(62.3% 0.214 259.815));
+  --blockr-assistant-border-danger: var(--bc-color-border-danger, oklch(63.7% 0.237 25.331));
+  --blockr-assistant-bg-subtle: var(--bc-color-bg-subtle, color-mix(in oklab, currentColor 5%, transparent));
+  --blockr-assistant-bg-raised: var(--bc-color-bg-raised, Canvas);
+  --blockr-assistant-bg-accent: var(--bc-color-bg-accent, oklch(54.6% 0.245 262.881));
+  --blockr-assistant-bg-danger: color-mix(in oklab, var(--blockr-assistant-border-danger) 10%, transparent);
+  --blockr-assistant-link: var(--bc-color-blue-600, oklch(54.6% 0.245 262.881));
+  --blockr-assistant-radius: var(--bc-radius-lg, 0.5rem);
+  --blockr-assistant-radius-sm: var(--bc-radius-md, 0.375rem);
+  --blockr-assistant-transition: var(--bc-default-transition-duration, 150ms)
+    var(--bc-default-transition-timing-function, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 [data-bc-theme="dark"] .blockr-assistant {
-  --blockr-assistant-text: var(--blockr-color-text-default, #f0f3f7);
-  --blockr-assistant-text-secondary: var(--blockr-color-text-secondary, #c2c9d3);
-  --blockr-assistant-text-muted: var(--blockr-color-text-muted, #8a94a3);
-  --blockr-assistant-text-subtle: var(--blockr-color-text-disabled, #6b7686);
-  --blockr-assistant-text-accent: var(--blockr-color-text-accent, #60a5fa);
-  --blockr-assistant-text-danger: var(--blockr-color-text-danger, #f87171);
-  --blockr-assistant-bg-surface: var(--blockr-color-bg-surface, #161b23);
-  --blockr-assistant-bg-raised: var(--blockr-color-bg-raised, #1e242e);
-  --blockr-assistant-bg-field: var(--blockr-color-bg-field, #14181f);
-  --blockr-assistant-bg-subtle: var(--blockr-color-bg-subtle, #14181f);
-  --blockr-assistant-bg-hover: var(--blockr-color-bg-hover, color-mix(in srgb, #f0f3f7 6%, transparent));
-  --blockr-assistant-bg-danger: var(--blockr-color-bg-danger, rgb(248 113 113 / 0.1));
-  --blockr-assistant-border: var(--blockr-color-border-default, #232932);
-  --blockr-assistant-border-strong: var(--blockr-color-border-strong, #2d343f);
-  --blockr-assistant-border-accent: var(--blockr-color-border-accent, #3b82f6);
-  --blockr-assistant-border-danger: var(--blockr-color-border-danger, #f87171);
-  --blockr-assistant-accent: var(--blockr-accent-500, #3b82f6);
-  --blockr-assistant-accent-hover: var(--blockr-accent-600, #2563eb);
-  --blockr-assistant-stop: var(--blockr-grey-100, #f3f4f6);
-  --blockr-assistant-shadow: var(--blockr-shadow-md, 0 4px 12px rgb(0 0 0 / 0.5));
-  --blockr-assistant-focus-ring: var(--blockr-focus-ring, 0 0 0 3px rgb(96 165 250 / 0.28));
+  --blockr-assistant-link: var(--bc-color-blue-400, oklch(70.7% 0.165 254.624));
 }
 
 /*
  * The root fills the element, at its width and height, and the chat sizes
  * itself from it, as a container, so that the message field fits a rail.
+ * It draws no background of its own, as core's page draws none, so that the
+ * frontend's shows behind the transcript.
  */
 .blockr-assistant {
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
   container: blockr-assistant / inline-size;
-  background: var(--blockr-assistant-bg-surface);
   color: var(--blockr-assistant-text);
   font-family: var(--bc-font-sans, system-ui, sans-serif);
   font-size: 14px;
@@ -142,14 +128,19 @@
   border: 1px solid var(--blockr-assistant-border);
   border-radius: 50%;
   background: var(--blockr-assistant-bg-raised);
-  box-shadow: var(--blockr-assistant-shadow);
-  color: var(--blockr-assistant-text-secondary);
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
+  color: var(--blockr-assistant-text);
   cursor: pointer;
   pointer-events: auto;
 }
 
+/* On hover, the button lays the subtle background over its own, opaque one. */
 .blockr-assistant-to-bottom:hover {
-  background: var(--blockr-assistant-bg-hover);
+  background:
+    linear-gradient(var(--blockr-assistant-bg-subtle), var(--blockr-assistant-bg-subtle)),
+    var(--blockr-assistant-bg-raised);
 }
 
 .blockr-assistant-to-bottom:disabled {
@@ -166,16 +157,17 @@
   stroke-linejoin: round;
 }
 
+/* What holds the focus takes an outline in the accent, as core's fields do. */
 .blockr-assistant :is(button, summary):focus-visible {
-  outline: none;
-  box-shadow: var(--blockr-assistant-focus-ring);
+  outline: 2px solid var(--blockr-assistant-border-accent);
+  outline-offset: 1px;
 }
 
 /* The user's message: a full-width band, labelled "You". */
 .blockr-assistant-user {
   padding: 7px 12px;
   border-radius: var(--blockr-assistant-radius);
-  background: var(--blockr-assistant-bg-field);
+  background: var(--blockr-assistant-bg-subtle);
   font-size: 13.5px;
 }
 
@@ -183,9 +175,9 @@
   content: "You";
   display: block;
   font-size: 11px;
-  font-weight: var(--blockr-font-weight-medium, 500);
+  font-weight: var(--bc-font-weight-medium, 500);
   line-height: 1.4;
-  color: var(--blockr-assistant-text-subtle);
+  color: var(--blockr-assistant-text-muted);
 }
 
 .blockr-assistant-user-text {
@@ -206,7 +198,6 @@
   border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius-sm);
   font-size: 12px;
-  color: var(--blockr-assistant-text-secondary);
 }
 
 /* A turn: plain prose, with its rows between the paragraphs. */
@@ -232,7 +223,7 @@
 .blockr-assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
   margin: 12px 0 6px;
   font-size: 14px;
-  font-weight: var(--blockr-font-weight-semibold, 600);
+  font-weight: var(--bc-font-weight-semibold, 600);
   line-height: 1.35;
 }
 
@@ -253,19 +244,18 @@
 }
 
 .blockr-assistant-markdown a {
-  color: var(--blockr-assistant-text-accent);
+  color: var(--blockr-assistant-link);
 }
 
 .blockr-assistant-markdown blockquote {
   padding-left: 10px;
-  border-left: 3px solid var(--blockr-assistant-border-strong);
-  color: var(--blockr-assistant-text-secondary);
+  border-left: 3px solid var(--blockr-assistant-border);
 }
 
 .blockr-assistant-markdown code {
   padding: 1px 4px;
   border-radius: 4px;
-  background: var(--blockr-assistant-bg-hover);
+  background: var(--blockr-assistant-bg-subtle);
   font-family: var(--bc-font-mono, ui-monospace, monospace);
   font-size: 12.5px;
 }
@@ -285,6 +275,9 @@
   border-radius: var(--blockr-assistant-radius) var(--blockr-assistant-radius) 0 0;
   background: var(--blockr-assistant-bg-subtle);
   font-size: 11.5px;
+}
+
+.blockr-assistant-code-header > span {
   color: var(--blockr-assistant-text-muted);
 }
 
@@ -294,13 +287,13 @@
   border-radius: var(--blockr-assistant-radius-sm);
   background: transparent;
   font: inherit;
-  color: inherit;
+  color: var(--blockr-assistant-text-muted);
   cursor: pointer;
 }
 
 .blockr-assistant-copy:hover {
-  background: var(--blockr-assistant-bg-hover);
-  color: var(--blockr-assistant-text-secondary);
+  background: var(--blockr-assistant-bg-subtle);
+  color: var(--blockr-assistant-text);
 }
 
 .blockr-assistant-markdown pre {
@@ -335,19 +328,21 @@
 
 .blockr-assistant-table :is(th, td) {
   padding: 4px 8px;
-  border: 1px solid var(--blockr-assistant-border);
+  border: 1px solid color-mix(in oklab, var(--blockr-assistant-border) 40%, transparent);
   text-align: left;
   vertical-align: top;
 }
 
 .blockr-assistant-table th {
   background: var(--blockr-assistant-bg-subtle);
-  font-weight: var(--blockr-font-weight-semibold, 600);
+  font-weight: var(--bc-font-weight-semibold, 600);
 }
 
 /*
  * The rows that fold: the model's reasoning, each tool's calls and a summary.
  * Each is a row of 30px, which opens below its title.
+ * The title is in the colour of the text, and its muted parts are elements of
+ * their own, as the chevron and the reasoning's label are.
  */
 .blockr-assistant :is(.blockr-assistant-reasoning, .blockr-assistant-tool, .blockr-assistant-summary details) > summary {
   display: flex;
@@ -358,7 +353,6 @@
   padding: 2px 10px;
   border-radius: var(--blockr-assistant-radius);
   font-size: 12px;
-  color: var(--blockr-assistant-text-muted);
   list-style: none;
   cursor: pointer;
   transition: background var(--blockr-assistant-transition);
@@ -369,15 +363,15 @@
 }
 
 .blockr-assistant :is(.blockr-assistant-reasoning, .blockr-assistant-tool, .blockr-assistant-summary details) > summary:hover {
-  background: var(--blockr-assistant-bg-hover);
+  background: var(--blockr-assistant-bg-subtle);
 }
 
 .blockr-assistant :is(.blockr-assistant-reasoning, .blockr-assistant-summary details) > summary::before {
   content: "";
   width: 6px;
   height: 6px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
+  border-right: 1.5px solid var(--blockr-assistant-text-muted);
+  border-bottom: 1.5px solid var(--blockr-assistant-text-muted);
   transform: rotate(-45deg);
   transition: transform var(--blockr-assistant-transition);
 }
@@ -392,20 +386,20 @@
   padding-left: 10px;
   border-left: 2px solid var(--blockr-assistant-border);
   font-size: 13px;
+}
+
+.blockr-assistant-reasoning-text,
+.blockr-assistant-reasoning-label {
   color: var(--blockr-assistant-text-muted);
 }
 
-.blockr-assistant-reasoning[data-running] > summary {
-  color: var(--blockr-assistant-text-secondary);
+/* While the model reasons, the label is in the colour of the text. */
+.blockr-assistant-reasoning[data-running] .blockr-assistant-reasoning-label {
+  color: var(--blockr-assistant-text);
 }
 
 .blockr-assistant-summary details > summary {
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-assistant-text-secondary);
-}
-
-.blockr-assistant-summary-text {
-  color: var(--blockr-assistant-text);
+  font-weight: var(--bc-font-weight-medium, 500);
 }
 
 /* The rows of a run of tool calls. */
@@ -417,15 +411,19 @@
 }
 
 .blockr-assistant-tool-title {
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-assistant-text-secondary);
+  font-weight: var(--bc-font-weight-medium, 500);
 }
 
+/*
+ * The number of calls, as a pill.
+ * Its ring is mixed from the colour of the text, since a shade mixed on the
+ * pill would mix from its muted colour.
+ */
 .blockr-assistant-tool-count {
   min-width: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--blockr-assistant-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--blockr-assistant-border);
   font-size: 11px;
   text-align: center;
   color: var(--blockr-assistant-text-muted);
@@ -444,7 +442,7 @@
 }
 
 .blockr-assistant-tool-mark[data-state="running"] {
-  border: 1.5px solid var(--blockr-assistant-border-strong);
+  border: 1.5px solid var(--blockr-assistant-border);
   border-top-color: var(--blockr-assistant-text-muted);
   border-radius: 50%;
   animation: blockr-assistant-spin 0.8s linear infinite;
@@ -457,8 +455,8 @@
   left: 4px;
   width: 4px;
   height: 8px;
-  border-right: 1.5px solid var(--blockr-assistant-text-subtle);
-  border-bottom: 1.5px solid var(--blockr-assistant-text-subtle);
+  border-right: 1.5px solid var(--blockr-assistant-text-muted);
+  border-bottom: 1.5px solid var(--blockr-assistant-text-muted);
   transform: rotate(45deg);
 }
 
@@ -485,7 +483,7 @@
   left: 2px;
   width: 8px;
   height: 1.5px;
-  background: var(--blockr-assistant-text-subtle);
+  background: var(--blockr-assistant-text-muted);
 }
 
 .blockr-assistant-tool[data-state="failed"] > summary .blockr-assistant-tool-title {
@@ -522,11 +520,10 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  color: var(--blockr-assistant-text-secondary);
 }
 
 .blockr-assistant-block[data-removed] {
-  color: var(--blockr-assistant-text-subtle);
+  color: var(--blockr-assistant-text-muted);
   text-decoration: line-through;
 }
 
@@ -573,8 +570,8 @@
 .blockr-assistant-call-label {
   margin-bottom: 2px;
   font-size: 11px;
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-assistant-text-subtle);
+  font-weight: var(--bc-font-weight-medium, 500);
+  color: var(--blockr-assistant-text-muted);
 }
 
 .blockr-assistant-call pre {
@@ -587,7 +584,6 @@
   font-family: var(--bc-font-mono, ui-monospace, monospace);
   font-size: 11.5px;
   white-space: pre-wrap;
-  color: var(--blockr-assistant-text-secondary);
 }
 
 .blockr-assistant-call[data-state="failed"] .blockr-assistant-call-result {
@@ -623,19 +619,18 @@
 /* The greeting and its suggestions, as rows of 30px. */
 .blockr-assistant-greeting {
   padding: 24px 2px 2px;
-  color: var(--blockr-assistant-text-muted);
 }
 
 .blockr-assistant-greeting h3 {
   margin: 0 0 2px;
   font-size: 15px;
-  font-weight: var(--blockr-font-weight-semibold, 600);
-  color: var(--blockr-assistant-text);
+  font-weight: var(--bc-font-weight-semibold, 600);
 }
 
 .blockr-assistant-greeting p {
   margin: 0;
   font-size: 13px;
+  color: var(--blockr-assistant-text-muted);
 }
 
 .blockr-assistant-suggestions {
@@ -647,29 +642,30 @@
   list-style: none;
 }
 
+/* A suggestion is a button as core draws one, as wide as the transcript. */
 .blockr-assistant-suggestion {
   display: flex;
   align-items: center;
   width: 100%;
   min-height: 30px;
   padding: 2px 10px;
-  border: 0;
+  border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius);
-  background: var(--blockr-assistant-bg-field);
+  background: transparent;
   font: inherit;
   font-size: 13px;
   text-align: left;
-  color: var(--blockr-assistant-text-secondary);
+  color: var(--blockr-assistant-text);
   cursor: pointer;
   transition: background var(--blockr-assistant-transition);
 }
 
 .blockr-assistant-suggestion:hover:not(:disabled) {
-  background: var(--blockr-assistant-bg-hover);
+  background: var(--blockr-assistant-bg-subtle);
 }
 
 .blockr-assistant-suggestion:disabled {
-  color: var(--blockr-assistant-text-subtle);
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -685,7 +681,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--blockr-assistant-text-subtle);
+  background: var(--blockr-assistant-text-muted);
   animation: blockr-assistant-pulse 1.2s ease-in-out infinite;
 }
 
@@ -721,14 +717,12 @@
   border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius);
   background: var(--blockr-assistant-bg-raised);
-  transition:
-    border-color var(--blockr-assistant-transition),
-    box-shadow var(--blockr-assistant-transition);
 }
 
-.blockr-assistant-field:focus-within {
-  border-color: var(--blockr-assistant-border-accent);
-  box-shadow: var(--blockr-assistant-focus-ring);
+/* While the text holds the focus, the field takes the outline of core's fields. */
+.blockr-assistant-field:has(textarea:focus) {
+  outline: 2px solid var(--blockr-assistant-border-accent);
+  outline-offset: 1px;
 }
 
 .blockr-assistant-field textarea {
@@ -749,7 +743,8 @@
 }
 
 .blockr-assistant-field textarea::placeholder {
-  color: var(--blockr-assistant-text-subtle);
+  color: var(--blockr-assistant-text-muted);
+  opacity: 1;
 }
 
 .blockr-assistant-send,
@@ -763,29 +758,31 @@
   padding: 0;
   border: 0;
   border-radius: var(--blockr-assistant-radius-sm);
-  background: var(--blockr-assistant-accent);
-  color: var(--blockr-assistant-on-accent);
   cursor: pointer;
-  transition: background var(--blockr-assistant-transition);
 }
 
-.blockr-assistant-send:hover:not(:disabled) {
-  background: var(--blockr-assistant-accent-hover);
+/* The send button is a primary button of core's, faded while it is disabled. */
+.blockr-assistant-send {
+  background: var(--blockr-assistant-bg-accent);
+  color: var(--blockr-assistant-text-on-accent);
 }
 
 .blockr-assistant-send:disabled {
-  background: var(--blockr-assistant-bg-hover);
-  color: var(--blockr-assistant-text-subtle);
+  opacity: 0.5;
   cursor: default;
 }
 
+/*
+ * The stop button is filled with the colour of the text, and its square with
+ * the background of what is raised.
+ */
 .blockr-assistant-stop {
-  background: var(--blockr-assistant-stop);
-  color: var(--blockr-assistant-bg-surface);
+  color: var(--blockr-assistant-text);
+  background: currentColor;
 }
 
 .blockr-assistant-stop rect {
-  fill: currentColor;
+  fill: var(--blockr-assistant-bg-raised);
   stroke: none;
 }
 
@@ -795,25 +792,30 @@
   animation: blockr-assistant-pulse 1.2s ease-in-out infinite;
 }
 
-/* The dialog before a link opens another site, in the top layer. */
+/*
+ * The dialog before a link opens another site, in the top layer, as core's
+ * dialogs draw.
+ */
 .blockr-assistant-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 16px;
   border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-radius-xl, 12px);
+  border-radius: var(--blockr-assistant-radius);
   background: var(--blockr-assistant-bg-raised);
-  box-shadow: var(--blockr-shadow-lg, 0 25px 50px -12px rgb(0 0 0 / 0.25));
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 0.1),
+    0 8px 10px -6px rgb(0 0 0 / 0.1);
   color: var(--blockr-assistant-text);
 }
 
 .blockr-assistant-dialog::backdrop {
-  background: rgb(0 0 0 / 0.3);
+  background: rgb(0 0 0 / 0.4);
 }
 
 .blockr-assistant-dialog h2 {
   margin: 0 0 8px;
   font-size: 15px;
-  font-weight: var(--blockr-font-weight-semibold, 600);
+  font-weight: var(--bc-font-weight-semibold, 600);
 }
 
 .blockr-assistant-dialog p {
@@ -842,21 +844,30 @@
   background: transparent;
   font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text-secondary);
+  color: var(--blockr-assistant-text);
   cursor: pointer;
+}
+
+.blockr-assistant-dialog-buttons button:hover {
+  background: var(--blockr-assistant-bg-subtle);
 }
 
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-always {
   margin-right: auto;
   padding-left: 0;
   border-color: transparent;
-  color: var(--blockr-assistant-text-accent);
+  color: var(--blockr-assistant-link);
+}
+
+.blockr-assistant-dialog-buttons .blockr-assistant-dialog-always:hover {
+  background: transparent;
+  text-decoration: underline;
 }
 
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-open {
-  border-color: var(--blockr-assistant-accent);
-  background: var(--blockr-assistant-accent);
-  color: var(--blockr-assistant-on-accent);
+  border-color: var(--blockr-assistant-border-accent);
+  background: var(--blockr-assistant-bg-accent);
+  color: var(--blockr-assistant-text-on-accent);
 }
 
 /*
