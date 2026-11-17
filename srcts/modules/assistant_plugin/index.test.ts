@@ -99,7 +99,10 @@ describe("the assistant's plugin class", () => {
     expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
   });
 
-  test("draws the chat in the element that a frontend gives mountPlugin(), once the chat's libraries have loaded", async () => {
+  // The page imports the chat's libraries as the chat first mounts, and the
+  // first import of libraries that large can take longer than a test's usual
+  // time on a busy machine, so the test waits for them for up to 30 seconds.
+  test("draws the chat in the element that a frontend gives mountPlugin(), once the chat's libraries have loaded", { timeout: 60_000 }, async () => {
     const { core, settled } = await started();
     const el = element();
 
@@ -110,8 +113,8 @@ describe("the assistant's plugin class", () => {
       });
       await settled();
     });
-    // The page imports the chat's libraries as the chat first mounts.
-    for (let i = 0; i < 200 && el.querySelector(".blockr-assistant-greeting") === null; i += 1) {
+    const start = Date.now();
+    while (el.querySelector(".blockr-assistant-greeting") === null && Date.now() - start < 30_000) {
       await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
     }
 

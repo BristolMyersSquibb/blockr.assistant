@@ -7,7 +7,7 @@ import { HELLO, stubCore } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { act } from "react";
-import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { openAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
 import { ENDED } from "../loop/index.ts";
@@ -25,6 +25,11 @@ import { renderChat } from "./panel.tsx";
 const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
 const KEY = "blockr.assistant-open_conversation";
+
+// The file imports the chat's libraries once, before its tests: the first
+// import of libraries that large can take longer than a test's time on a busy
+// machine.
+beforeAll(() => loadLibraries(), 60_000);
 
 beforeEach(() => {
   localStorage.clear();
@@ -127,8 +132,10 @@ async function settle(ms = 0): Promise<void> {
 
 // Waits until the condition holds, as a reply streams, and then for what
 // React draws next, as a reply's text draws once more as the reply completes.
+// It waits for up to 20 seconds, which a busy machine may take.
 async function until(condition: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 200; i += 1) {
+  const start = Date.now();
+  while (Date.now() - start < 20_000) {
     if (condition()) {
       await settle();
       return;
@@ -136,6 +143,28 @@ async function until(condition: () => boolean, what: string): Promise<void> {
     await settle(5);
   }
   throw new Error(`Timed out waiting for ${what}.`);
+}
+
+// A reply that holds its turn until the test lets the reply go or the turn
+// stops, so that the test acts on the turn while it surely runs, however long
+// a busy machine pauses between two looks at it.
+function heldReply(text: string): { readonly reply: FauxResponseStep; readonly release: () => void } {
+  let release = (): void => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reply: FauxResponseStep = async (_context, options) => {
+    await new Promise<void>((resolve) => {
+      void released.then(resolve);
+      const signal = options?.signal;
+      if (signal?.aborted === true) resolve();
+      signal?.addEventListener("abort", () => {
+        resolve();
+      });
+    });
+    return fauxAssistantMessage(text);
+  };
+  return { reply, release };
 }
 
 // Presses the key in the message field, and waits for the field to show what
@@ -402,7 +431,8 @@ describe("the chat's tool calls", () => {
 
 describe("the chat while a turn runs", () => {
   test("shows the stop button in the turn's conversation, which stops the turn, as Escape in the chat does", async () => {
-    const { el, assistant } = await chat({ tokensPerSecond: 20, replies: [fauxAssistantMessage("One two three four five six seven eight nine ten."), fauxAssistantMessage("Again, slowly, word by word.")] });
+    const replies = [heldReply("One two three four five six seven eight nine ten."), heldReply("Again, slowly, word by word.")];
+    const { el, assistant } = await chat({ replies: replies.map((held) => held.reply) });
 
     type(el, "Count.");
     press(field(el), "Enter");
@@ -422,7 +452,7 @@ describe("the chat while a turn runs", () => {
   test("lets the user type in another conversation, holds back the send, and says which conversation's turn it waits for", async () => {
     localStorage.setItem(KEY, "c1");
     const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } };
-    const { el, assistant } = await chat({ state, tokensPerSecond: 20, replies: [fauxAssistantMessage("A long reply that streams for a while, word by word, to the end.")] });
+    const { el, assistant } = await chat({ state, replies: [heldReply("A long reply that the turn holds until it stops.").reply] });
 
     // The turn streams while the test waits inside act(), so its start
     // needs no act() that stays open beside the others.
@@ -449,12 +479,14 @@ describe("the chat while a turn runs", () => {
   });
 
   test("goes on once the panel closes, and shows the reply as the chat mounts again", async () => {
-    const { el, assistant, core, remove } = await chat({ tokensPerSecond: 50, replies: [fauxAssistantMessage("The reply that streams while no panel shows.")] });
+    const held = heldReply("The reply that streams while no panel shows.");
+    const { el, assistant, core, remove } = await chat({ tokensPerSecond: 50, replies: [held.reply] });
 
     type(el, "Count.");
     press(field(el), "Enter");
     await until(() => assistant.turns.current() !== undefined, "the turn");
     remove();
+    held.release();
     await until(() => assistant.turns.current() === undefined, "the turn to end");
 
     let again = (): void => undefined;
