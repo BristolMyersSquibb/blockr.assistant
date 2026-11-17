@@ -38,7 +38,9 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload" | "beforeCall">> & {
+    readonly key?: string | undefined;
+  } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -576,8 +578,40 @@ describe("a turn that stops or fails", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.failure).toBe("401 Unauthorized");
+    expect(calls[0]?.overflow).toBeUndefined();
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+
+  test("reports a call that failed since the conversation outgrew the window, as pi tells it from the provider's error", async () => {
+    const { run, calls } = turnWith([fauxAssistantMessage([], { stopReason: "error", errorMessage: "Your input exceeds the context window of this model." })]);
+
+    await run();
+
+    expect(calls[0]?.overflow).toBe(true);
+  });
+});
+
+describe("before each call", () => {
+  test("the loop waits for what the caller does, and then reads the conversation", async () => {
+    const contexts: TranscriptContext[] = [];
+    const record: FauxResponseStep = (context) => {
+      contexts.push(context);
+      return fauxAssistantMessage("Two.");
+    };
+    let before = 0;
+    const turn = turnWith([record], {
+      beforeCall: async () => {
+        before += 1;
+        await Promise.resolve();
+        turn.messages.splice(0, 1, { ...asked, parts: [{ type: "text", text: "How many blocks now?" }] });
+      },
+    });
+
+    await turn.run();
+
+    expect(before).toBe(1);
+    expect(contexts[0]?.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "How many blocks now?" }] });
   });
 });
 

@@ -1,21 +1,26 @@
-// When a conversation needs a summary, and how much of it the summary keeps
+// When a conversation needs a summary, and where the summary cuts it, as pi's
+// own CLI has both
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#compaction),
-// until the comparisons of the assistant's benchmark settle both
+// until the comparisons of the assistant's benchmark settle them
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.8.1#the-decisions-it-compares):
-// - A conversation needs a summary once the tokens of its last call, its
-//   usage.last, pass its model's context window less 16,384 tokens, which pi's
-//   own CLI keeps free for the reply.
-// - Where a conversation holds a summary, its usage.last counts only once a
-//   reply was made after the summary. Until then, usage.last counts a call
-//   that went out before the summary, and so sent the messages that the
-//   summary replaced. A reply carries the time at which its call went out, as
-//   pi stamps it.
-// - The summary keeps the newest exchanges that together hold a quarter of the
-//   window or less. So what it keeps starts on a message that the user sent,
-//   as what the state keeps does (../state/state.ts). Where the last exchange
-//   alone holds more, the summary keeps no message.
-// - The summary covers at least one reply beyond an earlier summary, so where
-//   the conversation holds no reply, there is nothing to summarize.
+// - A conversation needs a summary once the tokens that its next call would
+//   send pass the model's context window less 16,384 tokens, which pi's CLI
+//   keeps free for the reply.
+// - Those tokens are the tokens of the last call, which usage.last keeps,
+//   and an estimate of the messages that entered after the last reply.
+//   Where no reply came after the conversation's summary, usage.last counts
+//   a call that sent the messages that the summary replaced, so the estimate
+//   covers every message. A reply carries the time at which its call went
+//   out, as pi stamps it.
+// - The summary keeps the newest messages that hold a quarter of the window,
+//   where pi's CLI keeps 20,000 tokens, which would pass the rule itself on a
+//   window of 32,000. The cut falls before a message that the user sent or
+//   before a reply, never before the results of a reply's tool calls.
+// - Where the cut falls inside an exchange, a summary of its own covers the
+//   exchange's start, so that the model knows what the user asked, as pi's
+//   CLI splits such a turn.
+// - An earlier summary goes to the call that writes the next one, which
+//   updates it rather than summarizing it again.
 // The tokens of a message are estimated at four characters to a token, with
 // 1,200 tokens for each image, as pi's CLI estimates them.
 
@@ -28,21 +33,34 @@ export const RESERVE = 16_384;
 // The tokens that an image is estimated at.
 export const IMAGE_TOKENS = 1_200;
 
-// Whether the conversation's usage.last counts a call that sent the
-// conversation as it is now: the call spent tokens, and no summary came after
-// the call went out.
-export function lastIsCurrent(conversation: Conversation): boolean {
-  if (conversation.usage.last === 0) return false;
-  const summary = conversation.messages.find((message) => message.role === "summary");
-  if (summary === undefined) return true;
-  const summarized = Date.parse(summary.created);
-  return conversation.messages.some((message) => message.role === "assistant" && Date.parse(message.created) > summarized);
+// Where a summary cuts a conversation's messages, by their indexes.
+export interface Cut {
+  // The first message that the summary covers: the one after an earlier
+  // summary, or the first.
+  readonly start: number;
+  // The first message that the conversation keeps after the summary.
+  readonly first: number;
+  // Where the cut falls inside an exchange, the message that opened the
+  // exchange. The messages from it to the cut get a summary of their own.
+  readonly turnStart: number | undefined;
+}
+
+// The tokens that the conversation's next call would send, as estimated.
+export function contextTokens(conversation: Conversation): number {
+  const { messages, usage } = conversation;
+  const summary = messages.find((message) => message.role === "summary");
+  let reply = messages.length - 1;
+  while (reply >= 0 && messages[reply]?.role !== "assistant") reply -= 1;
+  const replied = messages[reply];
+  const counts = replied !== undefined && usage.last > 0 && (summary === undefined || Date.parse(replied.created) > Date.parse(summary.created));
+  const estimated = (from: number): number => messages.slice(from).reduce((sum, message) => sum + estimatedTokens(message), 0);
+  return counts ? usage.last + estimated(reply + 1) : estimated(0);
 }
 
 // Whether the conversation needs a summary, under the context window of its
 // model, in tokens.
 export function needsSummary(conversation: Conversation, window: number): boolean {
-  return lastIsCurrent(conversation) && conversation.usage.last > window - RESERVE;
+  return contextTokens(conversation) > window - RESERVE;
 }
 
 // How many tokens of the newest messages a summary keeps, under the context
@@ -51,23 +69,43 @@ export function keptTokens(window: number): number {
   return Math.floor(window / 4);
 }
 
-// The index of the first message that a summary keeps, the number of messages
-// where it keeps none, or undefined where the messages hold nothing to
-// summarize. It keeps the newest exchanges whose messages hold `kept` tokens
-// or fewer, but none from the first reply back.
-export function firstKept(messages: readonly Message[], kept: number): number | undefined {
-  const reply = messages.findIndex((message) => message.role === "assistant");
-  if (reply < 0) return undefined;
+// Where a summary cuts the messages, so that the messages from the cut on
+// hold about `kept` tokens, or undefined where the summary would cover
+// nothing. As pi's CLI finds the cut, it walks back from the newest message
+// until the messages hold `kept` tokens, and cuts before the first message
+// from there on that may start what is kept.
+export function cutOf(messages: readonly Message[], kept: number): Cut | undefined {
+  const start = messages[0]?.role === "summary" ? 1 : 0;
+  const cuts = messages.flatMap((message, index) => (index >= start && message.role !== "tool" ? [index] : []));
+  if (cuts.length === 0) return undefined;
+
+  let first = cuts[0] ?? start;
   let tokens = 0;
-  let first = messages.length;
-  for (let i = messages.length - 1; i > reply; i -= 1) {
+  for (let i = messages.length - 1; i >= start; i -= 1) {
     const message = messages[i];
     if (message === undefined) continue;
     tokens += estimatedTokens(message);
-    if (tokens > kept) break;
-    if (opensExchange(message)) first = i;
+    if (tokens >= kept) {
+      first = cuts.find((cut) => cut >= i) ?? cuts.at(-1) ?? first;
+      break;
+    }
   }
-  return first;
+
+  const opener = messages[first];
+  const turnStart = opener === undefined || opensExchange(opener) ? undefined : exchangeStart(messages, first, start);
+  const history = (turnStart ?? first) - start;
+  const prefix = turnStart === undefined ? 0 : first - turnStart;
+  return history > 0 || prefix > 0 ? { start, first, turnStart } : undefined;
+}
+
+// The message that opened the exchange in which the message at the index
+// lies, searching back no further than `start`, or undefined.
+function exchangeStart(messages: readonly Message[], index: number, start: number): number | undefined {
+  for (let i = index - 1; i >= start; i -= 1) {
+    const message = messages[i];
+    if (message !== undefined && opensExchange(message)) return i;
+  }
+  return undefined;
 }
 
 // The tokens of a message, as estimated: the characters that its parts hold,

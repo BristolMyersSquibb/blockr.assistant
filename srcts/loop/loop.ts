@@ -38,12 +38,18 @@
 //   which ends the conversation (./cache.ts). It does so through pi's
 //   onPayload, before the caller's onPayload sees the request.
 //
+// Before each call, the loop awaits what the caller does then, as compaction
+// puts a summary in place where the conversation nears the model's context
+// window (../compaction). It reads the conversation only after that.
+//
 // It reports to its caller as the turn runs, and pi waits for each report
 // before it goes on, so that a reply is in the conversation before the next
 // call goes out:
 // - The reply as it streams.
 // - Each call to the model once it ended, with its reply, its tokens, and why
-//   it failed, where it failed.
+//   it failed, where it failed. A call that failed since the conversation
+//   outgrew the model's context window says so, as pi tells from the
+//   provider's error.
 // - Each tool call once it returned, before the reply's other calls return.
 // - The results of a reply's tool calls, as one message of the role tool.
 //
@@ -67,11 +73,12 @@
 //    that await. So core puts its spans of them under the tool's span.
 // 5. The turn's span ends once the turn ends.
 //
-// The loop also makes the call that writes a summary for compaction, outside
-// any turn (../compaction). That call goes to the model through the same
-// provider, with the same credential, identity and thinking level, but with
-// the caller's system prompt and one message of the role user. It declares
-// no tools and holds no message of the app's
+// The loop also makes each call that writes a summary for compaction
+// (../compaction), which runs on pi's models alone, not on its agent loop.
+// That call goes to the model through the same provider, with the same
+// credential, identity and thinking level, but with the caller's system
+// prompt and one message of the role user. It declares no tools and holds no
+// message of the app's
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
 // The loop also gives the context window of a model as pi takes it, by which
 // compaction judges when a conversation needs a summary.
@@ -141,6 +148,10 @@ export interface Turn extends CallModel {
   readonly transformContext?: (messages: readonly Message[], signal: AbortSignal) => Promise<readonly Message[]>;
   readonly appMessage?: () => Promise<string>;
   readonly onPayload?: (payload: unknown) => unknown;
+  // What the caller does before each call goes out, which the call waits for,
+  // as compaction does. Where it rejects, the turn rejects before the call
+  // goes out.
+  readonly beforeCall?: (signal: AbortSignal) => Promise<void>;
   readonly signal: AbortSignal;
   readonly on: Handlers;
 }
@@ -176,6 +187,10 @@ export interface Call {
   // Why the call failed, where it failed. A call that the turn's signal
   // stopped did not fail.
   readonly failure?: string;
+  // Whether the call failed since the conversation outgrew the model's
+  // context window, as pi's isContextOverflow() tells from the provider's
+  // error.
+  readonly overflow?: boolean;
 }
 
 // The call that writes a summary for compaction: one message of the role
@@ -276,6 +291,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
+      await turn.beforeCall?.(signal ?? turn.signal);
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
@@ -298,7 +314,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(event.message));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -457,13 +473,15 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
   return globalThis.fetch(input, { ...init, headers });
 }
 
-// A call that ended, with the reply that pi wrote.
-function callOf(reply: AssistantMessage): Call {
+// A call that ended, with the reply that pi wrote, to the model given.
+function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>): Call {
   const written = replyOf(reply);
+  const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
-    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(failed ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(failed && pi.isContextOverflow(reply, model.contextWindow) ? { overflow: true } : {}),
   };
 }
 

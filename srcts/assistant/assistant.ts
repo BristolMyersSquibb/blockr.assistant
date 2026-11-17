@@ -12,8 +12,10 @@
 // The turns offer the read tools and the edit tools, which take the
 // plugin's signal to tell another board opening from a stop.
 //
-// The compaction follows the turns, and prepares its calls as they do, on the
-// same deployment, models, model settings and loop (../compaction).
+// The turns call on the compaction before each call and after a call that
+// outgrew the window. The compaction prepares the calls of /compact as the
+// turns prepare theirs, on the same deployment, models, model settings and
+// loop (../compaction).
 //
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
@@ -92,6 +94,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -100,10 +103,10 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     settings,
     callFailed,
     prompt,
+    compaction,
     load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
-  const compaction = createCompaction(core, signal, { conversations, turns, deployment, models, settings, load });
 
   const assistant = { conversations, skills, models, turns, compaction, signal };
   opened.set(core, assistant);

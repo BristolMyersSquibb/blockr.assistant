@@ -13,10 +13,9 @@
 //    Where the deployment names no models, the models ask for the base URL's
 //    list again, where the last list offered none (../models).
 // 3. The loop and its provider code load with a dynamic import, which the
-//    browser does once, as the page prepares its first call. A turn prepares
-//    one as it starts, and compaction as it judges a conversation whose last
-//    call spent tokens (../compaction). So a page that prepares no call never
-//    loads them.
+//    browser does once, as the page prepares its first call: as the board's
+//    first turn starts, or as the user asks for a summary (../compaction). So
+//    a page where nobody asks the assistant anything never loads them.
 // 4. The model takes the settings that the deployment's model settings give
 //    it, and those that the base URL's list gives it, where either gives any
 //    (../model-settings). Once the loop has loaded, which holds pi's catalogs,
@@ -45,12 +44,18 @@ export interface CallOptions {
   readonly load: () => Promise<Loop>;
 }
 
-// A call that is prepared, with the loop that makes it. Or why no call can go
-// out, and whether to raise that, since the models raised already why the
-// deployment offers no model. Or that the preparation stopped, as where the
-// board closed meanwhile.
+// A call that is prepared: the loop that makes it, and the model that it
+// talks to.
+export interface PreparedCall {
+  readonly loop: Loop;
+  readonly model: CallModel;
+}
+
+// A call that is prepared. Or why no call can go out, and whether to raise
+// that, since the models raised already why the deployment offers no model.
+// Or that the preparation stopped, as where the board closed meanwhile.
 export type Prepared =
-  | { readonly kind: "prepared"; readonly loop: Loop; readonly model: CallModel }
+  | ({ readonly kind: "prepared" } & PreparedCall)
   | { readonly kind: "failed"; readonly why: string; readonly raise: boolean }
   | { readonly kind: "stopped" };
 

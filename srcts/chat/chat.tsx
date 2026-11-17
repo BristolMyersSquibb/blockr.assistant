@@ -11,11 +11,12 @@
 //   which local storage keeps (./open.ts), and the text typed and not sent,
 //   which assistant-ui's message field holds while the chat is mounted.
 // - The user's message goes to the conversations and starts a turn
-//   (./send.ts). Sending waits while a turn runs in any conversation, but not
-//   while the model writes a summary.
+//   (./send.ts). Sending waits while a turn runs in any conversation. While
+//   the model writes a summary that the user asked for, a turn starts, and
+//   its first call waits for the summary (../compaction).
 // - The stop button, which shows in the turn's conversation, and Escape
-//   anywhere in the chat stop the turn, and leave a summary that the model
-//   writes alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
+//   anywhere in the chat stop the turn, with a summary that the turn waits
+//   for, while a summary that the user asked for goes on.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 

@@ -182,10 +182,11 @@ function Summary(): ReactElement {
 // What the transcript shows at its end while the turn runs in the open
 // conversation and shows nothing new, as before its reply starts and between
 // its calls to the model. While the turn stops, the stop button says so
-// instead (./composer.tsx).
+// instead (./composer.tsx), and while the turn waits for a summary, the line
+// of the summary does.
 function Working(): ReactElement | null {
-  const { running, runsHere, waiting } = useChat();
-  if (running === undefined || !runsHere || running.stopping) return null;
+  const { running, runsHere, waiting, compacting } = useChat();
+  if (running === undefined || !runsHere || running.stopping || compacting) return null;
   const streamed = running.reply !== undefined && (running.reply.parts.length > 0 || running.reply.reasoning.length > 0);
   if (streamed || waiting.size > 0) return null;
   return (
@@ -198,7 +199,7 @@ function Working(): ReactElement | null {
 }
 
 // What the transcript shows at its end while the model writes a summary of
-// the open conversation, which a turn may run beside.
+// the open conversation, which a turn's next call waits for.
 function Compacting(): ReactElement | null {
   const { compacting } = useChat();
   if (!compacting) return null;

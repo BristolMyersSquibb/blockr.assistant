@@ -1,9 +1,9 @@
 // The rule of compaction (./rule.ts): when a conversation needs a summary,
-// and how much of it the summary keeps.
+// and where the summary cuts it.
 
 import { describe, expect, test } from "vitest";
 import type { Conversation, Message, Part, Role } from "../state/index.ts";
-import { estimatedTokens, firstKept, keptTokens, lastIsCurrent, needsSummary, RESERVE } from "./rule.ts";
+import { contextTokens, cutOf, estimatedTokens, keptTokens, needsSummary, RESERVE } from "./rule.ts";
 
 const EARLY = "2026-11-16T08:00:00.000Z";
 const LATE = "2026-11-16T09:00:00.000Z";
@@ -11,6 +11,11 @@ const LATE = "2026-11-16T09:00:00.000Z";
 // A message whose text the tokens given estimate.
 function message(id: string, role: Role, tokens = 10, created = EARLY): Message {
   return { id, role, parts: [{ type: "text", text: "x".repeat(tokens * 4) }], created };
+}
+
+// The results of a reply's tool calls, which the tokens given estimate.
+function results(id: string, tokens = 10): Message {
+  return { id, role: "tool", parts: [{ type: "tool_result", id: "t1", text: "x".repeat(tokens * 4) }], created: EARLY };
 }
 
 function note(id: string, tokens = 10): Message {
@@ -21,71 +26,77 @@ function conversation(last: number, ...messages: Message[]): Conversation {
   return { title: "Sales", updated: EARLY, messages, usage: { input: 0, output: 0, last }, model: null };
 }
 
+describe("the tokens of a conversation's next call", () => {
+  test("are those of its last call, and an estimate of the messages after the last reply", () => {
+    const held = conversation(5_000, message("u1", "user"), message("a1", "assistant"), results("r1", 300), message("u2", "user", 20));
+
+    expect(contextTokens(held)).toBe(5_000 + 300 + 20);
+  });
+
+  test("are an estimate of every message until a reply follows the summary, since the last call sent what the summary replaced", () => {
+    const before = conversation(90_000, message("s1", "summary", 100, LATE), message("u2", "user"), message("a2", "assistant", 10, EARLY));
+    const after = conversation(90_000, message("s1", "summary", 100, EARLY), message("u2", "user"), message("a2", "assistant", 10, LATE));
+
+    expect(contextTokens(before)).toBe(120);
+    expect(contextTokens(after)).toBe(90_000);
+  });
+
+  test("are an estimate of every message where no call spent tokens", () => {
+    expect(contextTokens(conversation(0, message("u1", "user", 30)))).toBe(30);
+  });
+});
+
 describe("a conversation needs a summary", () => {
-  test("once the tokens of its last call pass its model's window less the reserve", () => {
+  test("once the tokens of its next call pass its model's window less the reserve", () => {
     const window = 100_000;
     const held = (last: number) => conversation(last, message("u1", "user"), message("a1", "assistant"));
 
     expect(needsSummary(held(window - RESERVE), window)).toBe(false);
     expect(needsSummary(held(window - RESERVE + 1), window)).toBe(true);
   });
-
-  test("only once a reply follows its summary, since until then its last call sent what the summary replaced", () => {
-    const before = conversation(90_000, message("s1", "summary", 10, LATE), message("u2", "user"), message("a2", "assistant", 10, EARLY));
-    const after = conversation(90_000, message("s1", "summary", 10, EARLY), message("u2", "user"), message("a2", "assistant", 10, LATE));
-
-    expect(lastIsCurrent(before)).toBe(false);
-    expect(needsSummary(before, 100_000)).toBe(false);
-    expect(lastIsCurrent(after)).toBe(true);
-    expect(needsSummary(after, 100_000)).toBe(true);
-  });
-
-  test("never where its last call spent no token", () => {
-    expect(lastIsCurrent(conversation(0, message("u1", "user")))).toBe(false);
-  });
 });
 
-describe("a summary keeps", () => {
-  test("a quarter of the window", () => {
+describe("a summary", () => {
+  test("keeps a quarter of the window", () => {
     expect(keptTokens(128_000)).toBe(32_000);
+    expect(keptTokens(32_000)).toBe(8_000);
   });
 
-  test("the newest exchanges that hold the tokens given or fewer", () => {
-    const messages = [
-      message("u1", "user"),
-      message("a1", "assistant"),
-      message("u2", "user"),
-      message("a2", "assistant"),
-      message("u3", "user"),
-      message("a3", "assistant"),
-    ];
+  test("cuts before the message from which the newest messages hold the tokens given, where the user sent it", () => {
+    const messages = [message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant"), message("u3", "user"), message("a3", "assistant")];
 
-    expect(firstKept(messages, 40)).toBe(2);
-    expect(firstKept(messages, 39)).toBe(4);
-    expect(firstKept(messages, 20)).toBe(4);
+    expect(cutOf(messages, 20)).toEqual({ start: 0, first: 4, turnStart: undefined });
+    expect(cutOf(messages, 40)).toEqual({ start: 0, first: 2, turnStart: undefined });
   });
 
-  test("no exchange that starts on a note of what others changed, which the user did not send", () => {
+  test("cuts before a reply inside an exchange, whose start then gets a summary of its own", () => {
+    const messages = [message("u1", "user"), message("a1", "assistant"), results("r1", 400), message("a2", "assistant"), results("r2", 400), message("a3", "assistant")];
+
+    expect(cutOf(messages, 500)).toEqual({ start: 0, first: 3, turnStart: 0 });
+  });
+
+  test("never cuts before the results of tool calls, but keeps the reply that made the calls", () => {
+    const messages = [message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant"), results("r2", 5_000)];
+
+    expect(cutOf(messages, 1_000)).toEqual({ start: 0, first: 3, turnStart: 2 });
+  });
+
+  test("may keep what starts on a note of what others changed, as a cut inside its exchange", () => {
     const messages = [message("u1", "user"), message("a1", "assistant"), note("n1"), message("a2", "assistant")];
 
-    expect(firstKept(messages, 1_000)).toBe(4);
+    expect(cutOf(messages, 20)).toEqual({ start: 0, first: 2, turnStart: 0 });
   });
 
-  test("no message where the last exchange alone holds more", () => {
-    const messages = [message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant", 500)];
+  test("covers the messages after an earlier summary, which the call updates", () => {
+    const messages = [message("s1", "summary"), message("u2", "user"), message("a2", "assistant"), message("u3", "user"), message("a3", "assistant")];
 
-    expect(firstKept(messages, 100)).toBe(4);
+    expect(cutOf(messages, 20)).toEqual({ start: 1, first: 3, turnStart: undefined });
   });
 
-  test("none of the first exchange with a reply, so that the summary covers a reply", () => {
-    expect(firstKept([message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant")], 1_000)).toBe(2);
-    expect(firstKept([message("u1", "user"), message("a1", "assistant")], 1_000)).toBe(2);
-    expect(firstKept([message("s1", "summary"), message("u2", "user"), message("a2", "assistant")], 1_000)).toBe(3);
-  });
-
-  test("nothing to summarize where the conversation holds no reply", () => {
-    expect(firstKept([message("s1", "summary"), message("u2", "user")], 1_000)).toBeUndefined();
-    expect(firstKept([], 1_000)).toBeUndefined();
+  test("covers nothing where every message fits what it keeps", () => {
+    expect(cutOf([message("u1", "user"), message("a1", "assistant")], 1_000)).toBeUndefined();
+    expect(cutOf([message("s1", "summary"), results("r1")], 1)).toBeUndefined();
+    expect(cutOf([], 1)).toBeUndefined();
   });
 });
 

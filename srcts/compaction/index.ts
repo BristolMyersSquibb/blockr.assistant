@@ -1,8 +1,9 @@
 // Compaction, which puts a summary in place of a conversation's older
-// messages once the conversation nears its model's context window, or once
-// the user asks.
+// messages before a call that would near its model's context window, after a
+// call that outgrew it, or as the user asks, as pi's own CLI compacts.
 
 export { createCompaction } from "./compaction.ts";
 export type { Compaction, CompactionOptions } from "./compaction.ts";
-export { SUMMARY_SYSTEM_PROMPT, conversationText, summaryPrompt } from "./prompt.ts";
-export { estimatedTokens, firstKept, IMAGE_TOKENS, keptTokens, lastIsCurrent, needsSummary, RESERVE } from "./rule.ts";
+export { conversationText, historyPrompt, mergedSummary, RESULT_CHARACTERS, SUMMARY_SYSTEM_PROMPT, turnStartPrompt } from "./prompt.ts";
+export { contextTokens, cutOf, estimatedTokens, IMAGE_TOKENS, keptTokens, needsSummary, RESERVE } from "./rule.ts";
+export type { Cut } from "./rule.ts";

@@ -63,10 +63,8 @@ export function holdsMessage(conversation: Conversation, id: MessageId): boolean
 }
 
 // Whether a summary can take the place of the messages before `from`: the
-// messages hold `from`, and none from it on has the summary's id. Without
-// `from`, the summary takes the place of every message, which it always can.
-export function canCompact(messages: readonly Message[], summary: Message, from?: MessageId): boolean {
-  if (from === undefined) return true;
+// messages hold `from`, and none from it on has the summary's id.
+export function canCompact(messages: readonly Message[], summary: Message, from: MessageId): boolean {
   const index = messages.findIndex((message) => message.id === from);
   return index >= 0 && messages.slice(index).every((message) => message.id !== summary.id);
 }

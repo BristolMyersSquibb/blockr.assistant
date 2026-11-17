@@ -1,15 +1,14 @@
-// What the call that writes a summary sends (./prompt.ts): the older messages
-// as text, then the request for the summary.
+// What the calls that write a summary send (./prompt.ts): the older messages
+// as text, then pi's instructions, which update an earlier summary or cover
+// the start of a split exchange.
 
 import { describe, expect, test } from "vitest";
-import { SUMMARY_REQUEST } from "../loop/index.ts";
 import type { Message } from "../state/index.ts";
-import { conversationText, summaryPrompt } from "./prompt.ts";
+import { conversationText, historyPrompt, mergedSummary, RESULT_CHARACTERS, turnStartPrompt } from "./prompt.ts";
 
 const CREATED = "2026-11-16T08:00:00.000Z";
 
 const messages: Message[] = [
-  { id: "s1", role: "summary", parts: [{ type: "text", text: "We built a sales chart." }], created: CREATED },
   {
     id: "u2",
     role: "user",
@@ -42,25 +41,42 @@ const messages: Message[] = [
   },
 ];
 
-describe("the call that writes a summary", () => {
-  test("holds each part of the older messages as text, labelled with who wrote it", () => {
+describe("the calls that write a summary", () => {
+  test("hold each part of the older messages as text, labelled as pi's CLI labels them", () => {
     expect(conversationText(messages).split("\n\n")).toEqual([
-      "[Summary of the conversation before]: We built a sales chart.",
       "[User]: /regions",
       "[The skill regions, which the user called]: Group by region.",
       "[The user attached a file]: sales.csv, of the type text/csv",
       "[What others changed in the board]: The user removed the block b2.",
       "[Assistant]: Reading the blocks.",
-      '[The assistant called list_blocks]: {"limit":2}',
-      '[The assistant called inspect_results]: {"code":"plot(b1)"}',
-      '[The result of list_blocks]: ["b1"]',
-      "[The call of inspect_results failed]: Drew a plot.\n(The result also held 2 images.)",
+      '[Assistant tool calls]: list_blocks(limit=2); inspect_results(code="plot(b1)")',
+      '[Tool result]: ["b1"]',
+      "[Tool result]: Drew a plot.\n(The result also held 2 images.)\n(The call failed.)",
     ]);
   });
 
-  test("wraps the older messages in tags, which the request for the summary follows", () => {
-    const prompt = summaryPrompt(messages.slice(0, 1));
+  test("cut each tool result to 2,000 characters", () => {
+    const long: Message = { id: "r1", role: "tool", parts: [{ type: "tool_result", id: "t1", text: "x".repeat(RESULT_CHARACTERS + 5) }], created: CREATED };
 
-    expect(prompt).toBe(`<conversation>\n[Summary of the conversation before]: We built a sales chart.\n</conversation>\n\n${SUMMARY_REQUEST}`);
+    expect(conversationText([long])).toBe(`[Tool result]: ${"x".repeat(RESULT_CHARACTERS)}\n\n[... 5 more characters truncated]`);
+  });
+
+  test("ask for a structured summary, or for an update of the earlier summary, which goes in tags of its own", () => {
+    const fresh = historyPrompt(messages.slice(0, 1));
+    const update = historyPrompt(messages.slice(0, 1), "## Goal\nA sales chart.");
+
+    expect(fresh.startsWith("<conversation>\n[User]: /regions")).toBe(true);
+    expect(fresh).toContain("Create a structured context checkpoint summary");
+    expect(fresh).toContain("Preserve the exact ids of blocks, links, stacks and plugins");
+    expect(update).toContain("<previous-summary>\n## Goal\nA sales chart.\n</previous-summary>");
+    expect(update).toContain("incorporate into the existing summary provided in <previous-summary> tags");
+  });
+
+  test("ask for a checkpoint of the start of a split exchange, which pi's CLI merges with the summary", () => {
+    const prompt = turnStartPrompt(messages.slice(0, 1));
+
+    expect(prompt.startsWith("# Conversation\n[User]: /regions")).toBe(true);
+    expect(prompt).toContain("## Original Request");
+    expect(mergedSummary("History.", "Start.")).toBe("History.\n\n---\n\n**Turn Context (split turn):**\n\nStart.");
   });
 });

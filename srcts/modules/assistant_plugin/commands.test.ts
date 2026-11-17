@@ -215,18 +215,6 @@ describe("the assistant's commands", () => {
     expect(heldIn(core, "c1")?.messages[0]).toEqual(summary);
   });
 
-  test("compact_conversation puts a summary in place of every message where from is left out", async () => {
-    const core = await started({
-      conversations: { c1: conversation([message("u1", "user"), message("a1", "assistant"), message("a2", "assistant")]) },
-    });
-    const summary = { ...message("s1", "summary"), parts: [{ type: "text", text: "The user asked for sales by region." }] };
-
-    expect(core.commands.preflight("blockr.assistant-compact_conversation", { conversation: "c9", summary })).toBe(false);
-    await core.commands.run("blockr.assistant-compact_conversation", { conversation: "c1", summary });
-
-    expect(heldIn(core, "c1")?.messages).toEqual([summary]);
-  });
-
   test("none takes an undo step", async () => {
     const core = await started();
 

@@ -172,18 +172,20 @@ setting does not take, the assistant raises the error
 \code{assistant_model_settings_failed}.
 It then goes on without the file until the next board opens.
 The assistant finds a \code{like} that names no model of pi's catalogs only once
-it loads the catalogs.
-It loads them as the board's first turn starts, or as a board opens whose
-conversations spent tokens, since compaction reads the windows then.
+it loads the catalogs, as it first calls a model on the board.
 }
 
 \section{Compaction}{
 
-The assistant compacts a conversation once the tokens of its last call pass
-the model's context window less 16,384 tokens.
-A call to the conversation's model then writes a summary of the older
-messages, which takes their place in the conversation.
-The newest exchanges stay as they were, up to a quarter of the window.
+The assistant compacts a conversation as pi's own CLI does.
+Before each call to the model, it estimates the tokens that the call would
+send.
+Where they pass the model's context window less 16,384 tokens, a call of
+its own writes a summary of the older messages first, which takes their
+place in the conversation.
+The newest messages stay as they were, up to a quarter of the window.
+A call that fails since the conversation outgrew the window gets a summary
+too, and the assistant then makes the call once more.
 The window is the one that the model settings, pi's catalogs or the base
 URL's list give the model, or else 128,000 tokens.
 So a deployment sets when compaction runs through a model's

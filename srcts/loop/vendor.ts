@@ -1,6 +1,8 @@
 // The parts of pi that the loop uses (./loop.ts): the agent loop of
 // pi-agent-core, the models and providers of pi-ai, the three APIs that the
-// assistant speaks, and pi's catalogs of OpenAI's and Anthropic's models.
+// assistant speaks, pi's catalogs of OpenAI's and Anthropic's models, and
+// pi-ai's test of whether a call failed as the conversation outgrew the
+// model's context window.
 // The build bundles them, minified, into a file of their own, pi-<hash>.js,
 // which the loop imports by that name as the page prepares its first call
 // (../turns/prepare.ts, ../build/build.ts).
@@ -17,3 +19,4 @@ export * as openaiCompletions from "@earendil-works/pi-ai/api/openai-completions
 export * as openaiResponses from "@earendil-works/pi-ai/api/openai-responses";
 export { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 export { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
+export { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";

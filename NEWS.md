@@ -259,22 +259,22 @@
   The help page of `new_assistant_plugin()` lists the parts of what a call
   sends, and today's template, `inst/prompts/system-prompt.md`, goes.
 
-* The assistant compacts a conversation once the tokens of its last call pass
-  its model's context window less 16,384 tokens (#232).
-  A call to the conversation's model writes a summary of the older messages,
-  with no tools and under a prompt of its own, and the summary takes their
-  place.
-  The newest exchanges stay, up to a quarter of the window, by an estimate of
-  four characters to a token.
-  Where the last exchange alone holds more, the summary takes the place of
-  every message, which `blockr.assistant-compact_conversation` now does where
-  it is given no `from`.
-  The assistant judges a conversation as each turn in it ends, and as the
-  board opens, which loads pi where a conversation's last call spent tokens.
+* The assistant compacts a conversation as pi's own CLI compacts a session
+  (#232).
+  Before each call to the model, it estimates the tokens that the call would
+  send: those of the last call, and four characters to a token for the
+  messages after its reply.
+  Where they pass the model's context window less 16,384 tokens, the call
+  waits while a call of the assistant's own writes a summary of the older
+  messages, which then takes their place.
+  The newest messages stay, up to a quarter of the window.
+  Where the cut falls inside an exchange, a summary of the exchange's start
+  goes with it, and a later summary updates the one before it.
+  A call that the provider refuses since the conversation outgrew the window
+  gets a summary too, and the assistant makes the call once more.
   No board option sets when compaction runs, since `chat_compact_tokens` and
   `chat_compact_keep` went with today's compaction (#219).
-  The call runs beside the turns, so a turn may start while the model writes
-  the summary, and the transcript says so at its end.
+  While the model writes, the transcript says so at its end.
   A compaction that fails leaves the conversation as it was, and raises the
   warning `assistant_compaction_failed`.
 

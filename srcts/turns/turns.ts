@@ -12,7 +12,10 @@
 // 3. It prepares its calls (./prepare.ts): where they go, the model that they
 //    talk to, which the conversation picked where the deployment offers it,
 //    with the model's settings, and the loop, which the browser loads once.
-// 4. Each call sends the system prompt of the open board, and after the
+// 4. Before each call, compaction puts a summary in place where the
+//    conversation nears the model's context window, and the call waits for
+//    it (../compaction).
+//    Each call sends the system prompt of the open board, and after the
 //    conversation's last message the message of the app's, as it is when the
 //    call goes out, with the board and what the user has on screen
 //    (../prompt).
@@ -22,6 +25,10 @@
 //    reasoning, by message.
 // 5. After each call, it adds the call's input and output tokens, and every
 //    token of the call as the total, through blockr.assistant-add_usage.
+// 6. Where a call failed since the conversation outgrew the model's context
+//    window, compaction puts a summary in place, and the turn tries the call
+//    once more, as pi's own CLI does. The turn raises the call's failure only
+//    where no summary went in or the second call fails too.
 //
 // A turn has a signal of its own, which stop() aborts, as the chat's stop
 // button does, and which aborts as the next board opens, since core aborts
@@ -53,6 +60,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
+import type { Compaction } from "../compaction/index.ts";
 import type { Answered, Handlers, Streamed } from "../loop/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
@@ -72,6 +80,9 @@ export interface TurnsOptions extends CallOptions {
   // The system prompt of the open board, and the message of the app's for
   // each call.
   readonly prompt: Prompt;
+  // The compaction, which puts a summary in place before a call that needs
+  // one, and after a call that outgrew the window.
+  readonly compaction: Pick<Compaction, "beforeCall" | "compact">;
   // The tab's Web Locks, the page's by default.
   readonly locks?: Locks | undefined;
 }
@@ -109,6 +120,11 @@ interface State {
   reply: Streamed | undefined;
   results: Readonly<Record<string, Answered>>;
   stopping: boolean;
+  // Why a call failed that outgrew the window, which the turn holds back
+  // while it tries the call once more.
+  overflow: string | undefined;
+  // Whether the turn tried a call once more already.
+  retried: boolean;
   readonly controller: AbortController;
 }
 
@@ -190,7 +206,8 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
           await write(() => conversations.addUsage(turn.conversation, input, output, total));
         }
         if (call.failure !== undefined) {
-          if (writes && !closed()) fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+          if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) turn.overflow = call.failure;
+          else if (writes && !closed()) fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
         } else if (!turn.controller.signal.aborted) {
           succeeded();
         }
@@ -228,16 +245,29 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     }
     if (stopped(turn)) return;
 
-    await prepared.loop.run({
-      ...prepared.model,
-      tools: options.tools,
-      messages: () => conversations.get(turn.conversation)?.messages ?? [],
-      kept: (message) => conversations.kept(turn.conversation, message),
-      systemPrompt,
-      appMessage: () => options.prompt.appMessage(),
-      signal: turn.controller.signal,
-      on: handlers(turn),
-    });
+    const call = { loop: prepared.loop, model: prepared.model };
+    const loop = (): Promise<void> =>
+      prepared.loop.run({
+        ...prepared.model,
+        tools: options.tools,
+        messages: () => conversations.get(turn.conversation)?.messages ?? [],
+        kept: (message) => conversations.kept(turn.conversation, message),
+        systemPrompt,
+        appMessage: () => options.prompt.appMessage(),
+        beforeCall: (stop) => options.compaction.beforeCall(turn.conversation, call, stop),
+        signal: turn.controller.signal,
+        on: handlers(turn),
+      });
+
+    await loop();
+    const overflow = turn.overflow;
+    if (overflow === undefined || stopped(turn)) return;
+    turn.overflow = undefined;
+    turn.retried = true;
+    const compacted = await options.compaction.compact(turn.conversation, call, turn.controller.signal);
+    if (stopped(turn)) return;
+    if (compacted) await loop();
+    else fail(turn.conversation, `The assistant's call to the model failed: ${overflow}`);
   }
 
   return {
@@ -246,7 +276,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       if (running !== undefined) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, controller: new AbortController() };
+      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, overflow: undefined, retried: false, controller: new AbortController() };
       const close = (): void => {
         turn.controller.abort(CLOSED);
       };
