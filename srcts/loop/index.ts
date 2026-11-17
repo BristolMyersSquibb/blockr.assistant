@@ -3,6 +3,6 @@
 // this module alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 
 export { createLoop, loadLoop, PROVIDER } from "./loop.ts";
-export type { Call, CallAnswer, Connection, Handlers, Loop, Pi, Streamed, Turn } from "./loop.ts";
-export { ENDED, STOPPED, SUMMARY_REQUEST } from "./messages.ts";
+export type { Call, CallAnswer, CallModel, Connection, Handlers, Loop, Pi, Streamed, Summarized, SummaryCall, Turn } from "./loop.ts";
+export { ENDED, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
 export type { Answered } from "./messages.ts";

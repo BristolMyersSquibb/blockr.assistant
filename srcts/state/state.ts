@@ -98,7 +98,7 @@ export function messagesToDrop(messages: readonly Message[], keep: number): numb
 }
 
 // Whether a message opens an exchange: one that the user sent, or a summary.
-function opensExchange(message: Message): boolean {
+export function opensExchange(message: Message): boolean {
   return message.role === "summary" || (message.role === "user" && !isNote(message));
 }
 

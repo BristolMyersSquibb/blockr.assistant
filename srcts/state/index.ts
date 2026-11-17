@@ -13,6 +13,7 @@ export {
   messagesToDrop,
   newConversation,
   newId,
+  opensExchange,
 } from "./state.ts";
 export type {
   AssistantState,

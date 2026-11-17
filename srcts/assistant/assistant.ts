@@ -1,6 +1,6 @@
 // The assistant of the open board: its conversations, its skills, the models
-// that it offers and its turns, which the class's start opens as each board
-// opens, and which last until the next board opens, as the plugin's signal
+// that it offers, its turns and its compaction, which the class's start opens
+// as each board opens, and which last until the next board opens, as the plugin's signal
 // aborts (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).
 // What has to outlive a mount of the chat, the turn above all, runs from
 // start, so the chat finds the assistant through the CoreApi that core gives
@@ -11,6 +11,11 @@
 //
 // The turns offer the read tools and the edit tools, which take the
 // plugin's signal to tell another board opening from a stop.
+//
+// The turns call on the compaction before each call and after a call that
+// outgrew the window. The compaction prepares the calls of /compact as the
+// turns prepare theirs, on the same deployment, models, model settings,
+// visitor's key and loop (../compaction).
 //
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
@@ -24,11 +29,13 @@
 // take, each turn fails with the error assistant_call_failed, which says why.
 // The assistant also has R read the deployment's model settings as the board
 // opens, which the turns hand the loop (../model-settings).
-// Where the deployment leaves the key to the visitor, the models and the turns
-// read the visitor's own key, which the page keeps across boards, and which
-// the chat asks for (../visitor-key).
+// Where the deployment leaves the key to the visitor, the models, the turns
+// and the compaction read the visitor's own key, which the page keeps across
+// boards, and which the chat asks for (../visitor-key).
 
 import type { CoreApi } from "@blockr/core";
+import { createCompaction } from "../compaction/index.ts";
+import type { Compaction } from "../compaction/index.ts";
 import { createConversations } from "../conversations/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
@@ -53,6 +60,7 @@ export interface Assistant {
   readonly skills: Skills;
   readonly models: Models;
   readonly turns: Turns;
+  readonly compaction: Compaction;
   // What the deployment chose, which the chat reads to tell whether it asks
   // the visitor for a key. It rejects where an option holds a value that it
   // does not take.
@@ -99,6 +107,8 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const key = options.key ?? pageKey();
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
+  const load = options.load ?? loadLoop;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -108,11 +118,12 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     callFailed,
     key,
     prompt,
-    load: options.load ?? loadLoop,
+    compaction,
+    load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
 
-  const assistant = { conversations, skills, models, turns, deployment, key, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

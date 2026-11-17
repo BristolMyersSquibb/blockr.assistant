@@ -11,12 +11,15 @@
 //   which local storage keeps (./open.ts), and the text typed and not sent,
 //   which assistant-ui's message field holds while the chat is mounted.
 // - The user's message goes to the conversations and starts a turn
-//   (./send.ts). Sending waits while a turn runs in any conversation.
+//   (./send.ts). Sending waits while a turn runs in any conversation. While
+//   the model writes a summary that the user asked for, a turn starts, and
+//   its first call waits for the summary (../compaction).
 // - Where the deployment leaves the key to the visitor, the chat asks for the
 //   visitor's own key in a field above the message field, and sends nothing
 //   while it lacks one (./key.tsx).
 // - The stop button, which shows in the turn's conversation, and Escape
-//   anywhere in the chat stop the turn.
+//   anywhere in the chat stop the turn, with a summary that the turn waits
+//   for, while a summary that the user asked for goes on.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 
@@ -31,7 +34,7 @@ import { keyOf } from "../visitor-key/index.ts";
 import { Composer } from "./composer.tsx";
 import { ChatActionsContext, ChatStateContext } from "./context.ts";
 import type { ChatActions, ChatState, KeyField } from "./context.ts";
-import { useConversations, useDeployment, useRunning, useVisitorKey } from "./hooks.ts";
+import { useCompacting, useConversations, useDeployment, useRunning, useVisitorKey } from "./hooks.ts";
 import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
@@ -42,7 +45,7 @@ import { Transcript } from "./transcript.tsx";
 
 export function Chat({ core, assistant }: { readonly core: CoreApi; readonly assistant: Assistant }): ReactElement {
   const { AssistantRuntimeProvider, useExternalStoreRuntime } = libraries();
-  const { conversations, turns } = assistant;
+  const { conversations, turns, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const deployment = useDeployment(assistant.deployment);
@@ -56,6 +59,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const conversation = open === undefined ? undefined : all[open];
   const messages = conversation?.messages ?? NO_MESSAGES;
   const runsHere = running !== undefined && running.conversation === open;
+  const compacting = useCompacting(compaction, open);
 
   // Where the deployment leaves the key to the visitor, the chat shows the
   // field for the key unless the key is given, and sends nothing while it
@@ -131,13 +135,14 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     () => ({
       running,
       runsHere,
+      compacting,
       waiting,
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
       keyField,
       noKey,
     }),
-    [all, history, keyField, noKey, running, runsHere, waiting],
+    [all, compacting, history, keyField, noKey, running, runsHere, waiting],
   );
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {

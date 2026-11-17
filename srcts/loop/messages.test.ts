@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { Message, Part } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
-import { appMessage, callMessages, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_REQUEST } from "./messages.ts";
+import { appMessage, callMessages, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
 
 const model: Model<Api> = {
   id: "gpt-5.4",
@@ -132,12 +132,12 @@ describe("a conversation as pi's messages", () => {
     expect(roles(messages)).toEqual(["user"]);
   });
 
-  test("gives a summary as an exchange: the request for it as the user's, and the summary as the reply", () => {
-    const messages = piMessages([message("s1", "summary", text("We added two blocks.")), message("u2", "user", text("Go on."))], nothingKept, model);
+  test("gives a summary as a message of the role user, which says that it holds the summary of what came before, as pi's CLI frames one", () => {
+    const messages = piMessages([message("s1", "summary", text("We added two blocks.")), message("a2", "assistant", text("Done."))], nothingKept, model);
 
-    expect(roles(messages)).toEqual(["user", "assistant", "user"]);
-    expect(texts((messages[0] as UserMessage).content)).toEqual([SUMMARY_REQUEST]);
-    expect((messages[1] as AssistantMessage).content).toEqual([{ type: "text", text: "We added two blocks." }]);
+    expect(roles(messages)).toEqual(["user", "assistant"]);
+    expect(texts((messages[0] as UserMessage).content)).toEqual([`${SUMMARY_PREFIX}We added two blocks.${SUMMARY_SUFFIX}`]);
+    expect(SUMMARY_PREFIX).toContain("The conversation history before this point was compacted into the following summary:");
   });
 
   test("puts the system prompt with the tools' declarations first", () => {

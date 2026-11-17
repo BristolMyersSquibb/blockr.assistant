@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Board, CoreApi } from "@blockr/core";
+import type { Compaction } from "../compaction/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import type { Conversation, ConversationId } from "../state/index.ts";
@@ -22,6 +23,14 @@ export function useConversations(conversations: Conversations): Readonly<Record<
   const subscribe = useCallback((changed: () => void) => conversations.subscribe(changed), [conversations]);
   const all = useCallback(() => conversations.all(), [conversations]);
   return useSyncExternalStore(subscribe, all);
+}
+
+// Whether the model writes a summary of the conversation, false where none
+// is open.
+export function useCompacting(compaction: Compaction, conversation: ConversationId | undefined): boolean {
+  const subscribe = useCallback((changed: () => void) => compaction.subscribe(changed), [compaction]);
+  const writing = useCallback(() => conversation !== undefined && compaction.writing(conversation), [compaction, conversation]);
+  return useSyncExternalStore(subscribe, writing);
 }
 
 export function useRunning(turns: Turns): Running | undefined {
