@@ -15,6 +15,7 @@ import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
+import type { ModelSettings } from "../model-settings/index.ts";
 import type { Message } from "../state/index.ts";
 import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
@@ -173,6 +174,35 @@ describe("a turn on the loop", () => {
     expect(calls.map((c) => c.options?.apiKey)).toEqual(["test-key", "test-key"]);
     expect(calls[0]?.options?.reasoning).toBe("medium");
     expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  // The level off is no level at all, as pi takes it.
+  test.each<{ readonly what: string; readonly api: string; readonly model: string; readonly settings?: ModelSettings; readonly level: SimpleStreamOptions["reasoning"] }>([
+    { what: "the level off on Chat Completions for a model of pi's catalog of OpenAI's models", api: "openai-completions", model: "gpt-5.4", level: undefined },
+    { what: "the level off on Chat Completions for a model whose like names one", api: "openai-completions", model: "company-gpt", settings: { like: "gpt-5.4-nano" }, level: undefined },
+    { what: "the level medium on Chat Completions for a model outside that catalog", api: "openai-completions", model: "openai/gpt-5.4", level: "medium" },
+    { what: "the level medium on Chat Completions for a model of pi's catalog of Anthropic's models", api: "openai-completions", model: "claude-sonnet-5-5", level: "medium" },
+    { what: "the level medium on the Responses API for a model of pi's catalog of OpenAI's models", api: "openai-responses", model: "gpt-5.4", level: "medium" },
+    { what: "the level medium on Anthropic's API", api: "anthropic-messages", model: "claude-sonnet-5-5", level: "medium" },
+  ])("gives pi $what", async ({ api, model, settings, level }) => {
+    const faux = createFauxCore({ api, provider: PROVIDER });
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    faux.setResponses([seen(calls, fauxAssistantMessage("Two."))]);
+    const loop = createLoop(pi, { [api]: faux });
+
+    await loop.run({
+      connection: { baseUrl: "https://proxy.invalid/v1", api, apiKey: () => Promise.resolve("test-key") },
+      model,
+      ...(settings === undefined ? {} : { settings }),
+      tools: [listed],
+      messages: () => [asked],
+      kept: () => undefined,
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.options?.reasoning).toBe(level);
   });
 
   test("hands pi a placeholder where the connection gives no key, which the loop's fetch takes off the request", async () => {

@@ -33,7 +33,7 @@ export interface ModelSettings {
   // whose settings the model takes where the file gives none.
   readonly like?: string;
   // Whether the model reasons, so that pi asks it to, at the thinking level
-  // medium.
+  // that the loop gives it, medium but for one case (../loop).
   readonly reasoning?: boolean;
   // Whether the model takes images. Where it takes none, pi replaces each
   // image of inspect_results with "(tool image omitted: model does not

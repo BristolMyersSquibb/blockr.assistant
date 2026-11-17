@@ -174,6 +174,26 @@ describe("a turn on Anthropic's Messages API", () => {
   });
 });
 
+describe("a turn on OpenAI's Chat Completions API", () => {
+  test("gets a reply from gpt-5.4, which takes function tools there only with the reasoning effort none", async () => {
+    const { core, conversation } = await turned({
+      assistant_base_url: `${mock.origin}/openai/v1`,
+      assistant_api: "openai-completions",
+      assistant_api_key: mock.key,
+      assistant_models: "gpt-5.4",
+    });
+
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(conversation?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(lastText(conversation)).toBe(mock.done);
+    const calls = (await reached("POST")).map((call) => call.body);
+    expect(calls.map((body) => [Array.isArray(body.tools), body.reasoning_effort])).toEqual([
+      [true, "none"],
+      [true, "none"],
+    ]);
+  });
+});
+
 describe("the list of models from another origin", () => {
   // The settings that a list gives a model: its context window, its cap for a
   // reply and whether it takes images.

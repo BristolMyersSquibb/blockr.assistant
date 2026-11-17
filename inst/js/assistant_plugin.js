@@ -1064,10 +1064,11 @@ async function runAgent(pi, streams, turn, span) {
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
+  const level = thinkingLevel(pi, turn);
   let added;
   const config = {
     model: model2,
-    reasoning: "medium",
+    ...level === void 0 ? {} : { reasoning: level },
     identity: { attribution: null },
     // Every message goes to the model as it is, but the message of the app's,
     // which goes as a message of the role user.
@@ -1153,6 +1154,10 @@ function catalogModel(pi, id) {
     if (Object.hasOwn(catalog, id)) return catalog[id];
   }
   return void 0;
+}
+function thinkingLevel(pi, turn) {
+  const openai = Object.hasOwn(pi.OPENAI_MODELS, turn.settings?.like ?? turn.model);
+  return turn.connection.api === "openai-completions" && openai ? void 0 : "medium";
 }
 function keyless(input, init) {
   const headers = new Headers(init?.headers);

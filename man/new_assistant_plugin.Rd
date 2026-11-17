@@ -158,6 +158,12 @@ include what pi sends that API, such as the adaptive thinking that
 Anthropic's current models need.
 \item The setting \code{reasoning} says whether the model reasons, so that the
 assistant asks it to, at the thinking level \code{medium}.
+On OpenAI's Chat Completions API, a model whose \code{like} or id names a
+model of pi's catalog of OpenAI's models takes the level \code{off} instead.
+That API refuses function tools with any reasoning effort but \code{none} for
+OpenAI's GPT-5.4 models.
+For the level \code{off}, pi sends the effort \code{none} to a model that takes it,
+such as \code{gpt-5.4}, and no effort to the others, such as \code{o3}.
 \item The setting \code{images} says whether the model takes images.
 For a model that takes none, the assistant sends a note in place of each
 plot of \code{inspect_results}.

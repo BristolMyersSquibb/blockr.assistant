@@ -128,6 +128,12 @@
 #'   Anthropic's current models need.
 #' * The setting `reasoning` says whether the model reasons, so that the
 #'   assistant asks it to, at the thinking level `medium`.
+#'   On OpenAI's Chat Completions API, a model whose `like` or id names a
+#'   model of pi's catalog of OpenAI's models takes the level `off` instead.
+#'   That API refuses function tools with any reasoning effort but `none` for
+#'   OpenAI's GPT-5.4 models.
+#'   For the level `off`, pi sends the effort `none` to a model that takes it,
+#'   such as `gpt-5.4`, and no effort to the others, such as `o3`.
 #' * The setting `images` says whether the model takes images.
 #'   For a model that takes none, the assistant sends a note in place of each
 #'   plot of `inspect_results`.
