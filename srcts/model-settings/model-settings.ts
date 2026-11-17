@@ -111,10 +111,10 @@ async function readSettings(core: Core, signal: AbortSignal, failed: HeldError):
 function settingsOf(reply: Json | Blob): ReadonlyMap<string, ModelSettings> {
   if (reply === null) return NONE;
   if (!isObject(reply)) throw new TypeError(`${FILE} gives ${shown(reply)}, where it gives each model's settings by the model's id.`);
-  return new Map(Object.entries(reply).map(([id, entry]) => [id, entryOf(id, entry)]));
+  return new Map(Object.entries(reply).map(([id, entry]) => [id, parseEntry(id, entry)]));
 }
 
-function entryOf(id: string, entry: Json): ModelSettings {
+function parseEntry(id: string, entry: Json): ModelSettings {
   if (entry === null) return {};
   if (!isObject(entry)) {
     throw new TypeError(`${FILE} gives the model ${id} ${shown(entry)}, where it gives the model's settings by their names, such as reasoning: true.`);

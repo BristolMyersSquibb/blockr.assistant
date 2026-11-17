@@ -9,7 +9,7 @@ import type { Kept, KeptFile } from "../conversations/index.ts";
 import type { Message, Part } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import type { Encoded } from "../attachments/index.ts";
-import { appMessage, callMessages, encodeFiles, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
+import { appMessage, callMessages, convertReply, encodeFiles, ENDED, llmMessages, piMessages, resultsOf, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
 import type { CallFiles, Carried } from "./messages.ts";
 
 const model: Model<Api> = {
@@ -269,7 +269,7 @@ describe("pi's messages in the state's shape", () => {
   test("give a reply its text and its tool calls in order, while the memory keeps its reasoning and the reply as pi wrote it", () => {
     const written = fauxAssistantMessage([fauxThinking("Look first."), fauxText("I look."), fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" });
 
-    const reply = replyOf(written);
+    const reply = convertReply(written);
 
     expect(reply?.message).toMatchObject({
       role: "assistant",
@@ -285,11 +285,11 @@ describe("pi's messages in the state's shape", () => {
   test("keep no reply as pi wrote it where it did not finish, since pi drops such a reply whole", () => {
     const stopped = fauxAssistantMessage([fauxText("I lo")], { stopReason: "aborted" });
 
-    expect(replyOf(stopped)?.kept).toEqual({});
+    expect(convertReply(stopped)?.kept).toEqual({});
   });
 
   test("give no message for a reply that holds no text and no tool call", () => {
-    expect(replyOf(fauxAssistantMessage([fauxThinking("Hmm."), fauxText("  ")], { stopReason: "aborted" }))).toBeUndefined();
+    expect(convertReply(fauxAssistantMessage([fauxThinking("Hmm."), fauxText("  ")], { stopReason: "aborted" }))).toBeUndefined();
   });
 
   test("give the results of a reply's calls as one message of the role tool, in the order of the calls, with the images in the memory", () => {

@@ -126,7 +126,7 @@ export function conversationText(messages: readonly Message[]): string {
 }
 
 function paragraphsOf(message: Message): string[] {
-  const calls = message.parts.flatMap((part) => (part.type === "tool_call" ? [`${part.tool}(${argsOf(part.args)})`] : []));
+  const calls = message.parts.flatMap((part) => (part.type === "tool_call" ? [`${part.tool}(${formatArgs(part.args)})`] : []));
   const others = message.parts.flatMap((part) => paragraphOf(message, part));
   return calls.length === 0 ? others : [...others, `[Assistant tool calls]: ${calls.join("; ")}`];
 }
@@ -142,13 +142,13 @@ function paragraphOf(message: Message, part: Part): string[] {
     case "attachment":
       return [`[The user attached a file]: ${part.name}, of the type ${part.media_type}`];
     case "tool_result":
-      return [`[Tool result]: ${cut(part.text)}${imagesOf(part)}${part.error === true ? "\n(The call failed.)" : ""}`];
+      return [`[Tool result]: ${cut(part.text)}${describeImages(part)}${part.error === true ? "\n(The call failed.)" : ""}`];
     case "tool_call":
       return [];
   }
 }
 
-function argsOf(args: Readonly<Record<string, unknown>>): string {
+function formatArgs(args: Readonly<Record<string, unknown>>): string {
   return Object.entries(args)
     .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
     .join(", ");
@@ -160,7 +160,7 @@ function cut(text: string): string {
   return `${text.slice(0, RESULT_CHARACTERS)}\n\n[... ${String(text.length - RESULT_CHARACTERS)} more characters truncated]`;
 }
 
-function imagesOf(part: ToolResultPart): string {
+function describeImages(part: ToolResultPart): string {
   const count = part.images ?? 0;
   if (count === 0) return "";
   return count === 1 ? "\n(The result also held an image.)" : `\n(The result also held ${String(count)} images.)`;

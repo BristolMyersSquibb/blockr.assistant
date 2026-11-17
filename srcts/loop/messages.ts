@@ -344,7 +344,7 @@ function toolResult(call: ToolCallPart, content: (TextContent | ImageContent)[],
 // A reply that pi wrote, in the state's shape, with what the memory keeps of
 // it, or undefined where it holds no text and no tool call, as a reply that
 // streamed nothing before the user stopped it or its call failed.
-export function replyOf(reply: AssistantMessage): { readonly message: Message; readonly kept: Kept } | undefined {
+export function convertReply(reply: AssistantMessage): { readonly message: Message; readonly kept: Kept } | undefined {
   const parts = partsOf(reply);
   if (parts.length === 0) return undefined;
   const reasoning = reasoningOf(reply);

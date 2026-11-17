@@ -115,7 +115,7 @@ import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { markBeforeAppMessage } from "./cache.ts";
 import { withFiles } from "./files.ts";
-import { appMessage, callMessages, encodeFiles, image, isToolCall, llmMessages, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import { appMessage, callMessages, convertReply, encodeFiles, image, isToolCall, llmMessages, partsOf, reasoningOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered, Carried, CarriedFile } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
@@ -367,7 +367,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
-          answered.set(event.toolCallId, answeredOf(event.result as AgentToolResult<unknown>, event.isError));
+          answered.set(event.toolCallId, convertToolResult(event.result as AgentToolResult<unknown>, event.isError));
         }
         turn.on.returned(event.toolCallId, answer(event.toolCallId));
         return;
@@ -486,7 +486,7 @@ function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSett
           ...at,
           name: id,
           reasoning: false,
-          input: inputOf(["text", "image"], listed.images),
+          input: includeImages(["text", "image"], listed.images),
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: listed.contextWindow ?? 128_000,
           maxTokens: listed.maxTokens ?? 16_384,
@@ -496,7 +496,7 @@ function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSett
   return {
     ...base,
     reasoning: given.reasoning ?? base.reasoning,
-    input: inputOf(base.input, given.images),
+    input: includeImages(base.input, given.images),
     contextWindow: given.contextWindow ?? base.contextWindow,
     maxTokens: given.maxTokens ?? base.maxTokens,
     ...(anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" as const } } : {}),
@@ -505,7 +505,7 @@ function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSett
 
 // The inputs of a model, with images or without them, as the setting given
 // says, or as they are where it says nothing.
-function inputOf(input: Model<Api>["input"], images: boolean | undefined): Model<Api>["input"] {
+function includeImages(input: Model<Api>["input"], images: boolean | undefined): Model<Api>["input"] {
   if (images === undefined) return input;
   const others = input.filter((kind) => kind !== "image");
   return images ? [...others, "image"] : others;
@@ -537,7 +537,7 @@ const REFUSED: ReadonlySet<number> = new Set([400, 413, 415, 422]);
 // the call carried of the files that the user attached, and the status of the
 // provider's answer, where it answered.
 function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>, carried: Carried, status: number | undefined): Call {
-  const written = replyOf(reply);
+  const written = convertReply(reply);
   const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
@@ -579,7 +579,7 @@ function agentTool(tool: Tool, given: Map<string, Answered>, turn: TelemetrySpan
 
 // The result that pi gave in place of a tool, as for args that the tool's
 // schema refuses.
-function answeredOf(result: AgentToolResult<unknown>, isError: boolean): Answered {
+function convertToolResult(result: AgentToolResult<unknown>, isError: boolean): Answered {
   const text = result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n");
   const images = result.content.flatMap((block): KeptImage[] => (block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []));
   return { text, isError, images };
