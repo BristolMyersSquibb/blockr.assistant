@@ -197,25 +197,29 @@ describe("a turn on the loop", () => {
       level: "high",
     },
     { what: "the level off that the deployment's model settings give, before the level medium", api: "openai-responses", model: "gpt-5.4", settings: { thinkingLevel: "off" }, level: undefined },
-  ])("gives pi $what", async ({ api, model, settings, level }) => {
+  ])("gives pi $what, for a turn's calls and for the call that writes a summary", async ({ api, model, settings, level }) => {
     const faux = createFauxCore({ api, provider: PROVIDER });
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
-    faux.setResponses([seen(calls, fauxAssistantMessage("Two."))]);
+    faux.setResponses([seen(calls, fauxAssistantMessage("Two.")), seen(calls, fauxAssistantMessage("The user asked how many blocks."))]);
     const loop = createLoop(pi, { [api]: faux });
-
-    await loop.run({
+    const called = {
       connection: { baseUrl: "https://proxy.invalid/v1", api, apiKey: () => Promise.resolve("test-key") },
       model,
       ...(settings === undefined ? {} : { settings }),
+    };
+
+    await loop.run({
+      ...called,
       tools: [listed],
       messages: () => [asked],
       kept: () => undefined,
       signal: new AbortController().signal,
       on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
     });
+    await loop.summarize({ ...called, systemPrompt: "Summarize.", prompt: "<conversation>[User]: How many blocks?</conversation>", signal: new AbortController().signal });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.options?.reasoning).toBe(level);
+    expect(calls).toHaveLength(2);
+    expect(calls.map((call) => call.options?.reasoning)).toEqual([level, level]);
   });
 
   test("hands pi a placeholder where the connection gives no key, which the loop's fetch takes off the request", async () => {

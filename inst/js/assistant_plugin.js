@@ -2018,10 +2018,11 @@ async function summarize(pi, streams, call) {
   const model2 = buildModel(pi, call.model, call.connection, call.settings, call.listed);
   const models = modelsAt(pi, streams, call.connection, model2);
   const apiKey = await call.connection.apiKey() ?? NO_KEY2;
+  const level2 = thinkingLevel(pi, call);
   const reply = await models.completeSimple(
     model2,
     { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" }
+    { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" }
   );
   const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
   const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
@@ -2073,11 +2074,11 @@ function catalogModel(pi, id) {
   }
   return void 0;
 }
-function thinkingLevel(pi, turn) {
-  const given2 = turn.settings?.thinkingLevel;
+function thinkingLevel(pi, call) {
+  const given2 = call.settings?.thinkingLevel;
   if (given2 !== void 0) return given2 === "off" ? void 0 : given2;
-  const openai = Object.hasOwn(pi.OPENAI_MODELS, turn.settings?.like ?? turn.model);
-  return turn.connection.api === "openai-completions" && openai ? void 0 : "medium";
+  const openai = Object.hasOwn(pi.OPENAI_MODELS, call.settings?.like ?? call.model);
+  return call.connection.api === "openai-completions" && openai ? void 0 : "medium";
 }
 function keyless(input, init) {
   const headers = new Headers(init?.headers);

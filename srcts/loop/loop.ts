@@ -421,10 +421,11 @@ async function summarize(pi: Pi, streams: Readonly<Record<string, ProviderStream
   const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
   const models = modelsAt(pi, streams, call.connection, model);
   const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+  const level = thinkingLevel(pi, call);
   const reply = await models.completeSimple(
     model,
     { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
+    { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
   );
   const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
   const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
@@ -524,8 +525,8 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
   return undefined;
 }
 
-// The thinking level of the turn's calls, or undefined for the level off,
-// which pi takes as no level
+// The thinking level of a call to the model, a turn's or the one that writes a
+// summary, or undefined for the level off, which pi takes as no level
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
 // - The level that the deployment's model settings give the model, where they
 //   give one (../model-settings).
@@ -541,11 +542,11 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
 // no effort for off, as for gpt-5 and o3, pi sends no effort at all, and the
 // model reasons as OpenAI has it. A level that the model does not take, pi
 // moves to the next level up that it takes, or else to the next one down.
-function thinkingLevel(pi: Pi, turn: Turn): ThinkingLevel | undefined {
-  const given = turn.settings?.thinkingLevel;
+function thinkingLevel(pi: Pi, call: CallModel): ThinkingLevel | undefined {
+  const given = call.settings?.thinkingLevel;
   if (given !== undefined) return given === "off" ? undefined : given;
-  const openai = Object.hasOwn(pi.OPENAI_MODELS, turn.settings?.like ?? turn.model);
-  return turn.connection.api === "openai-completions" && openai ? undefined : "medium";
+  const openai = Object.hasOwn(pi.OPENAI_MODELS, call.settings?.like ?? call.model);
+  return call.connection.api === "openai-completions" && openai ? undefined : "medium";
 }
 
 // The page's fetch, but for the placeholder of a call that carries no key,
