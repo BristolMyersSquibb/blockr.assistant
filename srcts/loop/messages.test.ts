@@ -5,10 +5,12 @@
 import type { Api, AssistantMessage, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, test } from "vitest";
-import type { Kept } from "../conversations/index.ts";
+import type { Kept, KeptFile } from "../conversations/index.ts";
 import type { Message, Part } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
-import { appMessage, callMessages, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
+import type { Encoded } from "../attachments/index.ts";
+import { appMessage, callMessages, encodeFiles, ENDED, llmMessages, piMessages, replyOf, resultsOf, STOPPED, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "./messages.ts";
+import type { CallFiles, Carried } from "./messages.ts";
 
 const model: Model<Api> = {
   id: "gpt-5.4",
@@ -156,6 +158,96 @@ describe("a conversation as pi's messages", () => {
       content: "Be brief.",
       toolsAdded: [{ name: "list_blocks", description: "List the blocks.", parameters: { type: "object", properties: {} } }],
     });
+  });
+});
+
+describe("the files that the user attached, as pi's messages", () => {
+  const attachment = (name: string, mediaType: string): Part => ({ type: "attachment", name, media_type: mediaType });
+  const asked = message("u1", "user", text("Look at these."), attachment("plot.png", "image/png"), attachment("report.pdf", "application/pdf"), attachment('a "b" <c>.csv', "text/csv"));
+  // The copies of the files that the memory keeps, and their content as the
+  // loop encoded it for the turn.
+  const png = new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+  const pdf = new Blob(["%PDF-1.4\n"]);
+  const csv = new Blob(["a,b\n1,2"]);
+  const files: KeptFile[] = [{ blob: png }, { blob: pdf }, { blob: csv }];
+  const encoded = new Map<Blob, Encoded>([
+    [png, { data: "iVBORw0KGgo=" }],
+    [pdf, { data: "JVBERi0xLjQK" }],
+    [csv, { text: "a,b\n1,2" }],
+  ]);
+  const sent = (carried?: Carried): CallFiles => ({ encoded: (file) => encoded.get(file), ...(carried === undefined ? {} : { carried }) });
+  const keeping =
+    (held: readonly KeptFile[]) =>
+    (id: string): Kept | undefined =>
+      id === "u1" ? { files: held } : undefined;
+
+  test("give an image and a PDF as pi's images after a line that names each, and a text file as its text in the tag of today's chat", () => {
+    const [user] = piMessages([asked], keeping(files), model, sent()) as [UserMessage];
+
+    expect(user.content).toEqual([
+      { type: "text", text: "Look at these." },
+      { type: "text", text: 'The user attached the file "plot.png", of the type image/png.' },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+      { type: "text", text: 'The user attached the file "report.pdf", of the type application/pdf.' },
+      { type: "image", data: "JVBERi0xLjQK", mimeType: "application/pdf" },
+      { type: "text", text: '<file-attachment name="a &quot;b&quot; &lt;c&gt;.csv" type="text/csv">\na,b\n1,2\n</file-attachment>' },
+    ]);
+  });
+
+  test("note each file that no call carried with success before, and the name of each PDF, in order", () => {
+    const carried: Carried = { files: [], pdfs: [] };
+    const later = message("u2", "user", attachment("annex.pdf", "application/pdf"));
+    const kept = (id: string): Kept | undefined => (id === "u1" ? { files: [{ blob: png, taken: true }, { blob: pdf }, { blob: csv }] } : id === "u2" ? { files: [{ blob: pdf }] } : undefined);
+
+    callMessages([asked, message("a1", "assistant", text("Seen.")), later], kept, model, [], "", sent(carried));
+
+    expect(carried.files).toEqual([
+      { message: "u1", index: 1, name: "report.pdf" },
+      { message: "u1", index: 2, name: 'a "b" <c>.csv' },
+      { message: "u2", index: 0, name: "annex.pdf" },
+    ]);
+    expect(carried.pdfs).toEqual(["report.pdf", "annex.pdf"]);
+  });
+
+  test("give a model that takes no images neither an image nor a PDF, but their names, and a text file still", () => {
+    const carried: Carried = { files: [], pdfs: [] };
+    const [user] = piMessages([asked], keeping(files), { ...model, input: ["text"] }, sent(carried)) as [UserMessage];
+
+    expect(texts(user.content)).toEqual([
+      "Look at these.",
+      'The user attached the file "plot.png", of the type image/png, which the app did not send, since the model takes no images.',
+      'The user attached the file "report.pdf", of the type application/pdf, which the app did not send, since the model takes no images.',
+      '<file-attachment name="a &quot;b&quot; &lt;c&gt;.csv" type="text/csv">\na,b\n1,2\n</file-attachment>',
+    ]);
+    expect(Array.isArray(user.content) && user.content.some((block) => block.type === "image")).toBe(false);
+    expect(carried).toEqual({ files: [{ message: "u1", index: 2, name: 'a "b" <c>.csv' }], pdfs: [] });
+  });
+
+  test("give a file that the provider refused, one whose content the memory lacks and one that the loop could not encode as their names alone", () => {
+    const carried: Carried = { files: [], pdfs: [] };
+    const unread = new Blob(["unread"]);
+    const [user] = piMessages([asked], keeping([{ refused: true }, { blob: unread }]), model, sent(carried)) as [UserMessage];
+
+    expect(texts(user.content)).toEqual([
+      "Look at these.",
+      'The user attached the file "plot.png", of the type image/png, which the provider refused, so the conversation goes on without its content.',
+      'The user attached the file "report.pdf", of the type application/pdf, whose content is no longer available.',
+      'The user attached the file "a "b" <c>.csv", of the type text/csv, whose content is no longer available.',
+    ]);
+    expect(carried).toEqual({ files: [], pdfs: [] });
+  });
+
+  test("are encoded by the loop once for a turn: an image's and a PDF's bytes as base64, and a text file's text", async () => {
+    const encodings = new Map<Blob, Encoded>();
+    const conversation = [asked, message("a1", "assistant", text("Seen."))];
+
+    await encodeFiles(conversation, keeping(files), encodings);
+    const first = encodings.get(png);
+    await encodeFiles(conversation, keeping([...files.slice(0, 2), { refused: true }]), encodings);
+
+    expect(encodings.size).toBe(3);
+    for (const [file, content] of encoded) expect(encodings.get(file)).toEqual(content);
+    expect(encodings.get(png)).toBe(first);
   });
 });
 

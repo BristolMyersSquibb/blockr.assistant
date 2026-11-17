@@ -125,10 +125,96 @@
   list-style: none;
 }
 .blockr-assistant-files li {
-  padding: 0 6px;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.blockr-assistant-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 0;
+  padding: 2px 6px 2px 2px;
   border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius-sm);
+  background: var(--blockr-assistant-bg-raised);
+  font: inherit;
   font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--blockr-assistant-text);
+}
+button.blockr-assistant-file {
+  cursor: pointer;
+  transition: background var(--blockr-assistant-transition);
+}
+button.blockr-assistant-file:hover {
+  background: linear-gradient(var(--blockr-assistant-bg-subtle), var(--blockr-assistant-bg-subtle)), var(--blockr-assistant-bg-raised);
+}
+.blockr-assistant-file-thumb {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.blockr-assistant-file-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--blockr-assistant-bg-subtle);
+  font-size: 9.5px;
+  font-weight: var(--bc-font-weight-semibold, 600);
+  letter-spacing: 0.02em;
+}
+.blockr-assistant-file-badge,
+span.blockr-assistant-file .blockr-assistant-file-name {
+  color: var(--blockr-assistant-text-muted);
+}
+.blockr-assistant-file-name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blockr-assistant-file[data-refused] .blockr-assistant-file-name {
+  text-decoration: line-through;
+}
+.blockr-assistant-file-note {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--blockr-assistant-text-danger);
+}
+.blockr-assistant-file-remove {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--blockr-assistant-text-muted);
+  cursor: pointer;
+}
+.blockr-assistant-file-remove:hover {
+  background: var(--blockr-assistant-bg-subtle);
+}
+.blockr-assistant-file-remove svg {
+  width: 12px;
+  height: 12px;
 }
 .blockr-assistant-reply {
   display: flex;
@@ -539,17 +625,36 @@
 }
 .blockr-assistant-field {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: 6px;
   min-height: 42px;
-  padding: 7px 7px 7px 12px;
+  padding: 7px;
   border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius);
   background: var(--blockr-assistant-bg-raised);
 }
+.blockr-assistant-field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.blockr-assistant-staged {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .blockr-assistant-field:has(textarea:focus) {
   outline: 2px solid var(--blockr-assistant-border-accent);
   outline-offset: 1px;
+}
+.blockr-assistant-chat[data-dragging] .blockr-assistant-field {
+  outline: 2px dashed var(--blockr-assistant-border-accent);
+  outline-offset: 1px;
+}
+.blockr-assistant-files-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--blockr-assistant-text-muted);
 }
 .blockr-assistant-field textarea {
   flex: 1 1 auto;
@@ -571,6 +676,7 @@
   color: var(--blockr-assistant-text-muted);
   opacity: 1;
 }
+.blockr-assistant-attach,
 .blockr-assistant-send,
 .blockr-assistant-stop {
   display: inline-flex;
@@ -583,6 +689,14 @@
   border: 0;
   border-radius: var(--blockr-assistant-radius-sm);
   cursor: pointer;
+}
+.blockr-assistant-attach {
+  background: transparent;
+  color: var(--blockr-assistant-text-muted);
+}
+.blockr-assistant-attach:hover {
+  background: var(--blockr-assistant-bg-subtle);
+  color: var(--blockr-assistant-text);
 }
 .blockr-assistant-send {
   background: var(--blockr-assistant-bg-accent);
@@ -665,6 +779,80 @@
   background: var(--blockr-assistant-bg-accent);
   color: var(--blockr-assistant-text-on-accent);
 }
+.blockr-assistant-file-dialog {
+  width: min(960px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+.blockr-assistant-file-view {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+}
+.blockr-assistant-file-view-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 16px;
+  border-bottom: 1px solid var(--blockr-assistant-border);
+}
+.blockr-assistant-dialog .blockr-assistant-file-view-head h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blockr-assistant-file-view-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--blockr-assistant-radius-sm);
+  background: transparent;
+  color: var(--blockr-assistant-text-muted);
+  cursor: pointer;
+}
+.blockr-assistant-file-view-close:hover {
+  background: var(--blockr-assistant-bg-subtle);
+  color: var(--blockr-assistant-text);
+}
+.blockr-assistant-file-view-body {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+}
+.blockr-assistant-file-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+}
+.blockr-assistant-file-pdf {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 80px);
+  border: 0;
+}
+.blockr-assistant-file-text {
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
+  font-family: var(--bc-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @container blockr-assistant (width < 260px) {
   .blockr-assistant-transcript {
     padding: 8px 8px 0;
@@ -672,8 +860,8 @@
   .blockr-assistant-composer {
     padding: 6px 8px 8px;
   }
-  .blockr-assistant-field {
-    padding-left: 8px;
+  .blockr-assistant-file-name {
+    max-width: 120px;
   }
   .blockr-assistant-greeting {
     padding-top: 12px;
