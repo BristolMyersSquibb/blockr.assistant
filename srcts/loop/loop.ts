@@ -15,6 +15,14 @@
 //   in its answer to a page's preflight. Each of pi's APIs refuses to call
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
+// - The loop's fetch also notes what each call's request got back, where that
+//   says something of the key: a 401 or a 403, by which the base URL refused
+//   the key, or no answer that the page could read. OpenAI's 401 for a call
+//   reaches a page in the second way, since it carries no CORS header
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
+//   A failed call reports what its request got back, so that its caller can
+//   tell a refused key from a lost connection. Pi sends one request for each
+//   call, since it retries none.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter, and the thinking level medium
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
@@ -145,7 +153,14 @@ export interface Call {
   // Why the call failed, where it failed. A call that the turn's signal
   // stopped did not fail.
   readonly failure?: string;
+  // What the failed call's request got back, where that says something of
+  // the key: a 401 or a 403, by which the base URL refused the key, or no
+  // answer that the page could read, as where the answer carries no CORS
+  // header or the connection failed.
+  readonly answer?: CallAnswer;
 }
+
+export type CallAnswer = "refused" | "unread";
 
 export interface Loop {
   // Runs the turn, and resolves once the turn ends, however it ends. It
@@ -212,6 +227,23 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
 
+  // What the request of the call that runs got back, which each call starts
+  // afresh.
+  let got: CallAnswer | undefined;
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    let response: Response;
+    try {
+      response = await keyless(input, init);
+    } catch (error) {
+      // The page's fetch fails with a TypeError where it reads no answer, and
+      // with an AbortError where the request's signal aborts.
+      if (error instanceof TypeError) got = "unread";
+      throw error;
+    }
+    if (response.status === 401 || response.status === 403) got = "refused";
+    return response;
+  };
+
   const config: AgentLoopConfig = {
     model,
     reasoning: "medium",
@@ -225,7 +257,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
       return callMessages(transformed, kept, model, turn.tools, prompt);
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
-    fetch: keyless,
+    fetch,
     ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
   };
 
@@ -236,7 +268,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(event.message));
+        if (event.message.role === "assistant") await turn.on.called(callOf(event.message, got));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -260,9 +292,10 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   };
 
   const begun = { messages: callMessages(turn.messages(), kept, model, turn.tools, prompt), tools };
-  await pi.runAgentLoopContinue(begun, config, emit, turn.signal, (called, messages, options) =>
-    models.streamSimple(called, messages, { ...options, telemetry: span }),
-  );
+  await pi.runAgentLoopContinue(begun, config, emit, turn.signal, (called, messages, options) => {
+    got = undefined;
+    return models.streamSimple(called, messages, { ...options, telemetry: span });
+  });
 }
 
 // The model of the id given, at the connection's base URL, in its API,
@@ -343,13 +376,14 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
   return globalThis.fetch(input, { ...init, headers });
 }
 
-// A call that ended, with the reply that pi wrote.
-function callOf(reply: AssistantMessage): Call {
+// A call that ended, with the reply that pi wrote, and what its request got
+// back, where that says something of the key.
+function callOf(reply: AssistantMessage, answer: CallAnswer | undefined): Call {
   const written = replyOf(reply);
   return {
     ...(written === undefined ? {} : { reply: written }),
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
-    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason.", ...(answer === undefined ? {} : { answer }) } : {}),
   };
 }
 

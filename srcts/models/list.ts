@@ -80,9 +80,9 @@ const CALLS: Readonly<Record<string, string>> = {
 // The answer to the request for the list: the models of the list that take
 // tools, with the settings that the list gives each, by the model's id, where
 // it gives any, or why the assistant offers none. A list that the base URL
-// refuses for its key is refused, and any other answer that leaves no model
-// to offer failed.
-type Listed =
+// refuses for its key, with a 401 or a 403, is refused, and any other answer
+// that leaves no model to offer failed.
+export type Listed =
   | { readonly kind: "listed"; readonly models: readonly string[]; readonly settings: ReadonlyMap<string, ListedSettings> }
   | { readonly kind: "refused" | "failed"; readonly message: string };
 

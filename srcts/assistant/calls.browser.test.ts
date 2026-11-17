@@ -7,10 +7,12 @@
 // with the blockr options of a deployment that point at the mock. A turn then
 // runs on pi's own code for the API, through the page's fetch: the model calls
 // the tool list_blocks, and replies once it has the tool's result.
+// Where the deployment sets no key, the test gives the visitor's own key, as
+// the chat would, and reads what the base URL's answers did to it.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { beforeEach, describe, expect, inject, test } from "vitest";
-import { startAssistant } from "../testing/index.ts";
+import { beforeEach, describe, expect, inject, test, vi } from "vitest";
+import { startAssistant, storedIn } from "../testing/index.ts";
 import type { RecordedRequest } from "../testing/index.ts";
 import { assistantOf } from "./index.ts";
 
@@ -27,25 +29,26 @@ async function reached(method: string): Promise<RecordedRequest[]> {
 }
 
 // The assistant of a board on core's CoreApi for tests, where R holds the
-// blockr options given.
-async function opened(blockrOptions: Readonly<Record<string, Json>>) {
+// blockr options given, with the visitor's key given, where a test gives one.
+async function opened(blockrOptions: Readonly<Record<string, Json>>, key?: string) {
   const started = await startAssistant({ blockrOptions });
   await started.settled();
   const assistant = assistantOf(started.core);
   if (assistant === undefined) throw new Error("The class's start opened no assistant.");
   await assistant.conversations.opened;
+  if (key !== undefined) assistant.key.give(key);
   return { ...started, assistant };
 }
 
 // Runs a turn of a conversation that holds a question of the user's, on the
-// deployment that the blockr options given make, and gives the conversation
-// as the turn left it.
-async function turned(blockrOptions: Readonly<Record<string, Json>>) {
-  const { core, assistant } = await opened(blockrOptions);
+// deployment that the blockr options given make, with the visitor's key given,
+// where a test gives one, and gives the conversation as the turn left it.
+async function turned(blockrOptions: Readonly<Record<string, Json>>, key?: string) {
+  const { core, assistant, sent } = await opened(blockrOptions, key);
   await assistant.conversations.addConversation("c1", "Blocks");
   await assistant.conversations.addMessage("c1", { id: "u1", role: "user", parts: [{ type: "text", text: "Which blocks does the board hold?" }], created: "2026-11-16T08:00:00.000Z" });
   await assistant.turns.run("c1");
-  return { core, conversation: assistant.conversations.get("c1") };
+  return { core, assistant, sent, conversation: assistant.conversations.get("c1") };
 }
 
 function raised(core: CoreApi, code: string): string[] {
@@ -180,5 +183,84 @@ describe("the list of models from another origin", () => {
     expect(raised(core, "assistant_models_failed")).toEqual([
       `The assistant offers no model, since the base URL gives no list of models at ${mock.origin}/nolist/v1/models: it answered 404, "No list here.". An app on such a base URL names its models in the blockr option assistant_models.`,
     ]);
+  });
+});
+
+describe("the visitor's own key", () => {
+  // The blockr options of a deployment that sets no key, at the base URL of
+  // the mock given, which names its model, so that no key asks for a list.
+  const at = (base: string, api = "openai-responses") => ({ assistant_base_url: `${mock.origin}${base}`, assistant_api: api, assistant_models: "mock-model" });
+  const failed = "The assistant's call to the model failed: ";
+
+  test("goes with each call, and reaches neither the board, R nor the browser's storage", async () => {
+    const { core, sent, conversation } = await turned(at("/openai/v1"), mock.key);
+
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(lastText(conversation)).toBe(mock.done);
+    expect((await reached("POST")).map((call) => call.headers.authorization)).toEqual([`Bearer ${mock.key}`, `Bearer ${mock.key}`]);
+    const stored = [JSON.stringify([core.store.board(), sent]), storedIn(localStorage), storedIn(sessionStorage)];
+    expect(stored.join("\n")).not.toContain(mock.key);
+  });
+
+  test("is dropped where the base URL refuses a call's key with an answer that the page reads, as Anthropic does", async () => {
+    const { core, assistant } = await turned(at("/anthropic", "anthropic-messages"), "wrong-key");
+
+    expect(assistant.key.current()).toEqual({ kind: "refused" });
+    const [why] = raised(core, "assistant_call_failed");
+    expect(why?.startsWith(failed)).toBe(true);
+    expect(why).toContain("invalid x-api-key");
+    expect(await reached("GET")).toEqual([]);
+  });
+
+  test.each(["openai-responses", "openai-completions"])(
+    "is checked against the list of models where OpenAI refuses a call's key on %s with no CORS header, and dropped once the list refuses it",
+    async (api) => {
+      const { core, assistant } = await turned(at("/openai/v1", api), "wrong-key");
+
+      expect(assistant.key.current()).toEqual({ kind: "refused" });
+      const asked = await reached("GET");
+      expect(asked.map((request) => [request.path, request.headers.authorization])).toEqual([["/openai/v1/models", "Bearer wrong-key"]]);
+      const [why] = raised(core, "assistant_call_failed");
+      expect(why?.startsWith(failed)).toBe(true);
+      expect(why?.endsWith(` The base URL refused the assistant's key for its list of models at ${mock.origin}/openai/v1/models: it answered 401, "Incorrect API key provided.".`)).toBe(true);
+    },
+  );
+
+  test("stays where a call gets no answer that the page reads and the list takes the key, and the call fails as any call does", async () => {
+    const { core, assistant } = await turned(at("/drops/v1"), mock.key);
+
+    expect(assistant.key.current()).toEqual({ kind: "given", key: mock.key });
+    expect((await reached("GET")).map((request) => request.path)).toEqual(["/drops/v1/models"]);
+    const [why] = raised(core, "assistant_call_failed");
+    expect(why?.startsWith(failed)).toBe(true);
+    expect(why).not.toContain("may be wrong");
+  });
+
+  test("stays in doubt where a call and the list both get no answer that the page reads, and the error says that the connection was lost and the key may be wrong", async () => {
+    const { core, assistant } = await turned(at("/unreachable/v1"), mock.key);
+
+    expect(assistant.key.current()).toEqual({ kind: "lost", key: mock.key });
+    const [why] = raised(core, "assistant_call_failed");
+    expect(why?.startsWith(failed)).toBe(true);
+    expect(why?.endsWith(" The connection was lost, and the key may be wrong.")).toBe(true);
+  });
+
+  test("asks for the list of models once it comes, where the app names no models, and is dropped where the list refuses it", async () => {
+    const { core, assistant } = await opened({ assistant_base_url: `${mock.origin}/openai/v1` });
+    await expect(assistant.models.offered()).resolves.toEqual({ models: [] });
+    expect(await reached("GET")).toEqual([]);
+
+    assistant.key.give("wrong-key");
+    await vi.waitFor(() => {
+      expect(assistant.key.current()).toEqual({ kind: "refused" });
+    });
+    expect(raised(core, "assistant_call_failed")).toEqual([
+      `The base URL refused the assistant's key for its list of models at ${mock.origin}/openai/v1/models: it answered 401, "Incorrect API key provided.".`,
+    ]);
+
+    assistant.key.give(mock.key);
+    await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(assistant.key.current()).toEqual({ kind: "given", key: mock.key });
+    expect((await reached("GET")).map((request) => request.headers.authorization)).toEqual(["Bearer wrong-key", `Bearer ${mock.key}`]);
   });
 });

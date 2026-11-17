@@ -239,6 +239,25 @@
   for it to open.
   The chat's stylesheet is `inst/js/assistant_plugin.css`.
 
+* Where the app sets no key in the blockr option `assistant_api_key`, the
+  chat asks each visitor for a key of their own, in a field above the message
+  field, and sends nothing until the visitor gives one (#236).
+  The key stays in the page's memory and reaches neither the board, R nor the
+  browser's storage.
+  So another board that opens in the page keeps the key, and a reload asks
+  for it again.
+  Where the app names no models, the assistant asks for the base URL's list
+  of models with the key as soon as the visitor gives it.
+  Where the base URL refuses the key, for a call or for its list, the
+  assistant raises the error `assistant_call_failed`, and the chat asks for a
+  key again.
+  OpenAI's refusal of a call's key reaches the page as a failed connection,
+  so the assistant then asks for the list of models with the same key, which
+  tells a refused key from a lost connection.
+  Where the list fails as well, the error says that the connection was lost
+  and that the key may be wrong, and the chat shows the field again, holding
+  the key.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

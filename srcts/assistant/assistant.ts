@@ -19,6 +19,9 @@
 // take, each turn fails with the error assistant_call_failed, which says why.
 // The assistant also has R read the deployment's model settings as the board
 // opens, which the turns hand the loop (../model-settings).
+// Where the deployment leaves the key to the visitor, the models and the turns
+// read the visitor's own key, which the page keeps across boards, and which
+// the chat asks for (../visitor-key).
 
 import type { CoreApi } from "@blockr/core";
 import { createConversations } from "../conversations/index.ts";
@@ -36,12 +39,20 @@ import type { Skills } from "../skills/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
+import { pageKey } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 
 export interface Assistant {
   readonly conversations: Conversations;
   readonly skills: Skills;
   readonly models: Models;
   readonly turns: Turns;
+  // What the deployment chose, which the chat reads to tell whether it asks
+  // the visitor for a key. It rejects where an option holds a value that it
+  // does not take.
+  readonly deployment: Promise<Deployment>;
+  // The visitor's own key.
+  readonly key: VisitorKey;
   // The signal that aborts as the next board opens, which ends the assistant.
   readonly signal: AbortSignal;
 }
@@ -57,6 +68,8 @@ export interface AssistantOptions {
   // How the assistant asks the base URL for its list of models, through the
   // page's fetch unless given.
   readonly fetch?: Fetch;
+  // The visitor's own key, the page's unless given.
+  readonly key?: VisitorKey;
 }
 
 const opened = new WeakMap<CoreApi, Assistant>();
@@ -76,7 +89,8 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   // The turns report why the options cannot be read, as each turn starts.
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
-  const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
+  const key = options.key ?? pageKey();
+  const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const turns = createTurns(core, signal, {
     conversations,
@@ -85,11 +99,12 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     models,
     settings,
     callFailed,
+    key,
     load: options.load ?? loadLoop,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
 
-  const assistant = { conversations, skills, models, turns, signal };
+  const assistant = { conversations, skills, models, turns, deployment, key, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

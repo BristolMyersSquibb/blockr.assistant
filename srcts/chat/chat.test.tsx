@@ -10,12 +10,15 @@ import { act } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { openAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
+import type { Credential } from "../deployment/index.ts";
 import { ENDED } from "../loop/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistantModule from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { fauxLoop } from "../testing/index.ts";
+import { fauxLoop, storedIn } from "../testing/index.ts";
+import { createVisitorKey } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 import { loadLibraries } from "./libraries.ts";
 import { renderChat } from "./panel.tsx";
 
@@ -59,12 +62,16 @@ interface Options {
   readonly replies?: FauxResponseStep[];
   readonly tokensPerSecond?: number;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
+  // How the calls are authenticated, with the deployment's key unless given.
+  readonly credential?: Credential;
+  // The visitor's own key, which holds none unless given.
+  readonly key?: VisitorKey;
 }
 
 // Core on a board that holds the assistant's state given, with the assistant
-// of the board on pi's fake provider, which the class's start would open, and
-// the chat drawn in an element of the page, once its libraries have loaded.
-// Core stops as the test finishes.
+// of the board on pi's fake provider at https://faux.invalid/v1, which the
+// class's start would open, and the chat drawn in an element of the page, once
+// its libraries have loaded. Core stops as the test finishes.
 async function chat(options: Options = {}) {
   const board = HELLO.board.board;
   const stubbed = await act(() =>
@@ -91,9 +98,10 @@ async function chat(options: Options = {}) {
   const { faux, loop, connection } = fauxLoop(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond });
   faux.setResponses(options.replies ?? [fauxAssistantMessage("The board holds **no** block.")]);
   const assistant = openAssistant(stubbed.core, controller.signal, {
-    deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: { kind: "deployment", key: "test-key" }, models: ["faux-1"] }),
+    deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: options.credential ?? { kind: "deployment", key: "test-key" }, models: ["faux-1"] }),
     load: () => Promise.resolve(loop),
     locks: undefined,
+    key: options.key ?? createVisitorKey(),
   });
   await act(() => assistant.conversations.opened);
   await act(() => loadLibraries());
@@ -206,6 +214,28 @@ function field(el: HTMLElement): HTMLTextAreaElement {
 function inState(assistant: Assistant): AssistantState["conversations"] {
   return assistant.conversations.all();
 }
+
+// Types the key into the field for the visitor's key, as the visitor would,
+// and gives it with the field's button.
+function giveKey(el: HTMLElement, key: string): void {
+  const input = el.querySelector<HTMLInputElement>(".blockr-assistant-key input");
+  if (input === null) throw new Error("The chat draws no field for the key.");
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, key);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  click(el.querySelector(".blockr-assistant-key button"));
+}
+
+// A reply of pi's fake provider that records the key of the call.
+function keyed(into: (string | undefined)[], text = "Hello."): FauxResponseStep {
+  return (_context, options) => {
+    into.push(options?.apiKey);
+    return fauxAssistantMessage(text);
+  };
+}
+
+const VISITOR: Credential = { kind: "visitor" };
 
 describe("the assistant's chat", () => {
   test("shows the greeting of an empty board, with its three suggestions, above the message field", async () => {
@@ -331,6 +361,82 @@ describe("the assistant's chat", () => {
     await until(() => el.querySelector(".blockr-assistant-failure") !== null, "the failure");
 
     expect(el.querySelector(".blockr-assistant-failure")?.textContent).toBe("The assistant's call to the model failed: 401 Unauthorized");
+  });
+});
+
+describe("the chat's field for the visitor's key", () => {
+  test("asks for the key above the message field where the app sets none, and sends nothing until the visitor gives one", async () => {
+    const keys: (string | undefined)[] = [];
+    const { el, assistant, core, sent } = await chat({ credential: VISITOR, replies: [keyed(keys)] });
+
+    const note = el.querySelector(".blockr-assistant-key-note");
+    expect(note?.textContent).toBe("Enter your API key for faux.invalid. The assistant keeps it only until the page reloads.");
+    expect(el.querySelector(".blockr-assistant-key + .blockr-assistant-composer")).not.toBeNull();
+    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.type).toBe("password");
+    expect([...el.querySelectorAll<HTMLButtonElement>(".blockr-assistant-suggestion")].every((button) => button.disabled)).toBe(true);
+    expect(el.querySelector(".blockr-assistant-send")?.getAttribute("aria-label")).toBe("Sends once you enter your key");
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await settle();
+    expect(inState(assistant)).toEqual({});
+    expect(field(el).value).toBe("How many blocks?");
+
+    giveKey(el, "  sk-visitor  ");
+    await settle();
+    expect(assistant.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    expect(el.querySelector(".blockr-assistant-key")).toBeNull();
+
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null, "the reply");
+    expect(keys).toEqual(["sk-visitor"]);
+    const stored = [storedIn(localStorage), storedIn(sessionStorage), JSON.stringify([core.store.board(), sent])];
+    expect(stored.join("\n")).not.toContain("sk-visitor");
+  });
+
+  test("asks again, with an empty field, once the base URL refuses the key", async () => {
+    const key = createVisitorKey();
+    key.give("sk-wrong");
+    const { el } = await chat({ credential: VISITOR, key });
+    expect(el.querySelector(".blockr-assistant-key")).toBeNull();
+
+    act(() => {
+      key.refused("sk-wrong");
+    });
+
+    const note = el.querySelector(".blockr-assistant-key-note");
+    expect(note?.textContent).toBe("The server at faux.invalid refused your key. Enter another one.");
+    expect(note?.getAttribute("role")).toBe("alert");
+    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.value).toBe("");
+    expect(el.querySelector<HTMLButtonElement>(".blockr-assistant-send")?.disabled).toBe(true);
+  });
+
+  test("shows the field again, holding the key, after a lost connection, while the message field sends with the key", async () => {
+    const keys: (string | undefined)[] = [];
+    const key = createVisitorKey();
+    key.give("sk-visitor");
+    key.lost("sk-visitor");
+    const { el } = await chat({ credential: VISITOR, key, replies: [keyed(keys)] });
+
+    expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(
+      "The connection to faux.invalid was lost, and your key may be wrong. Change it, or send your message again.",
+    );
+    expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input")?.value).toBe("sk-visitor");
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null, "the reply");
+
+    expect(keys).toEqual(["sk-visitor"]);
+    expect(el.querySelector(".blockr-assistant-key")).toBeNull();
+  });
+
+  test("shows no field where the app sets a key, or none", async () => {
+    const deployments = await chat();
+    const none = await chat({ credential: { kind: "none" } });
+
+    expect(deployments.el.querySelector(".blockr-assistant-key")).toBeNull();
+    expect(none.el.querySelector(".blockr-assistant-key")).toBeNull();
   });
 });
 

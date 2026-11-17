@@ -1,11 +1,14 @@
 // The models that the assistant offers on the open board (./models.ts): those
 // that the deployment names, those of the base URL's list, when the assistant
-// asks for the list again, and which error each failed list raises.
+// asks for the list again, which error each failed list raises, the list for
+// the visitor's own key, and the list that checks a key.
 
 import type { Raised } from "@blockr/core";
 import { describe, expect, test, vi } from "vitest";
 import type { Deployment } from "../deployment/index.ts";
 import { heldError } from "../notifications/index.ts";
+import { createVisitorKey } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 import type { Fetch } from "./list.ts";
 import { createModels } from "./models.ts";
 
@@ -38,18 +41,33 @@ function answering(...responses: (() => Response | Promise<Response>)[]) {
   return { fetch, asked: () => asked };
 }
 
+// A fetch that answers each request with the next of the responses given, and
+// records the key that each request carries in Authorization.
+function recording(...responses: (() => Response | Promise<Response>)[]) {
+  const keys: (string | null)[] = [];
+  const { fetch: answer, asked } = answering(...responses);
+  const fetch: Fetch = (input, init) => {
+    keys.push(new Headers(init.headers).get("authorization"));
+    return answer(input, init);
+  };
+  return { fetch, asked, keys };
+}
+
 function proxy(given: Partial<Deployment> = {}): Deployment {
   return { baseUrl: "https://proxy.invalid/v1", api: "openai-completions", credential: { kind: "deployment", key: "test-key" }, models: undefined, ...given };
 }
 
-// The models of the board, on the deployment and the fetch given.
-function opened(deployment: Deployment | Promise<Deployment>, fetch: Fetch) {
+// The models of the board, on the deployment, the fetch and the visitor's key
+// given, a key of the visitor's that holds none unless given.
+function opened(deployment: Deployment | Promise<Deployment>, fetch: Fetch, key: VisitorKey = createVisitorKey()) {
   const { core, raised } = holding();
   const controller = new AbortController();
   const callFailed = heldError(core, controller.signal, "assistant_call_failed");
-  const models = createModels(core, controller.signal, { deployment: Promise.resolve(deployment), callFailed, fetch });
-  return { models, raised, controller };
+  const models = createModels(core, controller.signal, { deployment: Promise.resolve(deployment), callFailed, key, fetch });
+  return { models, raised, controller, key };
 }
+
+const visited = proxy({ credential: { kind: "visitor" } });
 
 const listed = () => Response.json({ data: [{ id: "gpt-5.4" }, { id: "gpt-5.4-nano" }] });
 const missing = () => new Response("Not Found", { status: 404 });
@@ -90,9 +108,9 @@ describe("the models that the assistant offers", () => {
     });
   });
 
-  test("are none where the visitor authenticates, for whom it asks for no list", async () => {
+  test("are none where the visitor authenticates and has given no key, for which they ask for no list", async () => {
     const { fetch, asked } = answering(listed);
-    const { models } = opened(proxy({ credential: { kind: "visitor" } }), fetch);
+    const { models } = opened(visited, fetch);
 
     await expect(models.offered()).resolves.toEqual({ models: [] });
     expect(asked()).toBe(0);
@@ -168,5 +186,124 @@ describe("the models that the assistant offers", () => {
 
     await expect(offered).resolves.toEqual({ models: [] });
     expect(raised("assistant_models_failed")).toEqual([]);
+  });
+});
+
+describe("the models for the visitor's own key", () => {
+  const refused = () => Response.json({ error: { message: "Incorrect API key provided." } }, { status: 401 });
+  const why = 'The base URL refused the assistant\'s key for its list of models at https://proxy.invalid/v1/models: it answered 401, "Incorrect API key provided.".';
+
+  test("are those of the list that the base URL gives for the key, which they ask for once the visitor gives it", async () => {
+    const { fetch, keys } = recording(listed);
+    const { models, key } = opened(visited, fetch);
+    await expect(models.offered()).resolves.toEqual({ models: [] });
+
+    key.give("sk-visitor");
+
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(keys).toEqual(["Bearer sk-visitor"]);
+  });
+
+  test("are those of the list for the key that the visitor gave before the board opened", async () => {
+    const { fetch, keys } = recording(listed);
+    const key = createVisitorKey();
+    key.give("sk-visitor");
+    const { models } = opened(visited, fetch, key);
+
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(keys).toEqual(["Bearer sk-visitor"]);
+  });
+
+  test("drop a key that the base URL refuses for its list, and ask again once the visitor gives a key, the same key included", async () => {
+    const { fetch, keys } = recording(refused, refused, listed);
+    const { models, raised, key } = opened(visited, fetch);
+
+    key.give("sk-wrong");
+    await vi.waitFor(() => {
+      expect(key.current()).toEqual({ kind: "refused" });
+    });
+    expect(raised("assistant_call_failed")).toEqual([why]);
+
+    key.give("sk-wrong");
+    await vi.waitFor(() => {
+      expect(keys).toHaveLength(2);
+    });
+    await vi.waitFor(() => {
+      expect(key.current()).toEqual({ kind: "refused" });
+    });
+
+    key.give("sk-right");
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(keys).toEqual(["Bearer sk-wrong", "Bearer sk-wrong", "Bearer sk-right"]);
+    expect(key.current()).toEqual({ kind: "given", key: "sk-right" });
+  });
+
+  test("ask for no list again where the visitor gives the key that they asked with", async () => {
+    const { fetch, asked } = answering(listed);
+    const { models, key } = opened(visited, fetch);
+    key.give("sk-visitor");
+    await models.offered();
+
+    key.give("sk-visitor");
+    await models.offered();
+
+    expect(asked()).toBe(1);
+  });
+
+  test("tell the key that the base URL took it, once a list comes for it", async () => {
+    const { fetch } = answering(missing, listed);
+    const key = createVisitorKey();
+    key.give("sk-visitor");
+    key.lost("sk-visitor");
+    const { models, raised } = opened(visited, fetch, key);
+    await vi.waitFor(() => {
+      expect(raised("assistant_models_failed")).toHaveLength(1);
+    });
+    expect(key.current()).toEqual({ kind: "lost", key: "sk-visitor" });
+
+    await models.offered();
+
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+  });
+
+  test("say nothing of a list for a key that the visitor replaced while the request ran", async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const keys: (string | null)[] = [];
+    const fetch: Fetch = (_url, init) => {
+      keys.push(new Headers(init.headers).get("authorization"));
+      return keys.length === 1
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve(listed());
+    };
+    const { models, raised, key } = opened(visited, fetch);
+    key.give("sk-first");
+    await vi.waitFor(() => {
+      expect(keys).toHaveLength(1);
+    });
+
+    key.give("sk-second");
+    answer(refused());
+
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    expect(keys).toEqual(["Bearer sk-first", "Bearer sk-second"]);
+    expect(key.current()).toEqual({ kind: "given", key: "sk-second" });
+    expect(raised("assistant_call_failed")).toEqual([]);
+  });
+
+  test("check a key against the base URL's list, which changes neither the key nor the models offered, and raises nothing", async () => {
+    const { fetch, keys } = recording(refused, listed, missing);
+    const { models, raised, key } = opened(proxy({ credential: { kind: "visitor" }, models: ["gpt-5.4"] }), fetch);
+    key.give("sk-visitor");
+
+    await expect(models.check("sk-visitor")).resolves.toEqual({ kind: "refused", message: why });
+    await expect(models.check("sk-visitor")).resolves.toMatchObject({ kind: "listed", models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.check("sk-visitor")).resolves.toMatchObject({ kind: "failed" });
+
+    expect(keys).toEqual(["Bearer sk-visitor", "Bearer sk-visitor", "Bearer sk-visitor"]);
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4"] });
+    expect([...raised("assistant_call_failed"), ...raised("assistant_models_failed")]).toEqual([]);
   });
 });

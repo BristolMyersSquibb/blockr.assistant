@@ -12,6 +12,9 @@
 //   which assistant-ui's message field holds while the chat is mounted.
 // - The user's message goes to the conversations and starts a turn
 //   (./send.ts). Sending waits while a turn runs in any conversation.
+// - Where the deployment leaves the key to the visitor, the chat asks for the
+//   visitor's own key in a field above the message field, and sends nothing
+//   while it lacks one (./key.tsx).
 // - The stop button, which shows in the turn's conversation, and Escape
 //   anywhere in the chat stop the turn.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
@@ -24,10 +27,12 @@ import type { CoreApi } from "@blockr/core";
 import type { Assistant } from "../assistant/index.ts";
 import { isNote } from "../state/index.ts";
 import type { Message } from "../state/index.ts";
+import { keyOf } from "../visitor-key/index.ts";
 import { Composer } from "./composer.tsx";
 import { ChatActionsContext, ChatStateContext } from "./context.ts";
-import type { ChatActions, ChatState } from "./context.ts";
-import { useConversations, useRunning } from "./hooks.ts";
+import type { ChatActions, ChatState, KeyField } from "./context.ts";
+import { useConversations, useDeployment, useRunning, useVisitorKey } from "./hooks.ts";
+import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
 import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
@@ -40,6 +45,8 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const { conversations, turns } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
+  const deployment = useDeployment(assistant.deployment);
+  const visitorKey = useVisitorKey(assistant.key);
   const [chosen, setChosen] = useState(storedConversation);
   const [link, setLink] = useState<string | undefined>(undefined);
 
@@ -50,6 +57,17 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const messages = conversation?.messages ?? NO_MESSAGES;
   const runsHere = running !== undefined && running.conversation === open;
 
+  // Where the deployment leaves the key to the visitor, the chat shows the
+  // field for the key unless the key is given, and sends nothing while it
+  // lacks a key.
+  const visitorAuthenticates = deployment?.credential.kind === "visitor";
+  const noKey = visitorAuthenticates && keyOf(visitorKey) === undefined;
+  const keyField = useMemo<KeyField | undefined>(
+    () =>
+      deployment !== undefined && visitorAuthenticates && visitorKey.kind !== "given" ? { state: visitorKey, host: new URL(deployment.baseUrl).host } : undefined,
+    [deployment, visitorAuthenticates, visitorKey],
+  );
+
   // Assistant-ui keeps what it converted of each item that the chat gives it
   // again, so a long conversation converts only what changed as a reply
   // streams (./messages.ts).
@@ -57,20 +75,20 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
   const send = useCallback(
     (text: string): Promise<void> => {
-      if (text.trim() === "" || turns.current() !== undefined) return Promise.resolve();
+      if (text.trim() === "" || turns.current() !== undefined || noKey) return Promise.resolve();
       return sendMessage(assistant, open, text, (added) => {
         storeConversation(added);
         setChosen(added);
       });
     },
-    [assistant, open, turns],
+    [assistant, noKey, open, turns],
   );
 
   const runtime = useExternalStoreRuntime({
     messages: shown,
     convertMessage: threadMessageOf,
     isRunning: runsHere,
-    isSendDisabled: running !== undefined,
+    isSendDisabled: running !== undefined || noKey,
     onNew: async (message: AppendMessage) => {
       const text = textOf(message);
       try {
@@ -100,8 +118,11 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
         turns.stop();
       },
       openLink: setLink,
+      giveKey: (key) => {
+        assistant.key.give(key);
+      },
     }),
-    [core, send, turns],
+    [assistant, core, send, turns],
   );
 
   const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(typedText).filter((text) => text !== ""), [messages]);
@@ -113,8 +134,10 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       waiting,
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
+      keyField,
+      noKey,
     }),
-    [all, history, running, runsHere, waiting],
+    [all, history, keyField, noKey, running, runsHere, waiting],
   );
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -131,6 +154,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
         <ChatStateContext value={state}>
           <div className="blockr-assistant-chat" onKeyDown={escape}>
             <Transcript />
+            <KeyForm />
             <Composer />
             <LinkDialog
               url={link}
