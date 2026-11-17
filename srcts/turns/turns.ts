@@ -12,12 +12,21 @@
 // 3. It loads the loop and its provider code with a dynamic import, which the
 //    browser does once, as the board's first turn starts, since a page where
 //    nobody asks the assistant anything never needs them.
-// 4. It runs on the model that the conversation picked, or on the default.
+// 4. It runs on the model that the conversation picked, where the deployment
+//    offers it, and on the default otherwise, while the pick stays in the
+//    state, so that the conversation talks to its model again under a
+//    deployment that offers it
+//    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
+//    Where the deployment names no models, it asks the models for the base
+//    URL's list again, where the last list offered none (../models).
+// 5. Its calls go to the deployment's base URL, in the API that the base URL
+//    speaks, with the deployment's key, or with no key where the key is
+//    "none" (../deployment).
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
 //    reasoning, by message.
-// 5. After each call, it adds the call's input and output tokens, and every
+// 6. After each call, it adds the call's input and output tokens, and every
 //    token of the call as the total, through blockr.assistant-add_usage.
 //
 // A turn has a signal of its own, which stop() aborts, as the chat's stop
@@ -36,31 +45,39 @@
 // A call to the model that fails, and a turn that cannot start, raise the
 // error assistant_call_failed from start, so that it holds once the panel
 // closes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
-// The turns withdraw it once a later call succeeds, and core withdraws it as
-// the next board opens.
+// A turn cannot start where a blockr option of the deployment holds a value
+// that it does not take, or where the deployment sets no key. The turns
+// withdraw the error once a later call succeeds, and core withdraws it as the
+// next board opens.
+// A turn for which the deployment offers no model raises nothing of its own,
+// since the models raised why already.
 // The memory keeps the failure by the conversation's last message, so that
 // the chat shows it at its turn. The conversation keeps what the turn
 // finished, and what its reply streamed until the failure.
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
-import type { Answered, Connection as LoopConnection, Handlers, Loop, Streamed } from "../loop/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import type { Deployment } from "../deployment/index.ts";
+import type { Answered, Connection, Handlers, Loop, Streamed } from "../loop/index.ts";
+import type { Models } from "../models/index.ts";
+import type { HeldError } from "../notifications/index.ts";
 import type { ConversationId } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { holdLock, pageLocks } from "./lock.ts";
 import type { Locks } from "./lock.ts";
 
-// Where the turns' calls go and how they are authenticated, with the model
-// that a conversation talks to where it picked none, or null for none.
-export interface Connection extends LoopConnection {
-  readonly model: string | null;
-}
-
 export interface TurnsOptions {
   readonly conversations: Conversations;
   readonly tools: readonly Tool[];
-  readonly connection: Connection;
+  // What the deployment chose through the assistant's blockr options, which
+  // the assistant reads as the board opens. It rejects where an option holds
+  // a value that it does not take.
+  readonly deployment: Promise<Deployment>;
+  // The models that the deployment offers.
+  readonly models: Pick<Models, "offered">;
+  // The error assistant_call_failed, which the models raise as well, for a
+  // list of models that the base URL refuses for its key.
+  readonly callFailed: HeldError;
   // Loads the loop, which imports pi's bundle.
   readonly load: () => Promise<Loop>;
   // The tab's Web Locks, the page's by default.
@@ -108,31 +125,26 @@ const STOP = new DOMException("The user stopped the turn.", "AbortError");
 const CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
 const GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
 
-const NO_MODEL = "The assistant has no model to talk to, since the conversation picked none and the app offers none.";
+const NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+const NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 
 export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOptions): Turns {
-  const { conversations, connection } = options;
+  const { conversations, callFailed } = options;
   const locks = "locks" in options ? options.locks : pageLocks();
   const listeners = new Set<() => void>();
   let running: State | undefined;
   // What current() gives, which changed() makes anew.
   let snapshot: Running | undefined;
-  // Withdraws the notification of a failed call that the turns raised, where
-  // they raised one.
-  let withdraw: (() => void) | undefined;
-
-  signal.addEventListener(
-    "abort",
-    () => {
-      withdraw = undefined;
-    },
-    { once: true },
-  );
 
   // Whether the board is closed, as the next board opened. A function, since
   // the signal aborts while a turn awaits.
   function closed(): boolean {
     return signal.aborted;
+  }
+
+  // Whether the turn stopped, or its board closed, while it awaited.
+  function stopped(turn: State): boolean {
+    return closed() || turn.controller.signal.aborted;
   }
 
   function changed(): void {
@@ -143,15 +155,18 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   // Raises the error of a failed call, in place of the one before, and keeps
   // why the turn failed by the conversation's last message.
   function fail(conversation: ConversationId, why: string): void {
-    withdraw?.();
-    withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_call_failed", message: why });
+    callFailed.raise(why);
+    keep(conversation, why);
+  }
+
+  // Keeps why the turn failed by the conversation's last message.
+  function keep(conversation: ConversationId, why: string): void {
     const last = conversations.get(conversation)?.messages.at(-1);
     if (last !== undefined) conversations.keep(conversation, last.id, { failure: why });
   }
 
   function succeeded(): void {
-    withdraw?.();
-    withdraw = undefined;
+    callFailed.withdraw();
   }
 
   // What the turn does with what the loop reports.
@@ -205,11 +220,26 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   }
 
   async function runTurn(turn: State): Promise<void> {
-    const held = conversations.get(turn.conversation);
-    if (held === undefined) return;
-    const model = held.model ?? connection.model;
-    if (model === null) {
-      fail(turn.conversation, NO_MODEL);
+    if (conversations.get(turn.conversation) === undefined) return;
+
+    let deployment: Deployment;
+    try {
+      deployment = await options.deployment;
+    } catch (error) {
+      if (!closed()) fail(turn.conversation, `The assistant cannot call a model: ${messageOf(error)}`);
+      return;
+    }
+    if (deployment.credential.kind === "visitor") {
+      fail(turn.conversation, NO_KEY);
+      return;
+    }
+
+    const offered = await options.models.offered();
+    if (stopped(turn)) return;
+    const picked = conversations.get(turn.conversation)?.model ?? null;
+    const model = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
+    if (model === undefined) {
+      keep(turn.conversation, offered.failure ?? NO_MODEL);
       return;
     }
 
@@ -220,10 +250,10 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       if (!closed()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf(error)}`);
       return;
     }
-    if (turn.controller.signal.aborted) return;
+    if (stopped(turn)) return;
 
     await loop.run({
-      connection,
+      connection: connectionOf(deployment),
       model,
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
@@ -278,6 +308,14 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       };
     },
   };
+}
+
+// Where the loop's calls go, and the key that each carries: the deployment's,
+// or none.
+function connectionOf(deployment: Deployment): Connection {
+  const { credential } = deployment;
+  const key = credential.kind === "deployment" ? credential.key : undefined;
+  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
 }
 
 function messageOf(error: unknown): string {

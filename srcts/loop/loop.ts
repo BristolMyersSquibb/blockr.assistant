@@ -9,6 +9,12 @@
 // - The loop takes the credential through getApiKey, which pi calls for each
 //   request, so that the loop knows no way to authenticate
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
+//   Where the connection gives no key, no call carries one, neither in
+//   Authorization nor in Anthropic's x-api-key, so that a base URL that
+//   needs no key, such as a company's own proxy, need not allow either header
+//   in its answer to a page's preflight. Each of pi's APIs refuses to call
+//   without a key, so the loop gives pi a placeholder, which its fetch takes
+//   off the request before the request leaves.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter, and the thinking level medium
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
@@ -32,15 +38,34 @@
 // Where the turn's signal aborts, pi stops the model's stream, and each tool
 // call left without a result gets one that says the user stopped the turn.
 // The tools stop waiting themselves, since each takes the signal.
+//
+// The loop records the turn's spans, under the names that ellmer gives the
+// spans of today's turns (./telemetry.ts):
+// 1. As a turn starts, the loop starts its span, invoke_agent, under the
+//    context that is active as run() is called. The span carries the
+//    provider and the model, as ellmer's does.
+// 2. It gives pi the turn's span through streamFn, as
+//    { ...options, telemetry: turn }. So pi records the span of each call to
+//    the model under the turn's span.
+// 3. It runs each tool call in a span execute_tool <tool> under the turn's
+//    span, with gen_ai.tool.name, gen_ai.tool.description and
+//    gen_ai.tool.call.id. The tool's span is active as the tool is called.
+// 4. A tool runs its commands and sends its requests before its first await,
+//    or else inside context.with() of the context that it kept from before
+//    that await. So core puts its spans of them under the tool's span.
+// 5. The turn's span ends once the turn ends.
 
+import { context } from "@opentelemetry/api";
 import type { Json } from "@blockr/core";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
+import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
+import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
 
 // The parts of pi that the loop uses, as ./vendor.ts names them.
@@ -59,6 +84,10 @@ export interface Connection {
   // undefined for none.
   apiKey(): Promise<string | undefined>;
 }
+
+// The key that the loop gives pi for a call that carries none, which the
+// loop's fetch takes off the request.
+const NO_KEY = "blockr-assistant-no-key";
 
 export interface Turn {
   readonly connection: Connection;
@@ -139,7 +168,18 @@ export async function loadLoop(): Promise<Loop> {
   return createLoop(await import("./vendor.ts"));
 }
 
-async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+// Runs the turn in its span, invoke_agent.
+function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+  const attributes = {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": providerName(turn.connection.api),
+    "gen_ai.request.model": turn.model,
+  };
+  return telemetryUnder(context.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
+}
+
+// Runs the turn on pi's agent loop, under the turn's span.
+async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
   const model = modelOf(pi, turn.model, turn.connection);
   const models = pi.createModels();
   models.setProvider(
@@ -159,7 +199,7 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
   const given = new Map<string, Answered>();
   const answered = new Map<string, Answered>();
   const answer = (id: string): Answered => given.get(id) ?? answered.get(id) ?? { text: STOPPED, isError: true, images: [] };
-  const tools = turn.tools.map((tool) => agentTool(tool, given));
+  const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
 
@@ -175,7 +215,8 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       return callMessages(transformed, kept, model, turn.tools, prompt);
     },
-    getApiKey: () => turn.connection.apiKey(),
+    getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
+    fetch: keyless,
     ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
   };
 
@@ -209,8 +250,10 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
     }
   };
 
-  const context = { messages: callMessages(turn.messages(), kept, model, turn.tools, prompt), tools };
-  await pi.runAgentLoopContinue(context, config, emit, turn.signal, models.streamSimple.bind(models));
+  const begun = { messages: callMessages(turn.messages(), kept, model, turn.tools, prompt), tools };
+  await pi.runAgentLoopContinue(begun, config, emit, turn.signal, (called, messages, options) =>
+    models.streamSimple(called, messages, { ...options, telemetry: span }),
+  );
 }
 
 // The model of the id given, at the connection's base URL, in its API,
@@ -220,8 +263,18 @@ async function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>
 //   it takes, which Anthropic's current models refuse in any other form. It
 //   takes the catalog's settings for the API alone where the catalog's model
 //   speaks the connection's API.
-// - Any other model reasons, takes images, and has room for 200,000 tokens, of
-//   which a reply takes up to 32,000. The cost is unknown, so pi counts none.
+// - Any other model, such as one that a company's own proxy serves under a
+//   name of its own, gets settings that every API takes:
+//   - It does not reason, so that pi sends no reasoning effort and asks for no
+//     thinking, which a model that does not reason refuses, and the model
+//     reasons as its provider has it, as today's calls leave it to.
+//   - It takes images, so that the plots of inspect_results reach the model,
+//     as today's assistant sends them to every model.
+//   - Its context window holds 128,000 tokens, as gpt-4o's does, and each call
+//     asks for up to 16,384 tokens for its reply, the most that gpt-4o takes.
+//     The cap goes out with every call, and pi lowers it only as the input
+//     nears the window.
+//   - Its cost is unknown, so pi counts none.
 function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
   const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, id);
@@ -229,11 +282,11 @@ function modelOf(pi: Pi, id: string, connection: Connection): Model<Api> {
     return {
       ...at,
       name: id,
-      reasoning: true,
+      reasoning: false,
       input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 200_000,
-      maxTokens: 32_000,
+      contextWindow: 128_000,
+      maxTokens: 16_384,
     };
   }
   // The catalog's headers belong to the catalog's provider, so they go.
@@ -249,6 +302,16 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
   return undefined;
 }
 
+// The page's fetch, but for the placeholder of a call that carries no key,
+// which it takes off the request. The SDKs that pi calls give their headers
+// with the request's init.
+function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
+  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+  return globalThis.fetch(input, { ...init, headers });
+}
+
 // A call that ended, with the reply that pi wrote.
 function callOf(reply: AssistantMessage): Call {
   const written = replyOf(reply);
@@ -262,7 +325,8 @@ function callOf(reply: AssistantMessage): Call {
 // A tool as pi runs it, which keeps the result that the tool gave by call.
 // The tool rejects only where the turn's signal aborts, and pi then writes an
 // error of its own as the result, which the loop replaces.
-function agentTool(tool: Tool, given: Map<string, Answered>): AgentTool {
+// Each call runs in its span, under the turn's span.
+function agentTool(tool: Tool, given: Map<string, Answered>, turn: TelemetrySpan): AgentTool {
   return {
     name: tool.name,
     label: tool.name,
@@ -270,7 +334,15 @@ function agentTool(tool: Tool, given: Map<string, Answered>): AgentTool {
     parameters: tool.parameters,
     executionMode: tool.executionMode,
     async execute(id, args, signal) {
-      const result = await tool.execute(args as Readonly<Record<string, Json>>, signal ?? new AbortController().signal);
+      const attributes = {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": tool.name,
+        "gen_ai.tool.description": tool.description,
+        "gen_ai.tool.call.id": id,
+      };
+      const result = await turn.startSpan({ name: `execute_tool ${tool.name}`, attributes }, () =>
+        tool.execute(args as Readonly<Record<string, Json>>, signal ?? new AbortController().signal),
+      );
       given.set(id, { text: result.text, isError: result.isError, images: result.images });
       const content: (TextContent | ImageContent)[] = [{ type: "text", text: result.text }, ...result.images.map(image)];
       return { content, details: undefined, isError: result.isError };

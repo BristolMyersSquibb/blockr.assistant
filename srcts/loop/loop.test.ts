@@ -1,15 +1,20 @@
 // The loop on pi's fake provider (./loop.ts), whose replies each test
 // scripts: a turn as it streams, its tool calls, its calls to the model, what
-// each call sends, a stop and a failed call. The test plays the turns, which
-// keep each message that the loop reports in a conversation of their own.
+// each call sends, a stop, a failed call and the tree of a turn's spans. The
+// test plays the turns, which keep each message that the loop reports in a
+// conversation of their own.
 
-import type { SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace";
+import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { Message } from "../state/index.ts";
-import { fauxLoop } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
+import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
 import { STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
@@ -28,10 +33,11 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "systemPrompt" | "transformContext" | "onPayload">> = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "systemPrompt" | "transformContext" | "onPayload">> & { readonly key?: string | undefined } = {},
   tokensPerSecond?: number,
 ) {
-  const { faux, loop, connection } = fauxLoop(tokensPerSecond === undefined ? {} : { tokensPerSecond });
+  const { key, ...rest } = given;
+  const { faux, loop, connection } = fauxLoop({ ...(tokensPerSecond === undefined ? {} : { tokensPerSecond }), ...("key" in given ? { key } : {}) });
   faux.setResponses(replies);
   const messages: Message[] = [asked];
   const kept = new Map<string, Kept>();
@@ -75,7 +81,7 @@ function turnWith(
         return Promise.resolve();
       },
     },
-    ...given,
+    ...rest,
   };
 
   return { run: () => loop.run(turn), messages, kept, calls, streamed, returned, controller, keys: () => keys };
@@ -154,6 +160,76 @@ describe("a turn on the loop", () => {
     expect(calls.map((c) => c.options?.apiKey)).toEqual(["test-key", "test-key"]);
     expect(calls[0]?.options?.reasoning).toBe("medium");
     expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("hands pi a placeholder where the connection gives no key, which the loop's fetch takes off the request", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { key: undefined });
+    await run();
+    const sent: Headers[] = [];
+    vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers));
+      return Promise.resolve(new Response("{}"));
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const placeholder = calls[0]?.options?.apiKey ?? "";
+    const fetch = calls[0]?.options?.fetch;
+    await fetch?.("https://proxy.invalid/v1/chat/completions", { headers: { authorization: `Bearer ${placeholder}`, "content-type": "application/json" } });
+    await fetch?.("https://proxy.invalid/v1/messages", { headers: new Headers({ "x-api-key": placeholder, "anthropic-version": "2023-06-01" }) });
+    await fetch?.("https://api.openai.com/v1/responses", { headers: { authorization: "Bearer sk-test" } });
+
+    expect(placeholder).not.toBe("");
+    expect(sent.map((headers) => Object.fromEntries(headers))).toEqual([
+      { "content-type": "application/json" },
+      { "anthropic-version": "2023-06-01" },
+      { authorization: "Bearer sk-test" },
+    ]);
+  });
+
+  test("gives a model that pi's catalogs lack settings that every API takes", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith(
+      [
+        (_context, _options, _state, model) => {
+          models.push(model);
+          return fauxAssistantMessage("Two.");
+        },
+      ],
+      { model: "company-gpt-4o" },
+    );
+
+    await run();
+
+    expect(models[0]).toMatchObject({
+      id: "company-gpt-4o",
+      api: FAUX_API,
+      baseUrl: "https://faux.invalid/v1",
+      reasoning: false,
+      input: ["text", "image"],
+      contextWindow: 128_000,
+      maxTokens: 16_384,
+    });
+  });
+
+  test("gives a model that pi's catalog holds the catalog's settings, at the connection's base URL", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith(
+      [
+        (_context, _options, _state, model) => {
+          models.push(model);
+          return fauxAssistantMessage("Two.");
+        },
+      ],
+      { model: "gpt-5.4" },
+    );
+
+    await run();
+
+    const { reasoning, input, contextWindow, maxTokens } = OPENAI_MODELS["gpt-5.4"];
+    expect(models[0]).toMatchObject({ id: "gpt-5.4", baseUrl: "https://faux.invalid/v1", reasoning, input, contextWindow, maxTokens });
   });
 
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
@@ -296,5 +372,87 @@ describe("a turn that stops or fails", () => {
     expect(calls[0]?.failure).toBe("401 Unauthorized");
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+});
+
+describe("the spans of a turn", () => {
+  // The id of the span's parent, or undefined for a root.
+  function parentOf(span: ReadableSpan): string | undefined {
+    return span.parentSpanContext?.spanId;
+  }
+
+  test("hold each call to the model and each tool call under the turn's span, and core's span of a tool's request under the tool's span", async () => {
+    const recorded = recordSpans();
+    const stub = await startAssistant({ answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) } });
+    await stub.settled();
+    const tools = readTools(stub.core, skillsHolding());
+    const { run } = turnWith(
+      [fauxAssistantMessage([fauxToolCall("get_block_result", { id: "a" }, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("The block a holds a dataset.")],
+      { tools },
+    );
+
+    await run();
+
+    const turn = recorded.span("invoke_agent");
+    const calls = recorded.spans().filter((span) => span.name === "chat faux-1");
+    const tool = recorded.span("execute_tool get_block_result");
+    const request = recorded.span("request describe_result");
+    expect(parentOf(turn)).toBeUndefined();
+    expect(turn.attributes).toEqual({ "gen_ai.operation.name": "invoke_agent", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1" });
+    expect(calls.map(parentOf)).toEqual([turn.spanContext().spanId, turn.spanContext().spanId]);
+    expect(calls.map((call) => call.kind)).toEqual([SpanKind.CLIENT, SpanKind.CLIENT]);
+    expect(calls[0]?.attributes).toMatchObject({ "gen_ai.operation.name": "chat", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1", stop: "toolUse" });
+    expect(parentOf(tool)).toBe(turn.spanContext().spanId);
+    expect(tool.attributes).toEqual({
+      "gen_ai.operation.name": "execute_tool",
+      "gen_ai.tool.name": "get_block_result",
+      "gen_ai.tool.description": tools.find((offered) => offered.name === "get_block_result")?.description,
+      "gen_ai.tool.call.id": "c1",
+    });
+    expect(parentOf(request)).toBe(tool.spanContext().spanId);
+    expect(new Set([turn, ...calls, tool, request].map((span) => span.spanContext().traceId)).size).toBe(1);
+    // The turn's span ends last, once the turn ended.
+    expect(recorded.spans().indexOf(turn)).toBeGreaterThan(recorded.spans().indexOf(calls[1] ?? turn));
+  });
+
+  test("give a call that failed the provider's message in its span's status", async () => {
+    const recorded = recordSpans();
+    const { run } = turnWith([fauxAssistantMessage([fauxText("I will look.")], { stopReason: "error", errorMessage: "401 Unauthorized" })]);
+
+    await run();
+
+    const call = recorded.span("chat faux-1");
+    expect(call.status).toEqual({ code: SpanStatusCode.ERROR, message: "401 Unauthorized" });
+    expect(call.attributes["error.type"]).toBe("provider_error");
+    expect(recorded.span("invoke_agent").status.code).toBe(SpanStatusCode.UNSET);
+  });
+
+  test("mark the span of a tool call that the user stopped as failed", async () => {
+    const recorded = recordSpans();
+    let stop = (): void => undefined;
+    const waits = tool(
+      "describe_block",
+      (signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(signal.reason as Error);
+          });
+          stop();
+        }),
+    );
+    const turn = turnWith([fauxAssistantMessage([fauxToolCall("describe_block", {}, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Never sent.")], {
+      tools: [waits],
+    });
+    stop = () => {
+      queueMicrotask(() => {
+        turn.controller.abort(new DOMException("The user stopped the turn.", "AbortError"));
+      });
+    };
+
+    await turn.run();
+
+    const called = recorded.span("execute_tool describe_block");
+    expect(called.status).toEqual({ code: SpanStatusCode.ERROR, message: "The user stopped the turn." });
+    expect(called.attributes["error.type"]).toBe("AbortError");
   });
 });

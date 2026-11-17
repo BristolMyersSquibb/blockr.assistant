@@ -96,8 +96,6 @@
   and the images that each tool result carries.
   A call that fails raises the error `assistant_call_failed`, which the
   plugin withdraws once a later call succeeds.
-  Until the assistant reads its blockr options, it has no model to talk to,
-  so each turn fails.
 
 * The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
   minified, into `inst/js/pi-<hash>.js`, which the browser loads as the first
@@ -105,6 +103,42 @@
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
+
+* The assistant sends its calls from the browser where four blockr options
+  say, never through R (#226).
+  The blockr option `assistant_base_url` gives the base URL, OpenAI's API by
+  default, and `assistant_api` gives the API that the base URL speaks:
+  `"openai-responses"`, the default, `"openai-completions"` or
+  `"anthropic-messages"`.
+  The blockr option `assistant_api_key` gives the key that every call
+  carries, or `"none"` for a base URL that needs no key, so that no call
+  carries one.
+  The assistant reads no variable of a provider's own clients, such as
+  `OPENAI_API_KEY`.
+  The blockr option `assistant_models` gives the models offered, the first
+  being the default, as a character vector or as one string that separates
+  them by commas.
+
+* Where the app names no models, the assistant offers the models of the base
+  URL's list that take tools, which it asks for with the key as each board
+  opens (#226).
+  It reads which models take tools from OpenRouter's `supported_parameters`
+  and `endpoints`, and from the `type` and the `tags` of Vercel's AI Gateway.
+  It keeps a model of a list that says nothing of what a model takes, such as
+  OpenAI's or Anthropic's, unless the model's id names a kind of model that
+  takes no tools, such as `embedding` or `tts`.
+  A list that the base URL refuses for its key raises the error
+  `assistant_call_failed`.
+  A list that fails otherwise, or that holds no model that takes tools,
+  raises the error `assistant_models_failed`, and the assistant asks again as
+  the user sends.
+  A conversation talks to its pick of the model where the app offers it, and
+  to the default otherwise.
+
+* A model that pi's catalogs of OpenAI's and Anthropic's models lack, such as
+  one that a company's own proxy names, does not reason, takes images, has a
+  context window of 128,000 tokens and takes up to 16,384 tokens for a reply
+  (#226).
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
@@ -135,6 +169,19 @@
   It also says whether the step took an undo step.
   The tool `undo_edit` takes back the assistant's last undo step, and returns
   the same review of what the undo changed.
+
+* The assistant records a span for each turn and each tool call, as ellmer
+  did, and has pi record a span for each call to the model under the turn's
+  span (#234).
+  The spans take ellmer's names, `invoke_agent`, `execute_tool <tool>` and
+  `chat <model>`, with OpenTelemetry's attributes for generative AI, such as
+  the model, the tokens and the tool's name.
+  Each call's span names its provider after the API that the call speaks,
+  `anthropic` or `openai`.
+  The spans go into core's traces.
+  So core's spans of the commands that a tool runs and of the requests that it
+  sends sit under the tool's span.
+  The metrics that ellmer recorded go, since core records none in the client.
 
 * The class's `ui` draws the assistant's chat wherever the frontend places the
   plugin, in React on assistant-ui 0.15.36, in place of shinychat's chat

@@ -91,7 +91,7 @@ async function chat(options: Options = {}) {
   const { faux, loop, connection } = fauxLoop(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond });
   faux.setResponses(options.replies ?? [fauxAssistantMessage("The board holds **no** block.")]);
   const assistant = openAssistant(stubbed.core, controller.signal, {
-    connection: { ...connection, model: "faux-1" },
+    deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: { kind: "deployment", key: "test-key" }, models: ["faux-1"] }),
     load: () => Promise.resolve(loop),
     locks: undefined,
   });
