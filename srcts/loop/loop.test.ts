@@ -480,6 +480,145 @@ describe("a turn on the loop", () => {
   });
 });
 
+describe("the files that a call carries", () => {
+  const pdf: Message = {
+    id: "u1",
+    role: "user",
+    parts: [
+      { type: "text", text: "Read the report." },
+      { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+      { type: "attachment", name: "plot.png", media_type: "image/png" },
+    ],
+    created: CREATED,
+  };
+
+  // The copies of the PDF and of the image that the memory keeps: the start of
+  // a PDF, "JVBERi0=" as base64, and the start of a PNG, "iVBORw0KGgo=".
+  const report = (): Blob => new Blob(["%PDF-"]);
+  const plot = (): Blob => new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+
+  // A reply of pi's fake provider that first asks the page's fetch, as pi's
+  // APIs ask it for each call, and so meets the answer of the status given.
+  function answered(status: number, reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
+    return async (_context, options) => {
+      await options?.fetch?.("https://faux.invalid/v1/messages", { method: "POST" });
+      return reply;
+    };
+  }
+
+  // A turn of the conversation that holds the user's message with a PDF and
+  // an image, of which the memory keeps the PDF as taken where `taken` says
+  // so, on replies that the page's fetch meets with the statuses given.
+  function filed(replies: FauxResponseStep[], statuses: number[], taken = false) {
+    const queue = [...statuses];
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: queue.shift() ?? 200 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const turn = turnWith(replies);
+    turn.messages[0] = pdf;
+    turn.kept.set("u1", { files: [{ blob: report(), ...(taken ? { taken: true as const } : {}) }, { blob: plot() }] });
+    return turn;
+  }
+
+  test("reports each file that the call carried, which no call carried with success before", async () => {
+    const turn = filed([answered(200, fauxAssistantMessage("Read."))], [200], true);
+
+    await turn.run();
+
+    expect(turn.calls).toHaveLength(1);
+    expect(turn.calls[0]?.files).toEqual([{ message: "u1", index: 1, name: "plot.png" }]);
+    expect(turn.calls[0]?.refused).toBe(false);
+  });
+
+  test("reports that the provider refused the request where a failed call met an answer of 400, 413, 415 or 422", async () => {
+    for (const status of [400, 413, 415, 422]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: `${String(status)} Could not process the file` }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]).toMatchObject({ failure: `${String(status)} Could not process the file`, refused: true });
+      expect(turn.calls[0]?.files.map((file) => file.name)).toEqual(["report.pdf", "plot.png"]);
+    }
+  });
+
+  test("reports no refusal for a call that failed otherwise, as on an answer of 401, 429 or 500 or a failed connection", async () => {
+    for (const status of [401, 429, 500]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: "No." }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]?.refused).toBe(false);
+    }
+    const unasked = filed([fauxAssistantMessage("", { stopReason: "error", errorMessage: "Failed to fetch" })], []);
+    await unasked.run();
+    expect(unasked.calls[0]?.refused).toBe(false);
+  });
+
+  test("hands pi the PDF as an image of its type, after a line that names it", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const turn = filed([seen(calls, fauxAssistantMessage("Read."))], []);
+
+    await turn.run();
+
+    const user = calls[0]?.context?.messages.find((m) => m.role === "user");
+    expect(user?.content).toEqual([
+      { type: "text", text: "Read the report." },
+      { type: "text", text: 'The user attached the file "report.pdf", of the type application/pdf.' },
+      { type: "image", data: "JVBERi0=", mimeType: "application/pdf" },
+      { type: "text", text: 'The user attached the file "plot.png", of the type image/png.' },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+    ]);
+  });
+
+  test("turns the PDF into Anthropic's document before it moves the cache mark, and before the caller's onPayload sees the request", async () => {
+    const faux = createFauxCore({ api: "anthropic-messages", provider: PROVIDER });
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    faux.setResponses([seen(calls, fauxAssistantMessage("Read."))]);
+    const given: unknown[] = [];
+    // The memory gives the same copy of a file at each look, as the loop
+    // expects of it.
+    const files = [{ blob: report() }, { blob: plot() }];
+    await createLoop(pi, { "anthropic-messages": faux }).run({
+      connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
+      model: "faux-1",
+      tools: [],
+      messages: () => [pdf],
+      kept: (id) => (id === "u1" ? { files } : undefined),
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        given.push(payload);
+        return undefined;
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+    const mark = { type: "ephemeral" };
+    const said = (text: string) => ({ type: "text", text });
+    const reportSource = { type: "base64", media_type: "application/pdf", data: "JVBERi0=" };
+    const plotSource = { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" };
+    const labels = ['The user attached the file "report.pdf", of the type application/pdf.', 'The user attached the file "plot.png", of the type image/png.'] as const;
+    const sent = {
+      messages: [
+        { role: "user", content: [said("Read the report."), said(labels[0]), { type: "image", source: reportSource }, said(labels[1]), { type: "image", source: plotSource }] },
+        { role: "user", content: [{ ...said("The board."), cache_control: mark }] },
+      ],
+    };
+    const filed = {
+      messages: [
+        {
+          role: "user",
+          content: [said("Read the report."), said(labels[0]), { type: "document", source: reportSource, title: "report.pdf" }, said(labels[1]), { type: "image", source: plotSource, cache_control: mark }],
+        },
+        { role: "user", content: [said("The board.")] },
+      ],
+    };
+
+    await expect(Promise.resolve(calls[0]?.options?.onPayload?.(sent, {} as Model<Api>))).resolves.toEqual(filed);
+    expect(given).toEqual([filed]);
+  });
+});
+
 describe("the catalogs of the loop", () => {
   test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
     const { loop } = fauxLoop();

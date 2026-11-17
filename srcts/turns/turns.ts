@@ -57,11 +57,36 @@
 // The memory keeps the failure by the conversation's last message, so that
 // the chat shows it at its turn. The conversation keeps what the turn
 // finished, and what its reply streamed until the failure.
+//
+// A file that the user attached goes with every call of its conversation,
+// from the memory (../loop). A provider may refuse such a file
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails):
+// 1. A call fails, and the provider refused the request for what it held.
+// 2. The call carried files that no call carried with success before. The
+//    provider's answer does not say which one it refused, so each of them
+//    counts as refused.
+// 3. The turn ends, as a failed call ends it.
+// 4. The turns raise the error assistant_attachment_refused, which names the
+//    files and says why, in place of assistant_call_failed. The memory keeps
+//    the failure by the conversation's last message.
+// 5. The memory drops the content of those files, so that the conversation's
+//    later calls go without them, while the state still names them.
+// 6. A later call of that conversation that succeeds withdraws the error.
+// A call that succeeds marks each file that it carried as taken, so that a
+// later failure of the conversation's calls counts as no refusal of those
+// files.
+// A call that outgrew the model's window goes through compaction first, as
+// any call does that outgrows it. Where the call after compaction fails again
+// for what it holds, or where nothing could be compacted, the files that the
+// call carried count as refused, since compaction keeps the newest exchange,
+// which holds them.
 
 import type { CoreApi } from "@blockr/core";
-import type { Conversations } from "../conversations/index.ts";
+import { namesOf } from "../attachments/index.ts";
+import type { Conversations, KeptFile } from "../conversations/index.ts";
 import type { Compaction } from "../compaction/index.ts";
-import type { Answered, Handlers, Streamed } from "../loop/index.ts";
+import type { Answered, CarriedFile, Handlers, Streamed } from "../loop/index.ts";
+import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
 import type { ConversationId } from "../state/index.ts";
@@ -121,8 +146,10 @@ interface State {
   results: Readonly<Record<string, Answered>>;
   stopping: boolean;
   // Why a call failed that outgrew the window, which the turn holds back
-  // while it tries the call once more.
+  // while it tries the call once more, and the files that the call carried
+  // which no call carried with success before.
   overflow: string | undefined;
+  overflowed: readonly CarriedFile[];
   // Whether the turn tried a call once more already.
   retried: boolean;
   readonly controller: AbortController;
@@ -140,6 +167,10 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   let running: State | undefined;
   // What current() gives, which changed() makes anew.
   let snapshot: Running | undefined;
+  // The error of a file that the provider refused, and the conversation whose
+  // call raised it, until a later call of that conversation succeeds.
+  const attachmentRefused = heldError(core, signal, "assistant_attachment_refused");
+  let refusedIn: ConversationId | undefined;
 
   // Whether the board is closed, as the next board opened. A function, since
   // the signal aborts while a turn awaits.
@@ -170,8 +201,44 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     if (last !== undefined) conversations.keep(conversation, last.id, { failure: why });
   }
 
-  function succeeded(): void {
+  // Raises the error of the files that the provider refused, keeps why the
+  // turn failed, and drops the content of those files from the memory.
+  function refuse(conversation: ConversationId, files: readonly CarriedFile[], why: string): void {
+    const names = namesOf(files.map((file) => file.name));
+    const which = files.length === 1 ? `the file ${names}, so the conversation goes on without it` : `the files ${names}, so the conversation goes on without them`;
+    const message = `The provider refused ${which}: ${why}`;
+    attachmentRefused.raise(message);
+    refusedIn = conversation;
+    keep(conversation, message);
+    change(conversation, files, () => ({ refused: true }));
+  }
+
+  // Withdraws the errors that a call's success withdraws, and marks the files
+  // that the call carried as taken.
+  function succeeded(conversation: ConversationId, files: readonly CarriedFile[]): void {
     callFailed.withdraw();
+    if (refusedIn === conversation) {
+      attachmentRefused.withdraw();
+      refusedIn = undefined;
+    }
+    change(conversation, files, taken);
+  }
+
+  // Changes the files given in the memory, by message. A message that the
+  // conversation no longer holds keeps nothing to change.
+  function change(conversation: ConversationId, files: readonly CarriedFile[], changing: (file: KeptFile) => KeptFile): void {
+    const byMessage = new Map<string, Set<number>>();
+    for (const file of files) byMessage.set(file.message, (byMessage.get(file.message) ?? new Set()).add(file.index));
+    for (const [message, indices] of byMessage) {
+      const held = conversations.kept(conversation, message)?.files;
+      if (held === undefined) continue;
+      const next = held.map((file, index) => (indices.has(index) ? changing(file) : file));
+      try {
+        conversations.keep(conversation, message, { files: next });
+      } catch {
+        // The conversation no longer holds the message.
+      }
+    }
   }
 
   // What the turn does with what the loop reports.
@@ -206,10 +273,15 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
           await write(() => conversations.addUsage(turn.conversation, input, output, total));
         }
         if (call.failure !== undefined) {
-          if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) turn.overflow = call.failure;
-          else if (writes && !closed()) fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+          if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
+            turn.overflow = call.failure;
+            turn.overflowed = call.files;
+          } else if (writes && !closed()) {
+            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, call.failure);
+            else fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+          }
         } else if (!turn.controller.signal.aborted) {
-          succeeded();
+          succeeded(turn.conversation, call.files);
         }
         changed();
       },
@@ -267,6 +339,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     const compacted = await options.compaction.compact(turn.conversation, call, turn.controller.signal);
     if (stopped(turn)) return;
     if (compacted) await loop();
+    else if (turn.overflowed.length > 0) refuse(turn.conversation, turn.overflowed, overflow);
     else fail(turn.conversation, `The assistant's call to the model failed: ${overflow}`);
   }
 
@@ -276,7 +349,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       if (running !== undefined) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, overflow: undefined, retried: false, controller: new AbortController() };
+      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, overflow: undefined, overflowed: [], retried: false, controller: new AbortController() };
       const close = (): void => {
         turn.controller.abort(CLOSED);
       };
@@ -317,3 +390,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   };
 }
 
+// A file that a call carried with success, which the provider took.
+function taken(file: KeptFile): KeptFile {
+  return "refused" in file || file.taken === true ? file : { ...file, taken: true };
+}

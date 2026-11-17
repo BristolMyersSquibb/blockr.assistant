@@ -24,7 +24,10 @@
 //   The transformContext takes the conversation in the state's shape, and the
 //   onPayload the request as the provider takes it.
 // - Before each call, it builds pi's messages from the conversation as the
-//   plugin holds it then (./messages.ts). Where the caller gives a message of
+//   plugin holds it then (./messages.ts), with the files that the user
+//   attached, which the memory keeps as binary. It encodes each file once for
+//   the turn, as base64 or as text, and drops what it encoded as the turn
+//   ends. Where the caller gives a message of
 //   the app's, the loop adds it after the conversation's last message, for the
 //   call alone, as a message of the role user, so that no call goes out for it
 //   alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
@@ -39,6 +42,21 @@
 //   Chat Completions (./cache.ts).
 //   It does so through pi's onPayload, before the caller's onPayload sees the
 //   request.
+// - It hands pi each PDF as an image, and turns it into the block of the
+//   call's API for a file in the request that pi writes (./files.ts). It does
+//   so through pi's onPayload as well, before it moves the cache mark, which
+//   then marks the end of the conversation in the blocks that it holds.
+//
+// A provider may refuse a file that a call carries, as an image that it
+// cannot read, a PDF on an API that takes none, or a file larger than it
+// takes. It then answers the call with 400, 413, 415 or 422, as Anthropic's
+// and OpenAI's APIs answer a request that they refuse for what it holds. Both
+// put a CORS header on such an answer, so that the page reads its status
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
+// Pi writes the status into the text of its error alone, so the loop's fetch
+// keeps the status of each call's answer. A call that fails with one of those
+// statuses reports that the provider refused the request, with the files
+// that it carried and no call carried with success before.
 //
 // Before each call, the loop awaits what the caller does then, as compaction
 // puts a summary in place where the conversation nears the model's context
@@ -90,13 +108,15 @@ import type { Json } from "@blockr/core";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
+import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { markBeforeAppMessage } from "./cache.ts";
-import { appMessage, callMessages, convertReply, image, isToolCall, llmMessages, partsOf, reasoningOf, resultsOf, STOPPED } from "./messages.ts";
-import type { Answered } from "./messages.ts";
+import { withFiles } from "./files.ts";
+import { appMessage, callMessages, convertReply, encodeFiles, image, isToolCall, llmMessages, partsOf, reasoningOf, resultsOf, STOPPED } from "./messages.ts";
+import type { Answered, Carried, CarriedFile } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
 
@@ -192,6 +212,12 @@ export interface Call {
   // Why the call failed, where it failed. A call that the turn's signal
   // stopped did not fail.
   readonly failure?: string;
+  // The files that the user attached which the call carried, and no call
+  // carried with success before.
+  readonly files: readonly CarriedFile[];
+  // Whether the provider refused the request for what it held, as a failed
+  // call that the provider answered with 400, 413, 415 or 422.
+  readonly refused: boolean;
   // Whether the call failed since the conversation outgrew the model's
   // context window, as pi's isContextOverflow() tells from the provider's
   // error.
@@ -284,6 +310,13 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+  // The content of each file that the user attached, as the turn's calls send
+  // it, which the loop encodes once for the turn and drops as the turn ends.
+  const encodings = new Map<Blob, Encoded>();
+  // What the call that goes out carries of the files that the user attached,
+  // and the status of the provider's answer to it, once it answered.
+  let carried: Carried = { files: [], pdfs: [] };
+  let status: number | undefined;
   // The text of the message of the app's that the call going out holds, if
   // any.
   let added: string | undefined;
@@ -299,16 +332,27 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
       await turn.beforeCall?.(signal ?? turn.signal);
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
+      carried = { files: [], pdfs: [] };
+      status = undefined;
+      await encodeFiles(transformed, kept, encodings);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
-      const messages = callMessages(transformed, kept, model, turn.tools, prompt);
+      const messages = callMessages(transformed, kept, model, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === undefined ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
-    fetch: keyless,
+    fetch: async (input, init) => {
+      const response = await keyless(input, init);
+      status = response.status;
+      return response;
+    },
+    // The loop turns the PDFs into the API's blocks for a file, then moves
+    // the cache mark, and then hands the request to the caller's onPayload.
     onPayload: (payload) => {
-      const moved = added === undefined ? undefined : markBeforeAppMessage(payload, added, model.api);
-      if (turn.onPayload === undefined) return moved;
-      return turn.onPayload(moved ?? payload) ?? moved;
+      const filed = carried.pdfs.length === 0 ? undefined : withFiles(model.api, payload, carried.pdfs);
+      const moved = added === undefined ? undefined : markBeforeAppMessage(filed ?? payload, added, model.api);
+      const changed = moved ?? filed;
+      if (turn.onPayload === undefined) return changed;
+      return turn.onPayload(changed ?? payload) ?? changed;
     },
   };
 
@@ -319,7 +363,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model, carried, status));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -486,14 +530,21 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
   return globalThis.fetch(input, { ...init, headers });
 }
 
-// A call that ended, with the reply that pi wrote, to the model given.
-function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>): Call {
+// The statuses with which a provider refuses a request for what it holds.
+const REFUSED: ReadonlySet<number> = new Set([400, 413, 415, 422]);
+
+// A call that ended, with the reply that pi wrote, to the model given, what
+// the call carried of the files that the user attached, and the status of the
+// provider's answer, where it answered.
+function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>, carried: Carried, status: number | undefined): Call {
   const written = convertReply(reply);
   const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
     ...(failed ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    files: carried.files,
+    refused: failed && status !== undefined && REFUSED.has(status),
     ...(failed && pi.isContextOverflow(reply, model.contextWindow) ? { overflow: true } : {}),
   };
 }

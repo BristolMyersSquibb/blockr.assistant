@@ -8,8 +8,10 @@
 
 export {
   AssistantRuntimeProvider,
+  AttachmentPrimitive,
   AuiIf,
   ComposerPrimitive,
+  MessageNotSentError,
   MessagePrimitive,
   TextMessagePartProvider,
   ThreadPrimitive,
