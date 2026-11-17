@@ -10,6 +10,7 @@ import { createContext, useContext } from "react";
 import type { CoreApi } from "@blockr/core";
 import type { Running } from "../turns/index.ts";
 import type { KeyState } from "../visitor-key/index.ts";
+import type { OpenedFile } from "./files.tsx";
 
 export interface ChatActions {
   readonly core: CoreApi;
@@ -19,6 +20,11 @@ export interface ChatActions {
   readonly stop: () => void;
   // Asks before a link opens another site.
   readonly openLink: (url: string) => void;
+  // Adds the files to the message field, in order, leaving out those that the
+  // field does not take or that pass the bound.
+  readonly addFiles: (files: readonly File[]) => void;
+  // Opens a file of a message that the user sent large, in a dialog.
+  readonly openFile: (file: OpenedFile) => void;
   // Gives the visitor's own key, which the calls carry from then on.
   readonly giveKey: (key: string) => void;
 }
@@ -46,6 +52,9 @@ export interface ChatState {
   readonly history: readonly string[];
   // The title of a conversation, or undefined for one that the board lacks.
   readonly titleOf: (conversation: string) => string | undefined;
+  // What the chat says of the files that it left out of the message field as
+  // the user last added files, if any.
+  readonly filesNote: string | undefined;
   // What the field for the visitor's key shows, where the chat asks for a
   // key, or undefined where it shows no such field.
   readonly keyField: KeyField | undefined;

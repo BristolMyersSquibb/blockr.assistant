@@ -11,9 +11,14 @@
 // prompt and the message of the app's in each API's request.
 // Where the deployment sets no key, the test gives the visitor's own key, as
 // the chat would, and reads what the base URL's answers did to it.
+// The files that the user attaches reach each API in its blocks, and the mock
+// refuses a file named refused.pdf, as a provider refuses a file
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
 
 import type { CoreApi, Json } from "@blockr/core";
 import { beforeEach, describe, expect, inject, test, vi } from "vitest";
+import type { KeptFile } from "../conversations/index.ts";
+import type { Message } from "../state/index.ts";
 import { startAssistant, storedIn } from "../testing/index.ts";
 import type { RecordedRequest } from "../testing/index.ts";
 import { assistantOf } from "./index.ts";
@@ -101,6 +106,73 @@ function holdsResult(item: Item | undefined): boolean {
   return item?.type === "function_call_output" || item?.role === "tool" || blocksOf(item).some((block) => block.type === "tool_result");
 }
 
+// Runs a turn of a conversation whose message of the user's, the message
+// given, holds files whose content the memory keeps as given.
+async function turnedWith(blockrOptions: Readonly<Record<string, Json>>, message: Message, files: readonly KeptFile[]) {
+  const { core, assistant } = await opened(blockrOptions);
+  await assistant.conversations.addConversation("c1", "Files");
+  await assistant.conversations.addMessage("c1", message, { files });
+  await assistant.turns.run("c1");
+  return { core, assistant };
+}
+
+const CREATED = "2026-11-16T08:00:00.000Z";
+// The bytes of the files that the tests attach: the start of a PNG and of a
+// PDF, as base64.
+const PNG = "iVBORw0KGgo=";
+const PDF = "JVBERi0xLjQK";
+
+// A copy of a file's bytes, as the memory keeps it, of the bytes that base64
+// gives.
+function copyOf(base64: string): Blob {
+  return new Blob([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))]);
+}
+const LABEL_PNG = 'The user attached the file "plot.png", of the type image/png.';
+const LABEL_PDF = 'The user attached the file "report.pdf", of the type application/pdf.';
+const CSV = '<file-attachment name="sales.csv" type="text/csv">\na,b\n1,2\n\n</file-attachment>';
+
+const withFiles: Message = {
+  id: "u1",
+  role: "user",
+  parts: [
+    { type: "text", text: "Read these." },
+    { type: "attachment", name: "plot.png", media_type: "image/png" },
+    { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+    { type: "attachment", name: "sales.csv", media_type: "text/csv" },
+  ],
+  created: CREATED,
+};
+
+// What the first message of the user's holds on each API: the text, the
+// image as an image, the PDF in the API's block for a file, and the text file
+// as text.
+const FILE_BLOCKS: Readonly<Record<string, unknown[]>> = {
+  "openai-responses": [
+    { type: "input_text", text: "Read these." },
+    { type: "input_text", text: LABEL_PNG },
+    { type: "input_image", image_url: `data:image/png;base64,${PNG}` },
+    { type: "input_text", text: LABEL_PDF },
+    { type: "input_file", filename: "report.pdf", file_data: `data:application/pdf;base64,${PDF}` },
+    { type: "input_text", text: CSV },
+  ],
+  "openai-completions": [
+    { type: "text", text: "Read these." },
+    { type: "text", text: LABEL_PNG },
+    { type: "image_url", image_url: { url: `data:image/png;base64,${PNG}` } },
+    { type: "text", text: LABEL_PDF },
+    { type: "file", file: { filename: "report.pdf", file_data: `data:application/pdf;base64,${PDF}` } },
+    { type: "text", text: CSV },
+  ],
+  "anthropic-messages": [
+    { type: "text", text: "Read these." },
+    { type: "text", text: LABEL_PNG },
+    { type: "image", source: { type: "base64", media_type: "image/png", data: PNG } },
+    { type: "text", text: LABEL_PDF },
+    { type: "document", source: { type: "base64", media_type: "application/pdf", data: PDF }, title: "report.pdf" },
+    { type: "text", text: CSV },
+  ],
+};
+
 // Each API, with the base URLs of the mock that speak it, with and without a
 // key, the path that its calls go to at the keyed one, and the header that
 // carries the key.
@@ -163,6 +235,48 @@ describe.each(APIS)("a turn on $api", ({ api, keyed, keyless, calls: path, heade
   });
 });
 
+describe.each(APIS)("the files of a message on $api", ({ api, keyed }) => {
+  const deployment = { assistant_base_url: `${mock.origin}${keyed}`, assistant_api: api, assistant_api_key: mock.key, assistant_models: "mock-model" };
+
+  test("reach the API in its blocks with every call: an image as an image, a PDF as a file and a text file as text", async () => {
+    const copies = [copyOf(PNG), copyOf(PDF), new Blob(["a,b\n1,2\n"])] as const;
+    const { core, assistant } = await turnedWith(deployment, withFiles, copies.map((blob) => ({ blob })));
+
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(raised(core, "assistant_attachment_refused")).toEqual([]);
+    const calls = await reached("POST");
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(blocksOf(sent(call.body).find((item) => item.role === "user"))).toMatchObject(FILE_BLOCKS[api] ?? []);
+    expect(assistant.conversations.kept("c1", "u1")?.files).toEqual([
+      { blob: copies[0], taken: true },
+      { blob: copies[1], taken: true },
+      { blob: copies[2], taken: true },
+    ]);
+  });
+
+  test("raise assistant_attachment_refused where the API refuses a file, whose refusal the page reads, and the next turn goes without it", async () => {
+    const refused: Message = { id: "u1", role: "user", parts: [{ type: "text", text: "Read this." }, { type: "attachment", name: "refused.pdf", media_type: "application/pdf" }], created: CREATED };
+    const { core, assistant } = await turnedWith(deployment, refused, [{ blob: copyOf(PDF) }]);
+
+    const [why] = raised(core, "assistant_attachment_refused");
+    expect(why).toMatch(/^The provider refused the file "refused\.pdf", so the conversation goes on without it: .*could not be processed/);
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(assistant.conversations.kept("c1", "u1")).toEqual({ files: [{ refused: true }], failure: why });
+
+    await fetch(`${mock.origin}/__reset`, { method: "POST" });
+    await assistant.conversations.addMessage("c1", { id: "u2", role: "user", parts: [{ type: "text", text: "Go on without it." }], created: CREATED });
+    await assistant.turns.run("c1");
+
+    expect(raised(core, "assistant_attachment_refused")).toEqual([]);
+    const calls = await reached("POST");
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(JSON.stringify(call.body)).not.toContain(PDF);
+      expect(JSON.stringify(call.body)).toContain("which the provider refused, so the conversation goes on without its content.");
+    }
+  });
+});
+
 describe("a turn on Anthropic's Messages API", () => {
   test("marks for the cache the block before the message of the app's, the end of the conversation, and not that message", async () => {
     await turned({ assistant_base_url: `${mock.origin}/anthropic`, assistant_api: "anthropic-messages", assistant_api_key: mock.key, assistant_models: "mock-model" });
@@ -174,6 +288,26 @@ describe("a turn on Anthropic's Messages API", () => {
       expect(blocksOf(messages.at(-2)).at(-1)).toHaveProperty("cache_control", { type: "ephemeral" });
       expect(messages.slice(0, -2).flatMap(blocksOf).some((block) => "cache_control" in block)).toBe(false);
     }
+  });
+});
+
+describe("a turn on OpenAI's Chat Completions API", () => {
+  test("gets a reply from gpt-5.4, which takes function tools there only with the reasoning effort none", async () => {
+    const { core, conversation } = await turned({
+      assistant_base_url: `${mock.origin}/openai/v1`,
+      assistant_api: "openai-completions",
+      assistant_api_key: mock.key,
+      assistant_models: "gpt-5.4",
+    });
+
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(conversation?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(lastText(conversation)).toBe(mock.done);
+    const calls = (await reached("POST")).map((call) => call.body);
+    expect(calls.map((body) => [Array.isArray(body.tools), body.reasoning_effort])).toEqual([
+      [true, "none"],
+      [true, "none"],
+    ]);
   });
 });
 

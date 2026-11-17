@@ -14,7 +14,7 @@ import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { createConversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import type { Call, Loop } from "../loop/index.ts";
@@ -25,7 +25,7 @@ import type { Prompt } from "../prompt/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
-import type { AssistantState, Conversation, Message } from "../state/index.ts";
+import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
@@ -202,10 +202,10 @@ function inState(core: CoreApi, id: string): Conversation | undefined {
   return (core.store.board().plugins[ASSISTANT] as AssistantState).conversations[id];
 }
 
-function raised(core: CoreApi): string[] {
+function raised(core: CoreApi, code = "assistant_call_failed"): string[] {
   return core.notifications
     .get()
-    .filter((notification) => notification.source.kind === "module" && notification.source.code === "assistant_call_failed")
+    .filter((notification) => notification.source.kind === "module" && notification.source.code === code)
     .map((notification) => notification.message);
 }
 
@@ -638,7 +638,7 @@ function failing(failure: string, answer?: Call["answer"]): Loop {
     summarize: () => Promise.reject(new Error("The test writes no summary.")),
     async run(turn) {
       await turn.connection.apiKey();
-      await turn.on.called({ usage: { input: 0, output: 0, total: 0 }, failure, ...(answer === undefined ? {} : { answer }) });
+      await turn.on.called({ usage: { input: 0, output: 0, total: 0 }, failure, files: [], refused: false, ...(answer === undefined ? {} : { answer }) });
     },
   };
 }
@@ -836,5 +836,154 @@ describe("a turn on the deployment's key, or on none", () => {
 
     expect(checked).toEqual([]);
     expect(raised(core)).toEqual([UNREAD]);
+  });
+});
+
+describe("a file that the provider refuses", () => {
+  const REFUSED = "assistant_attachment_refused";
+  const attachment = (name: string, mediaType: string): Part => ({ type: "attachment", name, media_type: mediaType });
+  const withFiles: Message = { id: "u3", role: "user", parts: [{ type: "text", text: "Read these." }, attachment("report.pdf", "application/pdf"), attachment("plot.png", "image/png")], created: CREATED };
+
+  // A reply of pi's fake provider that first asks the page's fetch, as pi's
+  // APIs ask it for each call, and so meets the answer of the status given.
+  function answered(status: number, reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
+    return async (_context, options) => {
+      await options?.fetch?.("https://faux.invalid/v1/messages", { method: "POST" });
+      return reply;
+    };
+  }
+
+  const refusal = (status: number) => answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: `${String(status)} Could not process the file` }));
+
+  // The page's fetch, which meets each call with the statuses given in turn,
+  // and with 200 once they run out.
+  function statuses(...given: number[]): void {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: given.shift() ?? 200 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+  }
+
+  // The copies of the PDF and of the image that the memory keeps.
+  const report = new Blob(["%PDF-"]);
+  const plot = new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+
+  // The turns of a board whose conversation c1 ends on the user's message u3,
+  // which holds a PDF and an image that the memory keeps.
+  async function attached(replies: FauxResponseStep[], compaction?: OpenOptions["compaction"]) {
+    const open = await opened({ replies, ...(compaction === undefined ? {} : { compaction }) });
+    await open.conversations.addMessage("c1", withFiles, { files: [{ blob: report }, { blob: plot }] });
+    return open;
+  }
+
+  test("raises assistant_attachment_refused in place of assistant_call_failed, and drops the files' content, which the state still names", async () => {
+    statuses(400);
+    const { core, turns, conversations } = await attached([refusal(400)]);
+
+    await turns.run("c1");
+
+    const why = 'The provider refused the files "report.pdf" and "plot.png", so the conversation goes on without them: 400 Could not process the file';
+    expect(raised(core, REFUSED)).toEqual([why]);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u3")).toEqual({ files: [{ refused: true }, { refused: true }], failure: why });
+    expect(inState(core, "c1")?.messages.at(-1)?.parts).toEqual(withFiles.parts);
+  });
+
+  test("names the one file that a refused call carried", async () => {
+    statuses(200, 413);
+    const { core, turns, conversations } = await attached([answered(200, fauxAssistantMessage("Read.")), refusal(413)]);
+    await turns.run("c1");
+    const later: Message = { id: "u4", role: "user", parts: [attachment("big.png", "image/png")], created: CREATED };
+    await conversations.addMessage("c1", later, { files: [{ blob: plot }] });
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual(['The provider refused the file "big.png", so the conversation goes on without it: 413 Could not process the file']);
+    expect(conversations.kept("c1", "u4")?.files).toEqual([{ refused: true }]);
+  });
+
+  test("marks each file of a call that succeeds as taken, so that a later failure names none of them", async () => {
+    statuses(200, 400);
+    const { core, turns, conversations } = await attached([answered(200, fauxAssistantMessage("Read.")), refusal(400)]);
+
+    await turns.run("c1");
+    expect(conversations.kept("c1", "u3")?.files).toEqual([
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
+    ]);
+
+    await conversations.addMessage("c1", asked("u4", "Again."));
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([]);
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: 400 Could not process the file"]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
+    ]);
+  });
+
+  test("keeps the error until a later call of the conversation succeeds, whatever the calls of another conversation do", async () => {
+    statuses(400);
+    const { core, turns, conversations } = await attached([refusal(400), fauxAssistantMessage("In c2."), fauxAssistantMessage("Back in c1.")]);
+
+    await turns.run("c1");
+    await turns.run("c2");
+    expect(raised(core, REFUSED)).toHaveLength(1);
+
+    await conversations.addMessage("c1", asked("u4", "Go on without them."));
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([]);
+  });
+
+  test("counts the new files of a call that outgrew the window as refused, where no summary could go in", async () => {
+    statuses(400);
+    const { core, turns, conversations } = await attached([answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }))]);
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([`The provider refused the files "report.pdf" and "plot.png", so the conversation goes on without them: ${OVERFLOW}`]);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ refused: true }, { refused: true }]);
+  });
+
+  test("counts the new files as refused where the call outgrows the window again once a summary went in", async () => {
+    statuses(400, 400);
+    const overflow = (): FauxResponseStep => answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW }));
+    const { core, turns, conversations } = await attached([overflow(), overflow()], { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(true) });
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toHaveLength(1);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ refused: true }, { refused: true }]);
+  });
+
+  test("tries a call that outgrew the window once more once a summary went in, before it counts any file as refused", async () => {
+    statuses(400, 200);
+    const { core, turns, conversations } = await attached(
+      [answered(400, fauxAssistantMessage([], { stopReason: "error", errorMessage: OVERFLOW })), answered(200, fauxAssistantMessage("Read."))],
+      { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(true) },
+    );
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
+    ]);
+  });
+
+  test("counts as a failed call where the provider refused the request for another reason, or where the call carried no new file", async () => {
+    statuses(500);
+    const { core, turns, conversations } = await attached([answered(500, fauxAssistantMessage("", { stopReason: "error", errorMessage: "500 Overloaded" }))]);
+
+    await turns.run("c1");
+
+    expect(raised(core, REFUSED)).toEqual([]);
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: 500 Overloaded"]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ blob: report }, { blob: plot }]);
   });
 });

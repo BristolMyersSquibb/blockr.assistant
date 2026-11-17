@@ -10,7 +10,10 @@
 //   OpenAI's list of models. It takes the key test-key in Authorization, and
 //   answers another key with a 401. As OpenAI's do, the 401 of its list
 //   carries a CORS header, while the 401 of a call carries none, so that the
-//   page reads the call's refusal as a failed connection.
+//   page reads the call's refusal as a failed connection. Its Chat
+//   Completions API answers a call to a GPT-5.4 model that carries function
+//   tools and a reasoning effort other than none with a 400, in OpenAI's
+//   words, as OpenAI does (blockr.assistant#260).
 // - /anthropic speaks Anthropic's Messages API and gives Anthropic's list. It
 //   takes the key test-key in x-api-key, and refuses a preflight that does
 //   not ask for the header by which a page opts in, as Anthropic does.
@@ -29,6 +32,9 @@
 // A call to a model streams a call of the tool list_blocks where the request
 // holds no result of a tool, and the reply DONE once it holds one, each in
 // the events of the call's API.
+// A call whose request holds a file named refused.pdf, in the block of any
+// API for a file, gets an answer of 400 that says that the file could not be
+// processed, with a CORS header, as a provider refuses a file.
 // The mock records each request, with the JSON of its body, which the tests
 // read at /__requests and clear with a POST to /__reset. The setup gives the
 // tests the mock's origin, its key and the reply DONE through Vitest's
@@ -68,6 +74,9 @@ export interface RecordedRequest {
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Body;
 }
+
+// The name of the file that the mock refuses.
+const REFUSED_FILE = "refused.pdf";
 
 const LISTS: Readonly<Record<string, unknown>> = {
   openai: {
@@ -195,6 +204,10 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     response.end();
     return;
   }
+  if (holdsFile(body, REFUSED_FILE)) {
+    respond(response, 400, origin, { type: "error", error: { type: "invalid_request_error", message: `The file ${REFUSED_FILE} could not be processed.` } });
+    return;
+  }
 
   if (request.method === "GET" && (path === "/v1/models" || path === "/api/v1/models")) {
     const list = LISTS[base === "keyless" || base === "drops" ? "openai" : base];
@@ -207,7 +220,9 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
   if (request.method === "POST" && path === "/v1/chat/completions") {
-    stream(response, origin, completionsEvents(body));
+    const refusedEffort = base === "openai" ? effortRefused(body) : undefined;
+    if (refusedEffort === undefined) stream(response, origin, completionsEvents(body));
+    else respond(response, 400, origin, { error: { message: refusedEffort, type: "invalid_request_error", param: "reasoning_effort" } });
     return;
   }
   if (request.method === "POST" && path === "/v1/messages") {
@@ -287,8 +302,35 @@ function answered(body: Body): boolean {
   });
 }
 
+// Whether the request holds a file of the name given, in the block of any
+// API for a file: a document's title on Anthropic's API, and a file's name on
+// OpenAI's.
+function holdsFile(body: Body, name: string): boolean {
+  const listed = (value: unknown): readonly unknown[] => (Array.isArray(value) ? (value as unknown[]) : []);
+  return [...listed(body.input), ...listed(body.messages)].some((item) => {
+    const content = typeof item === "object" && item !== null ? (item as Body).content : undefined;
+    return listed(content).some((part) => {
+      if (typeof part !== "object" || part === null) return false;
+      const { title, filename, file } = part as Body;
+      const nested = typeof file === "object" && file !== null ? (file as Body).filename : undefined;
+      return title === name || filename === name || nested === name;
+    });
+  });
+}
+
 function modelOf(body: Body): string {
   return typeof body.model === "string" ? body.model : "mock-model";
+}
+
+// Why OpenAI's Chat Completions API refuses the call, in OpenAI's words, or
+// undefined where it takes the call. It refuses a call to a GPT-5.4 model
+// that carries function tools and a reasoning effort other than none.
+function effortRefused(body: Body): string | undefined {
+  const model = modelOf(body);
+  const tools = Array.isArray(body.tools) ? (body.tools as unknown[]) : [];
+  const effort = body.reasoning_effort;
+  if (!model.startsWith("gpt-5.4") || tools.length === 0 || effort === undefined || effort === "none") return undefined;
+  return `Function tools with reasoning_effort are not supported for ${model} in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.`;
 }
 
 function responsesEvents(body: Body): unknown[] {

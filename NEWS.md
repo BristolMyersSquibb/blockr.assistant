@@ -164,6 +164,19 @@
   So the assistant takes each setting of a model from the first of these that
   gives it: the file, pi's catalogs, the list, and the defaults above.
 
+* Each call asks the model to reason at pi's thinking level `medium`, with
+  one exception (#260).
+  On OpenAI's Chat Completions API, a model of pi's catalog of OpenAI's models
+  takes the level `off`, and so does a model whose `like` names one.
+  That API refuses function tools with any reasoning effort but `none` for
+  OpenAI's GPT-5.4 models.
+  For the level `off`, pi sends the effort `none` to a model that takes it,
+  and no effort to the others.
+  A model's entry in the deployment's model settings file may give its level
+  in `thinking_level`, in place of these defaults.
+  R reads only `true` and `false` in that file as booleans, as YAML 1.2 does,
+  so that an unquoted `off` stays the level `off`.
+
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
   The tools `get_block_result`, `inspect_results` and `read_skill` give the
@@ -283,6 +296,24 @@
   While the model writes, the transcript says so at its end.
   A compaction that fails leaves the conversation as it was, and raises the
   warning `assistant_compaction_failed`.
+
+* The chat's message field takes images, PDFs and text files, up to 30 MiB
+  together, which the user picks with its button, drops on the chat or pastes
+  (#231).
+  A click on a file of a message that the user sent opens it large.
+  The board keeps each file's name and media type, while the browser keeps a
+  copy of its content as long as the board stays open, so that the file stays
+  attached once the user deletes or edits it on disk.
+  The assistant sends that content to the model with the message and with
+  each later call of the conversation.
+  An image larger than 1568 pixels on its longer side is scaled down, and a
+  paste of more than 1,000 characters becomes a text file, as in shinychat's
+  chat.
+
+* A file that the provider refuses ends the turn with the error
+  `assistant_attachment_refused`, which names the file and says why (#231).
+  The conversation's later calls go without the file, and a later call of the
+  conversation that succeeds withdraws the error.
 
 * Where the app sets no key in the blockr option `assistant_api_key`, the
   chat asks each visitor for a key of their own, in a field above the message

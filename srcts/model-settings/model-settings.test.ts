@@ -11,13 +11,13 @@ import { createModelSettings } from "./index.ts";
 // every vector as an array, and a third model's id alone.
 const READ = {
   "corp-claude": { like: ["claude-sonnet-5-5"] },
-  "corp-gpt": { reasoning: [true], images: [false], context_window: [200000], max_tokens: [32000] },
+  "corp-gpt": { reasoning: [true], thinking_level: ["high"], images: [false], context_window: [200000], max_tokens: [32000] },
   "corp-mini": null,
 };
 
 const HELD = new Map([
   ["corp-claude", { like: "claude-sonnet-5-5" }],
-  ["corp-gpt", { reasoning: true, images: false, contextWindow: 200000, maxTokens: 32000 }],
+  ["corp-gpt", { reasoning: true, thinkingLevel: "high", images: false, contextWindow: 200000, maxTokens: 32000 }],
   ["corp-mini", {}],
 ]);
 
@@ -114,9 +114,19 @@ describe("the deployment's model settings", () => {
     {
       what: "a setting that the assistant does not know",
       reply: { "corp-gpt": { context_windows: [200000] } },
-      why: `${FILE} gives the model corp-gpt the setting context_windows, which the assistant does not know. A model's settings are like, reasoning, images, context_window and max_tokens.`,
+      why: `${FILE} gives the model corp-gpt the setting context_windows, which the assistant does not know. A model's settings are like, reasoning, thinking_level, images, context_window and max_tokens.`,
     },
     { what: "a reasoning that is no true or false", reply: { "corp-gpt": { reasoning: ["yes"] } }, why: `${FILE} gives the model corp-gpt the reasoning "yes", where reasoning takes true or false.` },
+    {
+      what: "a thinking level that pi does not have",
+      reply: { "corp-gpt": { thinking_level: ["none"] } },
+      why: `${FILE} gives the model corp-gpt the thinking_level "none", where thinking_level takes off, minimal, low, medium, high, xhigh or max.`,
+    },
+    {
+      what: "a thinking level that is no word",
+      reply: { "corp-gpt": { thinking_level: [false] } },
+      why: `${FILE} gives the model corp-gpt the thinking_level false, where thinking_level takes off, minimal, low, medium, high, xhigh or max.`,
+    },
     { what: "images that are no true or false", reply: { "corp-gpt": { images: [1] } }, why: `${FILE} gives the model corp-gpt the images 1, where images takes true or false.` },
     {
       what: "a context window that is no whole number",

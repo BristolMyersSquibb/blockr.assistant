@@ -107,9 +107,9 @@
 #' field for the key again, holding the key.
 #'
 #' @section Model settings:
-#' A model's settings say whether it reasons, whether it takes images, how
-#' many tokens its context window holds, and how many tokens each call asks
-#' for the reply.
+#' A model's settings say whether it reasons and at which thinking level,
+#' whether it takes images, how many tokens its context window holds, and how
+#' many tokens each call asks for the reply.
 #' The assistant takes each setting of a model from the first of these that
 #' gives it:
 #'
@@ -134,6 +134,7 @@
 #'   like: claude-sonnet-5-5
 #' corp-gpt:
 #'   reasoning: true
+#'   thinking_level: high
 #'   images: false
 #'   context_window: 200000
 #'   max_tokens: 32000
@@ -148,15 +149,32 @@
 #'   include what pi sends that API, such as the adaptive thinking that
 #'   Anthropic's current models need.
 #' * The setting `reasoning` says whether the model reasons, so that the
-#'   assistant asks it to, at the thinking level `medium`.
+#'   assistant asks it to.
+#' * The setting `thinking_level` gives the thinking level at which the
+#'   assistant asks the model to reason: `off`, `minimal`, `low`, `medium`,
+#'   `high`, `xhigh` or `max`.
+#'   Where the file gives none, the level is `medium`.
+#'   But on OpenAI's Chat Completions API, a model whose `like` or id names a
+#'   model of pi's catalog of OpenAI's models takes the level `off`.
+#'   That API refuses function tools with any reasoning effort but `none` for
+#'   OpenAI's GPT-5.4 models.
+#'   For the level `off`, pi sends the effort `none` to a model that takes it,
+#'   such as `gpt-5.4`, and no effort to the others, such as `o3`.
+#'   A level that the model does not take, pi moves to the next level up that
+#'   it takes, or else to the next one down.
+#'   A model that does not reason gets no effort, whatever its level.
 #' * The setting `images` says whether the model takes images.
 #'   For a model that takes none, the assistant sends a note in place of each
-#'   plot of `inspect_results`.
+#'   plot of `inspect_results`, and of each image and PDF that the user
+#'   attaches.
 #' * The setting `context_window` gives the tokens that the model's context
 #'   window holds, and `max_tokens` the most tokens that each call asks for
 #'   the reply.
 #'
 #' R reads the file as each board opens.
+#' It reads only `true` and `false` as booleans, as YAML 1.2 does.
+#' So an unquoted `off` stays the level `off`, and `reasoning: yes` is a
+#' value that `reasoning` does not take.
 #' Where R cannot read the file, or where the file gives a value that a
 #' setting does not take, the assistant raises the error
 #' `assistant_model_settings_failed`.
@@ -180,6 +198,34 @@
 #' `context_window`.
 #' Where a compaction fails, the conversation stays as it was, and the
 #' assistant raises the warning `assistant_compaction_failed`.
+#'
+#' @section Attachments:
+#' The user attaches images in PNG, JPEG, GIF or WebP, PDFs and text files to
+#' a message, through the button beside the message field, by dropping them
+#' on the chat or by pasting them.
+#' The files of one message take up to 30 MiB together.
+#' An image whose longer side passes 1568 pixels is scaled down to it.
+#' A paste of more than 1,000 characters becomes a text file, "Pasted Text".
+#'
+#' The board keeps the name and the media type of each file, but not its
+#' content.
+#' The browser keeps a copy of the content while the board stays open, so that
+#' the file stays attached once the user deletes or edits it on disk.
+#' The assistant sends the content to the model with the message and with each
+#' later call of the conversation.
+#' It sends a text file as its text, an image as an image, and a PDF in the
+#' block of the API for a file.
+#' Once the board opens again, the model learns only that the user attached
+#' the file.
+#'
+#' A provider may refuse a file, as one that it cannot read or one larger than
+#' it takes.
+#' Anthropic's API, for one, takes a PDF of up to 32 MB as base64, which a
+#' PDF of about 24 MiB reaches.
+#' The turn then ends, and the assistant raises the error
+#' `assistant_attachment_refused`, which names the file and says why.
+#' The conversation's later calls go without the file, and a later call of the
+#' conversation that succeeds withdraws the error.
 #'
 #' @section Requests:
 #' The class answers six requests in R, through its method of
@@ -218,6 +264,7 @@
 #' * The request `read_model_settings` gives what the YAML file that the
 #'   blockr option `assistant_model_settings` names holds, or `NULL` where it
 #'   names none.
+#'   It reads only `true` and `false` as booleans, as YAML 1.2 does.
 #'
 #' @section Template:
 #' Each call to the model sends the system prompt, then the conversation,

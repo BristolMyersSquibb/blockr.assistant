@@ -28,14 +28,21 @@ import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import { failureMessage, sendUntilReplied } from "../requests/index.ts";
 
+// A thinking level of pi's, by its name.
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+const LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 // A model's settings, each of which is undefined where its source gives none.
 export interface ModelSettings {
   // The id of a model of pi's catalogs of OpenAI's and Anthropic's models,
   // whose settings the model takes where the file gives none.
   readonly like?: string;
-  // Whether the model reasons, so that pi asks it to, at the thinking level
-  // medium.
+  // Whether the model reasons, so that pi asks it to.
   readonly reasoning?: boolean;
+  // The thinking level at which pi asks the model to reason, in place of the
+  // loop's default (../loop).
+  readonly thinkingLevel?: ThinkingLevel;
   // Whether the model takes images. Where it takes none, pi replaces each
   // image of inspect_results with "(tool image omitted: model does not
   // support images)".
@@ -111,10 +118,10 @@ async function readSettings(core: Core, signal: AbortSignal, failed: HeldError):
 function settingsOf(reply: Json | Blob): ReadonlyMap<string, ModelSettings> {
   if (reply === null) return NONE;
   if (!isObject(reply)) throw new TypeError(`${FILE} gives ${shown(reply)}, where it gives each model's settings by the model's id.`);
-  return new Map(Object.entries(reply).map(([id, entry]) => [id, entryOf(id, entry)]));
+  return new Map(Object.entries(reply).map(([id, entry]) => [id, parseEntry(id, entry)]));
 }
 
-function entryOf(id: string, entry: Json): ModelSettings {
+function parseEntry(id: string, entry: Json): ModelSettings {
   if (entry === null) return {};
   if (!isObject(entry)) {
     throw new TypeError(`${FILE} gives the model ${id} ${shown(entry)}, where it gives the model's settings by their names, such as reasoning: true.`);
@@ -128,6 +135,9 @@ function entryOf(id: string, entry: Json): ModelSettings {
       case "reasoning":
         settings = { ...settings, reasoning: flag(id, name, value) };
         break;
+      case "thinking_level":
+        settings = { ...settings, thinkingLevel: level(id, name, value) };
+        break;
       case "images":
         settings = { ...settings, images: flag(id, name, value) };
         break;
@@ -139,7 +149,7 @@ function entryOf(id: string, entry: Json): ModelSettings {
         break;
       default:
         throw new TypeError(
-          `${FILE} gives the model ${id} the setting ${name}, which the assistant does not know. A model's settings are like, reasoning, images, context_window and max_tokens.`,
+          `${FILE} gives the model ${id} the setting ${name}, which the assistant does not know. A model's settings are like, reasoning, thinking_level, images, context_window and max_tokens.`,
         );
     }
   }
@@ -155,6 +165,13 @@ function text(id: string, name: string, value: Json): string {
   const given = one(value);
   if (typeof given === "string" && given !== "") return given;
   throw refused(id, name, value, `the id of a model of ${CATALOGS}, such as claude-sonnet-5-5`);
+}
+
+function level(id: string, name: string, value: Json): ThinkingLevel {
+  const given = one(value);
+  const found = LEVELS.find((known) => known === given);
+  if (found !== undefined) return found;
+  throw refused(id, name, value, "off, minimal, low, medium, high, xhigh or max");
 }
 
 function flag(id: string, name: string, value: Json): boolean {
