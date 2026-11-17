@@ -174,7 +174,8 @@ it takes, or else to the next one down.
 A model that does not reason gets no effort, whatever its level.
 \item The setting \code{images} says whether the model takes images.
 For a model that takes none, the assistant sends a note in place of each
-plot of \code{inspect_results}.
+plot of \code{inspect_results}, and of each image and PDF that the user
+attaches.
 \item The setting \code{context_window} gives the tokens that the model's context
 window holds, and \code{max_tokens} the most tokens that each call asks for
 the reply.
@@ -188,8 +189,57 @@ Where R cannot read the file, or where the file gives a value that a
 setting does not take, the assistant raises the error
 \code{assistant_model_settings_failed}.
 It then goes on without the file until the next board opens.
-The assistant finds a \code{like} that names no model of pi's catalogs only as
-the board's first turn starts, since it loads the catalogs then.
+The assistant finds a \code{like} that names no model of pi's catalogs only once
+it loads the catalogs, as it first calls a model on the board.
+}
+
+\section{Compaction}{
+
+The assistant compacts a conversation as pi's own CLI does.
+Before each call to the model, it estimates the tokens that the call would
+send.
+Where they pass the model's context window less 16,384 tokens, a call of
+its own writes a summary of the older messages first, which takes their
+place in the conversation.
+The newest messages stay as they were, up to a quarter of the window.
+A call that fails since the conversation outgrew the window gets a summary
+too, and the assistant then makes the call once more.
+The window is the one that the model settings, pi's catalogs or the base
+URL's list give the model, or else 128,000 tokens.
+So a deployment sets when compaction runs through a model's
+\code{context_window}.
+Where a compaction fails, the conversation stays as it was, and the
+assistant raises the warning \code{assistant_compaction_failed}.
+}
+
+\section{Attachments}{
+
+The user attaches images in PNG, JPEG, GIF or WebP, PDFs and text files to
+a message, through the button beside the message field, by dropping them
+on the chat or by pasting them.
+The files of one message take up to 30 MiB together.
+An image whose longer side passes 1568 pixels is scaled down to it.
+A paste of more than 1,000 characters becomes a text file, "Pasted Text".
+
+The board keeps the name and the media type of each file, but not its
+content.
+The browser keeps a copy of the content while the board stays open, so that
+the file stays attached once the user deletes or edits it on disk.
+The assistant sends the content to the model with the message and with each
+later call of the conversation.
+It sends a text file as its text, an image as an image, and a PDF in the
+block of the API for a file.
+Once the board opens again, the model learns only that the user attached
+the file.
+
+A provider may refuse a file, as one that it cannot read or one larger than
+it takes.
+Anthropic's API, for one, takes a PDF of up to 32 MB as base64, which a
+PDF of about 24 MiB reaches.
+The turn then ends, and the assistant raises the error
+\code{assistant_attachment_refused}, which names the file and says why.
+The conversation's later calls go without the file, and a later call of the
+conversation that succeeds withdraws the error.
 }
 
 \section{Requests}{

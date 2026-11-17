@@ -5,6 +5,9 @@
 // before it, a stop, a failed call and the tree of a turn's spans. The test
 // plays the turns, which keep each message that the loop reports in a
 // conversation of their own.
+// One test runs a call on pi's own code for Chat Completions instead, and
+// stops the call before it goes out, to read the marks of Anthropic's cache
+// that pi puts in the request.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
@@ -39,7 +42,9 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload" | "beforeCall">> & {
+    readonly key?: string | undefined;
+  } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -352,6 +357,29 @@ describe("a turn on the loop", () => {
     expect(models[0]).toMatchObject({ input, contextWindow, maxTokens });
   });
 
+  test("gives a model whose id starts with anthropic/ pi's compat with Anthropic's format of cache marks on OpenRouter's Chat Completions alone", async () => {
+    const models: Model<Api>[] = [];
+    const runOn = async (baseUrl: string, model: string) => {
+      const faux = createFauxCore({ api: "openai-completions", provider: PROVIDER });
+      faux.setResponses([modelOfCall(models)]);
+      await createLoop(pi, { "openai-completions": faux }).run({
+        connection: { baseUrl, api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+        model,
+        tools: [],
+        messages: () => [asked],
+        kept: () => undefined,
+        signal: new AbortController().signal,
+        on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+      });
+    };
+
+    await runOn("https://openrouter.ai/api/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://gateway.invalid/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://openrouter.ai/api/v1", "openai/gpt-5.4");
+
+    expect(models.map((model) => model.compat)).toEqual([{ cacheControlFormat: "anthropic" }, undefined, undefined]);
+  });
+
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const board: Message = { id: "board", role: "user", parts: [{ type: "text", text: "The board holds a and b." }], created: CREATED };
@@ -388,7 +416,7 @@ describe("a turn on the loop", () => {
     expect(JSON.stringify(messages)).not.toContain("goes out");
   });
 
-  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's as the caller leaves it", async () => {
+  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's Messages API and Chat Completions as the caller leaves it", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const given: unknown[] = [];
     const onPayload = (payload: unknown): unknown => {
@@ -442,6 +470,45 @@ describe("a turn on the loop", () => {
     expect(given).toEqual([moved]);
   });
 
+  test("has pi mark the system prompt, the last tool and the end of the conversation of a call to one of Anthropic's models on OpenRouter's Chat Completions, and not the message of the app's", async () => {
+    const sent: unknown[] = [];
+    const conversation: Message[] = [
+      asked,
+      { id: "a1", role: "assistant", parts: [{ type: "tool_call", id: "c1", tool: "list_blocks", args: {} }], created: CREATED },
+      { id: "t1", role: "tool", parts: [{ type: "tool_result", id: "c1", text: '["a","b"]' }], created: CREATED },
+    ];
+    await createLoop(pi).run({
+      connection: { baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+      model: "anthropic/claude-haiku-5.5",
+      tools: [listed],
+      systemPrompt: "You are an assistant.",
+      messages: () => conversation,
+      kept: () => undefined,
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        sent.push(payload);
+        throw new Error("The test stops the call before it goes out.");
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+
+    const mark = { type: "ephemeral" };
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      model: "anthropic/claude-haiku-5.5",
+      messages: [
+        { role: "system", content: [{ type: "text", text: "You are an assistant.", cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "How many blocks?" }] },
+        { role: "assistant", tool_calls: [{ id: "c1" }] },
+        { role: "tool", tool_call_id: "c1", content: [{ type: "text", text: '["a","b"]', cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "The board." }] },
+      ],
+      tools: [{ function: { name: "list_blocks" }, cache_control: mark }],
+    });
+    expect(JSON.stringify(sent[0]).match(/"cache_control"/g)).toHaveLength(3);
+  });
+
   test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {
     const { run, messages } = turnWith([fauxAssistantMessage([fauxToolCall("list_views", {}, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("No views.")]);
 
@@ -451,11 +518,197 @@ describe("a turn on the loop", () => {
   });
 });
 
+describe("the files that a call carries", () => {
+  const pdf: Message = {
+    id: "u1",
+    role: "user",
+    parts: [
+      { type: "text", text: "Read the report." },
+      { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+      { type: "attachment", name: "plot.png", media_type: "image/png" },
+    ],
+    created: CREATED,
+  };
+
+  // The copies of the PDF and of the image that the memory keeps: the start of
+  // a PDF, "JVBERi0=" as base64, and the start of a PNG, "iVBORw0KGgo=".
+  const report = (): Blob => new Blob(["%PDF-"]);
+  const plot = (): Blob => new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+
+  // A reply of pi's fake provider that first asks the page's fetch, as pi's
+  // APIs ask it for each call, and so meets the answer of the status given.
+  function answered(status: number, reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
+    return async (_context, options) => {
+      await options?.fetch?.("https://faux.invalid/v1/messages", { method: "POST" });
+      return reply;
+    };
+  }
+
+  // A turn of the conversation that holds the user's message with a PDF and
+  // an image, of which the memory keeps the PDF as taken where `taken` says
+  // so, on replies that the page's fetch meets with the statuses given.
+  function filed(replies: FauxResponseStep[], statuses: number[], taken = false) {
+    const queue = [...statuses];
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: queue.shift() ?? 200 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const turn = turnWith(replies);
+    turn.messages[0] = pdf;
+    turn.kept.set("u1", { files: [{ blob: report(), ...(taken ? { taken: true as const } : {}) }, { blob: plot() }] });
+    return turn;
+  }
+
+  test("reports each file that the call carried, which no call carried with success before", async () => {
+    const turn = filed([answered(200, fauxAssistantMessage("Read."))], [200], true);
+
+    await turn.run();
+
+    expect(turn.calls).toHaveLength(1);
+    expect(turn.calls[0]?.files).toEqual([{ message: "u1", index: 1, name: "plot.png" }]);
+    expect(turn.calls[0]?.refused).toBe(false);
+  });
+
+  test("reports that the provider refused the request where a failed call met an answer of 400, 413, 415 or 422", async () => {
+    for (const status of [400, 413, 415, 422]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: `${String(status)} Could not process the file` }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]).toMatchObject({ failure: `${String(status)} Could not process the file`, refused: true });
+      expect(turn.calls[0]?.files.map((file) => file.name)).toEqual(["report.pdf", "plot.png"]);
+    }
+  });
+
+  test("reports no refusal for a call that failed otherwise, as on an answer of 401, 429 or 500 or a failed connection", async () => {
+    for (const status of [401, 429, 500]) {
+      const turn = filed([answered(status, fauxAssistantMessage("", { stopReason: "error", errorMessage: "No." }))], [status]);
+
+      await turn.run();
+
+      expect(turn.calls[0]?.refused).toBe(false);
+    }
+    const unasked = filed([fauxAssistantMessage("", { stopReason: "error", errorMessage: "Failed to fetch" })], []);
+    await unasked.run();
+    expect(unasked.calls[0]?.refused).toBe(false);
+  });
+
+  test("hands pi the PDF as an image of its type, after a line that names it", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const turn = filed([seen(calls, fauxAssistantMessage("Read."))], []);
+
+    await turn.run();
+
+    const user = calls[0]?.context?.messages.find((m) => m.role === "user");
+    expect(user?.content).toEqual([
+      { type: "text", text: "Read the report." },
+      { type: "text", text: 'The user attached the file "report.pdf", of the type application/pdf.' },
+      { type: "image", data: "JVBERi0=", mimeType: "application/pdf" },
+      { type: "text", text: 'The user attached the file "plot.png", of the type image/png.' },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+    ]);
+  });
+
+  test("turns the PDF into Anthropic's document before it moves the cache mark, and before the caller's onPayload sees the request", async () => {
+    const faux = createFauxCore({ api: "anthropic-messages", provider: PROVIDER });
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    faux.setResponses([seen(calls, fauxAssistantMessage("Read."))]);
+    const given: unknown[] = [];
+    // The memory gives the same copy of a file at each look, as the loop
+    // expects of it.
+    const files = [{ blob: report() }, { blob: plot() }];
+    await createLoop(pi, { "anthropic-messages": faux }).run({
+      connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
+      model: "faux-1",
+      tools: [],
+      messages: () => [pdf],
+      kept: (id) => (id === "u1" ? { files } : undefined),
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        given.push(payload);
+        return undefined;
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+    const mark = { type: "ephemeral" };
+    const said = (text: string) => ({ type: "text", text });
+    const reportSource = { type: "base64", media_type: "application/pdf", data: "JVBERi0=" };
+    const plotSource = { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" };
+    const labels = ['The user attached the file "report.pdf", of the type application/pdf.', 'The user attached the file "plot.png", of the type image/png.'] as const;
+    const sent = {
+      messages: [
+        { role: "user", content: [said("Read the report."), said(labels[0]), { type: "image", source: reportSource }, said(labels[1]), { type: "image", source: plotSource }] },
+        { role: "user", content: [{ ...said("The board."), cache_control: mark }] },
+      ],
+    };
+    const filed = {
+      messages: [
+        {
+          role: "user",
+          content: [said("Read the report."), said(labels[0]), { type: "document", source: reportSource, title: "report.pdf" }, said(labels[1]), { type: "image", source: plotSource, cache_control: mark }],
+        },
+        { role: "user", content: [said("The board.")] },
+      ],
+    };
+
+    await expect(Promise.resolve(calls[0]?.options?.onPayload?.(sent, {} as Model<Api>))).resolves.toEqual(filed);
+    expect(given).toEqual([filed]);
+  });
+});
+
 describe("the catalogs of the loop", () => {
   test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
     const { loop } = fauxLoop();
 
     expect(["gpt-5.4", "claude-sonnet-5-5", "company-gpt", "openai/gpt-5.4"].map((id) => loop.inCatalog(id))).toEqual([true, true, false, false]);
+  });
+
+  test("give the context window of a model as pi takes it, from the model settings, the catalog, the list or the default", () => {
+    const { loop, connection } = fauxLoop();
+
+    expect(loop.contextWindow({ connection, model: "gpt-5.4" })).toBe(OPENAI_MODELS["gpt-5.4"].contextWindow);
+    expect(loop.contextWindow({ connection, model: "gpt-5.4", settings: { contextWindow: 100_000 } })).toBe(100_000);
+    expect(loop.contextWindow({ connection, model: "deepseek/deepseek-v3.2", listed: { contextWindow: 163_840 } })).toBe(163_840);
+    expect(loop.contextWindow({ connection, model: "company-gpt" })).toBe(128_000);
+  });
+});
+
+describe("the call that writes a summary", () => {
+  const call = { model: "faux-1", systemPrompt: "Summarize.", prompt: "<conversation>[User]: Hi.</conversation>", signal: new AbortController().signal };
+
+  test("sends the system prompt and one message of the role user, with no tools, and gives the summary with the call's tokens", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([seen(calls, fauxAssistantMessage([fauxThinking("Short."), fauxText("The user said hi.")]))]);
+
+    const summarized = await loop.summarize({ ...call, connection });
+
+    expect(summarized.text).toBe("The user said hi.");
+    expect(summarized.failure).toBeUndefined();
+    expect(summarized.usage.input).toBeGreaterThan(0);
+    expect(summarized.usage.total).toBe(summarized.usage.input + summarized.usage.output);
+    const messages = calls[0]?.context?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ role: "system", content: "Summarize." });
+    expect(messages[0]).not.toHaveProperty("toolsAdded");
+    expect(messages[1]).toMatchObject({ role: "user", content: [{ type: "text", text: call.prompt }] });
+    expect(calls[0]?.options).toMatchObject({ apiKey: "test-key", reasoning: "medium", cacheRetention: "none" });
+    expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("gives why it wrote no summary, as for a failed call, a reply that the cap cut off or an empty one", async () => {
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "Rate limited." }),
+      fauxAssistantMessage("The user", { stopReason: "length" }),
+      fauxAssistantMessage(" "),
+    ]);
+
+    const failures = [];
+    for (let i = 0; i < 3; i += 1) failures.push((await loop.summarize({ ...call, connection })).failure);
+
+    expect(failures).toEqual(["Rate limited.", "The summary reached the model's cap for a reply, so it was cut off.", "The model wrote no summary."]);
   });
 });
 
@@ -567,8 +820,40 @@ describe("a turn that stops or fails", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.failure).toBe("401 Unauthorized");
+    expect(calls[0]?.overflow).toBeUndefined();
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+
+  test("reports a call that failed since the conversation outgrew the window, as pi tells it from the provider's error", async () => {
+    const { run, calls } = turnWith([fauxAssistantMessage([], { stopReason: "error", errorMessage: "Your input exceeds the context window of this model." })]);
+
+    await run();
+
+    expect(calls[0]?.overflow).toBe(true);
+  });
+});
+
+describe("before each call", () => {
+  test("the loop waits for what the caller does, and then reads the conversation", async () => {
+    const contexts: TranscriptContext[] = [];
+    const record: FauxResponseStep = (context) => {
+      contexts.push(context);
+      return fauxAssistantMessage("Two.");
+    };
+    let before = 0;
+    const turn = turnWith([record], {
+      beforeCall: async () => {
+        before += 1;
+        await Promise.resolve();
+        turn.messages.splice(0, 1, { ...asked, parts: [{ type: "text", text: "How many blocks now?" }] });
+      },
+    });
+
+    await turn.run();
+
+    expect(before).toBe(1);
+    expect(contexts[0]?.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "How many blocks now?" }] });
   });
 });
 

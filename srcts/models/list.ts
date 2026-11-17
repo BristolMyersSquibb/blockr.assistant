@@ -145,8 +145,8 @@ function settingsOf(entry: Readonly<Record<string, unknown>>): ListedSettings {
   const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
   const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
   const images =
-    imagesOf(fieldOf(entry.architecture, "input_modalities")) ??
-    imagesOf(fieldOf(entry.modalities, "input")) ??
+    takesImages(fieldOf(entry.architecture, "input_modalities")) ??
+    takesImages(fieldOf(entry.modalities, "input")) ??
     flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
   return {
     ...(contextWindow === undefined ? {} : { contextWindow }),
@@ -164,7 +164,7 @@ function tokensOf(value: unknown): number | undefined {
 }
 
 // Whether a list of the inputs that a model takes holds images.
-function imagesOf(value: unknown): boolean | undefined {
+function takesImages(value: unknown): boolean | undefined {
   return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : undefined;
 }
 

@@ -310,6 +310,47 @@ describe("the assistant's chat", () => {
     expect(row?.querySelector("strong")?.textContent).toBe("sales");
   });
 
+  test("says at the transcript's end that the model writes a summary, which a turn waits for until it stops, and then shows the summary", async () => {
+    localStorage.setItem(KEY, "c1");
+    const summary = heldReply("We built a sales chart.");
+    const turn = heldReply("Two blocks.");
+    // A summary under the default window of 128,000 tokens keeps about 32,000,
+    // so it keeps u3 and a3, and covers the two exchanges before them.
+    const long = "x".repeat(64_000);
+    const { el, assistant } = await chat({
+      state: {
+        conversations: {
+          c1: conversation("Sales", message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant"), message("u3", "user", text(long)), message("a3", "assistant", text(long))),
+        },
+      },
+      replies: [summary.reply, turn.reply],
+    });
+
+    let compacted: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      compacted = assistant.compaction.compact("c1");
+    });
+    await until(() => el.querySelector(".blockr-assistant-compacting") !== null, "the line that says that the model writes a summary");
+    expect(el.querySelector(".blockr-assistant-compacting")?.textContent).toBe("Writing a summary of the earlier messages");
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => assistant.turns.current() !== undefined, "the turn");
+    expect(el.querySelector(".blockr-assistant-working")).toBeNull();
+    press(field(el), "Escape");
+    await until(() => assistant.turns.current() === undefined, "the turn's stop");
+    expect(el.querySelector(".blockr-assistant-compacting")).not.toBeNull();
+
+    summary.release();
+    await act(() => compacted);
+    await settle();
+
+    expect(el.querySelector(".blockr-assistant-compacting")).toBeNull();
+    expect(el.querySelector(".blockr-assistant-summary summary")?.textContent).toBe("Summary of the earlier messages");
+    expect([...el.querySelectorAll(".blockr-assistant-user-text")].map((node) => node.textContent).at(-1)).toBe("How many blocks?");
+    expect(el.querySelectorAll(".blockr-assistant-user-text")).toHaveLength(2);
+  });
+
   test("shows the model's reasoning as a row that folds, while the board stays open", async () => {
     const { el } = await chat({ replies: [fauxAssistantMessage([fauxThinking("Counting the **blocks**."), fauxText("None.")])] });
 
@@ -566,5 +607,243 @@ describe("the chat's text", () => {
     click(dialog?.querySelector(".blockr-assistant-dialog-open") ?? null);
     expect(opened).toHaveBeenCalledWith("https://example.org/docs", "_blank", "noopener,noreferrer");
     expect(dialog?.open).toBe(false);
+  });
+});
+
+describe("the chat's attachments", () => {
+  // The bytes of the files that the tests attach: the start of a PNG, which
+  // is "iVBORw0KGgo=" as base64, and of a PDF, which is "JVBERi0xLjQK".
+  const png = (name = "plot.png") => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: "image/png" });
+  const pdf = (name = "report.pdf", size?: number) => new File([size === undefined ? "%PDF-1.4\n" : new Uint8Array(size)], name, { type: "application/pdf" });
+  const csv = () => new File(["a,b\n1,2\n"], "sales.csv", { type: "" });
+
+  // The names of the files that the message field stages.
+  function staged(el: HTMLElement): string[] {
+    return [...el.querySelectorAll(".blockr-assistant-staged .blockr-assistant-file-name")].map((name) => name.textContent);
+  }
+
+  // The files given, as the user picks them with the message field's button.
+  function pick(el: HTMLElement, ...files: File[]): void {
+    const input = el.querySelector<HTMLInputElement>(".blockr-assistant-picker");
+    if (input === null) throw new Error("The chat draws no file input.");
+    Object.defineProperty(input, "files", { value: files, configurable: true });
+    act(() => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  function transfer(...files: File[]): DataTransfer {
+    const data = new DataTransfer();
+    for (const file of files) data.items.add(file);
+    return data;
+  }
+
+  test("stages the files that the user picks, and sends them with the message, their content into the plugin's memory and to the model", async () => {
+    const seen: string[][] = [];
+    const { el, assistant } = await chat({
+      replies: [
+        (context) => {
+          const user = context.messages.find((m) => m.role === "user");
+          seen.push(Array.isArray(user?.content) ? user.content.map((block) => (block.type === "image" ? block.mimeType : block.text)) : []);
+          return fauxAssistantMessage("Read them.");
+        },
+      ],
+    });
+
+    pick(el, png(), pdf(), csv());
+    await until(() => staged(el).length === 3, "the staged files");
+    expect(staged(el)).toEqual(["plot.png", "report.pdf", "sales.csv"]);
+
+    type(el, "Read these.");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply")?.textContent === "Read them." && assistant.turns.current() === undefined, "the reply");
+
+    const [id, added] = Object.entries(inState(assistant))[0] ?? [];
+    expect(added?.messages[0]?.parts).toEqual([
+      { type: "text", text: "Read these." },
+      { type: "attachment", name: "plot.png", media_type: "image/png" },
+      { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+      { type: "attachment", name: "sales.csv", media_type: "text/csv" },
+    ]);
+    // The memory keeps a copy of each file's bytes, as binary, which every
+    // call took.
+    const kept = assistant.conversations.kept(id ?? "", added?.messages[0]?.id ?? "")?.files ?? [];
+    expect(kept.map((file) => ("blob" in file ? file.taken : file))).toEqual([true, true, true]);
+    const bytes = await Promise.all(kept.map(async (file) => ("blob" in file ? [...new Uint8Array(await file.blob.arrayBuffer())] : [])));
+    const encoder = new TextEncoder();
+    expect(bytes).toEqual([[137, 80, 78, 71, 13, 10, 26, 10], [...encoder.encode("%PDF-1.4\n")], [...encoder.encode("a,b\n1,2\n")]]);
+    expect(seen[0]).toEqual([
+      "Read these.",
+      'The user attached the file "plot.png", of the type image/png.',
+      "image/png",
+      'The user attached the file "report.pdf", of the type application/pdf.',
+      "application/pdf",
+      '<file-attachment name="sales.csv" type="text/csv">\na,b\n1,2\n\n</file-attachment>',
+    ]);
+    expect(staged(el)).toEqual([]);
+    const sent = [...el.querySelectorAll(".blockr-assistant-user .blockr-assistant-file")];
+    expect(sent.map((file) => file.querySelector(".blockr-assistant-file-name")?.textContent)).toEqual(["plot.png", "report.pdf", "sales.csv"]);
+    expect(sent.map((file) => file.tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON"]);
+    expect(sent[0]?.querySelector("img")?.getAttribute("src")).toMatch(/^blob:/);
+    expect(sent.slice(1).map((file) => file.querySelector(".blockr-assistant-file-badge")?.textContent)).toEqual(["PDF", "CSV"]);
+  });
+
+  test("sends a message that holds files and no text", async () => {
+    const { el, assistant } = await chat();
+
+    pick(el, csv());
+    await until(() => staged(el).length === 1, "the staged file");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
+
+    expect(Object.values(inState(assistant))[0]?.messages[0]?.parts).toEqual([{ type: "attachment", name: "sales.csv", media_type: "text/csv" }]);
+  });
+
+  test("removes a staged file with its button", async () => {
+    const { el } = await chat();
+
+    pick(el, png(), csv());
+    await until(() => staged(el).length === 2, "the staged files");
+    click(el.querySelector('.blockr-assistant-file-remove[aria-label="Remove plot.png"]'));
+    await until(() => staged(el).length === 1, "the file to go");
+
+    expect(staged(el)).toEqual(["sales.csv"]);
+  });
+
+  test("leaves out a file that the field does not take, and a file that would pass the bound, and says why", async () => {
+    const { el } = await chat();
+
+    pick(el, new File(["PK"], "archive.zip", { type: "application/zip" }), pdf("first.pdf", 20 * 1024 * 1024), pdf("second.pdf", 15 * 1024 * 1024), csv());
+    await until(() => el.querySelector(".blockr-assistant-files-note") !== null, "the note");
+
+    expect(staged(el)).toEqual(["first.pdf", "sales.csv"]);
+    expect(el.querySelector(".blockr-assistant-files-note")?.textContent).toBe(
+      'The chat takes images, PDFs and text files, so it left out "archive.zip". The files of a message take up to 30 MB together, so the chat left out "second.pdf".',
+    );
+  });
+
+  test("takes files that the user pastes, and turns a paste of a long text into a file, while a short paste goes into the text", async () => {
+    const { el } = await chat();
+
+    act(() => {
+      field(el).dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer(png("pasted.png")), bubbles: true, cancelable: true }));
+    });
+    await until(() => staged(el).length === 1, "the pasted image");
+
+    const long = new DataTransfer();
+    long.setData("text/plain", "x".repeat(1001));
+    act(() => {
+      field(el).dispatchEvent(new ClipboardEvent("paste", { clipboardData: long, bubbles: true, cancelable: true }));
+    });
+    await until(() => staged(el).length === 2, "the pasted text");
+
+    const short = new DataTransfer();
+    short.setData("text/plain", "x".repeat(1000));
+    const event = new ClipboardEvent("paste", { clipboardData: short, bubbles: true, cancelable: true });
+    act(() => {
+      field(el).dispatchEvent(event);
+    });
+    await settle();
+
+    expect(staged(el)).toEqual(["pasted.png", "Pasted Text"]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test("takes files dropped anywhere on the chat", async () => {
+    const { el } = await chat();
+
+    // The DragEvent of happy-dom leaves out the dataTransfer that it is given,
+    // which a browser's keeps.
+    const dropped = new DragEvent("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(dropped, "dataTransfer", { value: transfer(csv()) });
+    act(() => {
+      el.querySelector(".blockr-assistant-transcript")?.dispatchEvent(dropped);
+    });
+    await until(() => staged(el).length === 1, "the dropped file");
+
+    expect(staged(el)).toEqual(["sales.csv"]);
+  });
+
+  test("puts the text and the files back into the message field where the message does not enter the conversation", async () => {
+    const { el, assistant } = await chat();
+    vi.spyOn(assistant.conversations, "addConversation").mockRejectedValue(new Error("The state takes no conversation."));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    pick(el, csv());
+    await until(() => staged(el).length === 1, "the staged file");
+    type(el, "Read this.");
+    press(field(el), "Enter");
+    await until(() => staged(el).length === 1 && field(el).value === "Read this." && el.querySelector(".blockr-assistant-send") !== null, "the draft to come back");
+    await settle(20);
+
+    expect(field(el).value).toBe("Read this.");
+    expect(staged(el)).toEqual(["sales.csv"]);
+    expect(Object.keys(inState(assistant))).toEqual([]);
+  });
+});
+
+describe("the files of a message that the user sent", () => {
+  function withFiles() {
+    const parts: Part[] = [
+      text("Look."),
+      { type: "attachment", name: "plot.png", media_type: "image/png" },
+      { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
+      { type: "attachment", name: "notes.md", media_type: "text/markdown" },
+    ];
+    localStorage.setItem(KEY, "c1");
+    return { conversations: { c1: conversation("Files", message("u1", "user", ...parts), message("a1", "assistant")) } };
+  }
+
+  const files = (el: HTMLElement) => [...el.querySelectorAll(".blockr-assistant-user .blockr-assistant-file")];
+
+  test("open large in a dialog where the memory keeps their content: an image as itself, a PDF in the browser's viewer and a text file as its text", async () => {
+    const { el, assistant } = await chat({ state: withFiles() });
+    act(() => {
+      assistant.conversations.keep("c1", "u1", {
+        files: [
+          { blob: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: "image/png" }) },
+          { blob: new Blob(["%PDF-1.4\n"], { type: "application/pdf" }) },
+          { blob: new Blob(["# Notes"], { type: "text/markdown" }) },
+        ],
+      });
+    });
+    await settle();
+    const dialog = (): HTMLDialogElement | null => el.querySelector(".blockr-assistant-file-dialog");
+
+    click(files(el)[0] ?? null);
+    expect(dialog()?.open).toBe(true);
+    expect(dialog()?.querySelector("h2")?.textContent).toBe("plot.png");
+    expect(dialog()?.querySelector(".blockr-assistant-file-image")?.getAttribute("src")).toMatch(/^blob:/);
+    click(dialog()?.querySelector(".blockr-assistant-file-view-close") ?? null);
+    expect(dialog()?.open).toBe(false);
+
+    click(files(el)[1] ?? null);
+    await settle();
+    expect(dialog()?.querySelector(".blockr-assistant-file-pdf")?.getAttribute("src")).toMatch(/^blob:/);
+    click(dialog()?.querySelector(".blockr-assistant-file-view-close") ?? null);
+
+    click(files(el)[2] ?? null);
+    await until(() => dialog()?.querySelector(".blockr-assistant-file-text") !== null, "the text");
+    expect(dialog()?.querySelector(".blockr-assistant-file-text")?.textContent).toBe("# Notes");
+  });
+
+  test("show by their names alone, and open nothing, where the memory lacks their content, and say which the provider refused", async () => {
+    const { el, assistant } = await chat({ state: withFiles() });
+
+    expect(files(el).map((file) => [file.tagName, file.textContent])).toEqual([
+      ["SPAN", "PNGplot.png"],
+      ["SPAN", "PDFreport.pdf"],
+      ["SPAN", "MDnotes.md"],
+    ]);
+
+    act(() => {
+      assistant.conversations.keep("c1", "u1", { files: [{ refused: true }, { blob: new Blob(["%PDF-1.4\n"]), taken: true }, { blob: new Blob(["# Notes"]) }] });
+    });
+    await settle();
+    expect(files(el).map((file) => [file.tagName, file.hasAttribute("data-refused"), file.textContent])).toEqual([
+      ["SPAN", true, "PNGplot.pngRefused"],
+      ["BUTTON", false, "PDFreport.pdf"],
+      ["BUTTON", false, "MDnotes.md"],
+    ]);
   });
 });

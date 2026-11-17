@@ -9,7 +9,8 @@
 //    file.
 // 2. They check the settings that R's reply gives each model.
 // 3. They check that each model's like names a model of pi's catalogs, once
-//    the first turn has loaded the loop, which holds the catalogs.
+//    the page's first call has loaded the loop, which holds the catalogs
+//    (../turns/prepare.ts).
 // 4. Where R's session ends before R replies, they ask again, since reading
 //    the file changes nothing, as core asks again for a blockr option.
 // 5. Where R cannot read the file, or where the file gives a value that a
@@ -117,10 +118,10 @@ async function readSettings(core: Core, signal: AbortSignal, failed: HeldError):
 function settingsOf(reply: Json | Blob): ReadonlyMap<string, ModelSettings> {
   if (reply === null) return NONE;
   if (!isObject(reply)) throw new TypeError(`${FILE} gives ${shown(reply)}, where it gives each model's settings by the model's id.`);
-  return new Map(Object.entries(reply).map(([id, entry]) => [id, entryOf(id, entry)]));
+  return new Map(Object.entries(reply).map(([id, entry]) => [id, parseEntry(id, entry)]));
 }
 
-function entryOf(id: string, entry: Json): ModelSettings {
+function parseEntry(id: string, entry: Json): ModelSettings {
   if (entry === null) return {};
   if (!isObject(entry)) {
     throw new TypeError(`${FILE} gives the model ${id} ${shown(entry)}, where it gives the model's settings by their names, such as reasoning: true.`);
