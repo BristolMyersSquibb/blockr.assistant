@@ -204,8 +204,6 @@
   for (#229).
   The stop button and Escape stop the turn, and a failure that ended a turn
   shows at that turn.
-  Such a failure raises its notification only where no chat shows the turn's
-  conversation, as once the panel closed, so that the user sees it once.
   Each tool call shows as a row titled from the tool's name, and the calls to
   one tool with no text between them share a row.
   The row of the edit tool names its commands by their labels, and each block

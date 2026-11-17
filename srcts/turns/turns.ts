@@ -54,10 +54,6 @@
 // The memory keeps the failure by the conversation's last message, so that
 // the chat shows it at its turn. The conversation keeps what the turn
 // finished, and what its reply streamed until the failure.
-// Where a chat shows the conversation as its turn fails, the user sees the
-// failure there, so the turns withdraw the error that stands rather than
-// raise it, and the user sees the failure once. A chat says which
-// conversation it shows through addView().
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
@@ -101,11 +97,6 @@ export interface Turns {
   // Calls the listener whenever what current() gives changes, until the
   // function that it returns is called.
   subscribe(listener: () => void): () => void;
-  // Adds a view of the conversations, as a chat that shows, which says
-  // whether it shows a conversation, until the function that it returns is
-  // called. A turn that fails in a conversation that a view shows leaves its
-  // failure to the view.
-  addView(shows: (conversation: ConversationId) => boolean): () => void;
 }
 
 // A turn that runs.
@@ -141,7 +132,6 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   const { conversations, callFailed } = options;
   const locks = "locks" in options ? options.locks : pageLocks();
   const listeners = new Set<() => void>();
-  const views = new Set<(conversation: ConversationId) => boolean>();
   let running: State | undefined;
   // What current() gives, which changed() makes anew.
   let snapshot: Running | undefined;
@@ -162,26 +152,17 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     for (const listener of listeners) listener();
   }
 
-  // Keeps why the turn failed by the conversation's last message, and raises
-  // the error of a failed call in place of the one before, or withdraws the
-  // one before where a view shows the failure at its turn.
+  // Raises the error of a failed call, in place of the one before, and keeps
+  // why the turn failed by the conversation's last message.
   function fail(conversation: ConversationId, why: string): void {
-    if (keep(conversation, why) && shown(conversation)) callFailed.withdraw();
-    else callFailed.raise(why);
+    callFailed.raise(why);
+    keep(conversation, why);
   }
 
-  // Keeps why the turn failed by the conversation's last message, and says
-  // whether the conversation holds a message to keep it by.
-  function keep(conversation: ConversationId, why: string): boolean {
+  // Keeps why the turn failed by the conversation's last message.
+  function keep(conversation: ConversationId, why: string): void {
     const last = conversations.get(conversation)?.messages.at(-1);
-    if (last === undefined) return false;
-    conversations.keep(conversation, last.id, { failure: why });
-    return true;
-  }
-
-  // Whether a view shows the conversation.
-  function shown(conversation: ConversationId): boolean {
-    return [...views].some((shows) => shows(conversation));
+    if (last !== undefined) conversations.keep(conversation, last.id, { failure: why });
   }
 
   function succeeded(): void {
@@ -324,13 +305,6 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
-      };
-    },
-
-    addView(shows) {
-      views.add(shows);
-      return () => {
-        views.delete(shows);
       };
     },
   };
