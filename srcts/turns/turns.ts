@@ -22,6 +22,10 @@
 // 5. Its calls go to the deployment's base URL, in the API that the base URL
 //    speaks, with the deployment's key, or with no key where the key is
 //    "none" (../deployment).
+//    Each call sends the system prompt of the open board, and after the
+//    conversation's last message the message of the app's, as it is when the
+//    call goes out, with the board and what the user has on screen
+//    (../prompt).
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
@@ -46,9 +50,11 @@
 // error assistant_call_failed from start, so that it holds once the panel
 // closes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 // A turn cannot start where a blockr option of the deployment holds a value
-// that it does not take, or where the deployment sets no key. The turns
-// withdraw the error once a later call succeeds, and core withdraws it as the
-// next board opens.
+// that it does not take, or where the deployment sets no key. It fails before
+// its first call where a cap that the system prompt or the message of the
+// app's reads holds a value that it does not take. The turns withdraw the
+// error once a later call succeeds, and core withdraws it as the next board
+// opens.
 // A turn for which the deployment offers no model raises nothing of its own,
 // since the models raised why already.
 // The memory keeps the failure by the conversation's last message, so that
@@ -61,6 +67,7 @@ import type { Deployment } from "../deployment/index.ts";
 import type { Answered, Connection, Handlers, Loop, Streamed } from "../loop/index.ts";
 import type { Models } from "../models/index.ts";
 import type { HeldError } from "../notifications/index.ts";
+import type { Prompt } from "../prompt/index.ts";
 import type { ConversationId } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { holdLock, pageLocks } from "./lock.ts";
@@ -78,6 +85,9 @@ export interface TurnsOptions {
   // The error assistant_call_failed, which the models raise as well, for a
   // list of models that the base URL refuses for its key.
   readonly callFailed: HeldError;
+  // The system prompt of the open board, and the message of the app's for
+  // each call.
+  readonly prompt: Prompt;
   // Loads the loop, which imports pi's bundle.
   readonly load: () => Promise<Loop>;
   // The tab's Web Locks, the page's by default.
@@ -243,6 +253,15 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       return;
     }
 
+    let systemPrompt: string;
+    try {
+      systemPrompt = await options.prompt.system();
+    } catch (error) {
+      if (!closed()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf(error)}`);
+      return;
+    }
+    if (stopped(turn)) return;
+
     let loop: Loop;
     try {
       loop = await options.load();
@@ -258,6 +277,8 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message) => conversations.kept(turn.conversation, message),
+      systemPrompt,
+      appMessage: () => options.prompt.appMessage(),
       signal: turn.controller.signal,
       on: handlers(turn),
     });

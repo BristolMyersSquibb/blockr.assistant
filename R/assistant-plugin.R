@@ -124,6 +124,54 @@
 #' * The request `read_template` gives the text of the file that the blockr
 #'   option `assistant_template` names, or `NULL` where it names none.
 #'
+#' @section Template:
+#' Each call to the model sends the system prompt, then the conversation,
+#' then a message of the app's with the board and what the user has on
+#' screen.
+#' The parts below make them up, in the order in which the model reads them.
+#' A deployment's template is the Markdown file that the blockr option
+#' `assistant_template` names, which a deployment sets as the R option
+#' `blockr.assistant_template` or the environment variable
+#' `BLOCKR_ASSISTANT_TEMPLATE`.
+#' It takes the place of the three parts that have an id: it names each part
+#' that it keeps as `<<id>>` on a line of its own, in the order that it wants,
+#' and may add text of its own.
+#' The plugin writes every other part, whatever the template holds.
+#'
+#' \tabular{lll}{
+#'   \strong{Part} \tab \strong{Id} \tab \strong{What it tells the model} \cr
+#'   Role \tab \code{role} \tab
+#'     That it is an assistant next to a blockr data analysis board \cr
+#'   Build, don't ask \tab \code{build} \tab
+#'     To build what the user wants analysed, with defaults from the data,
+#'     rather than ask \cr
+#'   Style \tab \code{style} \tab To answer concisely \cr
+#'   What the app sends you \tab none \tab
+#'     That a message of the app's follows the conversation, with the board
+#'     and what the user has on screen \cr
+#'   Statuses \tab none \tab
+#'     What each status marker in the Board section means \cr
+#'   Look, don't guess \tab none \tab
+#'     That summaries are cut short, so it reads what it relies on rather
+#'     than guessing \cr
+#'   Edits \tab none \tab
+#'     That ids never change, and that changing one needs the user's yes \cr
+#'   Skills \tab none \tab
+#'     Each skill that names no block class or plugin class, and when to read
+#'     one \cr
+#'   Board \tab none \tab
+#'     The board as it is when the call goes out, in the app's message \cr
+#'   Focus \tab none \tab
+#'     Which block has focus and what the user has on screen, in the app's
+#'     message
+#' }
+#'
+#' As a board opens, the plugin has R read the template once.
+#' Where R cannot read it, or it names an id that is none of the three, the
+#' plugin raises the error `assistant_template_failed`.
+#' The calls then go on with blockr.assistant's own template until the next
+#' board opens.
+#'
 #' @section Skills:
 #' A skill is a directory that holds a `SKILL.md`.
 #' The file's YAML frontmatter gives the skill's `name`, which is the

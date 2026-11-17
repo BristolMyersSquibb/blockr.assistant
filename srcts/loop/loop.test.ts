@@ -1,13 +1,15 @@
 // The loop on pi's fake provider (./loop.ts), whose replies each test
 // scripts: a turn as it streams, its tool calls, its calls to the model, what
-// each call sends, a stop, a failed call and the tree of a turn's spans. The
+// each call sends, the message of the app's after the conversation and the
+// mark of Anthropic's cache before it, a stop, a failed call and the tree of
+// a turn's spans. The
 // test plays the turns, which keep each message that the loop reports in a
 // conversation of their own.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
-import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { createFauxCore, fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
@@ -16,8 +18,10 @@ import type { Message } from "../state/index.ts";
 import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
+import { createLoop, PROVIDER } from "./loop.ts";
 import { STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
+import * as pi from "./vendor.ts";
 import type { Call, Streamed, Turn } from "./loop.ts";
 
 const CREATED = "2026-11-16T08:00:00.000Z";
@@ -33,7 +37,7 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "systemPrompt" | "transformContext" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload">> & { readonly key?: string | undefined } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -243,14 +247,83 @@ describe("a turn on the loop", () => {
     expect(messages.map((m) => m.id)).not.toContain("board");
   });
 
-  test("hands pi the caller's onPayload", async () => {
+  test("adds the caller's message of the app's after the conversation's last message of each call, which the conversation does not keep", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
-    const onPayload = (payload: unknown): unknown => payload;
-    const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { onPayload });
+    let written = 0;
+    const appMessage = () => {
+      written += 1;
+      return Promise.resolve(`The board as call ${String(written)} goes out.`);
+    };
+    const { run, messages } = turnWith(
+      [seen(calls, fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" })), seen(calls, fauxAssistantMessage("Two."))],
+      { appMessage },
+    );
 
     await run();
 
-    expect(calls[0]?.options?.onPayload).toBe(onPayload);
+    expect(calls.map((call) => call.context?.messages.map(({ role }) => role))).toEqual([
+      ["system", "user", "user"],
+      ["system", "user", "assistant", "toolResult", "user"],
+    ]);
+    expect(calls.map((call) => call.context?.messages.at(-1))).toMatchObject([
+      { role: "user", content: [{ type: "text", text: "The board as call 1 goes out." }] },
+      { role: "user", content: [{ type: "text", text: "The board as call 2 goes out." }] },
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("goes out");
+  });
+
+  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's as the caller leaves it", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const given: unknown[] = [];
+    const onPayload = (payload: unknown): unknown => {
+      given.push(payload);
+      return { replaced: payload };
+    };
+    const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { onPayload, appMessage: () => Promise.resolve("The board.") });
+
+    await run();
+    const sent = { messages: [{ role: "user", content: [{ type: "text", text: "The board.", cache_control: { type: "ephemeral" } }] }] };
+
+    await expect(Promise.resolve(calls[0]?.options?.onPayload?.(sent, {} as Model<Api>))).resolves.toEqual({ replaced: sent });
+    expect(given).toEqual([sent]);
+  });
+
+  test("moves the mark of Anthropic's cache from the message of the app's to the block before it, before the caller's onPayload sees the request", async () => {
+    const faux = createFauxCore({ api: "anthropic-messages", provider: PROVIDER });
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    faux.setResponses([seen(calls, fauxAssistantMessage("Two."))]);
+    const given: unknown[] = [];
+    const messages: Message[] = [asked];
+    const mark = { type: "ephemeral" };
+    await createLoop(pi, { "anthropic-messages": faux }).run({
+      connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
+      model: "faux-1",
+      tools: [],
+      messages: () => messages,
+      kept: () => undefined,
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        given.push(payload);
+        return undefined;
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+    const sent = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "How many blocks?" }] },
+        { role: "user", content: [{ type: "text", text: "The board.", cache_control: mark }] },
+      ],
+    };
+
+    const moved = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "How many blocks?", cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "The board." }] },
+      ],
+    };
+    await expect(Promise.resolve(calls[0]?.options?.onPayload?.(sent, {} as Model<Api>))).resolves.toEqual(moved);
+    expect(given).toEqual([moved]);
   });
 
   test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {

@@ -47,6 +47,56 @@ export async function sendRequest(
   return { answer, conditions };
 }
 
+// What a request that the plugin sends as each board opens gives, and what it
+// raises where it fails.
+export interface OnOpen<T> {
+  // What the plugin makes of R's answer, which throws for an answer that it
+  // cannot read.
+  readonly read: (answer: Json | Blob) => T;
+  // What the plugin holds where the request fails, or where the next board
+  // opens before R replies.
+  readonly fallback: T;
+  // The code of the error that a failure raises, and its message, written
+  // from why the request failed.
+  readonly code: string;
+  readonly message: (why: string) => string;
+}
+
+// Sends the assistant's request `name` as a board opens, as the skills send
+// list_skills and the template read_template, and resolves with what R's
+// answer gives. It never rejects:
+// - Where R's session ends before R replies, it sends the request again,
+//   since the request changes nothing, as core asks again for a blockr option.
+// - Where R replies error, or R's answer cannot be read, it raises the error
+//   of the code given, from start, and resolves with the fallback. Core
+//   withdraws the error as the next board opens, which is also when the plugin
+//   sends the request again, so the plugin withdraws nothing itself
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
+// - Where the signal aborts first, as the next board opens, it raises nothing
+//   and resolves with the fallback.
+// - It drops the conditions of R's reply, ok or error, since R logs each. So
+//   core raises no notification for them, and R's error reaches the user only
+//   in the error of the code given.
+export async function requestOnOpen<T>(
+  core: { readonly request: CoreApi["request"]; readonly notifications: Pick<CoreApi["notifications"], "notify"> },
+  signal: AbortSignal,
+  name: string,
+  args: Readonly<Record<string, Json>>,
+  given: OnOpen<T>,
+): Promise<T> {
+  for (;;) {
+    try {
+      const { answer } = await sendRequest(core, name, args, { signal });
+      return given.read(answer);
+    } catch (error) {
+      if (signal.aborted) return given.fallback;
+      if (isSessionEnded(error)) continue;
+      core.notifications.notify(ASSISTANT, { severity: "error", code: given.code, message: given.message(failureMessage(error)) });
+      return given.fallback;
+    }
+  }
+}
+
 // The names of the app's packages, those of R's reply to `hello`.
 export function appPackages(core: { readonly store: Pick<CoreApi["store"], "packages"> }): string[] {
   return Object.keys(core.store.packages());

@@ -15,7 +15,8 @@
 //   so that a turn goes on once the panel closes
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).
 //   The assistant holds the conversations (../../conversations), the skills
-//   that R lists (../../skills) and the turns (../../turns).
+//   that R lists (../../skills), the template that R reads and what each call
+//   tells the model (../../prompt), and the turns (../../turns).
 // - Its `ui`, which every frontend places for the assistant, draws an empty
 //   panel. It draws in React, on the one copy of React that core puts on the
 //   page, in a root of its own.

@@ -26,6 +26,8 @@
 //   returned, since a provider takes a tool call only with its result.
 // - A summary goes as an exchange: a request for it as the user's message,
 //   and the summary as the reply.
+// - The message of the app's, which the loop adds after the conversation for
+//   the call alone, goes as text in a message of pi's role user.
 //
 // On the way back, a reply holds its text and its tool calls, in the order
 // that it gave them, while the memory keeps its reasoning, as text, and the
@@ -41,6 +43,7 @@ import type {
   TextContent,
   ToolResultMessage,
   Usage,
+  UserMessage,
 } from "@earendil-works/pi-ai";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import { newId } from "../state/index.ts";
@@ -96,6 +99,12 @@ export function callMessages(
 function systemMessage(prompt: string, tools: readonly Tool[]): SystemMessage {
   const declared = tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }));
   return { role: "system", content: prompt, ...(declared.length > 0 ? { toolsAdded: declared } : {}), timestamp: Date.now() };
+}
+
+// The message of the app's that the text given makes, as pi's message of the
+// role user.
+export function appMessage(text: string): UserMessage {
+  return { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
 }
 
 // The conversation as pi's messages, for a call to the model given.

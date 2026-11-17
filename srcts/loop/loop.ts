@@ -19,12 +19,21 @@
 //   OpenRouter, and the thinking level medium
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
 // - It hands pi the tools as they are, with each tool's executionMode, and
-//   takes the system prompt, a transformContext and an onPayload from its
-//   caller.
+//   takes from its caller the system prompt, a transformContext, the message
+//   of the app's and an onPayload.
 //   The transformContext takes the conversation in the state's shape, and the
 //   onPayload the request as the provider takes it.
 // - Before each call, it builds pi's messages from the conversation as the
-//   plugin holds it then (./messages.ts).
+//   plugin holds it then (./messages.ts). Where the caller gives a message of
+//   the app's, the loop adds it after the conversation's last message, for the
+//   call alone, as a message of the role user, so that no call goes out for it
+//   alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+//   The loop knows the message, since it adds it, so pi's messages carry no
+//   mark of the app's, and the message's own text says that the app writes it.
+// - The message of the app's changes from call to call, so on Anthropic's API
+//   the loop moves the cache mark that pi puts on it to the block before it,
+//   which ends the conversation (./cache.ts). It does so through pi's
+//   onPayload, before the caller's onPayload sees the request.
 //
 // It reports to its caller as the turn runs, and pi waits for each report
 // before it goes on, so that a reply is in the conversation before the next
@@ -63,7 +72,8 @@ import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
-import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import { markBeforeAppMessage } from "./cache.ts";
+import { appMessage, callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
@@ -100,10 +110,14 @@ export interface Turn {
   // What the memory keeps of a message of the conversation.
   kept(message: MessageId): Kept | undefined;
   // What the caller adds to each call: the system prompt, a transform of the
-  // conversation for the call alone, and a transform of the request that goes
-  // to the provider, whose undefined keeps the request as it is.
+  // conversation for the call alone, the text of the message of the app's
+  // that follows the conversation's last message, and a transform of the
+  // request that goes to the provider, whose undefined keeps the request as it
+  // is. The loop asks for the message of the app's as each call goes out.
+  // Where that rejects, the turn rejects before the call goes out.
   readonly systemPrompt?: string;
   readonly transformContext?: (messages: readonly Message[], signal: AbortSignal) => Promise<readonly Message[]>;
+  readonly appMessage?: () => Promise<string>;
   readonly onPayload?: (payload: unknown) => unknown;
   readonly signal: AbortSignal;
   readonly on: Handlers;
@@ -202,22 +216,32 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+  // The text of the message of the app's that the call going out holds, if
+  // any.
+  let added: string | undefined;
 
   const config: AgentLoopConfig = {
     model,
     reasoning: "medium",
     identity: { attribution: null },
-    // The loop adds no messages of its own to pi's, so they go to the model
-    // as they are.
+    // The loop writes each message of a call, the message of the app's
+    // among them, in one of pi's own roles, so they go to the model as they
+    // are.
     convertToLlm: (messages) => messages,
     transformContext: async (_messages, signal) => {
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
-      return callMessages(transformed, kept, model, turn.tools, prompt);
+      added = turn.appMessage === undefined ? undefined : await turn.appMessage();
+      const messages = callMessages(transformed, kept, model, turn.tools, prompt);
+      return added === undefined ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
     fetch: keyless,
-    ...(turn.onPayload === undefined ? {} : { onPayload: turn.onPayload }),
+    onPayload: (payload) => {
+      const moved = model.api === "anthropic-messages" && added !== undefined ? markBeforeAppMessage(payload, added) : undefined;
+      if (turn.onPayload === undefined) return moved;
+      return turn.onPayload(moved ?? payload) ?? moved;
+    },
   };
 
   const emit = async (event: AgentEvent): Promise<void> => {
