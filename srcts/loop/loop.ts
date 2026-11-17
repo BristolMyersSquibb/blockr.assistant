@@ -15,6 +15,14 @@
 //   in its answer to a page's preflight. Each of pi's APIs refuses to call
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
+// - The loop's fetch also notes what each call's request got back, where that
+//   says something of the key: a 401 or a 403, by which the base URL refused
+//   the key, or no answer that the page could read. OpenAI's 401 for a call
+//   reaches a page in the second way, since it carries no CORS header
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
+//   A failed call reports what its request got back, so that its caller can
+//   tell a refused key from a lost connection. Pi sends one request for each
+//   call, since it retries none.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter.
 // - It gives pi the thinking level that the deployment's model settings give
@@ -232,6 +240,11 @@ export interface Call {
   // Whether the provider refused the request for what it held, as a failed
   // call that the provider answered with 400, 413, 415 or 422.
   readonly refused: boolean;
+  // What the failed call's request got back, where that says something of
+  // the key: a 401 or a 403, by which the base URL refused the key, or no
+  // answer that the page could read, as where the answer carries no CORS
+  // header or the connection failed.
+  readonly answer?: CallAnswer;
   // Whether the call failed since the conversation outgrew the model's
   // context window, as pi's isContextOverflow() tells from the provider's
   // error.
@@ -258,6 +271,8 @@ export interface ModelReply {
   // Why the model wrote no text, where it wrote none.
   readonly failure?: string;
 }
+
+export type CallAnswer = "refused" | "unread";
 
 export interface Loop {
   // Runs the turn, and resolves once the turn ends, however it ends. It
@@ -340,12 +355,27 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   // it, which the loop encodes once for the turn and drops as the turn ends.
   const encodings = new Map<Blob, Encoded>();
   // What the call that goes out carries of the files that the user attached,
-  // and the status of the provider's answer to it, once it answered.
+  // and the status of the provider's answer to it, once it answered, or
+  // whether the page could read no answer to it.
   let carried: Carried = { files: [], pdfs: [] };
   let status: number | undefined;
+  let unread = false;
   // The text of the message of the app's that the call going out holds, if
   // any.
   let added: string | undefined;
+
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    try {
+      const response = await keyless(input, init);
+      status = response.status;
+      return response;
+    } catch (error) {
+      // The page's fetch fails with a TypeError where it reads no answer, and
+      // with an AbortError where the request's signal aborts.
+      if (error instanceof TypeError) unread = true;
+      throw error;
+    }
+  };
 
   const config: AgentLoopConfig = {
     model,
@@ -360,17 +390,14 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
       status = undefined;
+      unread = false;
       await encodeFiles(transformed, kept, encodings);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
       const messages = callMessages(transformed, kept, model, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === undefined ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
-    fetch: async (input, init) => {
-      const response = await keyless(input, init);
-      status = response.status;
-      return response;
-    },
+    fetch,
     // The loop turns the PDFs into the API's blocks for a file, then moves
     // the cache mark, and then hands the request to the caller's onPayload.
     onPayload: (payload) => {
@@ -389,7 +416,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model, carried, status));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model, carried, status, unread));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -587,10 +614,12 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
 const REFUSED: ReadonlySet<number> = new Set([400, 413, 415, 422]);
 
 // A call that ended, with the reply that pi wrote, to the model given, what
-// the call carried of the files that the user attached, and the status of the
-// provider's answer, where it answered.
-function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>, carried: Carried, status: number | undefined): Call {
+// the call carried of the files that the user attached, and what its request
+// got back: the status of the provider's answer, where it answered, or that
+// the page could read no answer.
+function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>, carried: Carried, status: number | undefined, unread: boolean): Call {
   const written = convertReply(reply);
+  const answer: CallAnswer | undefined = unread ? "unread" : status === 401 || status === 403 ? "refused" : undefined;
   const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
@@ -599,6 +628,7 @@ function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>, carried: Car
     files: carried.files,
     refused: failed && status !== undefined && REFUSED.has(status),
     ...(failed && pi.isContextOverflow(reply, model.contextWindow) ? { overflow: true } : {}),
+    ...(failed && answer !== undefined ? { answer } : {}),
   };
 }
 

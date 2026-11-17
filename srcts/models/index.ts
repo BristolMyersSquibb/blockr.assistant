@@ -3,4 +3,4 @@
 
 export { createModels, resolveModel } from "./models.ts";
 export type { Models, Offered } from "./models.ts";
-export type { Fetch } from "./list.ts";
+export type { Fetch, Listed } from "./list.ts";

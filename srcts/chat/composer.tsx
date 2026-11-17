@@ -8,6 +8,9 @@
 //   sends nothing until the turn ends, and the send button says which
 //   conversation's turn it waits for
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs).
+// - While the chat lacks the visitor's key, the user can type but sends
+//   nothing until the visitor gives a key, and the send button says so
+//   (./key.tsx).
 // - The stop button shows in place of the send button in the turn's
 //   conversation. It stops the turn, as Escape in the chat does, and says
 //   that the turn is stopping until the turn ends, as where an edit waits in a
@@ -38,7 +41,7 @@ export const PLACEHOLDER = "Ask about your board";
 export function Composer(): ReactElement {
   const { ComposerPrimitive, useAui, useAuiState } = libraries();
   const { addFiles, stop } = useChatActions();
-  const { filesNote, history, running, runsHere, titleOf } = useChat();
+  const { filesNote, history, noKey, running, runsHere, titleOf } = useChat();
   const aui = useAui();
   const text = useAuiState(({ composer }) => composer.text);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -84,7 +87,7 @@ export function Composer(): ReactElement {
   };
 
   const waitsFor = running === undefined || runsHere ? undefined : (titleOf(running.conversation) ?? "another conversation");
-  const sendLabel = waitsFor === undefined ? "Send" : `Sends once the turn in “${waitsFor}” ends`;
+  const sendLabel = noKey ? "Sends once you enter your key" : waitsFor === undefined ? "Send" : `Sends once the turn in “${waitsFor}” ends`;
 
   return (
     <ComposerPrimitive.Root className="blockr-assistant-composer">

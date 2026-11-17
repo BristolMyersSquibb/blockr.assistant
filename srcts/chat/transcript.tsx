@@ -2,7 +2,9 @@
 // scrolls, as the reply streams, to the newest message, until the user
 // scrolls up. A button then scrolls back to it, as in today's chat
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn).
-// - A conversation with no message shows the greeting (./greeting.ts).
+// - A conversation with no message shows the greeting (./greeting.ts), whose
+//   suggestions send nothing while a turn runs or the chat lacks the
+//   visitor's key.
 // - A message that the user sent shows its text as the user typed it, with
 //   each file that it holds, which a click opens large (./files.tsx).
 // - A turn shows as one reply (./messages.ts), whose pieces show in the order
@@ -71,7 +73,7 @@ function drawMessage({ message }: { readonly message: { readonly role: string } 
 
 function Greeting(): ReactElement {
   const { core, send } = useChatActions();
-  const { running } = useChat();
+  const { noKey, running } = useChat();
   const board = useBoard(core);
   const { lead, note, suggestions } = greetingOf(board);
   return (
@@ -84,7 +86,7 @@ function Greeting(): ReactElement {
             <button
               type="button"
               className="blockr-assistant-suggestion"
-              disabled={running !== undefined}
+              disabled={running !== undefined || noKey}
               onClick={() => {
                 send(suggestion);
               }}

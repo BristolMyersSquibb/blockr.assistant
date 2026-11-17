@@ -20,6 +20,7 @@ import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
+import { createVisitorKey } from "../visitor-key/index.ts";
 import { buildExcerpt, normalizeTitle, TITLE_PROMPT, titleConversations } from "./titles.ts";
 
 const ASSISTANT = "blockr.assistant-assistant_plugin";
@@ -102,7 +103,11 @@ async function opened(replies: FauxResponseStep[]) {
   const { faux, loop } = fauxLoop();
   faux.setResponses(replies);
   const deployment: Promise<Deployment> = Promise.resolve({ baseUrl: "https://faux.invalid/v1", api: FAUX_API, credential: { kind: "deployment", key: "test-key" }, models: undefined });
-  const models = { offered: () => Promise.resolve({ models: ["faux-1"], named: true }) };
+  const models = {
+    offered: () => Promise.resolve({ models: ["faux-1"], named: true }),
+    check: () => Promise.resolve({ kind: "failed" as const, message: "The list failed." }),
+  };
+  const key = createVisitorKey();
   const settings = { checked: () => Promise.resolve(new Map()) };
   const load = () => Promise.resolve(loop);
   const turns = createTurns(stubbed.core, controller.signal, {
@@ -112,12 +117,13 @@ async function opened(replies: FauxResponseStep[]) {
     models,
     settings,
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
+    key,
     prompt: { system: () => Promise.resolve("You answer questions about a board."), appMessage: () => Promise.resolve("The board holds no block.") },
     compaction: { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     load,
     locks: undefined,
   });
-  titleConversations(stubbed.core, controller.signal, { conversations, turns, deployment, models, settings, load });
+  titleConversations(stubbed.core, controller.signal, { conversations, turns, deployment, models, settings, key, load });
   return { ...stubbed, conversations, turns, faux };
 }
 

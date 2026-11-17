@@ -20,6 +20,9 @@
 //   button, drops them anywhere on the chat, or pastes them into the field.
 //   A click on a file of a message that the user sent opens it large, in a
 //   dialog (./files.tsx).
+// - Where the deployment leaves the key to the visitor, the chat asks for the
+//   visitor's own key in a field above the message field, and sends nothing
+//   while it lacks one (./key.tsx).
 // - The stop button, which shows in the turn's conversation, and Escape
 //   anywhere in the chat stop the turn, with a summary that the turn waits
 //   for, while a summary that the user asked for goes on.
@@ -59,15 +62,17 @@ import type { Assistant } from "../assistant/index.ts";
 import { isNote, joinText } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
 import type { Turns } from "../turns/index.ts";
+import { keyOf } from "../visitor-key/index.ts";
 import { addFiles, attachedOf, attachmentAdapter } from "./attach.ts";
 import { Composer } from "./composer.tsx";
 import { ChatActionsContext, ChatStateContext } from "./context.ts";
-import type { ChatActions, ChatState } from "./context.ts";
+import type { ChatActions, ChatState, KeyField } from "./context.ts";
 import { Drawer } from "./drawer.tsx";
 import { FileDialog } from "./files.tsx";
 import type { OpenedFile } from "./files.tsx";
 import { Footer } from "./footer.tsx";
-import { useCompacting, useConversations, useOffered, useRunning } from "./hooks.ts";
+import { useCompacting, useConversations, useDeployment, useOffered, useRunning, useVisitorKey } from "./hooks.ts";
+import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
 import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
@@ -82,6 +87,8 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const offered = useOffered(models);
+  const deployment = useDeployment(assistant.deployment);
+  const visitorKey = useVisitorKey(assistant.key);
   const [chosen, setChosen] = useState(storedConversation);
   const [nextPick, setNextPick] = useNextPick(assistant);
   const [drawer, setDrawer] = useState(false);
@@ -103,6 +110,17 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const runsHere = running !== undefined && running.conversation === open;
   const compacting = useCompacting(compaction, open);
 
+  // Where the deployment leaves the key to the visitor, the chat shows the
+  // field for the key unless the key is given, and sends nothing while it
+  // lacks a key.
+  const visitorAuthenticates = deployment?.credential.kind === "visitor";
+  const noKey = visitorAuthenticates && keyOf(visitorKey) === undefined;
+  const keyField = useMemo<KeyField | undefined>(
+    () =>
+      deployment !== undefined && visitorAuthenticates && visitorKey.kind !== "given" ? { state: visitorKey, host: new URL(deployment.baseUrl).host } : undefined,
+    [deployment, visitorAuthenticates, visitorKey],
+  );
+
   // Assistant-ui keeps what it converted of each item that the chat gives it
   // again, so a long conversation converts only what changed as a reply
   // streams (./messages.ts).
@@ -116,10 +134,10 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
   const send = useCallback(
     (text: string, files: readonly Attached[] = []): Promise<void> => {
-      if ((text.trim() === "" && files.length === 0) || turns.current() !== undefined) return Promise.resolve();
+      if ((text.trim() === "" && files.length === 0) || turns.current() !== undefined || noKey) return Promise.resolve();
       return sendMessage(assistant, open, text, files, nextPick, openConversation);
     },
-    [assistant, nextPick, open, openConversation, turns],
+    [assistant, nextPick, noKey, open, openConversation, turns],
   );
 
   const logError = useCallback(
@@ -165,7 +183,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     messages: shown,
     convertMessage: threadMessageOf,
     isRunning: runsHere,
-    isSendDisabled: running !== undefined,
+    isSendDisabled: running !== undefined || noKey,
     adapters: { attachments },
     onNew: async (message: AppendMessage) => {
       setFilesNote(undefined);
@@ -206,8 +224,11 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
         });
       },
       openFile: setFile,
+      giveKey: (key) => {
+        assistant.key.give(key);
+      },
     }),
-    [core, runtime, send, turns],
+    [assistant, core, runtime, send, turns],
   );
 
   const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(joinText).filter((text) => text !== ""), [messages]);
@@ -221,8 +242,10 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
       filesNote,
+      keyField,
+      noKey,
     }),
-    [all, compacting, filesNote, history, running, runsHere, waiting],
+    [all, compacting, filesNote, history, keyField, noKey, running, runsHere, waiting],
   );
 
   const closeFile = useCallback(() => {
@@ -270,6 +293,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
           >
             <div className="blockr-assistant-chat-main" inert={drawer}>
               <Transcript />
+              <KeyForm />
               <Composer />
               <Footer
                 usage={conversation?.usage}

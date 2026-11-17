@@ -736,6 +736,58 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   cursor: default;
   animation: blockr-assistant-pulse 1.2s ease-in-out infinite;
 }
+.blockr-assistant-key {
+  flex: 0 0 auto;
+  padding: 8px 12px 0;
+}
+.blockr-assistant-key-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--blockr-assistant-text-muted);
+}
+.blockr-assistant-key:is([data-asks=refused], [data-asks=lost]) .blockr-assistant-key-note {
+  color: var(--blockr-assistant-text-danger);
+}
+.blockr-assistant-key-field {
+  display: flex;
+  gap: 6px;
+}
+.blockr-assistant-key-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 30px;
+  margin: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--blockr-assistant-border);
+  border-radius: var(--blockr-assistant-radius-sm);
+  background: var(--blockr-assistant-bg-raised);
+  font: inherit;
+  font-size: 13px;
+  color: var(--blockr-assistant-text);
+}
+.blockr-assistant-key-field input[hidden] {
+  display: none;
+}
+.blockr-assistant-key-field input:focus {
+  outline: 2px solid var(--blockr-assistant-border-accent);
+  outline-offset: 1px;
+}
+.blockr-assistant-key-field input::placeholder {
+  color: var(--blockr-assistant-text-muted);
+  opacity: 1;
+}
+.blockr-assistant-key-field button {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 2px 12px;
+  border: 1px solid var(--blockr-assistant-border-accent);
+  border-radius: var(--blockr-assistant-radius-sm);
+  background: var(--blockr-assistant-bg-accent);
+  font: inherit;
+  font-size: 13px;
+  color: var(--blockr-assistant-text-on-accent);
+  cursor: pointer;
+}
 .blockr-assistant-footer {
   display: flex;
   flex: 0 0 auto;
@@ -1184,6 +1236,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   }
   .blockr-assistant-footer {
     padding: 0 8px 6px;
+  }
+  .blockr-assistant-key {
+    padding: 6px 8px 0;
   }
   .blockr-assistant-file-name {
     max-width: 120px;

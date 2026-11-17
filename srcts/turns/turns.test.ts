@@ -3,8 +3,9 @@
 // tokens in the state, the model that it talks to and its settings, the
 // system prompt and the message of the app's of each call, one turn at a
 // time, the tab's Web Lock, the reply as it streams, a stop, the error of a
-// failed call, the next board, and a conversation that another plugin
-// removes.
+// failed call, the next board, a conversation that another plugin removes,
+// and the visitor's own key, which the calls carry and of which a failed call
+// tells what it can.
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
 
@@ -16,9 +17,9 @@ import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { createConversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
-import type { Loop } from "../loop/index.ts";
+import type { Call, Loop } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
-import type { Offered } from "../models/index.ts";
+import type { Listed, Offered } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
 // The module of the assistant's class, which core imports as the page does.
@@ -27,6 +28,8 @@ import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
+import { createVisitorKey } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 import { createTurns } from "./turns.ts";
 import type { TurnsOptions } from "./turns.ts";
 import type { Locks } from "./lock.ts";
@@ -96,6 +99,11 @@ interface OpenOptions {
   readonly load?: () => Promise<Loop>;
   readonly tokensPerSecond?: number;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
+  // The visitor's own key, which holds none unless given.
+  readonly key?: VisitorKey;
+  // What the base URL's list says of each key that the turns check, which
+  // fails unless given.
+  readonly check?: (key: string) => Promise<Listed>;
   // The system prompt and the message of the app's, which are fixed texts
   // unless given.
   readonly prompt?: Prompt;
@@ -148,9 +156,13 @@ async function opened(options: OpenOptions = {}) {
     conversations,
     tools: options.tools ?? [],
     deployment,
-    models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"], named: true }) },
+    models: {
+      offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"], named: true }),
+      check: options.check ?? (() => Promise.resolve({ kind: "failed", message: "The list failed." })),
+    },
     settings: options.settings ?? { checked: () => Promise.resolve(new Map()) },
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
+    key: options.key ?? createVisitorKey(),
     prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
     compaction: options.compaction ?? { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     load: options.load ?? (() => Promise.resolve(loop)),
@@ -505,12 +517,12 @@ describe("a turn that fails", () => {
     expect(inState(core, "c2")?.messages.map((m) => m.id)).toEqual(["u2"]);
   });
 
-  test("raises the error assistant_call_failed where the deployment sets no key", async () => {
+  test("raises the error assistant_call_failed where the visitor authenticates and has given no key", async () => {
     const { core, turns, conversations } = await opened({ deployment: Promise.resolve(deployed({ kind: "visitor" })) });
 
     await turns.run("c1");
 
-    const why = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+    const why = "The assistant has no key for its calls, since the visitor has given none, and the app sets none in the blockr option assistant_api_key.";
     expect(raised(core)).toEqual([why]);
     expect(conversations.kept("c1", "u1")?.failure).toBe(why);
   });
@@ -613,6 +625,217 @@ describe("a turn that fails", () => {
     });
     await again.turns.run("c1");
     expect(raised(again.core)).toEqual([`The assistant's call to the model failed: ${OVERFLOW}`]);
+  });
+});
+
+// A loop whose one call fails with the failure given, as the request got back
+// what the answer given says, after it asks the connection for the call's
+// key. It writes no summary.
+function failing(failure: string, answer?: Call["answer"]): Loop {
+  return {
+    inCatalog: () => false,
+    contextWindow: () => 128_000,
+    callModel: () => Promise.reject(new Error("The test makes no model call of the plugin's own.")),
+    async run(turn) {
+      await turn.connection.apiKey();
+      await turn.on.called({ usage: { input: 0, output: 0, total: 0 }, failure, files: [], refused: false, ...(answer === undefined ? {} : { answer }) });
+    },
+  };
+}
+
+// The visitor's key, which holds the key given.
+function holding(key: string): VisitorKey {
+  const held = createVisitorKey();
+  held.give(key);
+  return held;
+}
+
+// The error of a call whose request got no answer that the page could read,
+// as pi words it.
+const UNREAD = "The assistant's call to the model failed: Connection error.: Failed to fetch";
+
+describe("a turn on the visitor's own key", () => {
+  const visitor = (): Promise<Deployment> => Promise.resolve(deployed({ kind: "visitor" }));
+
+  test("carries the key that the visitor holds as each call goes out", async () => {
+    const seen: { model: string; key: string | undefined }[] = [];
+    const key = holding("sk-first");
+    const replies: FauxResponseStep[] = [
+      (context, options, state, model) => {
+        seen.push({ model: model.id, key: options?.apiKey });
+        key.give("sk-second");
+        return fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "t1" })], { stopReason: "toolUse" });
+      },
+      recording(seen),
+    ];
+    const listed: Tool = {
+      name: "list_blocks",
+      description: "List the blocks.",
+      parameters: { type: "object", properties: {} },
+      executionMode: "parallel",
+      execute: () => Promise.resolve({ text: "[]", isError: false, images: [] }),
+    };
+    const { core, turns } = await opened({ deployment: visitor(), key, replies, tools: [listed] });
+
+    await turns.run("c1");
+
+    expect(seen.map((call) => call.key)).toEqual(["sk-first", "sk-second"]);
+    expect(raised(core)).toEqual([]);
+  });
+
+  test("drops the key where the base URL refused a call's key with an answer that the page read", async () => {
+    const key = holding("sk-wrong");
+    const checked: string[] = [];
+    const failure = '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}';
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key,
+      load: () => Promise.resolve(failing(failure, "refused")),
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "listed", models: [], settings: new Map() });
+      },
+    });
+
+    await turns.run("c1");
+
+    expect(key.current()).toEqual({ kind: "refused" });
+    expect(raised(core)).toEqual([`The assistant's call to the model failed: ${failure}`]);
+    expect(checked).toEqual([]);
+  });
+
+  test("checks the key against the base URL's list where a call got no answer that the page could read, and drops the key that the list refuses", async () => {
+    const key = holding("sk-wrong");
+    const checked: string[] = [];
+    const refusal = 'The base URL refused the assistant\'s key for its list of models at https://faux.invalid/v1/models: it answered 401, "Incorrect API key provided.".';
+    const { core, turns, conversations } = await opened({
+      deployment: visitor(),
+      key,
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "refused", message: refusal });
+      },
+    });
+
+    await turns.run("c1");
+
+    expect(checked).toEqual(["sk-wrong"]);
+    expect(key.current()).toEqual({ kind: "refused" });
+    expect(raised(core)).toEqual([`${UNREAD}. ${refusal}`]);
+    expect(conversations.kept("c1", "u1")?.failure).toBe(`${UNREAD}. ${refusal}`);
+  });
+
+  test("fails as any call where the list says that the base URL takes the key, which stays", async () => {
+    const key = holding("sk-visitor");
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key,
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+      check: () => Promise.resolve({ kind: "listed", models: ["gpt-5.4"], settings: new Map() }),
+    });
+
+    await turns.run("c1");
+
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    expect(raised(core)).toEqual([UNREAD]);
+  });
+
+  test("says that the connection was lost and the key may be wrong where the list fails as well, and keeps the key in doubt", async () => {
+    const key = holding("sk-visitor");
+    const { core, turns } = await opened({ deployment: visitor(), key, load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")) });
+
+    await turns.run("c1");
+
+    expect(key.current()).toEqual({ kind: "lost", key: "sk-visitor" });
+    expect(raised(core)).toEqual([`${UNREAD}. The connection was lost, and the key may be wrong.`]);
+  });
+
+  test("adds no full stop of its own to a call's failure that ends with one", async () => {
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key: holding("sk-visitor"),
+      load: () => Promise.resolve(failing("The proxy is down.", "unread")),
+    });
+
+    await turns.run("c1");
+
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: The proxy is down. The connection was lost, and the key may be wrong."]);
+  });
+
+  test("tells a key in doubt that the base URL took it, once a call succeeds", async () => {
+    const key = holding("sk-visitor");
+    key.lost("sk-visitor");
+    const { turns } = await opened({ deployment: visitor(), key });
+
+    await turns.run("c1");
+
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+  });
+
+  test("leaves the key as it is, and checks nothing, where a call fails otherwise", async () => {
+    const checked: string[] = [];
+    const key = holding("sk-visitor");
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key,
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "refused", message: "Refused." });
+      },
+      load: () => Promise.resolve(failing("429 Too Many Requests")),
+    });
+
+    await turns.run("c1");
+
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    expect(checked).toEqual([]);
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: 429 Too Many Requests"]);
+  });
+
+});
+
+describe("a turn on the deployment's key, or on none", () => {
+  test("checks the deployment's key as well, which changes only the error", async () => {
+    const refusal = 'The base URL refused the assistant\'s key for its list of models at https://faux.invalid/v1/models: it answered 401, "Incorrect API key provided.".';
+    const answers: Listed[] = [{ kind: "refused", message: refusal }, { kind: "failed", message: "The list failed." }];
+    const checked: string[] = [];
+    const key = holding("sk-visitor");
+    const { core, turns, conversations } = await opened({
+      key,
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve(answers.shift() ?? { kind: "listed", models: [], settings: new Map() });
+      },
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+    });
+
+    await turns.run("c1");
+    expect(raised(core)).toEqual([`${UNREAD}. ${refusal}`]);
+
+    await conversations.addMessage("c1", asked("u3", "Try again."));
+    await turns.run("c1");
+    expect(raised(core)).toEqual([`${UNREAD}. The connection was lost, and the key may be wrong.`]);
+
+    expect(checked).toEqual(["test-key", "test-key"]);
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+  });
+
+  test("checks nothing where the call carries no key, as for a base URL that needs none", async () => {
+    const checked: (string | undefined)[] = [];
+    const { core, turns } = await opened({
+      deployment: Promise.resolve(deployed({ kind: "none" })),
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "refused", message: "Refused." });
+      },
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+    });
+
+    await turns.run("c1");
+
+    expect(checked).toEqual([]);
+    expect(raised(core)).toEqual([UNREAD]);
   });
 });
 

@@ -315,6 +315,28 @@
   The conversation's later calls go without the file, and a later call of the
   conversation that succeeds withdraws the error.
 
+* Where the app sets no key in the blockr option `assistant_api_key`, the
+  chat asks each visitor for a key of their own, in a field above the message
+  field, and sends nothing until the visitor gives one (#236).
+  The plugin keeps the key in the page's memory, and writes it to neither the
+  board, R nor the browser's storage.
+  So another board that opens in the page keeps the key, and a reload asks
+  for it again.
+  The browser takes the field for a login, with the host of the base URL as
+  the user name, so that its password manager can save the key, where the
+  visitor lets it, and fill it in after a reload.
+  Where the app names no models, the assistant asks for the base URL's list
+  of models with the key as soon as the visitor gives it.
+  Where the base URL refuses the key, for a call or for its list, the
+  assistant raises the error `assistant_call_failed`, and the chat asks for a
+  key again.
+  OpenAI's refusal of a call's key reaches the page as a failed connection,
+  so the assistant then asks for the list of models with the same key, the
+  app's or the visitor's, which tells a refused key from a lost connection.
+  Where the list fails as well, the error says that the connection was lost
+  and that the key may be wrong, and the chat shows the field again, holding
+  the visitor's key.
+
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).
   The drawer opens over the chat, in the element that the frontend gives the

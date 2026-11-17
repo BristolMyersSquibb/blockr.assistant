@@ -47,11 +47,32 @@
 // error assistant_call_failed from start, so that it holds once the panel
 // closes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 // A turn cannot start where a blockr option of the deployment holds a value
-// that it does not take, or where the deployment sets no key. It fails before
-// its first call where a cap that the system prompt or the message of the
-// app's reads holds a value that it does not take. The turns withdraw the
-// error once a later call succeeds, and core withdraws it as the next board
-// opens.
+// that it does not take, or where the visitor authenticates and holds no key.
+// It fails before its first call where a cap that the system prompt or the
+// message of the app's reads holds a value that it does not take. The turns
+// withdraw the error once a later call succeeds, and core withdraws it as the
+// next board opens.
+//
+// A failed call that carried a key, the deployment's or the visitor's, says
+// what it can of the key
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated):
+// - Where the call's request got a 401 or a 403, the base URL refused the key.
+// - Where the call's request got no answer that the page could read, the
+//   turn has the models ask the base URL for its list of models with the same
+//   key. OpenAI's refusal of a call's key reaches a page that way, while its
+//   list's refusal reaches the page as a 401.
+//   - A list that the base URL refuses says that it refused the key, and the
+//     error adds why.
+//   - A list that the base URL gives says that the key works, and the call
+//     fails as any call does.
+//   - Where the list fails as well, the error says that the connection was
+//     lost and that the key may be wrong.
+// With the deployment's key, that changes only the error. With the visitor's
+// key, the turn also tells the key what the base URL said of it
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-credential):
+// a refused key goes, so that the chat asks for a key again, and a key that
+// may be wrong stays, while the chat asks for a key again, holding it. A call
+// that succeeds tells the visitor's key that the base URL took it.
 // A turn for which the deployment offers no model raises nothing of its own,
 // since the models raised why already.
 // The memory keeps the failure by the conversation's last message, so that
@@ -85,7 +106,8 @@ import type { CoreApi } from "@blockr/core";
 import { namesOf } from "../attachments/index.ts";
 import type { Conversations, KeptFile } from "../conversations/index.ts";
 import type { Compaction } from "../compaction/index.ts";
-import type { Answered, CarriedFile, Handlers, Streamed } from "../loop/index.ts";
+import type { Answered, Call, CarriedFile, Handlers, Streamed } from "../loop/index.ts";
+import type { Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
@@ -94,11 +116,14 @@ import type { Tool } from "../tools/index.ts";
 import { holdLock, pageLocks } from "./lock.ts";
 import type { Locks } from "./lock.ts";
 import { messageOf, prepareCall } from "./prepare.ts";
-import type { CallOptions } from "./prepare.ts";
+import type { CallOptions, Carried } from "./prepare.ts";
 
 export interface TurnsOptions extends CallOptions {
   readonly conversations: Conversations;
   readonly tools: readonly Tool[];
+  // The models that the deployment offers, which also ask the base URL for
+  // its list with a key, to tell whether the base URL takes the key.
+  readonly models: Pick<Models, "offered" | "check">;
   // The error assistant_call_failed, which the models raise as well, for a
   // list of models that the base URL refuses for its key.
   readonly callFailed: HeldError;
@@ -145,6 +170,9 @@ interface State {
   reply: Streamed | undefined;
   results: Readonly<Record<string, Answered>>;
   stopping: boolean;
+  // The key that the turn's last call carried, and whether it is the
+  // visitor's, where the call carried a key.
+  carried: Carried | undefined;
   // Why a call failed that outgrew the window, which the turn holds back
   // while it tries the call once more, and the files that the call carried
   // which no call carried with success before.
@@ -159,6 +187,8 @@ interface State {
 const STOP = new DOMException("The user stopped the turn.", "AbortError");
 const CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
 const GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
+
+const LOST = "The connection was lost, and the key may be wrong.";
 
 export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOptions): Turns {
   const { conversations, callFailed } = options;
@@ -213,15 +243,50 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     change(conversation, files, () => ({ refused: true }));
   }
 
-  // Withdraws the errors that a call's success withdraws, and marks the files
-  // that the call carried as taken.
-  function succeeded(conversation: ConversationId, files: readonly CarriedFile[]): void {
+  // Withdraws the errors that a call's success withdraws, marks the files
+  // that the call carried as taken, and tells the visitor's key that the base
+  // URL took it, where the call carried that key.
+  function succeeded(turn: State, files: readonly CarriedFile[]): void {
     callFailed.withdraw();
-    if (refusedIn === conversation) {
+    if (refusedIn === turn.conversation) {
       attachmentRefused.withdraw();
       refusedIn = undefined;
     }
-    change(conversation, files, taken);
+    change(turn.conversation, files, taken);
+    if (turn.carried?.visitor === true) options.key.took(turn.carried.key);
+  }
+
+  // Raises the error of a failed call, once the turn knows what the call says
+  // of its key, where the call carried one.
+  async function failed(turn: State, call: Call & { readonly failure: string }): Promise<void> {
+    const why = `The assistant's call to the model failed: ${call.failure}`;
+    const { carried } = turn;
+    if (carried === undefined || call.answer === undefined) {
+      fail(turn.conversation, why);
+      return;
+    }
+    const { key, visitor } = carried;
+    if (call.answer === "refused") {
+      fail(turn.conversation, why);
+      if (visitor) options.key.refused(key);
+      return;
+    }
+    const checked = await options.models.check(key);
+    if (closed()) return;
+    switch (checked.kind) {
+      case "refused":
+        fail(turn.conversation, `${sentence(why)} ${checked.message}`);
+        if (visitor) options.key.refused(key);
+        return;
+      case "listed":
+        fail(turn.conversation, why);
+        if (visitor) options.key.took(key);
+        return;
+      case "failed":
+        fail(turn.conversation, `${sentence(why)} ${LOST}`);
+        if (visitor) options.key.lost(key);
+        return;
+    }
   }
 
   // Changes the files given in the memory, by message. A message that the
@@ -272,16 +337,17 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         if (input > 0 || output > 0 || total > 0) {
           await write(() => conversations.addUsage(turn.conversation, input, output, total));
         }
-        if (call.failure !== undefined) {
+        const { failure } = call;
+        if (failure !== undefined) {
           if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
-            turn.overflow = call.failure;
+            turn.overflow = failure;
             turn.overflowed = call.files;
           } else if (writes && !closed()) {
-            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, call.failure);
-            else fail(turn.conversation, `The assistant's call to the model failed: ${call.failure}`);
+            if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, failure);
+            else await failed(turn, { ...call, failure });
           }
         } else if (!turn.controller.signal.aborted) {
-          succeeded(turn.conversation, call.files);
+          succeeded(turn, call.files);
         }
         changed();
       },
@@ -300,7 +366,14 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   async function runTurn(turn: State): Promise<void> {
     if (conversations.get(turn.conversation) === undefined) return;
 
-    const prepared = await prepareCall(options, () => conversations.get(turn.conversation)?.model ?? null, () => stopped(turn));
+    const prepared = await prepareCall(
+      options,
+      () => conversations.get(turn.conversation)?.model ?? null,
+      () => stopped(turn),
+      (carried) => {
+        turn.carried = carried;
+      },
+    );
     if (prepared.kind === "stopped") return;
     if (prepared.kind === "failed") {
       if (!prepared.raise) keep(turn.conversation, prepared.why);
@@ -349,7 +422,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       if (running !== undefined) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, overflow: undefined, overflowed: [], retried: false, controller: new AbortController() };
+      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, carried: undefined, overflow: undefined, overflowed: [], retried: false, controller: new AbortController() };
       const close = (): void => {
         turn.controller.abort(CLOSED);
       };
@@ -393,4 +466,11 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 // A file that a call carried with success, which the provider took.
 function taken(file: KeptFile): KeptFile {
   return "refused" in file || file.taken === true ? file : { ...file, taken: true };
+}
+
+// The text given, ending as a sentence ends, so that another sentence can
+// follow it: pi's message of a connection that failed, "Connection error.:
+// Failed to fetch", ends with no full stop.
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
 }

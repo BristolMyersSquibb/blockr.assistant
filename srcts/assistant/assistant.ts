@@ -14,8 +14,8 @@
 //
 // The turns call on the compaction before each call and after a call that
 // outgrew the window. The compaction prepares the calls of /compact as the
-// turns prepare theirs, on the same deployment, models, model settings and
-// loop (../compaction).
+// turns prepare theirs, on the same deployment, models, model settings,
+// visitor's key and loop (../compaction).
 //
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
@@ -29,6 +29,10 @@
 // take, each turn fails with the error assistant_call_failed, which says why.
 // The assistant also has R read the deployment's model settings as the board
 // opens, which the turns hand the loop (../model-settings).
+// Where the deployment leaves the key to the visitor, the models, the turns
+// and the compaction read the visitor's own key, which the page keeps across
+// boards, and which the chat asks for (../visitor-key).
+//
 // Once a conversation's first exchange that the model answered ends, the
 // assistant has a model call of its own title the conversation (../titles).
 
@@ -52,6 +56,8 @@ import { titleConversations } from "../titles/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
+import { pageKey } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 
 export interface Assistant {
   readonly conversations: Conversations;
@@ -59,6 +65,12 @@ export interface Assistant {
   readonly models: Models;
   readonly turns: Turns;
   readonly compaction: Compaction;
+  // What the deployment chose, which the chat reads to tell whether it asks
+  // the visitor for a key. It rejects where an option holds a value that it
+  // does not take.
+  readonly deployment: Promise<Deployment>;
+  // The visitor's own key.
+  readonly key: VisitorKey;
   // The signal that aborts as the next board opens, which ends the assistant.
   readonly signal: AbortSignal;
 }
@@ -74,6 +86,8 @@ export interface AssistantOptions {
   // How the assistant asks the base URL for its list of models, through the
   // page's fetch unless given.
   readonly fetch?: Fetch;
+  // The visitor's own key, the page's unless given.
+  readonly key?: VisitorKey;
 }
 
 const opened = new WeakMap<CoreApi, Assistant>();
@@ -94,10 +108,11 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   // The turns report why the options cannot be read, as each turn starts.
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
-  const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
+  const key = options.key ?? pageKey();
+  const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
-  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, load });
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -105,14 +120,15 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     models,
     settings,
     callFailed,
+    key,
     prompt,
     compaction,
     load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
-  titleConversations(core, signal, { conversations, turns, deployment, models, settings, load });
+  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
 
-  const assistant = { conversations, skills, models, turns, compaction, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

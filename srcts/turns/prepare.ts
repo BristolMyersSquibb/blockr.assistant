@@ -4,7 +4,8 @@
 // (../titles), so that all of them talk to the same model in the same way:
 // 1. The call goes to the deployment's base URL, in the API that the base URL
 //    speaks, with the deployment's key, or with no key where the key is
-//    "none" (../deployment).
+//    "none" (../deployment). Where the visitor authenticates, the call
+//    carries the key that the visitor holds as it goes out (../visitor-key).
 // 2. It talks to the model that the conversation picked, where the deployment
 //    offers it, and to the default otherwise, while the pick stays in the
 //    state, so that the conversation talks to its model again under a
@@ -21,14 +22,17 @@
 //    (../model-settings). Once the loop has loaded, which holds pi's catalogs,
 //    the model settings check that each like names a model of the catalogs.
 // No call can go out where a blockr option of the deployment holds a value
-// that it does not take, where the deployment sets no key, where the
-// deployment offers no model, or where the loop's code fails to load.
+// that it does not take, where the visitor authenticates and holds no key,
+// where the deployment offers no model, or where the loop's code fails to
+// load.
 
 import type { Deployment } from "../deployment/index.ts";
 import type { CallModel, Connection, Loop } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
 import { resolveModel } from "../models/index.ts";
 import type { Models } from "../models/index.ts";
+import { keyOf } from "../visitor-key/index.ts";
+import type { VisitorKey } from "../visitor-key/index.ts";
 
 // What preparing a call reads, which the assistant opens as the board opens.
 export interface CallOptions {
@@ -41,8 +45,17 @@ export interface CallOptions {
   // The settings that the deployment gives its models, in the file that the
   // blockr option assistant_model_settings names.
   readonly settings: Pick<ModelSettingsFile, "checked">;
+  // The visitor's own key, which the calls carry where the visitor
+  // authenticates.
+  readonly key: VisitorKey;
   // Loads the loop, which imports pi's bundle.
   readonly load: () => Promise<Loop>;
+}
+
+// A key that a call carried, and whether it is the visitor's.
+export interface Carried {
+  readonly key: string;
+  readonly visitor: boolean;
 }
 
 // A call that is prepared: the loop that makes it, and the model that it
@@ -60,22 +73,28 @@ export type Prepared =
   | { readonly kind: "failed"; readonly why: string; readonly raise: boolean }
   | { readonly kind: "stopped" };
 
-const NO_KEY = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+const NO_KEY = "The assistant has no key for its calls, since the visitor has given none, and the app sets none in the blockr option assistant_api_key.";
 const NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 
 const STOPPED: Prepared = { kind: "stopped" };
 
 // Prepares a call, given the conversation's pick of the model, which it reads
 // once the models offered are known, and whether to stop, which it asks after
-// each step that waits.
-export async function prepareCall(options: CallOptions, picked: () => string | null, stopped: () => boolean): Promise<Prepared> {
+// each step that waits. The call's connection hands carried(), where given,
+// each key that the call carries.
+export async function prepareCall(
+  options: CallOptions,
+  picked: () => string | null,
+  stopped: () => boolean,
+  carried: (key: Carried) => void = () => undefined,
+): Promise<Prepared> {
   let deployment: Deployment;
   try {
     deployment = await options.deployment;
   } catch (error) {
     return failed(`The assistant cannot call a model: ${messageOf(error)}`);
   }
-  if (deployment.credential.kind === "visitor") return failed(NO_KEY);
+  if (deployment.credential.kind === "visitor" && keyOf(options.key.current()) === undefined) return failed(NO_KEY);
 
   const offered = await options.models.offered();
   if (stopped()) return STOPPED;
@@ -95,7 +114,7 @@ export async function prepareCall(options: CallOptions, picked: () => string | n
   return {
     kind: "prepared",
     loop,
-    model: { connection: connectionOf(deployment), model, settings: settings.get(model), listed: offered.settings?.get(model) },
+    model: { connection: connectionOf(deployment, options.key, carried), model, settings: settings.get(model), listed: offered.settings?.get(model) },
   };
 }
 
@@ -103,12 +122,36 @@ function failed(why: string): Prepared {
   return { kind: "failed", why, raise: true };
 }
 
-// Where the calls go, and the key that each carries: the deployment's, or
-// none.
-function connectionOf(deployment: Deployment): Connection {
-  const { credential } = deployment;
-  const key = credential.kind === "deployment" ? credential.key : undefined;
-  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
+// Where the calls go, and the key that each carries: the deployment's, none,
+// or the key that the visitor holds as the call goes out. The connection
+// hands carried() each key that a call carries. A call for which the visitor
+// holds no key fails.
+function connectionOf(deployment: Deployment, visitor: VisitorKey, carried: (key: Carried) => void): Connection {
+  const { baseUrl, api, credential } = deployment;
+  switch (credential.kind) {
+    case "none":
+      return { baseUrl, api, apiKey: () => Promise.resolve(undefined) };
+    case "deployment":
+      return {
+        baseUrl,
+        api,
+        apiKey() {
+          carried({ key: credential.key, visitor: false });
+          return Promise.resolve(credential.key);
+        },
+      };
+    case "visitor":
+      return {
+        baseUrl,
+        api,
+        apiKey() {
+          const key = keyOf(visitor.current());
+          if (key === undefined) return Promise.reject(new Error(NO_KEY));
+          carried({ key, visitor: true });
+          return Promise.resolve(key);
+        },
+      };
+  }
 }
 
 export function messageOf(error: unknown): string {
