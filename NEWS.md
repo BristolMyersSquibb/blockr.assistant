@@ -239,6 +239,26 @@
   for it to open.
   The chat's stylesheet is `inst/js/assistant_plugin.css`.
 
+* Each call to the model sends the system prompt, then the conversation, and
+  then a message of the app's, which holds the board and what the user has on
+  screen as they are when the call goes out (#227).
+  So the system prompt stays the same while the board changes, and a
+  provider's prompt cache serves the tools, the system prompt and the
+  conversation so far.
+  On Anthropic's API, each call marks the end of the conversation for the
+  cache, rather than the message of the app's.
+  The system prompt holds the template, then the rules on the board and the
+  assistant's tools, and then the skills that name no class.
+  The template holds the sections `role`, `build` and `style`, which a
+  deployment's template keeps, moves or leaves out by their ids, while no
+  template changes the rules.
+  A deployment's template is the Markdown file that the blockr option
+  `assistant_template` names.
+  Where R cannot read it, or it names an id that is no section, the plugin
+  raises the error `assistant_template_failed` and uses its own template.
+  The help page of `new_assistant_plugin()` lists the parts of what a call
+  sends, and today's template, `inst/prompts/system-prompt.md`, goes.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

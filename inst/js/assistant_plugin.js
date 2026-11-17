@@ -705,6 +705,42 @@ function kindOf(sent2) {
 // srcts/loop/loop.ts
 import { context as context2 } from "@opentelemetry/api";
 
+// srcts/loop/cache.ts
+var LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+var MARKABLE = /* @__PURE__ */ new Set(["text", "image", "document", "tool_use", "tool_result"]);
+function markBeforeAppMessage(payload, text3) {
+  if (!isRecord(payload) || !Array.isArray(payload.messages)) return void 0;
+  const messages = payload.messages;
+  let at2 = messages.length - 1;
+  while (at2 >= 0 && !(isRecord(messages[at2]) && messages[at2].role === "user")) at2 -= 1;
+  const app = blocksOf(messages[at2]);
+  const marked = app?.length === 1 ? app[0] : void 0;
+  if (marked?.type !== "text" || marked.text !== text3.replace(LONE_SURROGATE, "") || marked.cache_control === void 0) {
+    return void 0;
+  }
+  for (let before = at2 - 1; before >= 0; before -= 1) {
+    const blocks = blocksOf(messages[before]);
+    if (blocks === void 0 || blocks.length === 0) continue;
+    const last = blocks.at(-1);
+    if (last === void 0 || !MARKABLE.has(last.type)) return void 0;
+    const { cache_control: mark, ...unmarked } = marked;
+    const moved = [...messages];
+    moved[before] = { ...messages[before], content: [...blocks.slice(0, -1), { ...last, cache_control: mark }] };
+    moved[at2] = { ...messages[at2], content: [unmarked] };
+    return { ...payload, messages: moved };
+  }
+  return void 0;
+}
+function blocksOf(message2) {
+  if (!isRecord(message2)) return void 0;
+  const { content } = message2;
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) && content.every(isRecord) ? content : void 0;
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // srcts/loop/messages.ts
 var ENDED = "The turn ended before this call returned.";
 var STOPPED = "The user stopped the turn before this call returned.";
@@ -718,12 +754,21 @@ var NO_USAGE = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
 };
-function callMessages(messages, kept, model2, tools, systemPrompt) {
-  return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model2)];
+function callMessages(messages, kept, model2, tools, systemPrompt2) {
+  return [systemMessage(systemPrompt2, tools), ...piMessages(messages, kept, model2)];
 }
 function systemMessage(prompt, tools) {
   const declared = tools.map((tool2) => ({ name: tool2.name, description: tool2.description, parameters: tool2.parameters }));
   return { role: "system", content: prompt, ...declared.length > 0 ? { toolsAdded: declared } : {}, timestamp: Date.now() };
+}
+function appMessage(written) {
+  return { role: "app", content: [text(written)], timestamp: Date.now() };
+}
+function llmMessages(messages) {
+  return messages.map((message2) => message2.role === "app" ? appAsUser(message2) : message2);
+}
+function appAsUser(message2) {
+  return { role: "user", content: message2.content, timestamp: message2.timestamp };
 }
 function piMessages(messages, kept, model2) {
   const out = [];
@@ -1019,21 +1064,28 @@ async function runAgent(pi, streams, turn, span) {
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
+  let added;
   const config = {
     model: model2,
     reasoning: "medium",
     identity: { attribution: null },
-    // The loop adds no messages of its own to pi's, so they go to the model
-    // as they are.
-    convertToLlm: (messages) => messages,
+    // Every message goes to the model as it is, but the message of the app's,
+    // which goes as a message of the role user.
+    convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
       const conversation2 = turn.messages();
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
-      return callMessages(transformed, kept, model2, turn.tools, prompt);
+      added = turn.appMessage === void 0 ? void 0 : await turn.appMessage();
+      const messages = callMessages(transformed, kept, model2, turn.tools, prompt);
+      return added === void 0 ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
     fetch: keyless,
-    ...turn.onPayload === void 0 ? {} : { onPayload: turn.onPayload }
+    onPayload: (payload) => {
+      const moved = model2.api === "anthropic-messages" && added !== void 0 ? markBeforeAppMessage(payload, added) : void 0;
+      if (turn.onPayload === void 0) return moved;
+      return turn.onPayload(moved ?? payload) ?? moved;
+    }
   };
   const emit = async (event) => {
     switch (event.type) {
@@ -1071,17 +1123,17 @@ async function runAgent(pi, streams, turn, span) {
     (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
   );
 }
-function modelOf(pi, id, connection, given2 = {}, listed2 = {}) {
+function modelOf(pi, id, connection, given2 = {}, listed3 = {}) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, given2.like ?? id);
   const base = known === void 0 ? {
     ...at2,
     name: id,
     reasoning: false,
-    input: inputOf(["text", "image"], listed2.images),
+    input: inputOf(["text", "image"], listed3.images),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: listed2.contextWindow ?? 128e3,
-    maxTokens: listed2.maxTokens ?? 16384
+    contextWindow: listed3.contextWindow ?? 128e3,
+    maxTokens: listed3.maxTokens ?? 16384
   } : { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
   return {
     ...base,
@@ -1374,7 +1426,7 @@ async function askList(deployment, key, fetch, signal) {
   let entries;
   try {
     const body = await response.json();
-    entries = isRecord(body) ? body.data : void 0;
+    entries = isRecord2(body) ? body.data : void 0;
   } catch (error) {
     return none(`the answer at ${url} is no list of models: ${messageOf(error)}`);
   }
@@ -1391,7 +1443,7 @@ function listedSettings(entries, models) {
   const wanted = new Set(models);
   const settings = /* @__PURE__ */ new Map();
   for (const entry of entries) {
-    if (!isRecord(entry) || typeof entry.id !== "string" || !wanted.has(entry.id)) continue;
+    if (!isRecord2(entry) || typeof entry.id !== "string" || !wanted.has(entry.id)) continue;
     wanted.delete(entry.id);
     const given2 = settingsOf2(entry);
     if (Object.keys(given2).length > 0) settings.set(entry.id, given2);
@@ -1409,7 +1461,7 @@ function settingsOf2(entry) {
   };
 }
 function fieldOf(value, name) {
-  return isRecord(value) ? value[name] : void 0;
+  return isRecord2(value) ? value[name] : void 0;
 }
 function tokensOf(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
@@ -1423,7 +1475,7 @@ function flagOf(value) {
 function toolModels(entries, api2) {
   const kept = /* @__PURE__ */ new Set();
   for (const entry of entries) {
-    if (isRecord(entry) && typeof entry.id === "string" && entry.id !== "" && takesTools(entry, entry.id, api2)) kept.add(entry.id);
+    if (isRecord2(entry) && typeof entry.id === "string" && entry.id !== "" && takesTools(entry, entry.id, api2)) kept.add(entry.id);
   }
   return [...kept];
 }
@@ -1455,13 +1507,13 @@ async function answerOf(response) {
   let message2;
   try {
     const body = await response.json();
-    message2 = isRecord(body) && isRecord(body.error) ? body.error.message : void 0;
+    message2 = isRecord2(body) && isRecord2(body.error) ? body.error.message : void 0;
   } catch {
     message2 = void 0;
   }
   return typeof message2 === "string" && message2 !== "" ? `${String(response.status)}, "${message2}"` : String(response.status);
 }
-function isRecord(value) {
+function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function messageOf(error) {
@@ -1483,21 +1535,21 @@ function createModels(core, signal, options) {
     if (deployment.models !== void 0) return { offered: { models: deployment.models }, again: false };
     const { credential } = deployment;
     if (credential.kind === "visitor") return NONE2;
-    const listed2 = await askList(deployment, credential.kind === "deployment" ? credential.key : void 0, fetch, signal);
+    const listed3 = await askList(deployment, credential.kind === "deployment" ? credential.key : void 0, fetch, signal);
     if (signal.aborted) return NONE2;
-    switch (listed2.kind) {
+    switch (listed3.kind) {
       case "listed": {
         modelsFailed.withdraw();
-        const { models, settings } = listed2;
+        const { models, settings } = listed3;
         return { offered: { models, ...settings.size === 0 ? {} : { settings } }, again: false };
       }
       case "refused":
         modelsFailed.withdraw();
-        options.callFailed.raise(listed2.message);
-        return { offered: { models: [], failure: listed2.message }, again: true };
+        options.callFailed.raise(listed3.message);
+        return { offered: { models: [], failure: listed3.message }, again: true };
       case "failed":
-        modelsFailed.raise(listed2.message);
-        return { offered: { models: [], failure: listed2.message }, again: true };
+        modelsFailed.raise(listed3.message);
+        return { offered: { models: [], failure: listed3.message }, again: true };
     }
   }
   let last = ask();
@@ -1509,53 +1561,79 @@ function createModels(core, signal, options) {
   };
 }
 
-// srcts/skills/skills.ts
-function createSkills(core, signal) {
-  const listed2 = listSkills(core, signal);
-  return { list: () => listed2 };
+// srcts/tools/caps.ts
+var DEFAULTS = {
+  // What describe_block and describe_stack give, and what describe_result()
+  // writes, which R cuts.
+  assistant_summary_max_chars: 2e3,
+  // What get_block_state and get_plugin_state give.
+  assistant_state_max_chars: 2e4,
+  // A value of the state that describe_block gives.
+  assistant_state_value_max_chars: 128,
+  // A description in a list: of a block class, a command or a plugin.
+  assistant_description_max_chars: 1e3,
+  // The description of a skill, in the list of the skills that name a class
+  // and in the Skills section of the system prompt.
+  assistant_skill_description_max_chars: 1024,
+  // Each part of the Board section, which the message of the app's holds.
+  assistant_board_section_max_chars: 1500,
+  // What the model's own R code prints, which R cuts, and the warnings and
+  // messages of R's reply to a tool's request.
+  assistant_eval_max_chars: 16e3,
+  // The blocks that the review of an edit covers.
+  assistant_review_max_blocks: 50
+};
+async function readToolCap(core, name) {
+  const sent2 = await core.blockrOption(name);
+  if (sent2 === void 0) return DEFAULTS[name];
+  const value = sentNumber(sent2);
+  if (Number.isInteger(value) && value >= 0) return value;
+  throw new RangeError(`The blockr option ${name} is ${JSON.stringify(sent2)}, where it takes a whole number of 0 or more.`);
 }
-async function listSkills(core, signal) {
-  try {
-    const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
-    return skillsOf(answer);
-  } catch (error) {
-    if (signal.aborted) return [];
-    core.notifications.notify(ASSISTANT, {
-      severity: "error",
-      code: "assistant_skills_failed",
-      message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
-    });
-    return [];
+
+// srcts/tools/cut.ts
+function cutText(text3, max, hint) {
+  const chars = Array.from(text3);
+  if (chars.length <= max) return text3;
+  const marker = (lost) => `
+... [+${String(lost)} chars truncated${hint === void 0 ? "" : ` -- ${hint}`}]`;
+  const keep2 = Math.max(0, max - Array.from(marker(chars.length)).length);
+  return chars.slice(0, keep2).join("") + marker(chars.length - keep2);
+}
+function leaveOutLong(value, max, hint) {
+  if (typeof value === "string") {
+    return Array.from(JSON.stringify(value)).length > max ? `[${String(Array.from(value).length)} chars omitted -- ${hint}]` : value;
   }
-}
-function skillsOf(reply) {
-  if (!Array.isArray(reply)) throw new TypeError("R's reply to list_skills is not a list of skills.");
-  return reply.map((entry) => {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new TypeError(`R's reply to list_skills holds ${JSON.stringify(entry)}, where it holds a skill.`);
-    }
-    const fields = entry;
-    return {
-      name: one2(fields, "name"),
-      description: one2(fields, "description"),
-      blocks: answeredTexts(fields.blocks, "list_skills"),
-      plugins: answeredTexts(fields.plugins, "list_skills"),
-      userInvocable: flag2(fields, "user-invocable"),
-      modelInvocable: !flag2(fields, "disable-model-invocation")
-    };
-  });
-}
-function one2(fields, name) {
-  const [value, ...rest] = answeredTexts(fields[name], "list_skills");
-  if (value === void 0 || rest.length > 0) {
-    throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(fields[name] ?? null)}, where it gives one string.`);
+  if (Array.isArray(value)) return value.map((item) => leaveOutLong(item, max, hint));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, leaveOutLong(item, max, hint)]));
   }
   return value;
 }
-function flag2(fields, name) {
-  const value = fields[name];
-  if (Array.isArray(value) && value.length === 1 && typeof value[0] === "boolean") return value[0];
-  throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
+function bounded(value, max) {
+  let budget = max;
+  const spend = (text3) => {
+    const kept = cutText(text3, Math.max(0, budget));
+    budget -= Array.from(kept).length;
+    return kept;
+  };
+  const walk = (item) => {
+    if (typeof item === "string") return spend(item);
+    if (Array.isArray(item)) return item.map(walk);
+    if (item !== null && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, walk(inner)]));
+    }
+    const text3 = JSON.stringify(item);
+    if (text3.length <= budget) {
+      budget -= text3.length;
+      return item;
+    }
+    return spend(text3);
+  };
+  return walk(value);
+}
+function skillBlurb(name, description, max) {
+  return cutText(description.replace(/\s+/g, " ").trim(), max, `call read_skill("${name}") for the rest`);
 }
 
 // srcts/tools/edit.ts
@@ -1768,85 +1846,13 @@ var assistantCommands = [
   })
 ];
 
-// srcts/tools/caps.ts
-var DEFAULTS = {
-  // What describe_block and describe_stack give, and what describe_result()
-  // writes, which R cuts.
-  assistant_summary_max_chars: 2e3,
-  // What get_block_state and get_plugin_state give.
-  assistant_state_max_chars: 2e4,
-  // A value of the state that describe_block gives.
-  assistant_state_value_max_chars: 128,
-  // A description in a list: of a block class, a command or a plugin.
-  assistant_description_max_chars: 1e3,
-  // The description of a skill that names a class.
-  assistant_skill_description_max_chars: 1024,
-  // What the model's own R code prints, which R cuts, and the warnings and
-  // messages of R's reply to a tool's request.
-  assistant_eval_max_chars: 16e3,
-  // The blocks that the review of an edit covers.
-  assistant_review_max_blocks: 50
-};
-async function readToolCap(core, name) {
-  const sent2 = await core.blockrOption(name);
-  if (sent2 === void 0) return DEFAULTS[name];
-  const value = sentNumber(sent2);
-  if (Number.isInteger(value) && value >= 0) return value;
-  throw new RangeError(`The blockr option ${name} is ${JSON.stringify(sent2)}, where it takes a whole number of 0 or more.`);
-}
-
-// srcts/tools/cut.ts
-function cutText(text3, max, hint) {
-  const chars = Array.from(text3);
-  if (chars.length <= max) return text3;
-  const marker = (lost) => `
-... [+${String(lost)} chars truncated${hint === void 0 ? "" : ` -- ${hint}`}]`;
-  const keep2 = Math.max(0, max - Array.from(marker(chars.length)).length);
-  return chars.slice(0, keep2).join("") + marker(chars.length - keep2);
-}
-function leaveOutLong(value, max, hint) {
-  if (typeof value === "string") {
-    return Array.from(JSON.stringify(value)).length > max ? `[${String(Array.from(value).length)} chars omitted -- ${hint}]` : value;
-  }
-  if (Array.isArray(value)) return value.map((item) => leaveOutLong(item, max, hint));
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, leaveOutLong(item, max, hint)]));
-  }
-  return value;
-}
-function bounded(value, max) {
-  let budget = max;
-  const spend = (text3) => {
-    const kept = cutText(text3, Math.max(0, budget));
-    budget -= Array.from(kept).length;
-    return kept;
-  };
-  const walk = (item) => {
-    if (typeof item === "string") return spend(item);
-    if (Array.isArray(item)) return item.map(walk);
-    if (item !== null && typeof item === "object") {
-      return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, walk(inner)]));
-    }
-    const text3 = JSON.stringify(item);
-    if (text3.length <= budget) {
-      budget -= text3.length;
-      return item;
-    }
-    return spend(text3);
-  };
-  return walk(value);
-}
-function skillBlurb(name, description, max) {
-  return cutText(description.replace(/\s+/g, " ").trim(), max, `call read_skill("${name}") for the rest`);
-}
-
 // srcts/tools/context.ts
 function own(record, key) {
   return Object.hasOwn(record, key) ? record[key] : void 0;
 }
 async function skillsNaming(context6, kind, id) {
-  const [listed2, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
-  return listed2.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
+  const [listed3, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
+  return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
 }
 
 // srcts/tools/changes.ts
@@ -1971,10 +1977,10 @@ async function toolRequest(core, name, args, opts = {}) {
 async function withConditions(core, text3, conditions) {
   const lines = conditions.filter(isWarningOrMessage).map(({ severity, message: message2 }) => `${severity === "warning" ? "Warning" : "Message"}: ${message2}`);
   if (lines.length === 0) return text3;
-  const listed2 = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
-  return text3 === "" ? listed2 : `${text3}
+  const listed3 = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
+  return text3 === "" ? listed3 : `${text3}
 
-${listed2}`;
+${listed3}`;
 }
 function isWarningOrMessage(condition) {
   return condition.severity !== "error";
@@ -2577,14 +2583,14 @@ function optionTools({ core }) {
         json(
           Object.values(core.options.registered()).map((option) => {
             const value = core.options.value(option.id);
-            const listed2 = {
+            const listed3 = {
               id: option.id,
               label: option.label,
               category: option.category,
               schema: option.schema,
               ...value === void 0 ? {} : { value }
             };
-            return listed2;
+            return listed3;
           })
         )
       )
@@ -2663,7 +2669,7 @@ function skillTools({ core, skills }) {
       ),
       run: async ({ name, file }, signal) => {
         const active = context5.active();
-        const skill = (await skills.list()).find((listed2) => listed2.name === name);
+        const skill = (await skills.list()).find((listed3) => listed3.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given2 = { name, packages: appPackages(core), ...file === void 0 ? {} : { path: file } };
         const { answer, conditions } = await context5.with(active, () => toolRequest(core, "read_skill", given2, { signal }));
@@ -2744,6 +2750,290 @@ function readTools(core, skills) {
     ...resultTools(context6),
     ...skillTools(context6)
   ];
+}
+
+// srcts/prompt/app-preamble.md
+var app_preamble_default = "This message comes from the app, not from the user.\nIt shows the board, and what the user has on screen, as they are when this call goes out.\n";
+
+// srcts/prompt/dock.ts
+var DOCK = "blockr.dock-dock_plugin";
+function dockViews(core) {
+  if (!Object.hasOwn(core.plugins.appPlugins(), DOCK) || core.plugins.pluginClass(DOCK).frontend === void 0) return void 0;
+  const plugins2 = core.store.board().plugins;
+  return Object.hasOwn(plugins2, DOCK) ? viewsOf(plugins2[DOCK]) : void 0;
+}
+function viewsOf(state) {
+  if (!isRecord3(state) || !isRecord3(state.views)) return void 0;
+  const views = [];
+  for (const [id, view] of Object.entries(state.views)) {
+    if (!isRecord3(view) || typeof view.name !== "string") return void 0;
+    const panels = panelsOf(view.grid);
+    if (panels === void 0) return void 0;
+    views.push({ id, name: view.name, panels });
+  }
+  return { views, active: views.find((view) => view.id === state.active) ?? null };
+}
+function panelsOf(grid) {
+  if (!isRecord3(grid)) return void 0;
+  const panels = [];
+  const take = (panel) => {
+    if (!isRecord3(panel)) return false;
+    const id = typeof panel.block === "string" ? panel.block : panel.plugin;
+    if (typeof id !== "string") return false;
+    panels.push(id);
+    return true;
+  };
+  const walk = (node) => {
+    if (!isRecord3(node)) return false;
+    if (Array.isArray(node.panels)) return node.panels.every(take);
+    if (Array.isArray(node.children)) return node.children.every(walk);
+    return false;
+  };
+  if (!walk(grid)) return void 0;
+  const { rails } = grid;
+  if (rails === void 0) return panels;
+  if (!isRecord3(rails)) return void 0;
+  for (const side of ["left", "right"]) {
+    const rail = rails[side];
+    if (rail !== void 0 && !walk(rail)) return void 0;
+  }
+  return panels;
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// srcts/prompt/board.ts
+var NO_RESULT = /* @__PURE__ */ new Set(["waiting", "invalid", "failed", "unevaluated", "stale"]);
+var ICONS = { error: "\u2716", warning: "\u26A0", message: "\u2139" };
+function boardSection(core, max) {
+  const board = core.store.board();
+  const blocks = Object.entries(board.blocks);
+  const links = Object.entries(board.links);
+  const stacks = Object.entries(board.stacks);
+  const counts = `${String(blocks.length)} block(s), ${String(links.length)} link(s), ${String(stacks.length)} stack(s).`;
+  const part = (heading, lines, tool2) => lines.length === 0 ? [] : [cutText([`### ${heading}`, ...lines].join("\n"), max, `call ${tool2} for the full list`)];
+  const parts = blocks.length + links.length + stacks.length === 0 ? [`${counts} (empty board -- no blocks yet)`] : [
+    counts,
+    "",
+    ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${listedAfter(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
+    ...part("Links", links.map(([id, { from, to, input }]) => `- ${id}: ${from} -> ${to}${input === "" ? "" : `$${input}`}`), "list_links"),
+    ...part("Stacks", stacks.map(([id, { name, blocks: held }]) => `- ${id} "${name}"${held.length === 0 ? "" : `: ${held.join(", ")}`}`), "list_stacks"),
+    ...optionPart(core, Object.keys(board.options), part)
+  ];
+  return ["## Board", ...parts, ...part("Plugins", pluginLines(core), "list_plugins"), ...part("Views", viewLines(core), `get_plugin_state("${DOCK}")`)].join("\n");
+}
+function listedAfter(names) {
+  return names.length === 0 ? "" : ` ${names.join(", ")}`;
+}
+function withMarkers(line, status) {
+  if (status === void 0) return line;
+  const counts = ["error", "warning", "message"].flatMap((severity) => {
+    const count = status.conditions.filter((condition) => condition.severity === severity).length;
+    return count === 0 ? [] : [`${ICONS[severity]} ${String(count)} ${severity}${count === 1 ? "" : "s"}`];
+  });
+  const markers = [...NO_RESULT.has(status.status) ? [`[${status.status}]`] : [], ...counts.length === 0 ? [] : [`[${counts.join(", ")}]`]];
+  return markers.length === 0 ? line : `${line} ${markers.join(" ")}`;
+}
+function optionPart(core, ids, part) {
+  if (ids.length === 0) return [];
+  const registered = core.options.registered();
+  const lines = ids.map((id) => {
+    const category = Object.hasOwn(registered, id) ? registered[id]?.category : void 0;
+    return category === void 0 ? `- ${id}` : `- ${id} (${category})`;
+  });
+  return part("Options", [...lines, "Current values via list_board_options; change with blockr.core-set_option."], "list_board_options");
+}
+function pluginLines(core) {
+  return Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT).flatMap(([id, { name }]) => {
+    const described = core.plugins.pluginClass(id).state?.schema.description;
+    const line = `- ${name} (id: ${id})`;
+    return typeof described === "string" && described.trim() !== "" ? [line, `  ${described.replace(/\s+/g, " ").trim()}`] : [line];
+  });
+}
+function viewLines(core) {
+  const views = dockViews(core);
+  if (views === void 0 || views.views.length <= 1) return [];
+  return views.views.map(({ id, name, panels }) => {
+    const active = views.active?.id === id ? " (active)" : "";
+    return `- ${name} (id: ${id})${active} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`;
+  });
+}
+
+// srcts/prompt/focus-preamble.md
+var focus_preamble_default = 'What the user is looking at on the board.\nA request that names no block -- "this plot", "add a filter here" -- is most likely about the block they last clicked, and otherwise about a block in the current view.\nA click can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n';
+
+// srcts/prompt/focus.ts
+function focusSection(core) {
+  const { blocks } = core.store.board();
+  const lines = [];
+  const active = dockViews(core)?.active;
+  if (active !== void 0 && active !== null) lines.push(`The active view is ${active.name} (id: ${active.id}).`);
+  const shown3 = core.onScreen.get();
+  if (shown3 !== null) {
+    const held = Object.keys(blocks);
+    const seen = [...new Set(shown3.blocks)].filter((id) => Object.hasOwn(blocks, id));
+    if (held.length > 0 && seen.length === 0) lines.push("No block is on screen.");
+    else if (held.length > 0 && seen.length === held.length) lines.push("Every block on the board is on screen.");
+    else if (seen.length > 0) lines.push("These blocks are on screen:", ...seen.map((id) => `- ${id}`));
+    const plugins2 = core.plugins.appPlugins();
+    const named = [...new Set(shown3.plugins)].flatMap((id) => {
+      const plugin = id === ASSISTANT || !Object.hasOwn(plugins2, id) ? void 0 : plugins2[id];
+      return plugin === void 0 ? [] : [`- ${plugin.name} (id: ${id})`];
+    });
+    if (named.length > 0) lines.push("These plugins are on screen:", ...named);
+  }
+  const focused = core.focus.get();
+  if (focused !== null && Object.hasOwn(blocks, focused)) lines.push(`Block ${focused} has focus.`);
+  return lines.length === 0 ? void 0 : ["## Focus", focus_preamble_default.trim(), "", ...lines].join("\n");
+}
+
+// srcts/prompt/rules.md
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a missing data input or a block upstream that has no result.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded.\nA result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n\nSo never guess at what a summary leaves out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that a summary does not show, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+
+// srcts/prompt/skills-preamble.md
+var skills_preamble_default = "Guidance authored for this deployment, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
+
+// srcts/prompt/skills.ts
+function skillsSection(skills, max) {
+  const listed3 = skills.filter((skill) => skill.modelInvocable && skill.blocks.length === 0 && skill.plugins.length === 0);
+  if (listed3.length === 0) return void 0;
+  return ["## Skills", skills_preamble_default.trim(), "", ...listed3.map((skill) => `- \`${skill.name}\`: ${skillBlurb(skill.name, skill.description, max)}`)].join("\n");
+}
+
+// srcts/prompt/prompt.ts
+function createPrompt(core, options) {
+  let written;
+  return {
+    system: () => written ??= systemPrompt(core, options),
+    appMessage: () => appMessage2(core)
+  };
+}
+async function systemPrompt(core, { skills, template }) {
+  const [text3, listed3, max] = await Promise.all([template.text(), skills.list(), readToolCap(core, "assistant_skill_description_max_chars")]);
+  const catalogue = skillsSection(listed3, max);
+  return [text3, rules_default.trim(), ...catalogue === void 0 ? [] : [catalogue]].join("\n\n");
+}
+async function appMessage2(core) {
+  const max = await readToolCap(core, "assistant_board_section_max_chars");
+  const focus = focusSection(core);
+  return [app_preamble_default.trim(), boardSection(core, max), ...focus === void 0 ? [] : [focus]].join("\n\n");
+}
+
+// srcts/prompt/build.md
+var build_default = `## Build, don't ask
+
+The user is assembling an analysis board.
+When they express an analytical intent, such as "show me X", "compare A and B" or "what is driving Y?", BUILD it: add the blocks and links that answer it, so that the user sees a result, not a plan.
+
+Where a low-level choice is left open, such as which column, grouping or comparison, pick the obvious default from what the data actually holds.
+Then state in one line what you built and the defaults you chose, so that the user can redirect.
+The board is editable, so a reasonable guess that the user can tweak beats a clarifying question.
+
+Do NOT describe what you would do and stop, and do NOT end a turn having only inspected data.
+Ask only about genuine high-level ambiguity, where you cannot tell what analysis is wanted and any build would likely be the wrong one.
+A detail that you can default is not that, but a board with no data at all is.
+`;
+
+// srcts/prompt/role.md
+var role_default = "You are an assistant embedded next to a blockr data analysis board.\n";
+
+// srcts/prompt/style.md
+var style_default = "Answer concisely.\n";
+
+// srcts/prompt/template.md
+var template_default = "<<role>>\n\n<<build>>\n\n<<style>>\n";
+
+// srcts/prompt/template.ts
+var SECTIONS = /* @__PURE__ */ new Map([
+  ["role", role_default],
+  ["build", build_default],
+  ["style", style_default]
+]);
+var TEMPLATE = template_default;
+var NAMED = /<<([A-Za-z0-9_-]+)>>/g;
+var WRITTEN = /* @__PURE__ */ new Set(["skills", "board", "focus"]);
+function createTemplate(core, signal) {
+  const read = readTemplate(core, signal);
+  return { text: () => read };
+}
+function fillTemplate(given2) {
+  const unknown = [...new Set(Array.from(given2.matchAll(NAMED), ([, id]) => id ?? ""))].filter((id) => !SECTIONS.has(id));
+  if (unknown.length > 0) throw new Error(unknownSections(unknown));
+  return given2.replace(NAMED, (_, id) => (SECTIONS.get(id) ?? "").trim()).trim();
+}
+async function readTemplate(core, signal) {
+  const own2 = fillTemplate(TEMPLATE);
+  try {
+    const { answer } = await sendUntilReplied(core, "read_template", {}, { signal });
+    return answer === null ? own2 : fillTemplate(answeredText(answer, "read_template"));
+  } catch (error) {
+    if (signal.aborted) return own2;
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_template_failed",
+      message: `The assistant uses its own template: ${failureMessage(error)}`
+    });
+    return own2;
+  }
+}
+function unknownSections(ids) {
+  const named = listed(ids.map((id) => `<<${id}>>`));
+  const which = ids.length === 1 ? "an id that is no section" : "ids that are no sections";
+  const written = ids.some((id) => WRITTEN.has(id)) ? " The plugin adds the skills, the board and the focus itself, whatever the template holds." : "";
+  return `The template that the blockr option assistant_template names puts in ${named}, ${which} of blockr.assistant's template, whose sections are ${listed([...SECTIONS.keys()])}.${written}`;
+}
+function listed(words) {
+  return words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
+}
+
+// srcts/skills/skills.ts
+function createSkills(core, signal) {
+  const listed3 = listSkills(core, signal);
+  return { list: () => listed3 };
+}
+async function listSkills(core, signal) {
+  try {
+    const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
+    return skillsOf(answer);
+  } catch (error) {
+    if (signal.aborted) return [];
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_skills_failed",
+      message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
+    });
+    return [];
+  }
+}
+function skillsOf(reply) {
+  if (!Array.isArray(reply)) throw new TypeError("R's reply to list_skills is not a list of skills.");
+  return reply.map((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError(`R's reply to list_skills holds ${JSON.stringify(entry)}, where it holds a skill.`);
+    }
+    const fields = entry;
+    return {
+      name: one2(fields, "name"),
+      description: one2(fields, "description"),
+      blocks: answeredTexts(fields.blocks, "list_skills"),
+      plugins: answeredTexts(fields.plugins, "list_skills"),
+      userInvocable: flag2(fields, "user-invocable"),
+      modelInvocable: !flag2(fields, "disable-model-invocation")
+    };
+  });
+}
+function one2(fields, name) {
+  const [value, ...rest] = answeredTexts(fields[name], "list_skills");
+  if (value === void 0 || rest.length > 0) {
+    throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(fields[name] ?? null)}, where it gives one string.`);
+  }
+  return value;
+}
+function flag2(fields, name) {
+  const value = fields[name];
+  if (Array.isArray(value) && value.length === 1 && typeof value[0] === "boolean") return value[0];
+  throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
 }
 
 // srcts/turns/lock.ts
@@ -2868,6 +3158,14 @@ function createTurns(core, signal, options) {
       keep2(turn.conversation, offered.failure ?? NO_MODEL);
       return;
     }
+    let systemPrompt2;
+    try {
+      systemPrompt2 = await options.prompt.system();
+    } catch (error) {
+      if (!closed2()) fail(turn.conversation, `The assistant cannot write its system prompt: ${messageOf2(error)}`);
+      return;
+    }
+    if (stopped(turn)) return;
     let loop;
     try {
       loop = await options.load();
@@ -2886,6 +3184,8 @@ function createTurns(core, signal, options) {
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message2) => conversations.kept(turn.conversation, message2),
+      systemPrompt: systemPrompt2,
+      appMessage: () => options.prompt.appMessage(),
       signal: turn.controller.signal,
       on: handlers(turn)
     });
@@ -2950,6 +3250,7 @@ function openAssistant(core, signal, options = {}) {
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
+  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
   const deployment = options.deployment ?? readDeployment(core);
   deployment.catch(() => void 0);
   const callFailed = heldError(core, signal, "assistant_call_failed");
@@ -2962,6 +3263,7 @@ function openAssistant(core, signal, options = {}) {
     models,
     settings,
     callFailed,
+    prompt,
     load: options.load ?? loadLoop,
     ..."locks" in options ? { locks: options.locks } : {}
   });
@@ -3488,7 +3790,7 @@ function isShownResult(value) {
 
 // srcts/chat/edit.ts
 function editView(args, text3, error, registered, board) {
-  const commands = listed(args).map((id) => labelOf(id, registered));
+  const commands = listed2(args).map((id) => labelOf(id, registered));
   const result = parsed(text3);
   if (result === void 0) return { commands, blocks: [], refused: void 0 };
   if (result.applied === false && error) {
@@ -3504,7 +3806,7 @@ function editView(args, text3, error, registered, board) {
   const removed = strings(object2(result.removed).blocks).filter((id) => !reviewed2.has(id)).map((id) => ({ id, name: id, status: void 0, removed: true }));
   return { commands, blocks: [...blocks, ...removed], refused: void 0 };
 }
-function listed(args) {
+function listed2(args) {
   const commands = object2(args).commands;
   if (!Array.isArray(commands)) return [];
   return commands.flatMap((entry) => {

@@ -282,7 +282,7 @@ describe("the assistant's chat", () => {
 
     type(el, "How many blocks?");
     press(field(el), "Enter");
-    await until(() => el.querySelector(".blockr-assistant-reply") !== null, "the reply");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
     expect((core.store.board().plugins[ASSISTANT] as AssistantState).conversations).toEqual({});
     expect(Object.values(assistant.conversations.all())[0]?.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
