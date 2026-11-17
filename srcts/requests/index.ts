@@ -10,5 +10,6 @@ export {
   isRequestError,
   isSessionEnded,
   sendRequest,
+  sendUntilReplied,
 } from "./requests.ts";
 export type { Reply } from "./requests.ts";

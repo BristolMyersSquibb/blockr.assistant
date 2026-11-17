@@ -83,14 +83,66 @@
 #' A conversation talks to its pick of the model where the deployment offers
 #' it, and to the default otherwise.
 #'
-#' The library pi, which runs the assistant's turns, knows the settings of
-#' OpenAI's and Anthropic's models.
-#' Any other model, such as one that a company's own proxy names, does not
-#' reason, takes images, has a context window of 128,000 tokens and takes up
-#' to 16,384 tokens for a reply.
+#' @section Model settings:
+#' A model's settings say whether it reasons, whether it takes images, how
+#' many tokens its context window holds, and how many tokens each call asks
+#' for the reply.
+#' The assistant takes each setting of a model from the first of these that
+#' gives it:
+#'
+#' 1. The YAML file that the blockr option `assistant_model_settings` names,
+#'    such as through the environment variable
+#'    `BLOCKR_ASSISTANT_MODEL_SETTINGS`.
+#' 2. The catalogs of OpenAI's and Anthropic's models of pi, the library that
+#'    runs the assistant's turns.
+#'    The assistant takes the catalogs' model that the file names in `like`,
+#'    or else their model of the same id.
+#' 3. The base URL's list of models, where the assistant offers the models of
+#'    the list.
+#'    OpenRouter's, Vercel's and Anthropic's lists give each model's context
+#'    window, its cap for a reply and whether it takes images.
+#' 4. The defaults: the model does not reason, takes images, has a context
+#'    window of 128,000 tokens and takes up to 16,384 tokens for a reply.
+#'
+#' The file gives the settings of each model under the model's id:
+#'
+#' ```yaml
+#' corp-claude:
+#'   like: claude-sonnet-5-5
+#' corp-gpt:
+#'   reasoning: true
+#'   images: false
+#'   context_window: 200000
+#'   max_tokens: 32000
+#' ```
+#'
+#' * The setting `like` names a model of pi's catalogs, such as
+#'   `claude-sonnet-5-5`, whose settings the model takes where the file gives
+#'   none.
+#'   So a model that a company's own proxy serves under a name of its own
+#'   takes the settings of the model behind the name.
+#'   Where the proxy speaks the API of the model behind the name, those
+#'   include what pi sends that API, such as the adaptive thinking that
+#'   Anthropic's current models need.
+#' * The setting `reasoning` says whether the model reasons, so that the
+#'   assistant asks it to, at the thinking level `medium`.
+#' * The setting `images` says whether the model takes images.
+#'   For a model that takes none, the assistant sends a note in place of each
+#'   plot of `inspect_results`.
+#' * The setting `context_window` gives the tokens that the model's context
+#'   window holds, and `max_tokens` the most tokens that each call asks for
+#'   the reply.
+#'
+#' R reads the file as each board opens.
+#' Where R cannot read the file, or where the file gives a value that a
+#' setting does not take, the assistant raises the error
+#' `assistant_model_settings_failed`.
+#' It then goes on without the file until the next board opens.
+#' The assistant finds a `like` that names no model of pi's catalogs only as
+#' the board's first turn starts, since it loads the catalogs then.
 #'
 #' @section Requests:
-#' The class answers five requests in R, through its method of
+#' The class answers six requests in R, through its method of
 #' [blockr.core::plugin_requests()].
 #' R calls each with the plugin's args by name, and with the blocks that it
 #' reads in `reads`, where the request takes them.
@@ -123,6 +175,9 @@
 #'   the file at `path` that the skill bundles.
 #' * The request `read_template` gives the text of the file that the blockr
 #'   option `assistant_template` names, or `NULL` where it names none.
+#' * The request `read_model_settings` gives what the YAML file that the
+#'   blockr option `assistant_model_settings` names holds, or `NULL` where it
+#'   names none.
 #'
 #' @section Skills:
 #' A skill is a directory that holds a `SKILL.md`.

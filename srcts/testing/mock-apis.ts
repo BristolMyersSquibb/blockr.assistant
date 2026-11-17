@@ -87,7 +87,22 @@ const LISTS: Readonly<Record<string, unknown>> = {
   openrouter: {
     data: [
       { id: "google/gemini-4-hydrogen:batch", supported_parameters: ["tools"], endpoints: ["/api/v1/batches"] },
-      { id: "openai/gpt-5.4", supported_parameters: ["tools", "reasoning"], endpoints: ["/api/v1/chat/completions", "/api/v1/messages", "/api/v1/responses"] },
+      {
+        id: "openai/gpt-5.4",
+        context_length: 1050000,
+        architecture: { input_modalities: ["text", "image", "file"] },
+        top_provider: { context_length: 1050000, max_completion_tokens: 128000 },
+        supported_parameters: ["tools", "reasoning"],
+        endpoints: ["/api/v1/chat/completions", "/api/v1/messages", "/api/v1/responses"],
+      },
+      {
+        id: "deepseek/deepseek-v3.2",
+        context_length: 163840,
+        architecture: { input_modalities: ["text"] },
+        top_provider: { context_length: 163840, max_completion_tokens: 147456 },
+        supported_parameters: ["reasoning", "tools"],
+        endpoints: ["/api/v1/chat/completions", "/api/v1/messages", "/api/v1/responses"],
+      },
       { id: "some/model-without-tools", supported_parameters: ["max_tokens"], endpoints: ["/api/v1/chat/completions"] },
     ],
   },
@@ -95,7 +110,16 @@ const LISTS: Readonly<Record<string, unknown>> = {
     object: "list",
     data: [
       { id: "openai/text-embedding-3-small", object: "model", type: "embedding", tags: [] },
-      { id: "anthropic/claude-sonnet-5.5", object: "model", type: "language", tags: ["tool-use", "vision"], supported_parameters: ["tools"] },
+      {
+        id: "anthropic/claude-sonnet-5.5",
+        object: "model",
+        context_window: 1000000,
+        max_tokens: 128000,
+        type: "language",
+        tags: ["tool-use", "vision"],
+        modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+        supported_parameters: ["tools"],
+      },
     ],
   },
 };

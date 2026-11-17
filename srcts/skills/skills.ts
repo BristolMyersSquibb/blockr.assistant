@@ -18,7 +18,7 @@
 //    only in assistant_skills_failed.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { answeredTexts, appPackages, failureMessage, isSessionEnded, sendRequest } from "../requests/index.ts";
+import { answeredTexts, appPackages, failureMessage, sendUntilReplied } from "../requests/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 
 // A skill, as R lists it.
@@ -55,20 +55,17 @@ export function createSkills(core: Core, signal: AbortSignal): Skills {
 }
 
 async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {
-  for (;;) {
-    try {
-      const { answer } = await sendRequest(core, "list_skills", { packages: appPackages(core) }, { signal });
-      return skillsOf(answer);
-    } catch (error) {
-      if (signal.aborted) return [];
-      if (isSessionEnded(error)) continue;
-      core.notifications.notify(ASSISTANT, {
-        severity: "error",
-        code: "assistant_skills_failed",
-        message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`,
-      });
-      return [];
-    }
+  try {
+    const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
+    return skillsOf(answer);
+  } catch (error) {
+    if (signal.aborted) return [];
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_skills_failed",
+      message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`,
+    });
+    return [];
   }
 }
 

@@ -47,6 +47,25 @@ export async function sendRequest(
   return { answer, conditions };
 }
 
+// Sends the assistant's request `name` as sendRequest() does, and sends it
+// again each time R's session ends before R replies, for a request that
+// changes nothing in R, as core sends a request for a blockr option again.
+// It rejects as sendRequest() does otherwise, and once the signal aborts.
+export async function sendUntilReplied(
+  core: { readonly request: CoreApi["request"] },
+  name: string,
+  args: Readonly<Record<string, Json>>,
+  opts: Omit<RequestOpts, "conditions"> = {},
+): Promise<Reply> {
+  for (;;) {
+    try {
+      return await sendRequest(core, name, args, opts);
+    } catch (error) {
+      if (!isSessionEnded(error) || opts.signal?.aborted === true) throw error;
+    }
+  }
+}
+
 // The names of the app's packages, those of R's reply to `hello`.
 export function appPackages(core: { readonly store: Pick<CoreApi["store"], "packages"> }): string[] {
   return Object.keys(core.store.packages());

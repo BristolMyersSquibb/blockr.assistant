@@ -28,8 +28,22 @@
 //    id names a kind of model that takes no tools, as "tts" does in
 //    "gpt-4o-mini-tts". Anthropic's capabilities name no tool use, since
 //    every model of Anthropic's API takes tools.
+//
+// An entry of the list may also give its model's context window, its cap for
+// a reply and whether it takes images, which the loop takes for a model that
+// neither the deployment's model settings nor pi's catalogs hold
+// (../loop):
+// - OpenRouter's entries give them in context_length,
+//   top_provider.max_completion_tokens and architecture.input_modalities.
+// - Vercel's give them in context_window, max_tokens and modalities.input.
+// - Anthropic's give them in max_input_tokens, max_tokens and
+//   capabilities.image_input.supported.
+// A field that holds no whole number of tokens above 0, no list of the
+// inputs that the model takes, or no true or false, says nothing. OpenAI's
+// entries give none of them.
 
 import type { Deployment } from "../deployment/index.ts";
+import type { ListedSettings } from "../model-settings/index.ts";
 
 // The words that name a kind of model that takes no tools, in a model's id or
 // in the type of its entry.
@@ -64,10 +78,13 @@ const CALLS: Readonly<Record<string, string>> = {
 };
 
 // The answer to the request for the list: the models of the list that take
-// tools, or why the assistant offers none. A list that the base URL refuses
-// for its key is refused, and any other answer that leaves no model to offer
-// failed.
-type Listed = { readonly kind: "listed"; readonly models: readonly string[] } | { readonly kind: "refused" | "failed"; readonly message: string };
+// tools, with the settings that the list gives each, by the model's id, where
+// it gives any, or why the assistant offers none. A list that the base URL
+// refuses for its key is refused, and any other answer that leaves no model
+// to offer failed.
+type Listed =
+  | { readonly kind: "listed"; readonly models: readonly string[]; readonly settings: ReadonlyMap<string, ListedSettings> }
+  | { readonly kind: "refused" | "failed"; readonly message: string };
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -106,7 +123,53 @@ export async function askList(deployment: Deployment, key: string | undefined, f
   if (models.length === 0) {
     return none(`the list of models at ${url} holds none that takes tools. An app on such a base URL names its models in the blockr option assistant_models.`);
   }
-  return { kind: "listed", models };
+  return { kind: "listed", models, settings: listedSettings(entries, models) };
+}
+
+// The settings that the list's entries give the models given, by the model's
+// id, for each model whose entry gives any. The first entry of a model gives
+// its settings.
+export function listedSettings(entries: readonly unknown[], models: readonly string[]): ReadonlyMap<string, ListedSettings> {
+  const wanted = new Set(models);
+  const settings = new Map<string, ListedSettings>();
+  for (const entry of entries) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || !wanted.has(entry.id)) continue;
+    wanted.delete(entry.id);
+    const given = settingsOf(entry);
+    if (Object.keys(given).length > 0) settings.set(entry.id, given);
+  }
+  return settings;
+}
+
+function settingsOf(entry: Readonly<Record<string, unknown>>): ListedSettings {
+  const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
+  const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
+  const images =
+    imagesOf(fieldOf(entry.architecture, "input_modalities")) ??
+    imagesOf(fieldOf(entry.modalities, "input")) ??
+    flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
+  return {
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+    ...(images === undefined ? {} : { images }),
+  };
+}
+
+function fieldOf(value: unknown, name: string): unknown {
+  return isRecord(value) ? value[name] : undefined;
+}
+
+function tokensOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+// Whether a list of the inputs that a model takes holds images.
+function imagesOf(value: unknown): boolean | undefined {
+  return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : undefined;
+}
+
+function flagOf(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 // The ids of the models of the list's entries that take tools, in the list's

@@ -1,13 +1,15 @@
 // The loop on pi's fake provider (./loop.ts), whose replies each test
 // scripts: a turn as it streams, its tool calls, its calls to the model, what
-// each call sends, a stop, a failed call and the tree of a turn's spans. The
-// test plays the turns, which keep each message that the loop reports in a
-// conversation of their own.
+// each call sends, the settings of the model that it talks to, a stop, a
+// failed call and the tree of a turn's spans. The test plays the turns,
+// which keep each message that the loop reports in a conversation of their
+// own.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
-import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
+import { createFauxCore, fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
@@ -16,9 +18,11 @@ import type { Message } from "../state/index.ts";
 import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
+import { createLoop, PROVIDER } from "./loop.ts";
+import type { Call, Streamed, Turn } from "./loop.ts";
 import { STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
-import type { Call, Streamed, Turn } from "./loop.ts";
+import * as pi from "./vendor.ts";
 
 const CREATED = "2026-11-16T08:00:00.000Z";
 const asked: Message = { id: "u1", role: "user", parts: [{ type: "text", text: "How many blocks?" }], created: CREATED };
@@ -33,7 +37,7 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "systemPrompt" | "transformContext" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "onPayload">> & { readonly key?: string | undefined } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -85,6 +89,14 @@ function turnWith(
   };
 
   return { run: () => loop.run(turn), messages, kept, calls, streamed, returned, controller, keys: () => keys };
+}
+
+// A reply of pi's fake provider that records the model of the call.
+function modelOfCall(into: Model<Api>[]): FauxResponseStep {
+  return (_context, _options, _state, model) => {
+    into.push(model);
+    return fauxAssistantMessage("Two.");
+  };
 }
 
 // A reply that pi's fake provider writes from a function of the call, which
@@ -232,6 +244,75 @@ describe("a turn on the loop", () => {
     expect(models[0]).toMatchObject({ id: "gpt-5.4", baseUrl: "https://faux.invalid/v1", reasoning, input, contextWindow, maxTokens });
   });
 
+  test("gives a model the settings that the deployment's model settings give it, before those of pi's catalog", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith([modelOfCall(models)], { model: "gpt-5.4", settings: { reasoning: false, images: false, maxTokens: 32_000 } });
+
+    await run();
+
+    const { contextWindow, thinkingLevelMap } = OPENAI_MODELS["gpt-5.4"];
+    expect(models[0]).toMatchObject({ id: "gpt-5.4", reasoning: false, input: ["text"], contextWindow, maxTokens: 32_000, thinkingLevelMap });
+  });
+
+  test("gives a model the settings of the catalog's model that its like names, under its own id, at the connection's base URL", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith([modelOfCall(models)], { model: "company-claude", settings: { like: "claude-sonnet-5-5", contextWindow: 200_000 } });
+
+    await run();
+
+    const { reasoning, input, maxTokens, thinkingLevelMap } = ANTHROPIC_MODELS["claude-sonnet-5-5"];
+    expect(models[0]).toMatchObject({ id: "company-claude", api: FAUX_API, baseUrl: "https://faux.invalid/v1", reasoning, input, contextWindow: 200_000, maxTokens, thinkingLevelMap });
+    expect(models[0]?.compat).toBeUndefined();
+  });
+
+  test("gives a model whose like speaks the connection's API the catalog's settings for that API, such as the thinking of Anthropic's current models", async () => {
+    const faux = createFauxCore({ api: "anthropic-messages", provider: PROVIDER });
+    const models: Model<Api>[] = [];
+    faux.setResponses([modelOfCall(models)]);
+    const loop = createLoop(pi, { "anthropic-messages": faux });
+
+    await loop.run({
+      connection: { baseUrl: "https://proxy.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
+      model: "company-claude",
+      settings: { like: "claude-sonnet-5-5" },
+      tools: [],
+      messages: () => [asked],
+      kept: () => undefined,
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+
+    expect(models[0]).toMatchObject({ id: "company-claude", api: "anthropic-messages", baseUrl: "https://proxy.invalid", compat: ANTHROPIC_MODELS["claude-sonnet-5-5"].compat });
+  });
+
+  test("gives a model that neither the model settings nor pi's catalogs hold the settings that the base URL's list gives it", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith([modelOfCall(models)], { model: "deepseek/deepseek-v3.2", listed: { contextWindow: 163_840, maxTokens: 147_456, images: false } });
+
+    await run();
+
+    expect(models[0]).toMatchObject({ id: "deepseek/deepseek-v3.2", reasoning: false, input: ["text"], contextWindow: 163_840, maxTokens: 147_456 });
+  });
+
+  test("takes each setting from the model settings, then from the list, then from the defaults", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith([modelOfCall(models)], { model: "company-gpt", settings: { reasoning: true, contextWindow: 400_000 }, listed: { contextWindow: 128_000, images: false } });
+
+    await run();
+
+    expect(models[0]).toMatchObject({ reasoning: true, input: ["text"], contextWindow: 400_000, maxTokens: 16_384 });
+  });
+
+  test("takes the settings of pi's catalog before those of the list", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith([modelOfCall(models)], { model: "gpt-5.4", listed: { contextWindow: 8_192, maxTokens: 1_024, images: false } });
+
+    await run();
+
+    const { input, contextWindow, maxTokens } = OPENAI_MODELS["gpt-5.4"];
+    expect(models[0]).toMatchObject({ input, contextWindow, maxTokens });
+  });
+
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const board: Message = { id: "board", role: "user", parts: [{ type: "text", text: "The board holds a and b." }], created: CREATED };
@@ -259,6 +340,14 @@ describe("a turn on the loop", () => {
     await run();
 
     expect(messages[2]?.parts).toEqual([{ type: "tool_result", id: "c1", text: "Tool list_views not found", error: true }]);
+  });
+});
+
+describe("the catalogs of the loop", () => {
+  test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
+    const { loop } = fauxLoop();
+
+    expect(["gpt-5.4", "claude-sonnet-5-5", "company-gpt", "openai/gpt-5.4"].map((id) => loop.inCatalog(id))).toEqual([true, true, false, false]);
   });
 });
 
