@@ -5,6 +5,9 @@
 // before it, a stop, a failed call and the tree of a turn's spans. The test
 // plays the turns, which keep each message that the loop reports in a
 // conversation of their own.
+// One test runs a call on pi's own code for Chat Completions instead, and
+// stops the call before it goes out, to read the marks of Anthropic's cache
+// that pi puts in the request.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
@@ -314,6 +317,29 @@ describe("a turn on the loop", () => {
     expect(models[0]).toMatchObject({ input, contextWindow, maxTokens });
   });
 
+  test("gives a model whose id starts with anthropic/ pi's compat with Anthropic's format of cache marks on OpenRouter's Chat Completions alone", async () => {
+    const models: Model<Api>[] = [];
+    const runOn = async (baseUrl: string, model: string) => {
+      const faux = createFauxCore({ api: "openai-completions", provider: PROVIDER });
+      faux.setResponses([modelOfCall(models)]);
+      await createLoop(pi, { "openai-completions": faux }).run({
+        connection: { baseUrl, api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+        model,
+        tools: [],
+        messages: () => [asked],
+        kept: () => undefined,
+        signal: new AbortController().signal,
+        on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+      });
+    };
+
+    await runOn("https://openrouter.ai/api/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://gateway.invalid/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://openrouter.ai/api/v1", "openai/gpt-5.4");
+
+    expect(models.map((model) => model.compat)).toEqual([{ cacheControlFormat: "anthropic" }, undefined, undefined]);
+  });
+
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const board: Message = { id: "board", role: "user", parts: [{ type: "text", text: "The board holds a and b." }], created: CREATED };
@@ -350,7 +376,7 @@ describe("a turn on the loop", () => {
     expect(JSON.stringify(messages)).not.toContain("goes out");
   });
 
-  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's as the caller leaves it", async () => {
+  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's Messages API and Chat Completions as the caller leaves it", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const given: unknown[] = [];
     const onPayload = (payload: unknown): unknown => {
@@ -402,6 +428,45 @@ describe("a turn on the loop", () => {
     };
     await expect(Promise.resolve(calls[0]?.options?.onPayload?.(sent, {} as Model<Api>))).resolves.toEqual(moved);
     expect(given).toEqual([moved]);
+  });
+
+  test("has pi mark the system prompt, the last tool and the end of the conversation of a call to one of Anthropic's models on OpenRouter's Chat Completions, and not the message of the app's", async () => {
+    const sent: unknown[] = [];
+    const conversation: Message[] = [
+      asked,
+      { id: "a1", role: "assistant", parts: [{ type: "tool_call", id: "c1", tool: "list_blocks", args: {} }], created: CREATED },
+      { id: "t1", role: "tool", parts: [{ type: "tool_result", id: "c1", text: '["a","b"]' }], created: CREATED },
+    ];
+    await createLoop(pi).run({
+      connection: { baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+      model: "anthropic/claude-haiku-5.5",
+      tools: [listed],
+      systemPrompt: "You are an assistant.",
+      messages: () => conversation,
+      kept: () => undefined,
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        sent.push(payload);
+        throw new Error("The test stops the call before it goes out.");
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+
+    const mark = { type: "ephemeral" };
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      model: "anthropic/claude-haiku-5.5",
+      messages: [
+        { role: "system", content: [{ type: "text", text: "You are an assistant.", cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "How many blocks?" }] },
+        { role: "assistant", tool_calls: [{ id: "c1" }] },
+        { role: "tool", tool_call_id: "c1", content: [{ type: "text", text: '["a","b"]', cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "The board." }] },
+      ],
+      tools: [{ function: { name: "list_blocks" }, cache_control: mark }],
+    });
+    expect(JSON.stringify(sent[0]).match(/"cache_control"/g)).toHaveLength(3);
   });
 
   test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {

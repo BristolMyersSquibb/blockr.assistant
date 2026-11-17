@@ -259,6 +259,12 @@
   The help page of `new_assistant_plugin()` lists the parts of what a call
   sends, and today's template, `inst/prompts/system-prompt.md`, goes.
 
+* Calls to Anthropic's models through OpenRouter's Chat Completions mark the
+  tools, the system prompt and the end of the conversation for Anthropic's
+  cache, as calls on Anthropic's API do (#261).
+  Through OpenRouter, Anthropic's cache serves only what a call marks, so
+  until now it served none of these calls.
+
 * The chat's message field takes images, PDFs and text files, up to 30 MiB
   together, which the user picks with its button, drops on the chat or pastes
   (#231).
