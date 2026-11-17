@@ -140,6 +140,30 @@
   context window of 128,000 tokens and takes up to 16,384 tokens for a reply
   (#226).
 
+* A deployment gives the settings of its models in a YAML file, which the
+  blockr option `assistant_model_settings` names, by each model's id (#254).
+  A model's entry may say whether it reasons, in `reasoning`, and whether it
+  takes images, in `images`.
+  It may give the tokens of its context window, in `context_window`, and its
+  cap for a reply, in `max_tokens`.
+  It may name in `like` a model of pi's catalogs, whose settings it takes
+  where the file gives none, as for a model that a company's own proxy serves
+  under a name of its own.
+  R reads the file as each board opens, in its reply to the new request
+  `read_model_settings`.
+  Where R cannot read the file, or where an entry gives a value that a
+  setting does not take, the assistant raises the error
+  `assistant_model_settings_failed`, and goes on without the file until the
+  next board opens.
+
+* A model of the base URL's list takes its context window, its cap for a
+  reply and whether it takes images from the list, where neither the
+  deployment's file nor pi's catalogs hold the model (#254).
+  OpenRouter's, Vercel's and Anthropic's lists give them, while OpenAI's
+  gives none.
+  So the assistant takes each setting of a model from the first of these that
+  gives it: the file, pi's catalogs, the list, and the defaults above.
+
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
   The tools `get_block_result`, `inspect_results` and `read_skill` give the

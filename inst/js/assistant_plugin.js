@@ -686,9 +686,9 @@ function modelsOf(sent2) {
   }
   return named;
 }
-function isWebUrl(text2) {
+function isWebUrl(text3) {
   try {
-    const { protocol } = new URL(text2);
+    const { protocol } = new URL(text3);
     return protocol === "https:" || protocol === "http:";
   } catch {
     return false;
@@ -968,7 +968,7 @@ function callAttributes() {
       named[RENAMED.get(name) ?? name] = value;
     }
     if (INPUT.some((name) => Object.hasOwn(given2, name))) {
-      named["gen_ai.usage.input_tokens"] = [...input.values()].reduce((sum, tokens2) => sum + tokens2, 0);
+      named["gen_ai.usage.input_tokens"] = [...input.values()].reduce((sum, tokens3) => sum + tokens3, 0);
     }
     return named;
   };
@@ -987,7 +987,7 @@ function createLoop(pi, apis = {}) {
     "openai-responses": pi.openaiResponses,
     ...apis
   };
-  return { run: (turn) => runTurn(pi, streams, turn) };
+  return { run: (turn) => runTurn(pi, streams, turn), inCatalog: (id) => catalogModel(pi, id) !== void 0 };
 }
 async function loadLoop() {
   return createLoop(await import("./pi-73d60f71.js"));
@@ -1001,7 +1001,7 @@ function runTurn(pi, streams, turn) {
   return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
 }
 async function runAgent(pi, streams, turn, span) {
-  const model2 = modelOf(pi, turn.model, turn.connection);
+  const model2 = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = pi.createModels();
   models.setProvider(
     pi.createProvider({
@@ -1071,21 +1071,30 @@ async function runAgent(pi, streams, turn, span) {
     (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
   );
 }
-function modelOf(pi, id, connection) {
+function modelOf(pi, id, connection, given2 = {}, listed2 = {}) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
-  const known = catalogModel(pi, id);
-  if (known === void 0) {
-    return {
-      ...at2,
-      name: id,
-      reasoning: false,
-      input: ["text", "image"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128e3,
-      maxTokens: 16384
-    };
-  }
-  return { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
+  const known = catalogModel(pi, given2.like ?? id);
+  const base = known === void 0 ? {
+    ...at2,
+    name: id,
+    reasoning: false,
+    input: inputOf(["text", "image"], listed2.images),
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: listed2.contextWindow ?? 128e3,
+    maxTokens: listed2.maxTokens ?? 16384
+  } : { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
+  return {
+    ...base,
+    reasoning: given2.reasoning ?? base.reasoning,
+    input: inputOf(base.input, given2.images),
+    contextWindow: given2.contextWindow ?? base.contextWindow,
+    maxTokens: given2.maxTokens ?? base.maxTokens
+  };
+}
+function inputOf(input, images) {
+  if (images === void 0) return input;
+  const others = input.filter((kind) => kind !== "image");
+  return images ? [...others, "image"] : others;
 }
 function catalogModel(pi, id) {
   for (const catalog of [pi.ANTHROPIC_MODELS, pi.OPENAI_MODELS]) {
@@ -1132,9 +1141,9 @@ function agentTool(tool2, given2, turn) {
   };
 }
 function answeredOf(result, isError) {
-  const text2 = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
+  const text3 = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
   const images = result.content.flatMap((block) => block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []);
-  return { text: text2, isError, images };
+  return { text: text3, isError, images };
 }
 
 // srcts/notifications/notifications.ts
@@ -1158,6 +1167,165 @@ function heldError(core, signal, code) {
       withdraw = void 0;
     }
   };
+}
+
+// srcts/requests/requests.ts
+async function sendRequest(core, name, args, opts = {}) {
+  let conditions = [];
+  const answer = await core.request(ASSISTANT, name, args, {
+    ...opts,
+    conditions: (given2) => {
+      conditions = given2;
+    }
+  });
+  return { answer, conditions };
+}
+async function sendUntilReplied(core, name, args, opts = {}) {
+  for (; ; ) {
+    try {
+      return await sendRequest(core, name, args, opts);
+    } catch (error) {
+      if (!isSessionEnded(error) || opts.signal?.aborted === true) throw error;
+    }
+  }
+}
+function appPackages(core) {
+  return Object.keys(core.store.packages());
+}
+function answeredText(answer, name) {
+  if (isArray(answer) && answer.length === 1 && typeof answer[0] === "string") return answer[0];
+  throw new TypeError(`R answered the request ${name} with ${shown(answer)}, where it writes one string.`);
+}
+function answeredTexts(answer, name) {
+  if (answer !== void 0 && isArray(answer) && answer.every((value) => typeof value === "string")) return [...answer];
+  throw new TypeError(`R answered the request ${name} with ${shown(answer ?? null)}, where it writes strings.`);
+}
+function answeredObject(answer, name) {
+  if (answer !== null && typeof answer === "object" && !isArray(answer) && !(answer instanceof Blob)) return answer;
+  throw new TypeError(`R answered the request ${name} with ${shown(answer)}, where it writes an object.`);
+}
+function isRequestError(error) {
+  return error instanceof Error && error.name === "RequestError";
+}
+function isSessionEnded(error) {
+  return error instanceof Error && error.name === "SessionEndedError";
+}
+function failureMessage(error) {
+  if (isRequestError(error)) {
+    const said = error.conditions.filter((condition) => condition.severity === "error").map((condition) => condition.message);
+    if (said.length > 0) return said.join("\n");
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+function isArray(value) {
+  return Array.isArray(value);
+}
+function shown(answer) {
+  return answer instanceof Blob ? "a file" : JSON.stringify(answer);
+}
+
+// srcts/model-settings/model-settings.ts
+var NONE = /* @__PURE__ */ new Map();
+var WITHOUT = "The assistant goes on without the deployment's model settings";
+var FILE = "the file that the blockr option assistant_model_settings names";
+var CATALOGS = "pi's catalogs of OpenAI's and Anthropic's models";
+function createModelSettings(core, signal) {
+  const failed = heldError(core, signal, "assistant_model_settings_failed");
+  const read = readSettings(core, signal, failed);
+  let checking;
+  return {
+    checked(inCatalog) {
+      checking ??= read.then((settings) => {
+        for (const [id, given2] of settings) {
+          if (given2.like !== void 0 && !inCatalog(given2.like)) {
+            failed.raise(`${WITHOUT}, since ${FILE} gives the model ${id} the like ${JSON.stringify(given2.like)}, which names no model of ${CATALOGS}.`);
+            return NONE;
+          }
+        }
+        return settings;
+      });
+      return checking;
+    }
+  };
+}
+async function readSettings(core, signal, failed) {
+  let answer;
+  try {
+    ({ answer } = await sendUntilReplied(core, "read_model_settings", {}, { signal }));
+  } catch (error) {
+    if (!signal.aborted) failed.raise(`${WITHOUT}, since R could not read them: ${failureMessage(error)}`);
+    return NONE;
+  }
+  try {
+    return settingsOf(answer);
+  } catch (error) {
+    failed.raise(`${WITHOUT}, since ${error instanceof Error ? error.message : String(error)}`);
+    return NONE;
+  }
+}
+function settingsOf(reply) {
+  if (reply === null) return NONE;
+  if (!isObject2(reply)) throw new TypeError(`${FILE} gives ${shown2(reply)}, where it gives each model's settings by the model's id.`);
+  return new Map(Object.entries(reply).map(([id, entry]) => [id, entryOf(id, entry)]));
+}
+function entryOf(id, entry) {
+  if (entry === null) return {};
+  if (!isObject2(entry)) {
+    throw new TypeError(`${FILE} gives the model ${id} ${shown2(entry)}, where it gives the model's settings by their names, such as reasoning: true.`);
+  }
+  let settings = {};
+  for (const [name, value] of Object.entries(entry)) {
+    switch (name) {
+      case "like":
+        settings = { ...settings, like: text2(id, name, value) };
+        break;
+      case "reasoning":
+        settings = { ...settings, reasoning: flag(id, name, value) };
+        break;
+      case "images":
+        settings = { ...settings, images: flag(id, name, value) };
+        break;
+      case "context_window":
+        settings = { ...settings, contextWindow: tokens(id, name, value) };
+        break;
+      case "max_tokens":
+        settings = { ...settings, maxTokens: tokens(id, name, value) };
+        break;
+      default:
+        throw new TypeError(
+          `${FILE} gives the model ${id} the setting ${name}, which the assistant does not know. A model's settings are like, reasoning, images, context_window and max_tokens.`
+        );
+    }
+  }
+  return settings;
+}
+function one(value) {
+  return Array.isArray(value) && value.length === 1 ? value[0] : void 0;
+}
+function text2(id, name, value) {
+  const given2 = one(value);
+  if (typeof given2 === "string" && given2 !== "") return given2;
+  throw refused(id, name, value, `the id of a model of ${CATALOGS}, such as claude-sonnet-5-5`);
+}
+function flag(id, name, value) {
+  const given2 = one(value);
+  if (typeof given2 === "boolean") return given2;
+  throw refused(id, name, value, "true or false");
+}
+function tokens(id, name, value) {
+  const given2 = one(value);
+  if (typeof given2 === "number" && Number.isSafeInteger(given2) && given2 > 0) return given2;
+  throw refused(id, name, value, "a whole number of tokens above 0, such as 128000");
+}
+function refused(id, name, value, takes) {
+  return new TypeError(`${FILE} gives the model ${id} the ${name} ${shown2(value)}, where ${name} takes ${takes}.`);
+}
+function isObject2(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Blob);
+}
+function shown2(value) {
+  if (value instanceof Blob) return "a file";
+  return JSON.stringify(one(value) ?? value);
 }
 
 // srcts/models/list.ts
@@ -1217,7 +1385,40 @@ async function askList(deployment, key, fetch, signal) {
   if (models.length === 0) {
     return none(`the list of models at ${url} holds none that takes tools. An app on such a base URL names its models in the blockr option assistant_models.`);
   }
-  return { kind: "listed", models };
+  return { kind: "listed", models, settings: listedSettings(entries, models) };
+}
+function listedSettings(entries, models) {
+  const wanted = new Set(models);
+  const settings = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || !wanted.has(entry.id)) continue;
+    wanted.delete(entry.id);
+    const given2 = settingsOf2(entry);
+    if (Object.keys(given2).length > 0) settings.set(entry.id, given2);
+  }
+  return settings;
+}
+function settingsOf2(entry) {
+  const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
+  const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
+  const images = imagesOf(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
+  return {
+    ...contextWindow === void 0 ? {} : { contextWindow },
+    ...maxTokens === void 0 ? {} : { maxTokens },
+    ...images === void 0 ? {} : { images }
+  };
+}
+function fieldOf(value, name) {
+  return isRecord(value) ? value[name] : void 0;
+}
+function tokensOf(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
+}
+function imagesOf(value) {
+  return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : void 0;
+}
+function flagOf(value) {
+  return typeof value === "boolean" ? value : void 0;
 }
 function toolModels(entries, api2) {
   const kept = /* @__PURE__ */ new Set();
@@ -1268,7 +1469,7 @@ function messageOf(error) {
 }
 
 // srcts/models/models.ts
-var NONE = { offered: { models: [] }, again: false };
+var NONE2 = { offered: { models: [] }, again: false };
 function createModels(core, signal, options) {
   const modelsFailed = heldError(core, signal, "assistant_models_failed");
   const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
@@ -1277,17 +1478,19 @@ function createModels(core, signal, options) {
     try {
       deployment = await options.deployment;
     } catch {
-      return NONE;
+      return NONE2;
     }
     if (deployment.models !== void 0) return { offered: { models: deployment.models }, again: false };
     const { credential } = deployment;
-    if (credential.kind === "visitor") return NONE;
+    if (credential.kind === "visitor") return NONE2;
     const listed2 = await askList(deployment, credential.kind === "deployment" ? credential.key : void 0, fetch, signal);
-    if (signal.aborted) return NONE;
+    if (signal.aborted) return NONE2;
     switch (listed2.kind) {
-      case "listed":
+      case "listed": {
         modelsFailed.withdraw();
-        return { offered: { models: listed2.models }, again: false };
+        const { models, settings } = listed2;
+        return { offered: { models, ...settings.size === 0 ? {} : { settings } }, again: false };
+      }
       case "refused":
         modelsFailed.withdraw();
         options.callFailed.raise(listed2.message);
@@ -1306,72 +1509,23 @@ function createModels(core, signal, options) {
   };
 }
 
-// srcts/requests/requests.ts
-async function sendRequest(core, name, args, opts = {}) {
-  let conditions = [];
-  const answer = await core.request(ASSISTANT, name, args, {
-    ...opts,
-    conditions: (given2) => {
-      conditions = given2;
-    }
-  });
-  return { answer, conditions };
-}
-function appPackages(core) {
-  return Object.keys(core.store.packages());
-}
-function answeredText(answer, name) {
-  if (isArray(answer) && answer.length === 1 && typeof answer[0] === "string") return answer[0];
-  throw new TypeError(`R answered the request ${name} with ${shown(answer)}, where it writes one string.`);
-}
-function answeredTexts(answer, name) {
-  if (answer !== void 0 && isArray(answer) && answer.every((value) => typeof value === "string")) return [...answer];
-  throw new TypeError(`R answered the request ${name} with ${shown(answer ?? null)}, where it writes strings.`);
-}
-function answeredObject(answer, name) {
-  if (answer !== null && typeof answer === "object" && !isArray(answer) && !(answer instanceof Blob)) return answer;
-  throw new TypeError(`R answered the request ${name} with ${shown(answer)}, where it writes an object.`);
-}
-function isRequestError(error) {
-  return error instanceof Error && error.name === "RequestError";
-}
-function isSessionEnded(error) {
-  return error instanceof Error && error.name === "SessionEndedError";
-}
-function failureMessage(error) {
-  if (isRequestError(error)) {
-    const said = error.conditions.filter((condition) => condition.severity === "error").map((condition) => condition.message);
-    if (said.length > 0) return said.join("\n");
-  }
-  return error instanceof Error ? error.message : String(error);
-}
-function isArray(value) {
-  return Array.isArray(value);
-}
-function shown(answer) {
-  return answer instanceof Blob ? "a file" : JSON.stringify(answer);
-}
-
 // srcts/skills/skills.ts
 function createSkills(core, signal) {
   const listed2 = listSkills(core, signal);
   return { list: () => listed2 };
 }
 async function listSkills(core, signal) {
-  for (; ; ) {
-    try {
-      const { answer } = await sendRequest(core, "list_skills", { packages: appPackages(core) }, { signal });
-      return skillsOf(answer);
-    } catch (error) {
-      if (signal.aborted) return [];
-      if (isSessionEnded(error)) continue;
-      core.notifications.notify(ASSISTANT, {
-        severity: "error",
-        code: "assistant_skills_failed",
-        message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
-      });
-      return [];
-    }
+  try {
+    const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
+    return skillsOf(answer);
+  } catch (error) {
+    if (signal.aborted) return [];
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_skills_failed",
+      message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
+    });
+    return [];
   }
 }
 function skillsOf(reply) {
@@ -1382,23 +1536,23 @@ function skillsOf(reply) {
     }
     const fields = entry;
     return {
-      name: one(fields, "name"),
-      description: one(fields, "description"),
+      name: one2(fields, "name"),
+      description: one2(fields, "description"),
       blocks: answeredTexts(fields.blocks, "list_skills"),
       plugins: answeredTexts(fields.plugins, "list_skills"),
-      userInvocable: flag(fields, "user-invocable"),
-      modelInvocable: !flag(fields, "disable-model-invocation")
+      userInvocable: flag2(fields, "user-invocable"),
+      modelInvocable: !flag2(fields, "disable-model-invocation")
     };
   });
 }
-function one(fields, name) {
+function one2(fields, name) {
   const [value, ...rest] = answeredTexts(fields[name], "list_skills");
   if (value === void 0 || rest.length > 0) {
     throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(fields[name] ?? null)}, where it gives one string.`);
   }
   return value;
 }
-function flag(fields, name) {
+function flag2(fields, name) {
   const value = fields[name];
   if (Array.isArray(value) && value.length === 1 && typeof value[0] === "boolean") return value[0];
   throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
@@ -1451,7 +1605,7 @@ var summary = {
 function keep(description) {
   return { type: "integer", minimum: 1, description };
 }
-function tokens(description) {
+function tokens2(description) {
   return { type: "integer", minimum: 0, description };
 }
 function definitionsFor(value) {
@@ -1588,9 +1742,9 @@ var assistantCommands = [
     args: object(
       {
         conversation,
-        input: tokens("The input tokens of the call."),
-        output: tokens("The output tokens of the call."),
-        total: tokens("Every token of the call, its cached input included.")
+        input: tokens2("The input tokens of the call."),
+        output: tokens2("The output tokens of the call."),
+        total: tokens2("Every token of the call, its cached input included.")
       },
       ["conversation", "input", "output", "total"]
     ),
@@ -1642,9 +1796,9 @@ async function readToolCap(core, name) {
 }
 
 // srcts/tools/cut.ts
-function cutText(text2, max, hint) {
-  const chars = Array.from(text2);
-  if (chars.length <= max) return text2;
+function cutText(text3, max, hint) {
+  const chars = Array.from(text3);
+  if (chars.length <= max) return text3;
   const marker = (lost) => `
 ... [+${String(lost)} chars truncated${hint === void 0 ? "" : ` -- ${hint}`}]`;
   const keep2 = Math.max(0, max - Array.from(marker(chars.length)).length);
@@ -1662,8 +1816,8 @@ function leaveOutLong(value, max, hint) {
 }
 function bounded(value, max) {
   let budget = max;
-  const spend = (text2) => {
-    const kept = cutText(text2, Math.max(0, budget));
+  const spend = (text3) => {
+    const kept = cutText(text3, Math.max(0, budget));
     budget -= Array.from(kept).length;
     return kept;
   };
@@ -1673,12 +1827,12 @@ function bounded(value, max) {
     if (item !== null && typeof item === "object") {
       return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, walk(inner)]));
     }
-    const text2 = JSON.stringify(item);
-    if (text2.length <= budget) {
-      budget -= text2.length;
+    const text3 = JSON.stringify(item);
+    if (text3.length <= budget) {
+      budget -= text3.length;
       return item;
     }
-    return spend(text2);
+    return spend(text3);
   };
   return walk(value);
 }
@@ -1774,7 +1928,7 @@ function notReady(blocks) {
     "The request did not go to R, since a block that it reads is not ready:",
     ...blocks.map(({ block, status }) => {
       const why = [status.reason, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
-      const said = why.filter((text2) => text2 !== null && text2 !== "");
+      const said = why.filter((text3) => text3 !== null && text3 !== "");
       return `- Block "${block}" reads ${status.status}${said.length > 0 ? `: ${said.join(" ")}` : "."}`;
     })
   ].join("\n");
@@ -1814,11 +1968,11 @@ async function toolRequest(core, name, args, opts = {}) {
     throw new Error(await withConditions(core, failureMessage(error), error.conditions), { cause: error });
   }
 }
-async function withConditions(core, text2, conditions) {
+async function withConditions(core, text3, conditions) {
   const lines = conditions.filter(isWarningOrMessage).map(({ severity, message: message2 }) => `${severity === "warning" ? "Warning" : "Message"}: ${message2}`);
-  if (lines.length === 0) return text2;
+  if (lines.length === 0) return text3;
   const listed2 = cutText(lines.join("\n"), await readToolCap(core, "assistant_eval_max_chars"));
-  return text2 === "" ? listed2 : `${text2}
+  return text3 === "" ? listed2 : `${text3}
 
 ${listed2}`;
 }
@@ -2007,8 +2161,8 @@ async function sent(core, reads, signal, active) {
   const described = answeredObject(answer, "describe_result");
   const texts = Object.fromEntries(
     reads.flatMap((id) => {
-      const text2 = own(described, id);
-      return text2 === void 0 ? [] : [[id, answeredText(text2, "describe_result")]];
+      const text3 = own(described, id);
+      return text3 === void 0 ? [] : [[id, answeredText(text3, "describe_result")]];
     })
   );
   return { texts, conditions };
@@ -2033,9 +2187,9 @@ function blockEntry(core, id, options) {
   };
 }
 function addedState(state, caps) {
-  const shown2 = leaveOutLong(state, caps.value, STATE_HINT);
-  const text2 = json(shown2);
-  return Array.from(text2).length > caps.state ? cutText(text2, caps.state, STATE_HINT) : shown2;
+  const shown3 = leaveOutLong(state, caps.value, STATE_HINT);
+  const text3 = json(shown3);
+  return Array.from(text3).length > caps.state ? cutText(text3, caps.state, STATE_HINT) : shown3;
 }
 function conditionKey({ severity, phase, message: message2 }) {
   return JSON.stringify([severity, phase ?? null, message2]);
@@ -2085,8 +2239,8 @@ function editTools(core, board) {
       run: async ({ commands }, signal) => {
         const active = context4.active();
         const caps = await reviewCaps(core);
-        const refused = refusedAhead(core, commands);
-        if (refused !== void 0) return refused;
+        const refused2 = refusedAhead(core, commands);
+        if (refused2 !== void 0) return refused2;
         signal.throwIfAborted();
         const before = conditionsNow(core);
         const hearing = hear(core);
@@ -2722,9 +2876,13 @@ function createTurns(core, signal, options) {
       return;
     }
     if (stopped(turn)) return;
+    const settings = await options.settings.checked((id) => loop.inCatalog(id));
+    if (stopped(turn)) return;
     await loop.run({
       connection: connectionOf(deployment),
       model: model2,
+      settings: settings.get(model2),
+      listed: offered.settings?.get(model2),
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message2) => conversations.kept(turn.conversation, message2),
@@ -2796,11 +2954,13 @@ function openAssistant(core, signal, options = {}) {
   deployment.catch(() => void 0);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
+  const settings = createModelSettings(core, signal);
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
     deployment,
     models,
+    settings,
     callFailed,
     load: options.load ?? loadLoop,
     ..."locks" in options ? { locks: options.locks } : {}
@@ -2883,9 +3043,9 @@ function libraries() {
 }
 
 // srcts/chat/recall.ts
-function recall(history, at2, text2, key) {
-  const showing = at2 !== void 0 && history[at2] === text2;
-  if (!showing && text2 !== "") return void 0;
+function recall(history, at2, text3, key) {
+  const showing = at2 !== void 0 && history[at2] === text3;
+  if (!showing && text3 !== "") return void 0;
   if (key === "up") {
     if (history.length === 0) return void 0;
     const next = showing ? Math.max(0, at2 - 1) : history.length - 1;
@@ -2904,7 +3064,7 @@ function Composer() {
   const { stop } = useChatActions();
   const { history, running, runsHere, titleOf } = useChat();
   const aui = useAui();
-  const text2 = useAuiState(({ composer }) => composer.text);
+  const text3 = useAuiState(({ composer }) => composer.text);
   const field = useRef(null);
   const recalled = useRef(void 0);
   useLayoutEffect(() => {
@@ -2912,7 +3072,7 @@ function Composer() {
     if (el === null) return;
     el.style.height = "auto";
     el.style.height = `${String(el.scrollHeight)}px`;
-  }, [text2]);
+  }, [text3]);
   const keys2 = (event) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (event.nativeEvent.isComposing || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
@@ -3053,7 +3213,7 @@ var FAILURE = "failure";
 var ATTACHMENT = "attachment";
 var given = /* @__PURE__ */ new WeakMap();
 function shownOf(messages, running, kept) {
-  const shown2 = [];
+  const shown3 = [];
   let opener;
   let span = [];
   let failure;
@@ -3061,7 +3221,7 @@ function shownOf(messages, running, kept) {
     const results = last ? running?.results : void 0;
     const reply = last && span.at(-1)?.role !== "assistant" ? running?.reply : void 0;
     if (span.length > 0 || failure !== void 0 || results !== void 0 && Object.keys(results).length > 0 || reply !== void 0) {
-      shown2.push(turnOf(opener, span, span.map((message2) => kept(message2.id)), failure, results, reply));
+      shown3.push(turnOf(opener, span, span.map((message2) => kept(message2.id)), failure, results, reply));
     }
     span = [];
     failure = void 0;
@@ -3072,7 +3232,7 @@ function shownOf(messages, running, kept) {
       failure = held?.failure ?? failure;
     } else if (message2.role === "user" || message2.role === "summary") {
       end2(false);
-      shown2.push(message2);
+      shown3.push(message2);
       opener = message2;
       failure = held?.failure;
     } else {
@@ -3081,13 +3241,13 @@ function shownOf(messages, running, kept) {
     }
   }
   end2(true);
-  return shown2;
+  return shown3;
 }
-function threadMessageOf(shown2) {
-  if ("kind" in shown2) return turnMessage(shown2);
-  const createdAt = new Date(shown2.created);
-  if (shown2.role === "summary") return { role: "system", id: shown2.id, createdAt, content: [{ type: "text", text: textOf(shown2.parts) }] };
-  return { role: "user", id: shown2.id, createdAt, content: userContent2(shown2.parts) };
+function threadMessageOf(shown3) {
+  if ("kind" in shown3) return turnMessage(shown3);
+  const createdAt = new Date(shown3.created);
+  if (shown3.role === "summary") return { role: "system", id: shown3.id, createdAt, content: [{ type: "text", text: textOf(shown3.parts) }] };
+  return { role: "user", id: shown3.id, createdAt, content: userContent2(shown3.parts) };
 }
 function waitingCalls(messages, running) {
   if (running === void 0) return /* @__PURE__ */ new Set();
@@ -3133,7 +3293,7 @@ function resultsOf2(turn) {
   return results;
 }
 function replyContent(reasoning, parts, results) {
-  const thought = reasoning.filter((text2) => text2.trim() !== "").map((text2) => ({ type: "reasoning", text: text2 }));
+  const thought = reasoning.filter((text3) => text3.trim() !== "").map((text3) => ({ type: "reasoning", text: text3 }));
   const said = parts.flatMap((part) => {
     switch (part.type) {
       case "text":
@@ -3193,7 +3353,7 @@ function storeConversation(id) {
 
 // srcts/chat/send.ts
 var NEW_CONVERSATION = "New conversation";
-async function sendMessage(assistant, open2, text2, opened2) {
+async function sendMessage(assistant, open2, text3, opened2) {
   const { conversations, turns } = assistant;
   let conversation2 = open2;
   if (conversation2 === void 0) {
@@ -3201,7 +3361,7 @@ async function sendMessage(assistant, open2, text2, opened2) {
     await conversations.addConversation(conversation2, NEW_CONVERSATION);
     opened2(conversation2);
   }
-  await conversations.addMessage(conversation2, { id: newId(), role: "user", parts: [{ type: "text", text: text2 }], created: (/* @__PURE__ */ new Date()).toISOString() });
+  await conversations.addMessage(conversation2, { id: newId(), role: "user", parts: [{ type: "text", text: text3 }], created: (/* @__PURE__ */ new Date()).toISOString() });
   void turns.run(conversation2).catch(() => void 0);
 }
 
@@ -3238,9 +3398,9 @@ function MarkdownText() {
   plugins ??= [remarkGfm];
   return /* @__PURE__ */ jsx3(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
 }
-function Markdown({ text: text2, running = false }) {
+function Markdown({ text: text3, running = false }) {
   const { TextMessagePartProvider } = libraries();
-  return /* @__PURE__ */ jsx3(TextMessagePartProvider, { text: text2, isRunning: running, children: /* @__PURE__ */ jsx3(MarkdownText, {}) });
+  return /* @__PURE__ */ jsx3(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx3(MarkdownText, {}) });
 }
 function Table({ children }) {
   return /* @__PURE__ */ jsx3("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx3("table", { children }) });
@@ -3327,9 +3487,9 @@ function isShownResult(value) {
 }
 
 // srcts/chat/edit.ts
-function editView(args, text2, error, registered, board) {
+function editView(args, text3, error, registered, board) {
   const commands = listed(args).map((id) => labelOf(id, registered));
-  const result = parsed(text2);
+  const result = parsed(text3);
   if (result === void 0) return { commands, blocks: [], refused: void 0 };
   if (result.applied === false && error) {
     const command2 = typeof result.command === "string" ? labelOf(result.command, registered) : void 0;
@@ -3359,10 +3519,10 @@ function nameOf(id, board) {
   const block = Object.hasOwn(board.blocks, id) ? board.blocks[id] : void 0;
   return block === void 0 || block.name === "" ? id : block.name;
 }
-function parsed(text2) {
-  if (text2 === void 0) return void 0;
+function parsed(text3) {
+  if (text3 === void 0) return void 0;
   try {
-    const value = JSON.parse(text2);
+    const value = JSON.parse(text3);
     return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
   } catch {
     return void 0;
@@ -3425,11 +3585,11 @@ function Edits({ calls }) {
   const commands = views.flatMap((view) => view.commands);
   const blocks = /* @__PURE__ */ new Map();
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);
-  const refused = views.flatMap((view) => view.refused === void 0 ? [] : [view.refused]);
+  const refused2 = views.flatMap((view) => view.refused === void 0 ? [] : [view.refused]);
   return /* @__PURE__ */ jsxs4("span", { className: "blockr-assistant-edit", children: [
     commands.length > 0 ? /* @__PURE__ */ jsx4("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
     blocks.size > 0 ? /* @__PURE__ */ jsx4("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx4(Block, { block }, block.id)) }) : null,
-    refused.map((refusal, index) => /* @__PURE__ */ jsxs4("span", { className: "blockr-assistant-edit-refused", children: [
+    refused2.map((refusal, index) => /* @__PURE__ */ jsxs4("span", { className: "blockr-assistant-edit-refused", children: [
       refusal.command === void 0 ? "Refused" : `Refused by ${refusal.command}`,
       refusal.failures.length > 0 ? `: ${refusal.failures.join(" ")}` : ""
     ] }, index))
@@ -3454,9 +3614,9 @@ function CallDetails({ call, state }) {
 function Result({ call, state }) {
   if (state === "running") return /* @__PURE__ */ jsx4("p", { className: "blockr-assistant-call-note", children: "Running" });
   if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx4("p", { className: "blockr-assistant-call-note", children: ENDED });
-  const { text: text2, images, count } = call.result;
+  const { text: text3, images, count } = call.result;
   return /* @__PURE__ */ jsxs4(Fragment, { children: [
-    text2 === "" ? null : /* @__PURE__ */ jsx4("pre", { className: "blockr-assistant-call-result", children: text2 }),
+    text3 === "" ? null : /* @__PURE__ */ jsx4("pre", { className: "blockr-assistant-call-result", children: text3 }),
     images.map((image2, index) => /* @__PURE__ */ jsx4(
       "img",
       {
@@ -3536,10 +3696,10 @@ function Greeting() {
 function UserMessage() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
-  const text2 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
+  const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
   const files = parts.flatMap((part) => part.type === "data" && part.name === ATTACHMENT ? [fileName(part.data)] : []);
   return /* @__PURE__ */ jsxs5(MessagePrimitive.Root, { className: "blockr-assistant-user", children: [
-    text2 === "" ? null : /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-user-text", children: text2 }),
+    text3 === "" ? null : /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-user-text", children: text3 }),
     files.length === 0 ? null : /* @__PURE__ */ jsx5("ul", { className: "blockr-assistant-files", children: files.map((name, index) => /* @__PURE__ */ jsx5("li", { children: name }, index)) })
   ] });
 }
@@ -3554,9 +3714,9 @@ function Reply() {
         return /* @__PURE__ */ jsx5(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
       case "reasoning": {
         const part = parts[segment.index];
-        const text2 = part?.type === "reasoning" ? part.text : "";
+        const text3 = part?.type === "reasoning" ? part.text : "";
         const last = segment.index === parts.length - 1;
-        return /* @__PURE__ */ jsx5(Reasoning, { text: text2, running: running && last }, `reasoning-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx5(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
       }
       case "tools":
         return /* @__PURE__ */ jsx5(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
@@ -3566,19 +3726,19 @@ function Reply() {
   }) });
 }
 var TEXT = { Text: MarkdownText };
-function Reasoning({ text: text2, running }) {
+function Reasoning({ text: text3, running }) {
   return /* @__PURE__ */ jsxs5("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
     /* @__PURE__ */ jsx5("summary", { children: /* @__PURE__ */ jsx5("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
-    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx5(Markdown, { text: text2, running }) })
+    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx5(Markdown, { text: text3, running }) })
   ] });
 }
 function Summary() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
-  const text2 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
+  const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
   return /* @__PURE__ */ jsx5(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs5("details", { children: [
     /* @__PURE__ */ jsx5("summary", { children: "Summary of the earlier messages" }),
-    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx5(Markdown, { text: text2 }) })
+    /* @__PURE__ */ jsx5("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx5(Markdown, { text: text3 }) })
   ] }) });
 }
 function Working() {
@@ -3610,11 +3770,11 @@ function Chat({ core, assistant }) {
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
   const messages = conversation2?.messages ?? NO_MESSAGES;
   const runsHere = running !== void 0 && running.conversation === open2;
-  const shown2 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
+  const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const send = useCallback2(
-    (text2) => {
-      if (text2.trim() === "" || turns.current() !== void 0) return Promise.resolve();
-      return sendMessage(assistant, open2, text2, (added) => {
+    (text3) => {
+      if (text3.trim() === "" || turns.current() !== void 0) return Promise.resolve();
+      return sendMessage(assistant, open2, text3, (added) => {
         storeConversation(added);
         setChosen(added);
       });
@@ -3622,17 +3782,17 @@ function Chat({ core, assistant }) {
     [assistant, open2, turns]
   );
   const runtime = useExternalStoreRuntime({
-    messages: shown2,
+    messages: shown3,
     convertMessage: threadMessageOf,
     isRunning: runsHere,
     isSendDisabled: running !== void 0,
     onNew: async (message2) => {
-      const text2 = textOf2(message2);
+      const text3 = textOf2(message2);
       try {
-        await send(text2);
+        await send(text3);
       } catch (error) {
         core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
-        runtime.thread.composer.setText(text2);
+        runtime.thread.composer.setText(text3);
       }
     },
     onCancel: () => {
@@ -3643,8 +3803,8 @@ function Chat({ core, assistant }) {
   const actions = useMemo2(
     () => ({
       core,
-      send: (text2) => {
-        send(text2).catch((error) => {
+      send: (text3) => {
+        send(text3).catch((error) => {
           core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
         });
       },
@@ -3655,7 +3815,7 @@ function Chat({ core, assistant }) {
     }),
     [core, send, turns]
   );
-  const history = useMemo2(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(typedText).filter((text2) => text2 !== ""), [messages]);
+  const history = useMemo2(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(typedText).filter((text3) => text3 !== ""), [messages]);
   const waiting2 = useMemo2(() => waitingCalls(messages, runsHere ? running : void 0), [messages, running, runsHere]);
   const state = useMemo2(
     () => ({
