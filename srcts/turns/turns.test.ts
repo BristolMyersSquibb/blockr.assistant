@@ -378,6 +378,25 @@ describe("a turn that fails", () => {
     expect(raised(core)).toEqual([]);
   });
 
+  test("leaves a failure to a view that shows the conversation, and withdraws the error that stands, where it raises the error otherwise", async () => {
+    const failed = fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" });
+    const { core, turns, conversations } = await opened({ replies: [failed, failed, failed] });
+    const why = "The assistant's call to the model failed: 401 Unauthorized";
+    const remove = turns.addView((conversation) => conversation === "c1");
+
+    await turns.run("c2");
+    expect(raised(core)).toEqual([why]);
+
+    await turns.run("c1");
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c1", "u1")?.failure).toBe(why);
+
+    remove();
+    await conversations.addMessage("c1", asked("u3", "Try again."));
+    await turns.run("c1");
+    expect(raised(core)).toEqual([why]);
+  });
+
   test("keeps why the deployment offers no model by the conversation's last message, and raises nothing of its own", async () => {
     const why = "The assistant offers no model, since the list of models at https://proxy.invalid/v1/models holds none that takes tools.";
     const { core, turns, conversations } = await opened({ offered: { models: [], failure: why } });

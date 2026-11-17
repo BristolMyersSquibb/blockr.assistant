@@ -17,7 +17,7 @@
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement } from "react";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { CoreApi } from "@blockr/core";
@@ -104,6 +104,16 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     [core, send, turns],
   );
 
+  // The chat is a view of the conversation that it shows, while its element
+  // shows, so that a turn that fails there leaves the failure to the chat
+  // rather than raise a notification of it as well (../turns).
+  const element = useRef<HTMLDivElement>(null);
+  const showing = useRef(open);
+  useLayoutEffect(() => {
+    showing.current = open;
+  });
+  useEffect(() => turns.addView((id) => id === showing.current && visible(element.current)), [turns]);
+
   const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(typedText).filter((text) => text !== ""), [messages]);
   const waiting = useMemo(() => waitingCalls(messages, runsHere ? running : undefined), [messages, running, runsHere]);
   const state = useMemo<ChatState>(
@@ -129,7 +139,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     <AssistantRuntimeProvider runtime={runtime}>
       <ChatActionsContext value={actions}>
         <ChatStateContext value={state}>
-          <div className="blockr-assistant-chat" onKeyDown={escape}>
+          <div ref={element} className="blockr-assistant-chat" onKeyDown={escape}>
             <Transcript />
             <Composer />
             <LinkDialog
@@ -158,3 +168,9 @@ function typedText(message: Message): string {
   return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
+// Whether the element shows. A frontend may keep the chat mounted out of
+// sight, as in a tab of the dock that does not show, where the user sees
+// nothing that the chat draws.
+function visible(element: HTMLElement | null): boolean {
+  return element?.checkVisibility({ visibilityProperty: true }) ?? false;
+}

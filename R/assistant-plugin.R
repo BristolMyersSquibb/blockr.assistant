@@ -67,8 +67,9 @@
 #'   such as `OPENAI_API_KEY`, so that a key set for code in R reaches no
 #'   browser unless the deployment sets it here.
 #'   Any visitor who can use the assistant can read the key from the page.
-#'   Where the option is unset, each turn fails with the error
-#'   `assistant_call_failed`.
+#'   Where the option is unset, each turn fails, which the chat shows at the
+#'   turn, or else the error `assistant_call_failed` reports, where no chat
+#'   shows the turn's conversation.
 #' * The blockr option `assistant_models` gives the ids of the models offered,
 #'   the first being the default, as a character vector or as one string that
 #'   separates them by commas, such as `"gpt-5.4,gpt-5.4-nano"`.

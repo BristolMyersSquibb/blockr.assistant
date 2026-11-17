@@ -2,7 +2,7 @@
 // pi's fake provider, drawn by React on happy-dom, so that the tests need
 // neither R, a browser nor a model.
 
-import type { Json } from "@blockr/core";
+import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -197,6 +197,14 @@ function click(target: Element | null): void {
   });
 }
 
+// The messages of the notifications of the error assistant_call_failed.
+function callFailures(core: CoreApi): string[] {
+  return core.notifications
+    .get()
+    .filter((notification) => notification.source.kind === "module" && notification.source.code === "assistant_call_failed")
+    .map((notification) => notification.message);
+}
+
 function field(el: HTMLElement): HTMLTextAreaElement {
   const found = el.querySelector("textarea");
   if (found === null) throw new Error("The chat draws no message field.");
@@ -323,14 +331,26 @@ describe("the assistant's chat", () => {
     expect(el.querySelector(".blockr-assistant-reply")?.textContent).toContain("None.");
   });
 
-  test("shows a failure that ended a turn at that turn", async () => {
-    const { el } = await chat({ replies: [fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" })] });
+  test("shows a failure that ended a turn at that turn, with no notification of it, which a chat out of sight raises", async () => {
+    const failed = fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" });
+    const { el, core } = await chat({ replies: [failed, failed] });
+    const why = "The assistant's call to the model failed: 401 Unauthorized";
 
     type(el, "How many blocks?");
     press(field(el), "Enter");
     await until(() => el.querySelector(".blockr-assistant-failure") !== null, "the failure");
 
-    expect(el.querySelector(".blockr-assistant-failure")?.textContent).toBe("The assistant's call to the model failed: 401 Unauthorized");
+    expect(el.querySelector(".blockr-assistant-failure")?.textContent).toBe(why);
+    expect(callFailures(core)).toEqual([]);
+
+    // A frontend may keep the chat mounted out of sight, as in a tab of the
+    // dock that does not show.
+    el.style.display = "none";
+    type(el, "And now?");
+    press(field(el), "Enter");
+    await until(() => callFailures(core).length > 0, "the notification");
+
+    expect(callFailures(core)).toEqual([why]);
   });
 });
 

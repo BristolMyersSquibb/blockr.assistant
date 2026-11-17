@@ -94,8 +94,9 @@ The assistant reads a key from this option alone, never from a variable
 such as \code{OPENAI_API_KEY}, so that a key set for code in R reaches no
 browser unless the deployment sets it here.
 Any visitor who can use the assistant can read the key from the page.
-Where the option is unset, each turn fails with the error
-\code{assistant_call_failed}.
+Where the option is unset, each turn fails, which the chat shows at the
+turn, or else the error \code{assistant_call_failed} reports, where no chat
+shows the turn's conversation.
 \item The blockr option \code{assistant_models} gives the ids of the models offered,
 the first being the default, as a character vector or as one string that
 separates them by commas, such as \code{"gpt-5.4,gpt-5.4-nano"}.

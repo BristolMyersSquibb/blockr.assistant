@@ -2625,6 +2625,7 @@ function createTurns(core, signal, options) {
   const { conversations, callFailed } = options;
   const locks = "locks" in options ? options.locks : pageLocks();
   const listeners = /* @__PURE__ */ new Set();
+  const views = /* @__PURE__ */ new Set();
   let running;
   let snapshot;
   function closed2() {
@@ -2638,12 +2639,17 @@ function createTurns(core, signal, options) {
     for (const listener of listeners) listener();
   }
   function fail(conversation2, why) {
-    callFailed.raise(why);
-    keep2(conversation2, why);
+    if (keep2(conversation2, why) && shown2(conversation2)) callFailed.withdraw();
+    else callFailed.raise(why);
   }
   function keep2(conversation2, why) {
     const last = conversations.get(conversation2)?.messages.at(-1);
-    if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
+    if (last === void 0) return false;
+    conversations.keep(conversation2, last.id, { failure: why });
+    return true;
+  }
+  function shown2(conversation2) {
+    return [...views].some((shows) => shows(conversation2));
   }
   function succeeded() {
     callFailed.withdraw();
@@ -2771,6 +2777,12 @@ function createTurns(core, signal, options) {
       return () => {
         listeners.delete(listener);
       };
+    },
+    addView(shows) {
+      views.add(shows);
+      return () => {
+        views.delete(shows);
+      };
     }
   };
 }
@@ -2833,12 +2845,12 @@ function nextAssistant(core) {
 }
 
 // srcts/chat/panel.tsx
-import { useEffect as useEffect3, useState as useState3 } from "react";
+import { useEffect as useEffect4, useState as useState3 } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo2, useState as useState2 } from "react";
+import { useCallback as useCallback2, useEffect as useEffect3, useLayoutEffect as useLayoutEffect2, useMemo as useMemo2, useRef as useRef3, useState as useState2 } from "react";
 
 // srcts/chat/composer.tsx
 import { useLayoutEffect, useRef } from "react";
@@ -3655,6 +3667,12 @@ function Chat({ core, assistant }) {
     }),
     [core, send, turns]
   );
+  const element = useRef3(null);
+  const showing = useRef3(open2);
+  useLayoutEffect2(() => {
+    showing.current = open2;
+  });
+  useEffect3(() => turns.addView((id) => id === showing.current && visible(element.current)), [turns]);
   const history = useMemo2(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(typedText).filter((text2) => text2 !== ""), [messages]);
   const waiting2 = useMemo2(() => waitingCalls(messages, runsHere ? running : void 0), [messages, running, runsHere]);
   const state = useMemo2(
@@ -3673,7 +3691,7 @@ function Chat({ core, assistant }) {
     event.preventDefault();
     turns.stop();
   };
-  return /* @__PURE__ */ jsx6(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx6(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx6(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs6("div", { className: "blockr-assistant-chat", onKeyDown: escape, children: [
+  return /* @__PURE__ */ jsx6(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx6(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx6(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs6("div", { ref: element, className: "blockr-assistant-chat", onKeyDown: escape, children: [
     /* @__PURE__ */ jsx6(Transcript, {}),
     /* @__PURE__ */ jsx6(Composer, {}),
     /* @__PURE__ */ jsx6(
@@ -3694,6 +3712,9 @@ function textOf2(message2) {
 function typedText(message2) {
   return message2.parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
+function visible(element) {
+  return element?.checkVisibility({ visibilityProperty: true }) ?? false;
+}
 
 // srcts/chat/panel.tsx
 import { jsx as jsx7 } from "react/jsx-runtime";
@@ -3713,7 +3734,7 @@ function Panel({ core }) {
 }
 function useAssistant(core) {
   const [assistant, setAssistant] = useState3(() => open(assistantOf(core)));
-  useEffect3(() => {
+  useEffect4(() => {
     if (assistant !== void 0 && !assistant.signal.aborted) {
       const closed2 = () => {
         setAssistant(void 0);
@@ -3735,7 +3756,7 @@ function useAssistant(core) {
 }
 function useLibraries(core) {
   const [loaded2, setLoaded] = useState3(librariesLoaded);
-  useEffect3(() => {
+  useEffect4(() => {
     if (loaded2 !== false) return;
     let live = true;
     loadLibraries().then(
