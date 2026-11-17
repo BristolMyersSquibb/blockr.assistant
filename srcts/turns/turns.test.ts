@@ -1,8 +1,9 @@
 // The turns (./turns.ts) on core's CoreApi for tests, with the conversations
 // of the board and the loop on pi's fake provider: a turn's messages and
-// tokens in the state, the model that it talks to and its settings, one turn
-// at a time, the tab's Web Lock, the reply as it streams, a stop, the error of
-// a failed call, the next board, and a conversation that another plugin
+// tokens in the state, the model that it talks to and its settings, the
+// system prompt and the message of the app's of each call, one turn at a
+// time, the tab's Web Lock, the reply as it streams, a stop, the error of a
+// failed call, the next board, and a conversation that another plugin
 // removes.
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
@@ -19,6 +20,7 @@ import type { Loop } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
 import type { Offered } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
+import type { Prompt } from "../prompt/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
@@ -93,7 +95,13 @@ interface OpenOptions {
   readonly load?: () => Promise<Loop>;
   readonly tokensPerSecond?: number;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
+  // The system prompt and the message of the app's, which are fixed texts
+  // unless given.
+  readonly prompt?: Prompt;
 }
+
+const SYSTEM_PROMPT = "You are an assistant embedded next to a blockr data analysis board.";
+const APP_MESSAGE = "This message comes from the app, not from the user.";
 
 // Core on a board whose conversations c1 and c2 hold a message that the user
 // sent, c1 with the conversation's pick of the model, faux-1, and c2 with
@@ -127,6 +135,7 @@ async function opened(options: OpenOptions = {}) {
     models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"], named: true }) },
     settings: options.settings ?? { checked: () => Promise.resolve(new Map()) },
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
+    prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
     load: options.load ?? (() => Promise.resolve(loop)),
     locks: locks.locks,
   });
@@ -264,6 +273,44 @@ describe("a turn of the assistant", () => {
     expect(keyless).toHaveLength(1);
     expect(keyless[0]?.key).not.toBe("test-key");
     expect(raised(second.core)).toEqual([]);
+  });
+
+  test("sends each call the system prompt, and after the conversation the message of the app's as it is when the call goes out, which the state does not keep", async () => {
+    const contexts: { readonly role: string; readonly content: unknown }[][] = [];
+    const read = (step: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep => (context) => {
+      contexts.push(context.messages.map(({ role, content }) => ({ role, content })));
+      return step;
+    };
+    const listed: Tool = {
+      name: "list_blocks",
+      description: "List the blocks.",
+      parameters: { type: "object", properties: {} },
+      executionMode: "parallel",
+      execute: () => Promise.resolve({ text: "[]", isError: false, images: [] }),
+    };
+    let written = 0;
+    const appMessage = () => {
+      written += 1;
+      return Promise.resolve(`The board as call ${String(written)} goes out.`);
+    };
+    const { core, turns } = await opened({
+      tools: [listed],
+      prompt: { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage },
+      replies: [read(fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c-1" })], { stopReason: "toolUse" })), read(fauxAssistantMessage("No blocks."))],
+    });
+
+    await turns.run("c1");
+
+    expect(contexts.map((messages) => messages[0])).toEqual([
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT },
+    ]);
+    expect(contexts.map((messages) => messages.at(-1))).toEqual([
+      { role: "user", content: [{ type: "text", text: "The board as call 1 goes out." }] },
+      { role: "user", content: [{ type: "text", text: "The board as call 2 goes out." }] },
+    ]);
+    expect(contexts[1]?.map(({ role }) => role)).toEqual(["system", "user", "assistant", "toolResult", "user"]);
+    expect(JSON.stringify(inState(core, "c1"))).not.toContain("goes out");
   });
 
   test("enters the results of its tool calls as one message of the role tool", async () => {
@@ -461,6 +508,34 @@ describe("a turn that fails", () => {
     await turns.run("c1");
 
     expect(raised(core)).toEqual(['The assistant cannot call a model: The blockr option assistant_api is "openai", where it takes the API that the base URL speaks.']);
+  });
+
+  test("raises the error assistant_call_failed where the system prompt cannot be written, and calls no model", async () => {
+    const seen: { model: string; key: string | undefined }[] = [];
+    const wrong = new RangeError('The blockr option assistant_skill_description_max_chars is "many", where it takes a whole number of 0 or more.');
+    const { core, turns } = await opened({
+      prompt: { system: () => Promise.reject(wrong), appMessage: () => Promise.resolve(APP_MESSAGE) },
+      replies: [recording(seen)],
+    });
+
+    await turns.run("c1");
+
+    expect(raised(core)).toEqual([`The assistant cannot write its system prompt: ${wrong.message}`]);
+    expect(seen).toEqual([]);
+  });
+
+  test("raises the error assistant_call_failed where the message of the app's cannot be written, and calls no model", async () => {
+    const seen: { model: string; key: string | undefined }[] = [];
+    const wrong = new RangeError('The blockr option assistant_board_section_max_chars is "many", where it takes a whole number of 0 or more.');
+    const { core, turns } = await opened({
+      prompt: { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.reject(wrong) },
+      replies: [recording(seen)],
+    });
+
+    await turns.run("c1");
+
+    expect(raised(core)).toEqual([`The assistant's turn failed: ${wrong.message}`]);
+    expect(seen).toEqual([]);
   });
 
   test("raises the error assistant_call_failed where the loop's code fails to load", async () => {

@@ -26,11 +26,18 @@
 //   returned, since a provider takes a tool call only with its result.
 // - A summary goes as an exchange: a request for it as the user's message,
 //   and the summary as the reply.
+// - The message of the app's, which the loop adds after the conversation for
+//   the call alone, goes as a message of the role app, which the loop
+//   declares among the messages of pi's agent, so that pi's messages tell it
+//   from the user's. Before the call, pi's convertToLlm turns it into text in
+//   a message of the role user, which the model takes, and whose text opens
+//   with the preamble that says that the app writes it.
 //
 // On the way back, a reply holds its text and its tool calls, in the order
 // that it gave them, while the memory keeps its reasoning, as text, and the
 // reply as pi wrote it, where it finished.
 
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type {
   Api,
   AssistantMessage,
@@ -41,6 +48,7 @@ import type {
   TextContent,
   ToolResultMessage,
   Usage,
+  UserMessage,
 } from "@earendil-works/pi-ai";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import { newId } from "../state/index.ts";
@@ -96,6 +104,36 @@ export function callMessages(
 function systemMessage(prompt: string, tools: readonly Tool[]): SystemMessage {
   const declared = tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }));
   return { role: "system", content: prompt, ...(declared.length > 0 ? { toolsAdded: declared } : {}), timestamp: Date.now() };
+}
+
+// A message of the app's, as the messages of pi's agent hold it.
+export interface AppMessage {
+  role: "app";
+  content: TextContent[];
+  timestamp: number;
+}
+
+// The role app among the messages of pi's agent, as pi's agent lets an app
+// declare roles of its own.
+declare module "@earendil-works/pi-agent-core" {
+  interface CustomAgentMessages {
+    app: AppMessage;
+  }
+}
+
+// The message of the app's that the text given makes.
+export function appMessage(written: string): AppMessage {
+  return { role: "app", content: [text(written)], timestamp: Date.now() };
+}
+
+// The messages of pi's agent as the model takes them: a message of the app's
+// as a message of the role user, and every other as it is.
+export function llmMessages(messages: readonly AgentMessage[]): PiMessage[] {
+  return messages.map((message): PiMessage => (message.role === "app" ? appAsUser(message) : message));
+}
+
+function appAsUser(message: AppMessage): UserMessage {
+  return { role: "user", content: message.content, timestamp: message.timestamp };
 }
 
 // The conversation as pi's messages, for a call to the model given.

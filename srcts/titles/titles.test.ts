@@ -112,6 +112,7 @@ async function opened(replies: FauxResponseStep[]) {
     models,
     settings,
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
+    prompt: { system: () => Promise.resolve("You answer questions about a board."), appMessage: () => Promise.resolve("The board holds no block.") },
     load,
     locks: undefined,
   });
