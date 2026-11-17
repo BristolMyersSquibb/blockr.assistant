@@ -308,7 +308,7 @@ describe("the visitor's own key", () => {
     expect(assistant.key.current()).toEqual({ kind: "lost", key: mock.key });
     const [why] = raised(core, "assistant_call_failed");
     expect(why?.startsWith(failed)).toBe(true);
-    expect(why?.endsWith(" The connection was lost, and the key may be wrong.")).toBe(true);
+    expect(why?.endsWith(". The connection was lost, and the key may be wrong.")).toBe(true);
   });
 
   test("asks for the list of models once it comes, where the app names no models, and is dropped where the list refuses it", async () => {

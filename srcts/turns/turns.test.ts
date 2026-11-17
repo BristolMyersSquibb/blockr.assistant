@@ -722,8 +722,8 @@ describe("a turn on the visitor's own key", () => {
 
     expect(checked).toEqual(["sk-wrong"]);
     expect(key.current()).toEqual({ kind: "refused" });
-    expect(raised(core)).toEqual([`${UNREAD} ${refusal}`]);
-    expect(conversations.kept("c1", "u1")?.failure).toBe(`${UNREAD} ${refusal}`);
+    expect(raised(core)).toEqual([`${UNREAD}. ${refusal}`]);
+    expect(conversations.kept("c1", "u1")?.failure).toBe(`${UNREAD}. ${refusal}`);
   });
 
   test("fails as any call where the list says that the base URL takes the key, which stays", async () => {
@@ -748,7 +748,19 @@ describe("a turn on the visitor's own key", () => {
     await turns.run("c1");
 
     expect(key.current()).toEqual({ kind: "lost", key: "sk-visitor" });
-    expect(raised(core)).toEqual([`${UNREAD} The connection was lost, and the key may be wrong.`]);
+    expect(raised(core)).toEqual([`${UNREAD}. The connection was lost, and the key may be wrong.`]);
+  });
+
+  test("adds no full stop of its own to a call's failure that ends with one", async () => {
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key: holding("sk-visitor"),
+      load: () => Promise.resolve(failing("The proxy is down.", "unread")),
+    });
+
+    await turns.run("c1");
+
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: The proxy is down. The connection was lost, and the key may be wrong."]);
   });
 
   test("tells a key in doubt that the base URL took it, once a call succeeds", async () => {
@@ -799,11 +811,11 @@ describe("a turn on the deployment's key, or on none", () => {
     });
 
     await turns.run("c1");
-    expect(raised(core)).toEqual([`${UNREAD} ${refusal}`]);
+    expect(raised(core)).toEqual([`${UNREAD}. ${refusal}`]);
 
     await conversations.addMessage("c1", asked("u3", "Try again."));
     await turns.run("c1");
-    expect(raised(core)).toEqual([`${UNREAD} The connection was lost, and the key may be wrong.`]);
+    expect(raised(core)).toEqual([`${UNREAD}. The connection was lost, and the key may be wrong.`]);
 
     expect(checked).toEqual(["test-key", "test-key"]);
     expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });

@@ -593,7 +593,7 @@ function createTurns(core, signal, options) {
     if (closed2()) return;
     switch (checked.kind) {
       case "refused":
-        fail(turn.conversation, `${why} ${checked.message}`);
+        fail(turn.conversation, `${sentence(why)} ${checked.message}`);
         if (visitor) options.key.refused(key);
         return;
       case "listed":
@@ -601,7 +601,7 @@ function createTurns(core, signal, options) {
         if (visitor) options.key.took(key);
         return;
       case "failed":
-        fail(turn.conversation, `${why} ${LOST}`);
+        fail(turn.conversation, `${sentence(why)} ${LOST}`);
         if (visitor) options.key.lost(key);
         return;
     }
@@ -740,6 +740,9 @@ function createTurns(core, signal, options) {
       };
     }
   };
+}
+function sentence(text3) {
+  return /[.!?]$/.test(text3) ? text3 : `${text3}.`;
 }
 
 // srcts/compaction/prompt.ts

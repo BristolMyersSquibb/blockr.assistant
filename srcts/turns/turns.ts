@@ -224,7 +224,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     if (closed()) return;
     switch (checked.kind) {
       case "refused":
-        fail(turn.conversation, `${why} ${checked.message}`);
+        fail(turn.conversation, `${sentence(why)} ${checked.message}`);
         if (visitor) options.key.refused(key);
         return;
       case "listed":
@@ -232,7 +232,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         if (visitor) options.key.took(key);
         return;
       case "failed":
-        fail(turn.conversation, `${why} ${LOST}`);
+        fail(turn.conversation, `${sentence(why)} ${LOST}`);
         if (visitor) options.key.lost(key);
         return;
     }
@@ -389,3 +389,9 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
   };
 }
 
+// The text given, ending as a sentence ends, so that another sentence can
+// follow it: pi's message of a connection that failed, "Connection error.:
+// Failed to fetch", ends with no full stop.
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
