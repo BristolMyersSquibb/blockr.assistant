@@ -110,13 +110,14 @@ export interface Conversations {
   keep(conversation: ConversationId, message: MessageId, kept: Kept): void;
   // Each of these changes a conversation as the command of its name does.
   // A message that addMessage() adds takes with it what the memory keeps of
-  // it, where it is given.
+  // it, where it is given. A call that gives addUsage() no total leaves the
+  // conversation's last as it was.
   addConversation(id: ConversationId, title: string, model?: string | null): Promise<void>;
   renameConversation(conversation: ConversationId, title: string): Promise<void>;
   removeConversation(conversation: ConversationId): Promise<void>;
   addMessage(conversation: ConversationId, message: Message, kept?: Kept): Promise<void>;
   compactConversation(conversation: ConversationId, summary: Message, from: MessageId): Promise<void>;
-  addUsage(conversation: ConversationId, input: number, output: number, total: number): Promise<void>;
+  addUsage(conversation: ConversationId, input: number, output: number, total?: number): Promise<void>;
   setModel(conversation: ConversationId, model: string | null): Promise<void>;
   // Calls the listener whenever what all() or kept() gives may have changed,
   // until the function that it returns is called.
@@ -380,7 +381,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async addUsage(conversation, input, output, total) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-add_usage", { conversation, input, output, total });
+        await run("blockr.assistant-add_usage", { conversation, input, output, ...(total === undefined ? {} : { total }) });
         return;
       }
       change(conversation, (held) => ({ ...held, usage: addedUsage(held.usage, input, output, total) }));

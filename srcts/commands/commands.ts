@@ -47,7 +47,7 @@ interface AddUsage {
   readonly conversation: ConversationId;
   readonly input: number;
   readonly output: number;
-  readonly total: number;
+  readonly total?: number;
 }
 
 // Whether the assistant's state on the board holds the conversation.
@@ -178,15 +178,15 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-add_usage",
     label: "Add usage",
     description:
-      "Adds a call's input and output tokens to a conversation's count, and keeps `total`, every token of the call, its cached input included, as the conversation's `last`.",
+      "Adds a call's input and output tokens to a conversation's count, and keeps `total`, every token of the call, its cached input included, as the conversation's `last`. A call that leaves `total` out, as one that titles the conversation, leaves `last` as it was.",
     args: schemas.object(
       {
         conversation: schemas.conversation,
         input: schemas.tokens("The input tokens of the call."),
         output: schemas.tokens("The output tokens of the call."),
-        total: schemas.tokens("Every token of the call, its cached input included."),
+        total: schemas.tokens("Every token of the call, its cached input included, which the conversation keeps as its `last`, as it was where this is left out."),
       },
-      ["conversation", "input", "output", "total"],
+      ["conversation", "input", "output"],
     ),
     preflight: (board, { conversation }) => holds(board, conversation),
     run: (board, { conversation, input, output, total }) => {

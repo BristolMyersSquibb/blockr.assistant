@@ -3,7 +3,7 @@
 // provider: the summary that goes in before a turn's call past the rule, what
 // the calls send, a split exchange, an earlier summary, the retry after a
 // call that outgrew the window, a failed summary's warning, a stop, the
-// user's ask, a cap of 0 and the next board.
+// user's ask, a cap of 0, the next board and the summary's spans.
 // The tests make the conversations, the compaction and the turns themselves,
 // on the assistant's class without its start, which would open the board's
 // own.
@@ -23,7 +23,7 @@ import type { Offered } from "../models/index.ts";
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import { heldError } from "../notifications/index.ts";
 import type { AssistantState, Conversation, Message, Role } from "../state/index.ts";
-import { FAUX_API, fauxLoop } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, recordSpans } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import { createCompaction } from "./compaction.ts";
@@ -110,7 +110,7 @@ async function opened(options: OpenOptions) {
   const calls = {
     deployment: Promise.resolve(deployed()),
     models: {
-      offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }),
+      offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"], named: true }),
       check: () => Promise.resolve({ kind: "failed" as const, message: "The list failed." }),
     },
     settings: { checked: () => Promise.resolve(new Map([["faux-1", { contextWindow: WINDOW }]])) },
@@ -218,6 +218,23 @@ describe("before a turn's call", () => {
     expect(system?.toolsAdded ?? []).toEqual([]);
     expect(userText(sent[0], 1)).toBe(historyPrompt(exchanges.slice(0, 2)));
     expect(userText(sent[1], 1)).toBe(`${SUMMARY_PREFIX}${SUMMARY}${SUMMARY_SUFFIX}`);
+  });
+
+  test("a summary's span goes under the turn's span, since the turn's call waits for it, with pi's span of the call under it", async () => {
+    const recorded = recordSpans();
+    const { conversations, turns } = await opened({ conversations: { c1: past }, replies: [fauxAssistantMessage(SUMMARY), fauxAssistantMessage("Done.")] });
+
+    await conversations.addMessage("c1", asked("u4"));
+    await turns.run("c1");
+
+    // The summary's span ends before the turn's.
+    const made = recorded.spans().filter((span) => span.name === "invoke_agent");
+    const [summary, turn] = made;
+    const calls = recorded.spans().filter((span) => span.name === "chat faux-1");
+    expect(made).toHaveLength(2);
+    expect(turn?.parentSpanContext).toBeUndefined();
+    expect(summary?.parentSpanContext?.spanId).toBe(turn?.spanContext().spanId);
+    expect(calls.map((call) => call.parentSpanContext?.spanId)).toEqual([summary?.spanContext().spanId, turn?.spanContext().spanId]);
   });
 
   test("no summary goes in where the call is within the rule", async () => {
@@ -396,7 +413,7 @@ describe("a summary", () => {
   });
 
   test("raises nothing where the deployment offers no model, since the models raised why", async () => {
-    const { core, compaction, faux } = await opened({ conversations: { c1: past }, offered: { models: [], failure: "The list offers no model." } });
+    const { core, compaction, faux } = await opened({ conversations: { c1: past }, offered: { models: [], named: false, failure: "The list offers no model." } });
 
     expect(await compaction.compact("c1")).toBe(false);
     expect(faux.state.callCount).toBe(0);

@@ -138,11 +138,12 @@ describe("the conversations under a cap above 0", () => {
     await conversations.renameConversation("c1", "Regions");
     await conversations.setModel("c1", "gpt-5.4");
     await conversations.addUsage("c1", 100, 20, 130);
+    await conversations.addUsage("c1", 40, 8);
 
     expect(stateIn(core).conversations.c1).toMatchObject({
       title: "Regions",
       model: "gpt-5.4",
-      usage: { input: 100, output: 20, last: 130 },
+      usage: { input: 140, output: 28, last: 130 },
     });
     await expect(conversations.addConversation("c1", "Again")).rejects.toThrow(/fails its preflight/);
   });
@@ -207,6 +208,7 @@ describe("the conversations under a cap of 0", () => {
     await conversations.addMessage("c2", message("u1", "user"));
     await conversations.renameConversation("c2", "Plots");
     await conversations.addUsage("c2", 100, 20, 130);
+    await conversations.addUsage("c2", 40, 8);
     await conversations.compactConversation("c1", message("s1", "summary"), "u3");
     await conversations.removeConversation("c1");
 
@@ -215,7 +217,7 @@ describe("the conversations under a cap of 0", () => {
     expect(conversations.get("c2")).toMatchObject({
       title: "Plots",
       model: "gpt-5.4",
-      usage: { input: 100, output: 20, last: 130 },
+      usage: { input: 140, output: 28, last: 130 },
       updated: "2026-11-16T08:00:00.000Z",
     });
     expect(ids(conversations.get("c2"))).toEqual(["u1"]);

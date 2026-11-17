@@ -48,7 +48,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
-import type { Summarized } from "../loop/index.ts";
+import type { ModelReply } from "../loop/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import { newId } from "../state/index.ts";
@@ -158,7 +158,7 @@ export function createCompaction(core: CoreApi, signal: AbortSignal, options: Co
     writes.add(conversation);
     changed();
     try {
-      const write = (prompt: string): Promise<Summarized> => loop.summarize({ ...model, systemPrompt: SUMMARY_SYSTEM_PROMPT, prompt, signal: stop });
+      const write = (prompt: string): Promise<ModelReply> => loop.callModel({ ...model, systemPrompt: SUMMARY_SYSTEM_PROMPT, prompt, signal: stop });
       const [past, start] = await Promise.all([
         history.length > 0 ? write(historyPrompt(history, earlier)) : undefined,
         turnStart.length > 0 ? write(turnStartPrompt(turnStart)) : undefined,

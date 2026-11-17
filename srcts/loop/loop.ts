@@ -102,15 +102,25 @@
 // 4. A tool runs its commands and sends its requests before its first await,
 //    or else inside context.with() of the context that it kept from before
 //    that await. So core puts its spans of them under the tool's span.
-// 5. The turn's span ends once the turn ends.
+// 5. The turn's span is active again as the loop calls what the caller does
+//    before a call. Compaction makes the calls that write a summary before
+//    its first await, so the spans of a summary that the call waits for go
+//    under the turn's span.
+// 6. The turn's span ends once the turn ends.
 //
-// The loop also makes each call that writes a summary for compaction
-// (../compaction), which runs on pi's models alone, not on its agent loop.
-// That call goes to the model through the same provider, with the same
-// credential, identity and thinking level, but with the caller's system
-// prompt and one message of the role user. It declares no tools and holds no
-// message of the app's
+// The loop also makes the model calls of the plugin's own, which run on pi's
+// models alone, not on its agent loop: the call that writes a summary for
+// compaction (../compaction), and the call that titles a conversation
+// (../titles). Such a call goes to the model through the same provider, with
+// the same credential, identity and thinking level as a turn's calls, but
+// with the caller's system prompt and one message of the role user. It
+// declares no tools and holds no message of the app's
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+// Such a call runs in a span invoke_agent of its own, under the context that
+// is active as callModel() is called, and the loop gives pi that span, so
+// that pi records the span of the call under it, as ellmer records today's
+// title calls. A title, which the plugin asks for once a turn ended, starts a
+// trace of its own.
 // The loop also gives the context window of a model as pi takes it, by which
 // compaction judges when a conversation needs a summary.
 
@@ -155,8 +165,9 @@ const NO_KEY = "blockr-assistant-no-key";
 // OpenRouter's base URL, as a deployment gives it.
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-// The model that a call talks to, which a turn and a summary both name: where
-// the call goes, the model's id, and its settings.
+// The model that a call talks to, which a turn and a model call of the
+// plugin's own both name: where the call goes, the model's id, and its
+// settings.
 export interface CallModel {
   readonly connection: Connection;
   // The id of the model, such as "gpt-5.4".
@@ -240,23 +251,24 @@ export interface Call {
   readonly overflow?: boolean;
 }
 
-// The call that writes a summary for compaction: one message of the role
-// user, under a system prompt of its own, with no tools
+// A model call of the plugin's own, as for a summary or a title: one message
+// of the role user, under a system prompt of its own, with no tools
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#compaction).
-export interface SummaryCall extends CallModel {
+export interface ModelCall extends CallModel {
   readonly systemPrompt: string;
   // The text of the message of the role user.
   readonly prompt: string;
   readonly signal: AbortSignal;
 }
 
-// A call that wrote a summary, or that ended without one.
-export interface Summarized {
-  // The summary, where the call wrote one.
+// What a model call of the plugin's own gave: the text that the model wrote,
+// or why it wrote none.
+export interface ModelReply {
+  // The text, where the model wrote one.
   readonly text?: string;
   // The tokens of the call, as a turn's call gives them.
   readonly usage: Call["usage"];
-  // Why the call wrote no summary, where it wrote none.
+  // Why the model wrote no text, where it wrote none.
   readonly failure?: string;
 }
 
@@ -267,10 +279,10 @@ export interface Loop {
   // rejects where the turn cannot go on, as where the credential cannot be
   // read.
   run(turn: Turn): Promise<void>;
-  // Makes the call that writes a summary, and resolves once the call ends,
+  // Makes a model call of the plugin's own, and resolves once the call ends,
   // however it ends. It rejects where the call cannot go out, as where the
   // credential cannot be read.
-  summarize(call: SummaryCall): Promise<Summarized>;
+  callModel(call: ModelCall): Promise<ModelReply>;
   // The context window of the model, in tokens, as the loop gives it to pi.
   contextWindow(model: CallModel): number;
   // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
@@ -291,7 +303,7 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
   };
   return {
     run: (turn) => runTurn(pi, streams, turn),
-    summarize: (call) => summarize(pi, streams, call),
+    callModel: (call) => callModel(pi, streams, call),
     contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
     inCatalog: (id) => catalogModel(pi, id) !== undefined,
   };
@@ -306,16 +318,26 @@ export async function loadLoop(): Promise<Loop> {
 
 // Runs the turn in its span, invoke_agent.
 function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+  return startAgentSpan(turn, (span) => runAgent(pi, streams, turn, span));
+}
+
+// Runs the callback in a span invoke_agent under the context that is active
+// as it is called, with the provider and the model that the call talks to, as
+// ellmer's span of a turn has them.
+function startAgentSpan<T>(call: CallModel, callback: (span: TelemetrySpan) => Promise<T>): Promise<T> {
   const attributes = {
     "gen_ai.operation.name": "invoke_agent",
-    "gen_ai.provider.name": providerName(turn.connection.api),
-    "gen_ai.request.model": turn.model,
+    "gen_ai.provider.name": providerName(call.connection.api),
+    "gen_ai.request.model": call.model,
   };
-  return telemetryUnder(context.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
+  return telemetryUnder(context.active()).startSpan({ name: "invoke_agent", attributes }, callback);
 }
 
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
+  // The context in which the turn's span is active, which the loop can read
+  // only before its first await.
+  const turnContext = context.active();
   const model = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = modelsAt(pi, streams, turn.connection, model);
 
@@ -363,7 +385,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
-      await turn.beforeCall?.(signal ?? turn.signal);
+      await context.with(turnContext, () => turn.beforeCall?.(signal ?? turn.signal));
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
@@ -440,39 +462,41 @@ function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, co
   return models;
 }
 
-// Makes the call that writes a summary, with the settings of a turn's calls:
-// the same model, credential, identity and thinking level. It asks the
-// provider to cache nothing, since no later call starts as this one does, as
-// pi's own CLI asks for its summaries.
-async function summarize(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: SummaryCall): Promise<Summarized> {
-  const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
-  const models = modelsAt(pi, streams, call.connection, model);
-  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
-  const level = thinkingLevel(pi, call);
-  const reply = await models.completeSimple(
-    model,
-    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-    { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
-  );
-  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
-  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
-  const failure = summaryFailure(reply, text);
-  return failure === undefined ? { text, usage } : { usage, failure };
+// Makes a model call of the plugin's own in its span, invoke_agent, with the
+// settings of a turn's calls: the same model, credential, identity and
+// thinking level. It asks the provider to cache nothing, since no later call
+// starts as this one does, as pi's own CLI asks for its summaries.
+function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
+  return startAgentSpan(call, async (span) => {
+    const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+    const models = modelsAt(pi, streams, call.connection, model);
+    const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+    const level = thinkingLevel(pi, call);
+    const reply = await models.completeSimple(
+      model,
+      { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+      { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span },
+    );
+    const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+    const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
+    const failure = findFailure(reply, text);
+    return failure === undefined ? { text, usage } : { usage, failure };
+  });
 }
 
-// Why a call wrote no summary, or undefined where it wrote one. A reply that
-// the model's cap for a reply cut off is no summary, since it may end
-// mid-sentence, as pi's CLI has it.
-function summaryFailure(reply: AssistantMessage, text: string): string | undefined {
+// Why the model wrote no text, or undefined where it wrote one. A reply that
+// the model's cap for a reply cut off counts as none, since it may end
+// mid-sentence, as pi's CLI has it for a summary.
+function findFailure(reply: AssistantMessage, text: string): string | undefined {
   switch (reply.stopReason) {
     case "error":
       return reply.errorMessage ?? "The provider gave no reason.";
     case "aborted":
-      return "The call was stopped before the model wrote the summary.";
+      return "The call was stopped before the model wrote its reply.";
     case "length":
-      return "The summary reached the model's cap for a reply, so it was cut off.";
+      return "The reply reached the model's cap for a reply, so it was cut off.";
     default:
-      return text === "" ? "The model wrote no summary." : undefined;
+      return text === "" ? "The model wrote no text." : undefined;
   }
 }
 
@@ -552,8 +576,8 @@ function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
   return undefined;
 }
 
-// The thinking level of a call to the model, a turn's or the one that writes a
-// summary, or undefined for the level off, which pi takes as no level
+// The thinking level of a call to the model, a turn's or a model call of the
+// plugin's own, or undefined for the level off, which pi takes as no level
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
 // - The level that the deployment's model settings give the model, where they
 //   give one (../model-settings).

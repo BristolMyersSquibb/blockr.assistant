@@ -10,7 +10,7 @@ import { heldError } from "../notifications/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
 import type { Fetch } from "./list.ts";
-import { createModels } from "./models.ts";
+import { createModels, resolveModel } from "./models.ts";
 
 // A core that holds the notifications that the assistant raises.
 function holding() {
@@ -77,7 +77,7 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models } = opened(proxy({ models: ["company-gpt", "company-claude"] }), fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: ["company-gpt", "company-claude"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["company-gpt", "company-claude"], named: true });
     expect(asked()).toBe(0);
   });
 
@@ -85,8 +85,8 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models, raised } = opened(proxy(), fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(asked()).toBe(1);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -104,6 +104,7 @@ describe("the models that the assistant offers", () => {
 
     await expect(models.offered()).resolves.toEqual({
       models: ["openai/gpt-5.4", "openai/gpt-5.4-nano"],
+      named: false,
       settings: new Map([["openai/gpt-5.4", { contextWindow: 1050000, maxTokens: 128000, images: true }]]),
     });
   });
@@ -112,7 +113,7 @@ describe("the models that the assistant offers", () => {
     const { fetch, asked } = answering(listed);
     const { models } = opened(visited, fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: [] });
+    await expect(models.offered()).resolves.toEqual({ models: [], named: false });
     expect(asked()).toBe(0);
   });
 
@@ -127,7 +128,7 @@ describe("the models that the assistant offers", () => {
       "The assistant offers no model, since the base URL gives no list of models at https://proxy.invalid/v1/models: it answered 404. An app on such a base URL names its models in the blockr option assistant_models.",
     );
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(asked()).toBe(2);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -152,7 +153,7 @@ describe("the models that the assistant offers", () => {
     const offered = await models.offered();
 
     const why = 'The base URL refused the assistant\'s key for its list of models at https://proxy.invalid/v1/models: it answered 401, "User not found.".';
-    expect(offered).toEqual({ models: [], failure: why });
+    expect(offered).toEqual({ models: [], named: false, failure: why });
     expect(raised("assistant_call_failed")).toEqual([why]);
     expect(raised("assistant_models_failed")).toEqual([]);
   });
@@ -163,7 +164,7 @@ describe("the models that the assistant offers", () => {
     wrong.catch(() => undefined);
     const { models, raised } = opened(wrong, fetch);
 
-    await expect(models.offered()).resolves.toEqual({ models: [] });
+    await expect(models.offered()).resolves.toEqual({ models: [], named: false });
     expect(asked()).toBe(0);
     expect([...raised("assistant_call_failed"), ...raised("assistant_models_failed")]).toEqual([]);
   });
@@ -184,8 +185,39 @@ describe("the models that the assistant offers", () => {
     controller.abort();
     answer(missing());
 
-    await expect(offered).resolves.toEqual({ models: [] });
+    await expect(offered).resolves.toEqual({ models: [], named: false });
     expect(raised("assistant_models_failed")).toEqual([]);
+  });
+});
+
+describe("what the chat reads of the models offered", () => {
+  test("is the last answer, without asking for the list again, and changes as an answer comes", async () => {
+    const { fetch, asked } = answering(missing, listed);
+    const { models } = opened(proxy(), fetch);
+    const changes: unknown[] = [];
+    models.subscribe(() => {
+      changes.push(models.current());
+    });
+
+    expect(models.current()).toBeUndefined();
+    await vi.waitFor(() => {
+      expect(models.current()?.failure).toMatch(/gives no list of models/);
+    });
+    expect(asked()).toBe(1);
+
+    await models.offered();
+    expect(models.current()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
+    expect(changes).toHaveLength(2);
+    expect(asked()).toBe(2);
+  });
+
+  test("gives the model that a conversation talks to: its pick where the models offered hold it, and the default otherwise", () => {
+    const offered = { models: ["gpt-5.4", "gpt-5.4-nano"], named: true };
+
+    expect(resolveModel(offered, "gpt-5.4-nano")).toBe("gpt-5.4-nano");
+    expect(resolveModel(offered, null)).toBe("gpt-5.4");
+    expect(resolveModel(offered, "gpt-4o")).toBe("gpt-5.4");
+    expect(resolveModel({ models: [], named: false }, "gpt-5.4")).toBeUndefined();
   });
 });
 
@@ -196,11 +228,11 @@ describe("the models for the visitor's own key", () => {
   test("are those of the list that the base URL gives for the key, which they ask for once the visitor gives it", async () => {
     const { fetch, keys } = recording(listed);
     const { models, key } = opened(visited, fetch);
-    await expect(models.offered()).resolves.toEqual({ models: [] });
+    await expect(models.offered()).resolves.toEqual({ models: [], named: false });
 
     key.give("sk-visitor");
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(keys).toEqual(["Bearer sk-visitor"]);
   });
 
@@ -210,7 +242,7 @@ describe("the models for the visitor's own key", () => {
     key.give("sk-visitor");
     const { models } = opened(visited, fetch, key);
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(keys).toEqual(["Bearer sk-visitor"]);
   });
 
@@ -233,7 +265,7 @@ describe("the models for the visitor's own key", () => {
     });
 
     key.give("sk-right");
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(keys).toEqual(["Bearer sk-wrong", "Bearer sk-wrong", "Bearer sk-right"]);
     expect(key.current()).toEqual({ kind: "given", key: "sk-right" });
   });
@@ -286,10 +318,38 @@ describe("the models for the visitor's own key", () => {
     key.give("sk-second");
     answer(refused());
 
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(keys).toEqual(["Bearer sk-first", "Bearer sk-second"]);
     expect(key.current()).toEqual({ kind: "given", key: "sk-second" });
     expect(raised("assistant_call_failed")).toEqual([]);
+  });
+
+  test("have the chat read the list for the visitor's newest key, which an answer for a key that the visitor replaced leaves as it is", async () => {
+    let answer: (response: Response) => void = () => undefined;
+    let asked = 0;
+    const fetch: Fetch = () => {
+      asked += 1;
+      return asked === 1
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve(listed());
+    };
+    const { models, key } = opened(visited, fetch);
+    key.give("sk-first");
+    await vi.waitFor(() => {
+      expect(asked).toBe(1);
+    });
+
+    key.give("sk-second");
+    await vi.waitFor(() => {
+      expect(models.current()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
+    });
+    answer(refused());
+    // Lets the request for the replaced key run to its end.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(models.current()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
   });
 
   test("check a key against the base URL's list, which changes neither the key nor the models offered, and raises nothing", async () => {
@@ -303,7 +363,7 @@ describe("the models for the visitor's own key", () => {
 
     expect(keys).toEqual(["Bearer sk-visitor", "Bearer sk-visitor", "Bearer sk-visitor"]);
     expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
-    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4"] });
+    await expect(models.offered()).resolves.toEqual({ models: ["gpt-5.4"], named: true });
     expect([...raised("assistant_call_failed"), ...raised("assistant_models_failed")]).toEqual([]);
   });
 });

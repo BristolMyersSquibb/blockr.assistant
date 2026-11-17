@@ -352,7 +352,7 @@ describe("the list of models from another origin", () => {
     const { core, assistant } = await opened({ assistant_base_url: `${mock.origin}${base}`, assistant_api: api, assistant_api_key: mock.key });
 
     const listed = new Map(settings as [string, ReturnType<typeof given>][]);
-    await expect(assistant.models.offered()).resolves.toEqual(listed.size === 0 ? { models } : { models, settings: listed });
+    await expect(assistant.models.offered()).resolves.toEqual(listed.size === 0 ? { models, named: false } : { models, named: false, settings: listed });
     const [name, value] = header as [string, string];
     expect((await reached("GET")).map((request) => request.headers[name])).toEqual([value]);
     expect(raised(core, "assistant_models_failed")).toEqual([]);
@@ -361,7 +361,7 @@ describe("the list of models from another origin", () => {
   test("is asked for with no key where the key is none", async () => {
     const { assistant } = await opened({ assistant_base_url: `${mock.origin}/keyless/v1`, assistant_api_key: "none" });
 
-    await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect((await reached("GET")).map((request) => [request.path, request.headers.authorization])).toEqual([["/keyless/v1/models", undefined]]);
   });
 
@@ -447,7 +447,7 @@ describe("the visitor's own key", () => {
 
   test("asks for the list of models once it comes, where the app names no models, and is dropped where the list refuses it", async () => {
     const { core, assistant } = await opened({ assistant_base_url: `${mock.origin}/openai/v1` });
-    await expect(assistant.models.offered()).resolves.toEqual({ models: [] });
+    await expect(assistant.models.offered()).resolves.toEqual({ models: [], named: false });
     expect(await reached("GET")).toEqual([]);
 
     assistant.key.give("wrong-key");
@@ -459,7 +459,7 @@ describe("the visitor's own key", () => {
     ]);
 
     assistant.key.give(mock.key);
-    await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+    await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(assistant.key.current()).toEqual({ kind: "given", key: mock.key });
     expect((await reached("GET")).map((request) => request.headers.authorization)).toEqual(["Bearer wrong-key", `Bearer ${mock.key}`]);
   });

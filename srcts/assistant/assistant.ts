@@ -32,6 +32,9 @@
 // Where the deployment leaves the key to the visitor, the models, the turns
 // and the compaction read the visitor's own key, which the page keeps across
 // boards, and which the chat asks for (../visitor-key).
+//
+// Once a conversation's first exchange that the model answered ends, the
+// assistant has a model call of its own title the conversation (../titles).
 
 import type { CoreApi } from "@blockr/core";
 import { createCompaction } from "../compaction/index.ts";
@@ -49,6 +52,7 @@ import { heldError } from "../notifications/index.ts";
 import { createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
+import { titleConversations } from "../titles/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
@@ -122,6 +126,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
+  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
 
   const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
   opened.set(core, assistant);

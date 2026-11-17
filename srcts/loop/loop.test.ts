@@ -2,9 +2,9 @@
 // scripts: a turn as it streams, its tool calls, its calls to the model, what
 // each call sends, the settings of the model that it talks to, the message
 // of the app's after the conversation and the mark of Anthropic's cache
-// before it, a stop, a failed call and the tree of a turn's spans. The test
-// plays the turns, which keep each message that the loop reports in a
-// conversation of their own.
+// before it, a stop, a failed call, the tree of a turn's spans and the span of
+// a model call of the plugin's own. The test plays the turns, which keep each
+// message that the loop reports in a conversation of their own.
 // One test runs a call on pi's own code for Chat Completions instead, and
 // stops the call before it goes out, to read the marks of Anthropic's cache
 // that pi puts in the request. The tests of what a failed call's request got
@@ -117,6 +117,11 @@ function seen(into: { context?: TranscriptContext; options?: SimpleStreamOptions
   };
 }
 
+// The id of the span's parent, or undefined for a root.
+function parentOf(span: ReadableSpan): string | undefined {
+  return span.parentSpanContext?.spanId;
+}
+
 describe("a turn on the loop", () => {
   test("streams the reply, and reports it as one finished message, with its reasoning kept and its tokens, once the call ended", async () => {
     const { run, messages, kept, calls, streamed } = turnWith([fauxAssistantMessage([fauxThinking("Count them."), fauxText("The board holds two blocks.")])]);
@@ -199,7 +204,7 @@ describe("a turn on the loop", () => {
       level: "high",
     },
     { what: "the level off that the deployment's model settings give, before the level medium", api: "openai-responses", model: "gpt-5.4", settings: { thinkingLevel: "off" }, level: undefined },
-  ])("gives pi $what, for a turn's calls and for the call that writes a summary", async ({ api, model, settings, level }) => {
+  ])("gives pi $what, for a turn's calls and for a model call of the plugin's own", async ({ api, model, settings, level }) => {
     const faux = createFauxCore({ api, provider: PROVIDER });
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     faux.setResponses([seen(calls, fauxAssistantMessage("Two.")), seen(calls, fauxAssistantMessage("The user asked how many blocks."))]);
@@ -218,7 +223,7 @@ describe("a turn on the loop", () => {
       signal: new AbortController().signal,
       on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
     });
-    await loop.summarize({ ...called, systemPrompt: "Summarize.", prompt: "<conversation>[User]: How many blocks?</conversation>", signal: new AbortController().signal });
+    await loop.callModel({ ...called, systemPrompt: "Summarize.", prompt: "<conversation>[User]: How many blocks?</conversation>", signal: new AbortController().signal });
 
     expect(calls).toHaveLength(2);
     expect(calls.map((call) => call.options?.reasoning)).toEqual([level, level]);
@@ -680,20 +685,20 @@ describe("the catalogs of the loop", () => {
   });
 });
 
-describe("the call that writes a summary", () => {
+describe("a model call of the plugin's own", () => {
   const call = { model: "faux-1", systemPrompt: "Summarize.", prompt: "<conversation>[User]: Hi.</conversation>", signal: new AbortController().signal };
 
-  test("sends the system prompt and one message of the role user, with no tools, and gives the summary with the call's tokens", async () => {
+  test("sends the system prompt and one message of the role user, with no tools, and gives the text with the call's tokens", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const { faux, loop, connection } = fauxLoop();
     faux.setResponses([seen(calls, fauxAssistantMessage([fauxThinking("Short."), fauxText("The user said hi.")]))]);
 
-    const summarized = await loop.summarize({ ...call, connection });
+    const reply = await loop.callModel({ ...call, connection });
 
-    expect(summarized.text).toBe("The user said hi.");
-    expect(summarized.failure).toBeUndefined();
-    expect(summarized.usage.input).toBeGreaterThan(0);
-    expect(summarized.usage.total).toBe(summarized.usage.input + summarized.usage.output);
+    expect(reply.text).toBe("The user said hi.");
+    expect(reply.failure).toBeUndefined();
+    expect(reply.usage.input).toBeGreaterThan(0);
+    expect(reply.usage.total).toBe(reply.usage.input + reply.usage.output);
     const messages = calls[0]?.context?.messages ?? [];
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ role: "system", content: "Summarize." });
@@ -703,7 +708,7 @@ describe("the call that writes a summary", () => {
     expect(calls[0]?.options?.identity?.attribution).toBeNull();
   });
 
-  test("gives why it wrote no summary, as for a failed call, a reply that the cap cut off or an empty one", async () => {
+  test("gives why the model wrote no text, as for a failed call, a reply that the cap cut off or an empty one", async () => {
     const { faux, loop, connection } = fauxLoop();
     faux.setResponses([
       fauxAssistantMessage([], { stopReason: "error", errorMessage: "Rate limited." }),
@@ -712,9 +717,25 @@ describe("the call that writes a summary", () => {
     ]);
 
     const failures = [];
-    for (let i = 0; i < 3; i += 1) failures.push((await loop.summarize({ ...call, connection })).failure);
+    for (let i = 0; i < 3; i += 1) failures.push((await loop.callModel({ ...call, connection })).failure);
 
-    expect(failures).toEqual(["Rate limited.", "The summary reached the model's cap for a reply, so it was cut off.", "The model wrote no summary."]);
+    expect(failures).toEqual(["Rate limited.", "The reply reached the model's cap for a reply, so it was cut off.", "The model wrote no text."]);
+  });
+
+  test("runs in a span invoke_agent of its own, under which pi records the span of the call", async () => {
+    const recorded = recordSpans();
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([fauxAssistantMessage("The user said hi.")]);
+
+    await loop.callModel({ ...call, connection });
+
+    const made = recorded.span("invoke_agent");
+    const called = recorded.span("chat faux-1");
+    expect(parentOf(made)).toBeUndefined();
+    expect(made.attributes).toEqual({ "gen_ai.operation.name": "invoke_agent", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1" });
+    expect(parentOf(called)).toBe(made.spanContext().spanId);
+    expect(called.kind).toBe(SpanKind.CLIENT);
+    expect(called.attributes).toMatchObject({ "gen_ai.operation.name": "chat", "gen_ai.provider.name": "faux", "gen_ai.request.model": "faux-1" });
   });
 });
 
@@ -864,11 +885,6 @@ describe("before each call", () => {
 });
 
 describe("the spans of a turn", () => {
-  // The id of the span's parent, or undefined for a root.
-  function parentOf(span: ReadableSpan): string | undefined {
-    return span.parentSpanContext?.spanId;
-  }
-
   test("hold each call to the model and each tool call under the turn's span, and core's span of a tool's request under the tool's span", async () => {
     const recorded = recordSpans();
     const stub = await startAssistant({ answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) } });

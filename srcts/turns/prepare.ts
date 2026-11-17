@@ -1,7 +1,7 @@
 // How the assistant prepares a call to the model of a conversation. Each turn
-// prepares its calls so, and compaction prepares the call that writes a
-// summary so (../compaction), so that both talk to the same model in the same
-// way:
+// prepares its calls so, compaction prepares the call that writes a summary
+// so (../compaction), and the titles the call that titles a conversation
+// (../titles), so that all of them talk to the same model in the same way:
 // 1. The call goes to the deployment's base URL, in the API that the base URL
 //    speaks, with the deployment's key, or with no key where the key is
 //    "none" (../deployment). Where the visitor authenticates, the call
@@ -29,6 +29,7 @@
 import type { Deployment } from "../deployment/index.ts";
 import type { CallModel, Connection, Loop } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
+import { resolveModel } from "../models/index.ts";
 import type { Models } from "../models/index.ts";
 import { keyOf } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
@@ -97,8 +98,7 @@ export async function prepareCall(
 
   const offered = await options.models.offered();
   if (stopped()) return STOPPED;
-  const pick = picked();
-  const model = pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
+  const model = resolveModel(offered, picked());
   if (model === undefined) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
 
   let loop: Loop;

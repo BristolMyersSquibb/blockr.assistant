@@ -39,6 +39,11 @@ export function at(...segments: string[]): string {
   return ["plugins", ASSISTANT, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
 }
 
+// The title of a conversation that the chat adds, until a model call titles
+// it after its first exchange, or the user renames it
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#commands).
+export const NEW_CONVERSATION = "New conversation";
+
 // A new id for a message or a conversation: 128 random bits, as hex.
 // They come from crypto.getRandomValues(), which a page has over plain HTTP
 // too, where it lacks crypto.randomUUID().
@@ -52,9 +57,11 @@ export function newConversation(title: string, model: string | null): Conversati
 }
 
 // The usage of a conversation once a call's input and output tokens are
-// added, with every token of the call, `total`, as its last.
-export function addedUsage(usage: Usage, input: number, output: number, total: number): Usage {
-  return { input: usage.input + input, output: usage.output + output, last: total };
+// added, with every token of the call, `total`, as its last. A call that
+// gives no total, as one that titles a conversation, leaves the last as it
+// was, since compaction reads the last as the size of the conversation.
+export function addedUsage(usage: Usage, input: number, output: number, total?: number): Usage {
+  return { input: usage.input + input, output: usage.output + output, last: total ?? usage.last };
 }
 
 // Whether a conversation holds a message under the id.
@@ -67,6 +74,13 @@ export function holdsMessage(conversation: Conversation, id: MessageId): boolean
 export function canCompact(messages: readonly Message[], summary: Message, from: MessageId): boolean {
   const index = messages.findIndex((message) => message.id === from);
   return index >= 0 && messages.slice(index).every((message) => message.id !== summary.id);
+}
+
+// The text of a message, its parts of text joined by line breaks, without the
+// text of a skill that a slash command carries. So a message that the user
+// sent gives the text as the user typed it.
+export function joinText(message: Message): string {
+  return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
 // Whether a message is a note of what others changed in the board.

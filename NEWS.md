@@ -337,6 +337,36 @@
   and that the key may be wrong, and the chat shows the field again, holding
   the visitor's key.
 
+* The chat's footer holds the button that opens the drawer of conversations,
+  the pick of the model and the meter (#230).
+  The drawer opens over the chat, in the element that the frontend gives the
+  chat.
+  It lists the board's conversations, the last updated first, grouped by when
+  each was last updated, and searches their titles.
+  It opens, renames and deletes a conversation, and marks the conversation
+  whose turn runs.
+  Deleting that conversation stops the turn first.
+  New opens the greeting, and the first message then adds the conversation.
+  The meter shows the input and output tokens that the open conversation
+  spent.
+
+* Where the app names several models or none, the footer offers the models
+  to pick from, and a pick sets the model of the open conversation from its
+  next turn (#230).
+  A new conversation starts on the pick of the conversation that was open.
+  A pick made while no conversation is open goes to the conversation that the
+  first message adds.
+  Where a conversation's pick is a model that the app does not offer, the
+  footer names the pick beside the model that the calls go to.
+
+* A conversation takes its title from a call to the model, once its first
+  exchange that the model answered ends, as shinychat's titles came (#230).
+  The call runs beside the turns, and the meter counts its tokens.
+  A title that the user gave meanwhile stands, and a title that fails leaves
+  "New conversation" for the user to rename.
+  The command `blockr.assistant-add_usage` takes no `total` for such a call,
+  and leaves the conversation's `last` as it was.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
