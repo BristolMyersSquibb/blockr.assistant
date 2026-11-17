@@ -33,10 +33,12 @@
 //   and pi's convertToLlm turns it into a message of the role user for the
 //   call (./messages.ts). The message's text opens with the preamble that says
 //   that the app writes it.
-// - The message of the app's changes from call to call, so on Anthropic's API
-//   the loop moves the cache mark that pi puts on it to the block before it,
-//   which ends the conversation (./cache.ts). It does so through pi's
-//   onPayload, before the caller's onPayload sees the request.
+// - The message of the app's changes from call to call.
+//   So where pi marks it for Anthropic's cache, the loop moves the mark to the
+//   end of the conversation before it, on Anthropic's Messages API and on
+//   Chat Completions (./cache.ts).
+//   It does so through pi's onPayload, before the caller's onPayload sees the
+//   request.
 //
 // Before each call, the loop awaits what the caller does then, as compaction
 // puts a summary in place where the conversation nears the model's context
@@ -118,6 +120,9 @@ export interface Connection {
 // The key that the loop gives pi for a call that carries none, which the
 // loop's fetch takes off the request.
 const NO_KEY = "blockr-assistant-no-key";
+
+// OpenRouter's base URL, as a deployment gives it.
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // The model that a call talks to, which a turn and a summary both name: where
 // the call goes, the model's id, and its settings.
@@ -243,7 +248,7 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
   return {
     run: (turn) => runTurn(pi, streams, turn),
     summarize: (call) => summarize(pi, streams, call),
-    contextWindow: (called) => modelOf(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
+    contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
     inCatalog: (id) => catalogModel(pi, id) !== undefined,
   };
 }
@@ -267,7 +272,7 @@ function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, tur
 
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
-  const model = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
+  const model = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = modelsAt(pi, streams, turn.connection, model);
 
   // The results that the tools gave, and those that pi gave in place of a
@@ -301,7 +306,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
     fetch: keyless,
     onPayload: (payload) => {
-      const moved = model.api === "anthropic-messages" && added !== undefined ? markBeforeAppMessage(payload, added) : undefined;
+      const moved = added === undefined ? undefined : markBeforeAppMessage(payload, added, model.api);
       if (turn.onPayload === undefined) return moved;
       return turn.onPayload(moved ?? payload) ?? moved;
     },
@@ -365,7 +370,7 @@ function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, co
 // provider to cache nothing, since no later call starts as this one does, as
 // pi's own CLI asks for its summaries.
 async function summarize(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: SummaryCall): Promise<Summarized> {
-  const model = modelOf(pi, call.model, call.connection, call.settings, call.listed);
+  const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
   const models = modelsAt(pi, streams, call.connection, model);
   const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
   const reply = await models.completeSimple(
@@ -421,7 +426,13 @@ function summaryFailure(reply: AssistantMessage, text: string): string | undefin
 //      takes. The cap goes out with every call, and pi lowers it only as the
 //      input nears the window.
 //    - Its cost is unknown, so pi counts none.
-function modelOf(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
+//
+// A model whose id starts with anthropic/, on OpenRouter's Chat Completions,
+// also takes pi's compat with Anthropic's format of cache marks.
+// Through OpenRouter, Anthropic's cache keeps only what a call marks
+// (https://openrouter.ai/docs/features/prompt-caching), and pi marks the
+// calls of such a model only where its provider is named openrouter.
+function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
   const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, given.like ?? id);
   // The catalog's headers belong to the catalog's provider, so they go.
@@ -437,12 +448,14 @@ function modelOf(pi: Pi, id: string, connection: Connection, given: ModelSetting
           maxTokens: listed.maxTokens ?? 16_384,
         }
       : { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
+  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
   return {
     ...base,
     reasoning: given.reasoning ?? base.reasoning,
     input: inputOf(base.input, given.images),
     contextWindow: given.contextWindow ?? base.contextWindow,
     maxTokens: given.maxTokens ?? base.maxTokens,
+    ...(anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" as const } } : {}),
   };
 }
 
