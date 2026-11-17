@@ -25,7 +25,7 @@
  * transcript, whose titles are in the colour of the text, hold their muted
  * parts as elements of their own.
  * The links take the theme's blue, which is lighter under the dark theme, as
- * the links of core's cards do.
+ * the blue is that core's cards give a message.
  * The radii, the weights of the face and the transitions come from core's
  * theme as well, and the shadows are those of Tailwind's theme, which core's
  * UIs use.
