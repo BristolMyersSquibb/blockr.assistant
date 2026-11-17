@@ -58,6 +58,15 @@
 //   module, as assistant_plugin.schema.json, where R finds it. The module
 //   imports the file as the schema of its class's state, so the build writes
 //   it before it bundles.
+// - What each file that the build writes imports up front goes into
+//   preload.json beside them, by `staticImports()` from `@blockr/core/build`,
+//   as core's build writes its own (BristolMyersSquibb/blockr.core#652).
+//   R names those files in the head of the page that it serves, so that the
+//   browser fetches them at once, rather than each once the file that
+//   imports it has loaded.
+//   The module imports the bundles of vendored parts only as it runs, so its
+//   list leaves them out, and a bundle that imports others up front, as the
+//   chat's imports React, has a list of its own.
 //
 // The build owns inst/js and empties it first, so that nothing is left of a
 // file that it no longer writes.
@@ -67,7 +76,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { preset, vendorCheck } from "@blockr/core/build";
+import { preset, staticImports, vendorCheck } from "@blockr/core/build";
 import * as esbuild from "esbuild";
 import { createGenerator } from "ts-json-schema-generator";
 
@@ -114,7 +123,24 @@ export async function build(root: string): Promise<string[]> {
     schema,
     ...[...vendored.values()].map(({ file }) => relative(root, join(out, file))),
     licensed,
+    await preloadList(root, out, results.map((result) => result.metafile), vendored.values()),
   ].sort();
+}
+
+// Writes what the files in `out` import up front into `out`, as preload.json,
+// and gives its path from `root`: the static imports of the files that the
+// builds of `metafiles` wrote, and those of each bundle of `vendored`, under
+// the name of its file, since its build wrote none and names its output
+// vendor.js.
+async function preloadList(root: string, out: string, metafiles: readonly esbuild.Metafile[], vendored: Iterable<Vendored>): Promise<string> {
+  const lists = Object.entries(staticImports(metafiles));
+  for (const { file, metafile } of vendored) {
+    const imports = Object.values(staticImports([metafile])).flat();
+    if (imports.length > 0) lists.push([file, imports]);
+  }
+  const file = join(out, "preload.json");
+  await writeFile(file, `${JSON.stringify(Object.fromEntries(lists.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))), null, 2)}\n`);
+  return relative(root, file);
 }
 
 // The files that name the parts of other projects that the client uses, each
