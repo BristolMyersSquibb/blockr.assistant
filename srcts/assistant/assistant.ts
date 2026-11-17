@@ -19,6 +19,8 @@
 // the assistant offers (../deployment). The models and the turns read what the
 // options say from there. Where an option holds a value that it does not
 // take, each turn fails with the error assistant_call_failed, which says why.
+// The assistant also has R read the deployment's model settings as the board
+// opens, which the turns hand the loop (../model-settings).
 
 import type { CoreApi } from "@blockr/core";
 import { createConversations } from "../conversations/index.ts";
@@ -27,6 +29,7 @@ import { readDeployment } from "../deployment/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import { loadLoop } from "../loop/index.ts";
 import type { Loop } from "../loop/index.ts";
+import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
@@ -74,11 +77,13 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
+  const settings = createModelSettings(core, signal);
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
     deployment,
     models,
+    settings,
     callFailed,
     prompt,
     load: options.load ?? loadLoop,

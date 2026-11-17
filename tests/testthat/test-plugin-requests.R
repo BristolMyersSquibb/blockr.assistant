@@ -1,4 +1,4 @@
-test_that("the assistant's class gives its five requests", {
+test_that("the assistant's class gives its six requests", {
 
   reqs <- plugin_requests(new_assistant_plugin())
 
@@ -6,7 +6,7 @@ test_that("the assistant's class gives its five requests", {
     reqs,
     c(
       "describe_result", "inspect_results", "list_skills", "read_skill",
-      "read_template"
+      "read_template", "read_model_settings"
     )
   )
   expect_true(all(lgl_ply(reqs, is.function)))
@@ -427,5 +427,96 @@ test_that("read_template takes one file", {
   expect_error(
     call_request("read_template"),
     class = "invalid_template_option"
+  )
+})
+
+test_that("read_model_settings gives nothing where the option names no file", {
+
+  withr::local_options(blockr.assistant_model_settings = NULL)
+  withr::local_envvar(BLOCKR_ASSISTANT_MODEL_SETTINGS = NA)
+
+  expect_null(call_request("read_model_settings"))
+})
+
+test_that("read_model_settings gives what the file holds, as YAML parses it", {
+
+  path <- withr::local_tempfile(fileext = ".yml")
+  writeLines(
+    c(
+      "corp-claude:",
+      "  like: claude-sonnet-5-5",
+      "corp-gpt:",
+      "  reasoning: true",
+      "  images: false",
+      "  context_window: 200000",
+      "  max_tokens: 32000"
+    ),
+    path
+  )
+
+  withr::local_options(blockr.assistant_model_settings = path)
+
+  expect_identical(
+    call_request("read_model_settings"),
+    list(
+      `corp-claude` = list(like = "claude-sonnet-5-5"),
+      `corp-gpt` = list(
+        reasoning = TRUE,
+        images = FALSE,
+        context_window = 200000L,
+        max_tokens = 32000L
+      )
+    )
+  )
+})
+
+test_that("read_model_settings reads the file of the environment variable", {
+
+  path <- withr::local_tempfile(fileext = ".yml")
+  writeLines(c("corp-gpt:", "  images: false"), path)
+
+  withr::local_options(blockr.assistant_model_settings = NULL)
+  withr::local_envvar(BLOCKR_ASSISTANT_MODEL_SETTINGS = path)
+
+  expect_identical(
+    call_request("read_model_settings"),
+    list(`corp-gpt` = list(images = FALSE))
+  )
+})
+
+test_that("read_model_settings fails where R cannot read the file", {
+
+  path <- file.path(withr::local_tempdir(), "missing.yml")
+
+  withr::local_options(blockr.assistant_model_settings = path)
+
+  expect_error(
+    call_request("read_model_settings"),
+    "R cannot read the model settings",
+    class = "unreadable_model_settings"
+  )
+})
+
+test_that("read_model_settings fails where the file holds no YAML", {
+
+  path <- withr::local_tempfile(fileext = ".yml")
+  writeLines(c("corp-gpt:", "  reasoning: [true"), path)
+
+  withr::local_options(blockr.assistant_model_settings = path)
+
+  expect_error(
+    call_request("read_model_settings"),
+    "R cannot read the model settings",
+    class = "unreadable_model_settings"
+  )
+})
+
+test_that("read_model_settings takes one file", {
+
+  withr::local_options(blockr.assistant_model_settings = c("a.yml", "b.yml"))
+
+  expect_error(
+    call_request("read_model_settings"),
+    class = "invalid_model_settings_option"
   )
 })

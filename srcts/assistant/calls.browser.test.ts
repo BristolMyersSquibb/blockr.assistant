@@ -175,15 +175,47 @@ describe("a turn on Anthropic's Messages API", () => {
 });
 
 describe("the list of models from another origin", () => {
+  // The settings that a list gives a model: its context window, its cap for a
+  // reply and whether it takes images.
+  const given = (contextWindow: number, maxTokens: number, images: boolean) => ({ contextWindow, maxTokens, images });
+
   test.each([
-    { list: "OpenAI's", base: "/openai/v1", api: "openai-responses", models: ["gpt-5.4", "gpt-5.4-nano"], header: ["authorization", `Bearer ${mock.key}`] },
-    { list: "Anthropic's", base: "/anthropic", api: "anthropic-messages", models: ["claude-haiku-5-5", "claude-sonnet-5-5"], header: ["x-api-key", mock.key] },
-    { list: "OpenRouter's", base: "/openrouter/api/v1", api: "openai-completions", models: ["openai/gpt-5.4"], header: ["authorization", `Bearer ${mock.key}`] },
-    { list: "Vercel's", base: "/vercel/v1", api: "openai-completions", models: ["anthropic/claude-sonnet-5.5"], header: ["authorization", `Bearer ${mock.key}`] },
-  ])("gives the models of $list list that take tools, asked for with the deployment's key", async ({ base, api, models, header }) => {
+    { list: "OpenAI's", base: "/openai/v1", api: "openai-responses", models: ["gpt-5.4", "gpt-5.4-nano"], settings: [], header: ["authorization", `Bearer ${mock.key}`] },
+    {
+      list: "Anthropic's",
+      base: "/anthropic",
+      api: "anthropic-messages",
+      models: ["claude-haiku-5-5", "claude-sonnet-5-5"],
+      settings: [
+        ["claude-haiku-5-5", given(1000000, 128000, true)],
+        ["claude-sonnet-5-5", given(1000000, 128000, true)],
+      ],
+      header: ["x-api-key", mock.key],
+    },
+    {
+      list: "OpenRouter's",
+      base: "/openrouter/api/v1",
+      api: "openai-completions",
+      models: ["openai/gpt-5.4", "deepseek/deepseek-v3.2"],
+      settings: [
+        ["openai/gpt-5.4", given(1050000, 128000, true)],
+        ["deepseek/deepseek-v3.2", given(163840, 147456, false)],
+      ],
+      header: ["authorization", `Bearer ${mock.key}`],
+    },
+    {
+      list: "Vercel's",
+      base: "/vercel/v1",
+      api: "openai-completions",
+      models: ["anthropic/claude-sonnet-5.5"],
+      settings: [["anthropic/claude-sonnet-5.5", given(1000000, 128000, true)]],
+      header: ["authorization", `Bearer ${mock.key}`],
+    },
+  ])("gives the models of $list list that take tools, with the settings that the list gives each, asked for with the deployment's key", async ({ base, api, models, settings, header }) => {
     const { core, assistant } = await opened({ assistant_base_url: `${mock.origin}${base}`, assistant_api: api, assistant_api_key: mock.key });
 
-    await expect(assistant.models.offered()).resolves.toEqual({ models });
+    const listed = new Map(settings as [string, ReturnType<typeof given>][]);
+    await expect(assistant.models.offered()).resolves.toEqual(listed.size === 0 ? { models } : { models, settings: listed });
     const [name, value] = header as [string, string];
     expect((await reached("GET")).map((request) => request.headers[name])).toEqual([value]);
     expect(raised(core, "assistant_models_failed")).toEqual([]);

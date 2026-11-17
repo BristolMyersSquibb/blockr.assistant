@@ -16,11 +16,10 @@
 // 5. They drop the conditions of R's reply, ok or error, since R logs each.
 //    So core raises no notification for them, and R's error reaches the user
 //    only in assistant_skills_failed.
-// The template sends its request as a board opens in the same way, through
-// requestOnOpen() (../requests).
 
 import type { CoreApi, Json } from "@blockr/core";
-import { answeredTexts, appPackages, requestOnOpen } from "../requests/index.ts";
+import { answeredTexts, appPackages, failureMessage, sendUntilReplied } from "../requests/index.ts";
+import { ASSISTANT } from "../state/index.ts";
 
 // A skill, as R lists it.
 export interface Skill {
@@ -55,13 +54,19 @@ export function createSkills(core: Core, signal: AbortSignal): Skills {
   return { list: () => listed };
 }
 
-function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {
-  return requestOnOpen<readonly Skill[]>(core, signal, "list_skills", { packages: appPackages(core) }, {
-    read: skillsOf,
-    fallback: [],
-    code: "assistant_skills_failed",
-    message: (why) => `The assistant goes on without skills, since R could not list them: ${why}`,
-  });
+async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {
+  try {
+    const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
+    return skillsOf(answer);
+  } catch (error) {
+    if (signal.aborted) return [];
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_skills_failed",
+      message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`,
+    });
+    return [];
+  }
 }
 
 // The skills of R's reply, which R writes with every vector as an array.

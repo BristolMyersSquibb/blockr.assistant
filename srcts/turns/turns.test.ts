@@ -1,20 +1,23 @@
 // The turns (./turns.ts) on core's CoreApi for tests, with the conversations
 // of the board and the loop on pi's fake provider: a turn's messages and
-// tokens in the state, the model that it talks to, the system prompt and the
-// message of the app's of each call, one turn at a time, the tab's Web Lock,
-// the reply as it streams, a stop, the error of a failed call, the next
-// board, and a conversation that another plugin removes.
+// tokens in the state, the model that it talks to and its settings, the
+// system prompt and the message of the app's of each call, one turn at a
+// time, the tab's Web Lock, the reply as it streams, a stop, the error of a
+// failed call, the next board, and a conversation that another plugin
+// removes.
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
 
 import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { createConversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import type { Loop } from "../loop/index.ts";
+import type { ModelSettingsFile } from "../model-settings/index.ts";
 import type { Offered } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
@@ -86,6 +89,8 @@ interface OpenOptions {
   readonly deployment?: Promise<Deployment>;
   // The models offered, faux-1 alone unless given.
   readonly offered?: Offered;
+  // The deployment's model settings, which give no model any unless given.
+  readonly settings?: Pick<ModelSettingsFile, "checked">;
   readonly tools?: readonly Tool[];
   readonly load?: () => Promise<Loop>;
   readonly tokensPerSecond?: number;
@@ -128,6 +133,7 @@ async function opened(options: OpenOptions = {}) {
     tools: options.tools ?? [],
     deployment,
     models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }) },
+    settings: options.settings ?? { checked: () => Promise.resolve(new Map()) },
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
     load: options.load ?? (() => Promise.resolve(loop)),
@@ -151,6 +157,15 @@ function recording(into: { model: string; key: string | undefined }[], text = "H
   return (_context, options, _state, model) => {
     into.push({ model: model.id, key: options?.apiKey });
     return fauxAssistantMessage(text);
+  };
+}
+
+// A reply of pi's fake provider that records the model of each call that it
+// answers, with its settings.
+function modelOfCall(into: Model<Api>[]): FauxResponseStep {
+  return (_context, _options, _state, model) => {
+    into.push(model);
+    return fauxAssistantMessage("Hello.");
   };
 }
 
@@ -206,6 +221,43 @@ describe("a turn of the assistant", () => {
 
     expect(seen.map(({ model }) => model)).toEqual(["faux-default"]);
     expect(inState(core, "c1")?.model).toBe("faux-1");
+  });
+
+  test("hands the loop the settings that the deployment's model settings give its model, and those that the base URL's list gives it", async () => {
+    const models: Model<Api>[] = [];
+    const { turns } = await opened({
+      offered: { models: ["faux-1", "faux-2"], settings: new Map([["faux-1", { contextWindow: 400_000, images: false }]]) },
+      settings: {
+        checked: () =>
+          Promise.resolve(
+            new Map([
+              ["faux-1", { reasoning: true, maxTokens: 32_000 }],
+              ["faux-2", { maxTokens: 8_000 }],
+            ]),
+          ),
+      },
+      replies: [modelOfCall(models)],
+    });
+
+    await turns.run("c1");
+
+    expect(models[0]).toMatchObject({ id: "faux-1", reasoning: true, input: ["text"], contextWindow: 400_000, maxTokens: 32_000 });
+  });
+
+  test("has the model settings check each like against pi's catalogs, which the loop holds, once the loop has loaded", async () => {
+    const asked: boolean[] = [];
+    const { turns } = await opened({
+      settings: {
+        checked: (inCatalog) => {
+          asked.push(inCatalog("claude-sonnet-5-5"), inCatalog("company-claude"));
+          return Promise.resolve(new Map());
+        },
+      },
+    });
+
+    await turns.run("c1");
+
+    expect(asked).toEqual([true, false]);
   });
 
   test("calls with the deployment's key, and hands pi no key of the deployment's where the key is none", async () => {

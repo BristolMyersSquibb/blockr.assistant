@@ -9,7 +9,7 @@ export {
   failureMessage,
   isRequestError,
   isSessionEnded,
-  requestOnOpen,
   sendRequest,
+  sendUntilReplied,
 } from "./requests.ts";
-export type { OnOpen, Reply } from "./requests.ts";
+export type { Reply } from "./requests.ts";

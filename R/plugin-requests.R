@@ -6,7 +6,8 @@ plugin_requests.assistant_plugin <- function(x, ...) {
     inspect_results = request_inspect_results,
     list_skills = request_list_skills,
     read_skill = request_read_skill,
-    read_template = request_read_template
+    read_template = request_read_template,
+    read_model_settings = request_read_model_settings
   )
 }
 
@@ -194,32 +195,59 @@ request_read_skill <- function(name, packages, path = NULL) {
 # `assistant_template` names, or `NULL` where the option names none.
 request_read_template <- function() {
 
-  path <- blockr_option("assistant_template", NULL)
+  lines <- read_option_file(
+    "assistant_template",
+    "template",
+    function(path) readLines(path, warn = FALSE, encoding = "UTF-8")
+  )
+
+  if (is.null(lines)) {
+    return(NULL)
+  }
+
+  paste(lines, collapse = "\n")
+}
+
+# What the YAML file that the blockr option `assistant_model_settings` names
+# holds, as `yaml::read_yaml()` parses it, or `NULL` where the option names
+# none.
+# The plugin checks the settings that the file gives each model.
+request_read_model_settings <- function() {
+  read_option_file(
+    "assistant_model_settings",
+    "model settings",
+    yaml::read_yaml
+  )
+}
+
+# What `read()` reads of the file that the blockr option `option` names, by
+# its path, or `NULL` where the option names none.
+# The errors name the file as the `what` of the option, such as its
+# "template", and take their classes from it, such as `unreadable_template`.
+read_option_file <- function(option, what, read) {
+
+  path <- blockr_option(option, NULL)
 
   if (is.null(path)) {
     return(NULL)
   }
 
+  stem <- gsub(" ", "_", what, fixed = TRUE)
+
   if (!is_string(path)) {
     blockr_abort(
-      "The blockr option assistant_template names one file, by its path.",
-      class = "invalid_template_option"
+      "The blockr option {option} names one file, by its path.",
+      class = paste0("invalid_", stem, "_option")
     )
   }
 
   unreadable <- function(cnd) {
     blockr_abort(
-      "R cannot read the template {path} that the blockr option ",
-      "assistant_template names: {conditionMessage(cnd)}",
-      class = "unreadable_template"
+      "R cannot read the {what} {path} that the blockr option {option} ",
+      "names: {conditionMessage(cnd)}",
+      class = paste0("unreadable_", stem)
     )
   }
 
-  lines <- tryCatch(
-    readLines(path, warn = FALSE, encoding = "UTF-8"),
-    warning = unreadable,
-    error = unreadable
-  )
-
-  paste(lines, collapse = "\n")
+  tryCatch(read(path), warning = unreadable, error = unreadable)
 }

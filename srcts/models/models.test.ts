@@ -73,6 +73,23 @@ describe("the models that the assistant offers", () => {
     expect(raised("assistant_models_failed")).toEqual([]);
   });
 
+  test("carry the settings that the base URL's list gives each, where it gives any", async () => {
+    const { fetch } = answering(() =>
+      Response.json({
+        data: [
+          { id: "openai/gpt-5.4", context_length: 1050000, top_provider: { max_completion_tokens: 128000 }, architecture: { input_modalities: ["text", "image"] } },
+          { id: "openai/gpt-5.4-nano" },
+        ],
+      }),
+    );
+    const { models } = opened(proxy(), fetch);
+
+    await expect(models.offered()).resolves.toEqual({
+      models: ["openai/gpt-5.4", "openai/gpt-5.4-nano"],
+      settings: new Map([["openai/gpt-5.4", { contextWindow: 1050000, maxTokens: 128000, images: true }]]),
+    });
+  });
+
   test("are none where the visitor authenticates, for whom it asks for no list", async () => {
     const { fetch, asked } = answering(listed);
     const { models } = opened(proxy({ credential: { kind: "visitor" } }), fetch);

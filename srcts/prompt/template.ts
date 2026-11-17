@@ -17,19 +17,26 @@
 //   naming it, and adds text of its own around them.
 //
 // The template of the open board, which the class's start reads as each board
-// opens, as the skills are listed, through requestOnOpen() (../requests):
+// opens, as the skills are listed:
 // 1. It sends the request read_template once.
 // 2. Where R answers with no text, since the option names no file, the board
 //    takes blockr.assistant's template.
-// 3. Where R cannot read the file, or the file names an id that is no section
+// 3. Where R's session ends before R replies, it asks again, since reading the
+//    file changes nothing, as core asks again for a blockr option.
+// 4. Where R cannot read the file, or the file names an id that is no section
 //    of blockr.assistant's template, it raises the error
 //    assistant_template_failed, and the board takes blockr.assistant's
-//    template until the next board opens
+//    template. Core withdraws the error as the next board opens, which is also
+//    when the plugin asks R again, so it withdraws nothing itself
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
-// 4. Where R's session ends before R replies, it asks again.
+//    It raises nothing where the next board opened first.
+// 5. It drops the conditions of R's reply, ok or error, since R logs each.
+//    So core raises no notification for them, and R's error reaches the user
+//    only in assistant_template_failed.
 
 import type { CoreApi } from "@blockr/core";
-import { answeredText, requestOnOpen } from "../requests/index.ts";
+import { answeredText, failureMessage, sendUntilReplied } from "../requests/index.ts";
+import { ASSISTANT } from "../state/index.ts";
 import build from "./build.md" with { type: "text" };
 import role from "./role.md" with { type: "text" };
 import style from "./style.md" with { type: "text" };
@@ -80,14 +87,20 @@ export function fillTemplate(given: string): string {
   return given.replace(NAMED, (_, id: string) => (SECTIONS.get(id) ?? "").trim()).trim();
 }
 
-function readTemplate(core: Core, signal: AbortSignal): Promise<string> {
+async function readTemplate(core: Core, signal: AbortSignal): Promise<string> {
   const own = fillTemplate(TEMPLATE);
-  return requestOnOpen(core, signal, "read_template", {}, {
-    read: (answer) => (answer === null ? own : fillTemplate(answeredText(answer, "read_template"))),
-    fallback: own,
-    code: "assistant_template_failed",
-    message: (why) => `The assistant uses its own template: ${why}`,
-  });
+  try {
+    const { answer } = await sendUntilReplied(core, "read_template", {}, { signal });
+    return answer === null ? own : fillTemplate(answeredText(answer, "read_template"));
+  } catch (error) {
+    if (signal.aborted) return own;
+    core.notifications.notify(ASSISTANT, {
+      severity: "error",
+      code: "assistant_template_failed",
+      message: `The assistant uses its own template: ${failureMessage(error)}`,
+    });
+    return own;
+  }
 }
 
 // Why a deployment's template fails, which names the ids given.
