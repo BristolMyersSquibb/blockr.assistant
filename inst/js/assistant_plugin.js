@@ -415,7 +415,7 @@ function createConversations(core, signal) {
   let cap;
   const memory = /* @__PURE__ */ new Map();
   const older = /* @__PURE__ */ new Map();
-  const keptOf2 = /* @__PURE__ */ new Map();
+  const keptOf = /* @__PURE__ */ new Map();
   const listeners = /* @__PURE__ */ new Set();
   let changes = 0;
   let given2;
@@ -437,8 +437,8 @@ function createConversations(core, signal) {
       for (const id of older.keys()) {
         if (!Object.hasOwn(held, id)) older.delete(id);
       }
-      for (const id of keptOf2.keys()) {
-        if (!Object.hasOwn(held, id)) keptOf2.delete(id);
+      for (const id of keptOf.keys()) {
+        if (!Object.hasOwn(held, id)) keptOf.delete(id);
       }
       for (const id of merged.keys()) {
         if (!Object.hasOwn(held, id)) merged.delete(id);
@@ -506,16 +506,16 @@ function createConversations(core, signal) {
     return held === void 0 ? void 0 : withOlder(conversation2, held);
   }
   function keep2(conversation2, message2, kept) {
-    const held = keptOf2.get(conversation2) ?? /* @__PURE__ */ new Map();
+    const held = keptOf.get(conversation2) ?? /* @__PURE__ */ new Map();
     held.set(message2, { ...held.get(message2), ...kept });
-    keptOf2.set(conversation2, held);
+    keptOf.set(conversation2, held);
     changed();
   }
   function unkeep(conversation2, message2) {
-    if (keptOf2.get(conversation2)?.delete(message2) === true) changed();
+    if (keptOf.get(conversation2)?.delete(message2) === true) changed();
   }
   function forget(conversation2) {
-    const held = keptOf2.get(conversation2);
+    const held = keptOf.get(conversation2);
     if (held === void 0) return;
     const ids = new Set(get(conversation2)?.messages.map((message2) => message2.id) ?? []);
     const gone = [...held.keys()].filter((id) => !ids.has(id));
@@ -533,7 +533,7 @@ function createConversations(core, signal) {
     },
     get,
     kept(conversation2, message2) {
-      return keptOf2.get(conversation2)?.get(message2);
+      return keptOf.get(conversation2)?.get(message2);
     },
     keep(conversation2, message2, kept) {
       if (get(conversation2)?.messages.some((held) => held.id === message2) !== true) {
@@ -563,7 +563,7 @@ function createConversations(core, signal) {
         return;
       }
       if (!memory.delete(conversation2)) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
-      keptOf2.delete(conversation2);
+      keptOf.delete(conversation2);
       changed();
     },
     async addMessage(conversation2, message2, kept) {
@@ -824,7 +824,10 @@ async function attachedFile(file, mediaType) {
   const typed = file.type === mediaType ? file : new File([file], file.name, { type: mediaType });
   return kindOf2(mediaType) === "image" ? scaledDown(typed) : typed;
 }
-async function keptFile(file, mediaType) {
+async function copiedFile(file) {
+  return new File([await file.arrayBuffer()], file.name, { type: file.type });
+}
+async function encodedFile(file, mediaType) {
   if (kindOf2(mediaType) === "text") return { text: await file.text() };
   return { data: await base64Of(file) };
 }
@@ -929,8 +932,30 @@ var NO_USAGE = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
 };
-function callMessages(messages, kept, model2, tools, systemPrompt2, carried) {
-  return [systemMessage(systemPrompt2, tools), ...piMessages(messages, kept, model2, carried)];
+function callMessages(messages, kept, model2, tools, systemPrompt2, files) {
+  return [systemMessage(systemPrompt2, tools), ...piMessages(messages, kept, model2, files)];
+}
+async function encodeFiles(messages, kept, encodings) {
+  const encoding = [];
+  for (const message2 of messages) {
+    if (message2.role !== "user") continue;
+    const files = kept(message2.id)?.files ?? [];
+    const attachments = message2.parts.filter((part) => part.type === "attachment");
+    for (const [index, part] of attachments.entries()) {
+      const file = files[index];
+      if (file === void 0 || !("blob" in file) || encodings.has(file.blob)) continue;
+      const { blob } = file;
+      encoding.push(
+        encodedFile(blob, part.media_type).then(
+          (encoded) => {
+            encodings.set(blob, encoded);
+          },
+          () => void 0
+        )
+      );
+    }
+  }
+  await Promise.all(encoding);
 }
 function systemMessage(prompt, tools) {
   const declared = tools.map((tool2) => ({ name: tool2.name, description: tool2.description, parameters: tool2.parameters }));
@@ -945,14 +970,14 @@ function llmMessages(messages) {
 function appAsUser(message2) {
   return { role: "user", content: message2.content, timestamp: message2.timestamp };
 }
-function piMessages(messages, kept, model2, carried) {
+function piMessages(messages, kept, model2, files) {
   const out = [];
   for (let i = 0; i < messages.length; i += 1) {
     const message2 = messages[i];
     if (message2 === void 0) continue;
     const at2 = Date.parse(message2.created);
     if (message2.role === "user") {
-      const content = userContent(message2, kept(message2.id)?.files ?? [], model2, carried);
+      const content = userContent(message2, kept(message2.id)?.files ?? [], model2, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at2 });
     } else if (message2.role === "summary") {
       out.push({ role: "user", content: [text(SUMMARY_REQUEST)], timestamp: at2 }, otherReply(message2.parts, model2, at2));
@@ -969,7 +994,7 @@ function piMessages(messages, kept, model2, carried) {
   }
   return out;
 }
-function userContent(message2, files, model2, carried) {
+function userContent(message2, files, model2, sent3) {
   let index = -1;
   return message2.parts.flatMap((part) => {
     switch (part.type) {
@@ -979,20 +1004,22 @@ function userContent(message2, files, model2, carried) {
         return [text(part.text)];
       case "attachment":
         index += 1;
-        return fileContent(part, files[index], { message: message2.id, index, name: part.name }, model2, carried);
+        return fileContent(part, files[index], { message: message2.id, index, name: part.name }, model2, sent3);
       default:
         return [];
     }
   });
 }
-function fileContent(part, file, at2, model2, carried) {
+function fileContent(part, file, at2, model2, sent3) {
   const attached = `The user attached the file "${part.name}", of the type ${part.media_type}`;
-  if (file === void 0) return [text(`${attached}, whose content is no longer available.`)];
-  if ("refused" in file) return [text(`${attached}, which the provider refused, so the conversation goes on without its content.`)];
-  if ("text" in file) {
+  if (file !== void 0 && "refused" in file) return [text(`${attached}, which the provider refused, so the conversation goes on without its content.`)];
+  const content = file === void 0 ? void 0 : sent3?.encoded(file.blob);
+  if (file === void 0 || content === void 0) return [text(`${attached}, whose content is no longer available.`)];
+  const carried = sent3?.carried;
+  if ("text" in content) {
     note(file, at2, carried);
     return [text(`<file-attachment name="${attribute(part.name)}" type="${attribute(part.media_type)}">
-${file.text}
+${content.text}
 </file-attachment>`)];
   }
   const kind = kindOf2(part.media_type);
@@ -1000,7 +1027,7 @@ ${file.text}
   if (!model2.input.includes("image")) return [text(`${attached}, which the app did not send, since the model takes no images.`)];
   note(file, at2, carried);
   if (kind === "pdf") carried?.pdfs.push(part.name);
-  return [text(`${attached}.`), { type: "image", data: file.data, mimeType: part.media_type }];
+  return [text(`${attached}.`), { type: "image", data: content.data, mimeType: part.media_type }];
 }
 function note(file, at2, carried) {
   if (!("taken" in file) || file.taken !== true) carried?.files.push(at2);
@@ -1265,6 +1292,7 @@ async function runAgent(pi, streams, turn, span) {
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
+  const encodings = /* @__PURE__ */ new Map();
   let carried = { files: [], pdfs: [] };
   let status;
   let added;
@@ -1280,8 +1308,9 @@ async function runAgent(pi, streams, turn, span) {
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
       status = void 0;
+      await encodeFiles(transformed, kept, encodings);
       added = turn.appMessage === void 0 ? void 0 : await turn.appMessage();
-      const messages = callMessages(transformed, kept, model2, turn.tools, prompt, carried);
+      const messages = callMessages(transformed, kept, model2, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === void 0 ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
@@ -3549,12 +3578,12 @@ function nextAssistant(core) {
 }
 
 // srcts/chat/panel.tsx
-import { useEffect as useEffect4, useState as useState3 } from "react";
+import { useEffect as useEffect4, useState as useState4 } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo3, useRef as useRef4, useState as useState2 } from "react";
+import { useCallback as useCallback2, useMemo as useMemo3, useRef as useRef4, useState as useState3 } from "react";
 
 // srcts/chat/attach.ts
 function attachmentAdapter() {
@@ -3574,9 +3603,7 @@ function attachmentAdapter() {
       return Promise.resolve(pending);
     },
     async send(attachment) {
-      const mediaType = attachment.contentType ?? attachment.file.type;
-      const kept = await keptFile(attachment.file, mediaType);
-      const complete = { ...attachment, status: { type: "complete" }, content: [partOf(kept, attachment.name, mediaType)] };
+      const complete = { ...attachment, file: await copiedFile(attachment.file), status: { type: "complete" }, content: [] };
       return complete;
     },
     remove() {
@@ -3608,31 +3635,12 @@ async function addFiles(field, files) {
 }
 function attachedOf(attachments) {
   return attachments.flatMap((attachment) => {
-    const kept = keptOf(attachment.content);
-    const mediaType = attachment.contentType ?? (attachment.type === "image" ? "image/png" : PDF);
-    return kept === void 0 ? [] : [{ name: attachment.name, mediaType, kept }];
+    const { file } = attachment;
+    return file === void 0 ? [] : [{ name: attachment.name, mediaType: attachment.contentType ?? file.type, kept: { blob: file } }];
   });
 }
 function stagedBytes(field) {
   return field.getState().attachments.reduce((sum, attachment) => sum + (attachment.file?.size ?? 0), 0);
-}
-function partOf(kept, name, mediaType) {
-  if ("text" in kept) return { type: "text", text: kept.text };
-  if ("data" in kept && kindOf2(mediaType) === "image") return { type: "image", image: `data:${mediaType};base64,${kept.data}`, filename: name };
-  return { type: "file", filename: name, data: "data" in kept ? kept.data : "", mimeType: mediaType };
-}
-function keptOf(content) {
-  const [part] = content;
-  switch (part?.type) {
-    case "text":
-      return { text: part.text };
-    case "image":
-      return { data: part.image.slice(part.image.indexOf(",") + 1) };
-    case "file":
-      return { data: part.data };
-    default:
-      return void 0;
-  }
 }
 
 // srcts/chat/composer.tsx
@@ -3654,7 +3662,7 @@ function useChat() {
 }
 
 // srcts/chat/files.tsx
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 // srcts/chat/libraries.ts
 var loading;
@@ -3704,7 +3712,7 @@ function SentFiles({ files }) {
 function Sent({ file }) {
   const { openFile } = useChatActions();
   const content = file.file !== void 0 && !("refused" in file.file) ? file.file : void 0;
-  const url = content !== void 0 && "data" in content && kindOf2(file.media_type) === "image" ? dataUrlOf(file.media_type, content) : void 0;
+  const url = useObjectUrl(content !== void 0 && kindOf2(file.media_type) === "image" ? content.blob : void 0);
   const mark = /* @__PURE__ */ jsx(FileMark, { name: file.name, mediaType: file.media_type, url });
   const name = /* @__PURE__ */ jsx("span", { className: "blockr-assistant-file-name", children: file.name });
   if (content === void 0) {
@@ -3745,9 +3753,7 @@ function FileMark({ name, mediaType, url }) {
 }
 var FileDialog = memo(function FileDialog2({ file, onClose }) {
   const ref = useRef(null);
-  const pdf = file?.mediaType === PDF && "data" in file.content ? file.content.data : void 0;
-  const blob = useMemo(() => pdf === void 0 ? void 0 : new Blob([bytesOf(pdf)], { type: PDF }), [pdf]);
-  const pdfUrl = useObjectUrl(blob);
+  const url = useObjectUrl(file === void 0 || kindOf2(file.mediaType) === "text" ? void 0 : file.content.blob);
   useEffect(() => {
     const dialog = ref.current;
     if (dialog === null) return;
@@ -3769,16 +3775,31 @@ var FileDialog = memo(function FileDialog2({ file, onClose }) {
           /* @__PURE__ */ jsx("h2", { children: file.name }),
           /* @__PURE__ */ jsx("button", { type: "button", className: "blockr-assistant-file-view-close", title: "Close", "aria-label": "Close", onClick: onClose, children: /* @__PURE__ */ jsx("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4.5 4.5l7 7M11.5 4.5l-7 7" }) }) })
         ] }),
-        /* @__PURE__ */ jsx("div", { className: "blockr-assistant-file-view-body", children: /* @__PURE__ */ jsx(FileView, { file, pdfUrl }) })
+        /* @__PURE__ */ jsx("div", { className: "blockr-assistant-file-view-body", children: /* @__PURE__ */ jsx(FileView, { file, url }) })
       ] })
     }
   );
 });
-function FileView({ file, pdfUrl }) {
-  const { content } = file;
-  if ("text" in content) return /* @__PURE__ */ jsx("pre", { className: "blockr-assistant-file-text", children: content.text === "" ? "(The file is empty.)" : content.text });
-  if (kindOf2(file.mediaType) === "image") return /* @__PURE__ */ jsx("img", { className: "blockr-assistant-file-image", src: dataUrlOf(file.mediaType, content), alt: file.name });
-  return pdfUrl === void 0 ? null : /* @__PURE__ */ jsx("iframe", { className: "blockr-assistant-file-pdf", src: pdfUrl, title: file.name });
+function FileView({ file, url }) {
+  const kind = kindOf2(file.mediaType);
+  if (kind === "text") return /* @__PURE__ */ jsx(FileText, { file: file.content.blob });
+  if (url === void 0) return null;
+  if (kind === "image") return /* @__PURE__ */ jsx("img", { className: "blockr-assistant-file-image", src: url, alt: file.name });
+  return /* @__PURE__ */ jsx("iframe", { className: "blockr-assistant-file-pdf", src: url, title: file.name });
+}
+function FileText({ file }) {
+  const [read, setRead] = useState(void 0);
+  useEffect(() => {
+    let live = true;
+    void file.text().then((text3) => {
+      if (live) setRead({ file, text: text3 });
+    });
+    return () => {
+      live = false;
+    };
+  }, [file]);
+  if (read?.file !== file) return null;
+  return /* @__PURE__ */ jsx("pre", { className: "blockr-assistant-file-text", children: read.text === "" ? "(The file is empty.)" : read.text });
 }
 function useObjectUrl(blob) {
   const url = useMemo(() => blob === void 0 || typeof URL.createObjectURL !== "function" ? void 0 : URL.createObjectURL(blob), [blob]);
@@ -3794,21 +3815,6 @@ function badgeOf(name, mediaType) {
   const dot = name.lastIndexOf(".");
   if (dot > 0 && dot < name.length - 1) return name.slice(dot + 1, dot + 5).toUpperCase();
   return mediaType === PDF ? "PDF" : "TXT";
-}
-var urls = /* @__PURE__ */ new WeakMap();
-function dataUrlOf(mediaType, content) {
-  let url = urls.get(content);
-  if (url === void 0) {
-    url = `data:${mediaType};base64,${content.data}`;
-    urls.set(content, url);
-  }
-  return url;
-}
-function bytesOf(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 // srcts/chat/recall.ts
@@ -4219,7 +4225,7 @@ function greetingOf(board) {
 }
 
 // srcts/chat/markdown.tsx
-import { useEffect as useEffect3, useState } from "react";
+import { useEffect as useEffect3, useState as useState2 } from "react";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
@@ -4241,7 +4247,7 @@ function Table({ children }) {
   return /* @__PURE__ */ jsx4("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx4("table", { children }) });
 }
 function CodeHeader({ language, code }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState2(false);
   useEffect3(() => {
     if (!copied) return;
     const timer = setTimeout(() => {
@@ -4603,11 +4609,11 @@ function Chat({ core, assistant }) {
   const { conversations, turns } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
-  const [chosen, setChosen] = useState2(storedConversation);
-  const [link, setLink] = useState2(void 0);
-  const [file, setFile] = useState2(void 0);
-  const [filesNote, setFilesNote] = useState2(void 0);
-  const [dragging, setDragging] = useState2(false);
+  const [chosen, setChosen] = useState3(storedConversation);
+  const [link, setLink] = useState3(void 0);
+  const [file, setFile] = useState3(void 0);
+  const [filesNote, setFilesNote] = useState3(void 0);
+  const [dragging, setDragging] = useState3(false);
   const attachments = useMemo3(() => attachmentAdapter(), []);
   const adding = useRef4(Promise.resolve());
   const open2 = chosen !== void 0 && Object.hasOwn(all, chosen) ? chosen : void 0;
@@ -4758,7 +4764,7 @@ function Panel({ core }) {
   return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && assistant !== void 0 ? /* @__PURE__ */ jsx8(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
-  const [assistant, setAssistant] = useState3(() => open(assistantOf(core)));
+  const [assistant, setAssistant] = useState4(() => open(assistantOf(core)));
   useEffect4(() => {
     if (assistant !== void 0 && !assistant.signal.aborted) {
       const closed2 = () => {
@@ -4780,7 +4786,7 @@ function useAssistant(core) {
   return open(assistant);
 }
 function useLibraries(core) {
-  const [loaded2, setLoaded] = useState3(librariesLoaded);
+  const [loaded2, setLoaded] = useState4(librariesLoaded);
   useEffect4(() => {
     if (loaded2 !== false) return;
     let live = true;

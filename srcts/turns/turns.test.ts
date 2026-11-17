@@ -572,11 +572,15 @@ describe("a file that the provider refuses", () => {
     });
   }
 
+  // The copies of the PDF and of the image that the memory keeps.
+  const report = new Blob(["%PDF-"]);
+  const plot = new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+
   // The turns of a board whose conversation c1 ends on the user's message u3,
   // which holds a PDF and an image that the memory keeps.
   async function attached(replies: FauxResponseStep[]) {
     const open = await opened({ replies });
-    await open.conversations.addMessage("c1", withFiles, { files: [{ data: "JVBERi0=" }, { data: "iVBORw0KGgo=" }] });
+    await open.conversations.addMessage("c1", withFiles, { files: [{ blob: report }, { blob: plot }] });
     return open;
   }
 
@@ -598,7 +602,7 @@ describe("a file that the provider refuses", () => {
     const { core, turns, conversations } = await attached([answered(200, fauxAssistantMessage("Read.")), refusal(413)]);
     await turns.run("c1");
     const later: Message = { id: "u4", role: "user", parts: [attachment("big.png", "image/png")], created: CREATED };
-    await conversations.addMessage("c1", later, { files: [{ data: "iVBORw0KGgo=" }] });
+    await conversations.addMessage("c1", later, { files: [{ blob: plot }] });
 
     await turns.run("c1");
 
@@ -612,8 +616,8 @@ describe("a file that the provider refuses", () => {
 
     await turns.run("c1");
     expect(conversations.kept("c1", "u3")?.files).toEqual([
-      { data: "JVBERi0=", taken: true },
-      { data: "iVBORw0KGgo=", taken: true },
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
     ]);
 
     await conversations.addMessage("c1", asked("u4", "Again."));
@@ -622,8 +626,8 @@ describe("a file that the provider refuses", () => {
     expect(raised(core, REFUSED)).toEqual([]);
     expect(raised(core)).toEqual(["The assistant's call to the model failed: 400 Could not process the file"]);
     expect(conversations.kept("c1", "u3")?.files).toEqual([
-      { data: "JVBERi0=", taken: true },
-      { data: "iVBORw0KGgo=", taken: true },
+      { blob: report, taken: true },
+      { blob: plot, taken: true },
     ]);
   });
 
@@ -649,6 +653,6 @@ describe("a file that the provider refuses", () => {
 
     expect(raised(core, REFUSED)).toEqual([]);
     expect(raised(core)).toEqual(["The assistant's call to the model failed: 500 Overloaded"]);
-    expect(conversations.kept("c1", "u3")?.files).toEqual([{ data: "JVBERi0=" }, { data: "iVBORw0KGgo=" }]);
+    expect(conversations.kept("c1", "u3")?.files).toEqual([{ blob: report }, { blob: plot }]);
   });
 });

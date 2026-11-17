@@ -10,10 +10,12 @@
 // - A file whose content the memory lacks, as once the board opens again,
 //   shows by its name and opens nothing, and so does a file that the provider
 //   refused, which says so.
+// The chat shows a file from the copy of its bytes that the memory keeps,
+// through an object URL, which it releases once it no longer shows the file.
 // The dialog opens in the browser's top layer, through showModal(), and sits
 // in the chat's element, as the dialog before a link does (./links.tsx).
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import type { Attachment } from "@assistant-ui/react";
 import { kindOf, PDF } from "../attachments/index.ts";
@@ -67,7 +69,7 @@ export function SentFiles({ files }: { readonly files: readonly SentFile[] }): R
 function Sent({ file }: { readonly file: SentFile }): ReactElement {
   const { openFile } = useChatActions();
   const content = file.file !== undefined && !("refused" in file.file) ? file.file : undefined;
-  const url = content !== undefined && "data" in content && kindOf(file.media_type) === "image" ? dataUrlOf(file.media_type, content) : undefined;
+  const url = useObjectUrl(content !== undefined && kindOf(file.media_type) === "image" ? content.blob : undefined);
   const mark = <FileMark name={file.name} mediaType={file.media_type} url={url} />;
   const name = <span className="blockr-assistant-file-name">{file.name}</span>;
 
@@ -116,13 +118,10 @@ export interface OpenedFile {
 
 // The dialog that shows a file large, open while `file` names one, which
 // calls onClose() as it closes. The chat draws again as each token of a reply
-// streams, so the dialog draws again only as its file changes, and reads a
-// PDF's bytes once.
+// streams, so the dialog draws again only as its file changes.
 export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly file: OpenedFile | undefined; readonly onClose: () => void }): ReactElement {
   const ref = useRef<HTMLDialogElement>(null);
-  const pdf = file?.mediaType === PDF && "data" in file.content ? file.content.data : undefined;
-  const blob = useMemo(() => (pdf === undefined ? undefined : new Blob([bytesOf(pdf)], { type: PDF })), [pdf]);
-  const pdfUrl = useObjectUrl(blob);
+  const url = useObjectUrl(file === undefined || kindOf(file.mediaType) === "text" ? undefined : file.content.blob);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -154,7 +153,7 @@ export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly
             </button>
           </div>
           <div className="blockr-assistant-file-view-body">
-            <FileView file={file} pdfUrl={pdfUrl} />
+            <FileView file={file} url={url} />
           </div>
         </div>
       )}
@@ -162,11 +161,32 @@ export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly
   );
 });
 
-function FileView({ file, pdfUrl }: { readonly file: OpenedFile; readonly pdfUrl: string | undefined }): ReactElement | null {
-  const { content } = file;
-  if ("text" in content) return <pre className="blockr-assistant-file-text">{content.text === "" ? "(The file is empty.)" : content.text}</pre>;
-  if (kindOf(file.mediaType) === "image") return <img className="blockr-assistant-file-image" src={dataUrlOf(file.mediaType, content)} alt={file.name} />;
-  return pdfUrl === undefined ? null : <iframe className="blockr-assistant-file-pdf" src={pdfUrl} title={file.name} />;
+// A file in the dialog: an image as itself, a PDF in the browser's viewer for
+// PDFs, under the media type of its copy, and a text file as its text.
+function FileView({ file, url }: { readonly file: OpenedFile; readonly url: string | undefined }): ReactElement | null {
+  const kind = kindOf(file.mediaType);
+  if (kind === "text") return <FileText file={file.content.blob} />;
+  if (url === undefined) return null;
+  if (kind === "image") return <img className="blockr-assistant-file-image" src={url} alt={file.name} />;
+  return <iframe className="blockr-assistant-file-pdf" src={url} title={file.name} />;
+}
+
+// A text file's text, which shows once the browser has read the copy.
+function FileText({ file }: { readonly file: Blob }): ReactElement | null {
+  const [read, setRead] = useState<{ readonly file: Blob; readonly text: string } | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    void file.text().then((text) => {
+      if (live) setRead({ file, text });
+    });
+    return () => {
+      live = false;
+    };
+  }, [file]);
+
+  if (read?.file !== file) return null;
+  return <pre className="blockr-assistant-file-text">{read.text === "" ? "(The file is empty.)" : read.text}</pre>;
 }
 
 // An object URL of the blob given, while the component shows it. The browser
@@ -187,25 +207,4 @@ function badgeOf(name: string, mediaType: string): string {
   const dot = name.lastIndexOf(".");
   if (dot > 0 && dot < name.length - 1) return name.slice(dot + 1, dot + 5).toUpperCase();
   return mediaType === PDF ? "PDF" : "TXT";
-}
-
-// The data URL of an image's content, which the chat makes once for each
-// content that the memory keeps, so that the chat hands React the same string
-// each time it draws.
-const urls = new WeakMap<object, string>();
-function dataUrlOf(mediaType: string, content: { readonly data: string }): string {
-  let url = urls.get(content);
-  if (url === undefined) {
-    url = `data:${mediaType};base64,${content.data}`;
-    urls.set(content, url);
-  }
-  return url;
-}
-
-// The bytes that base64 gives.
-function bytesOf(base64: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }

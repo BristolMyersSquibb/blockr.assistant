@@ -12,14 +12,14 @@
 // 3. The chat hands each file that it keeps to assistant-ui's message field,
 //    whose adapter stages it, so that the field shows it until the user sends
 //    the message or removes the file.
-// 4. As the message is sent, the adapter reads each file's content, which
-//    goes into the plugin's memory with the message (./send.ts).
+// 4. As the message is sent, the adapter copies each file's bytes, which go
+//    into the plugin's memory with the message (./send.ts), so that the file
+//    stays attached once the user deletes or edits it on disk.
 // The chat adds the files one at a time, in the order given, so that each
 // file meets the bound with every file staged before it.
 
-import type { Attachment, AttachmentAdapter, CompleteAttachment, PendingAttachment, ThreadUserMessagePart } from "@assistant-ui/react";
-import { ACCEPT, attachedFile, keptFile, kindOf, MAX_BYTES, mediaTypeOf, namesOf, PDF, sizeOf } from "../attachments/index.ts";
-import type { KeptFile } from "../conversations/index.ts";
+import type { Attachment, AttachmentAdapter, CompleteAttachment, PendingAttachment } from "@assistant-ui/react";
+import { ACCEPT, attachedFile, copiedFile, kindOf, MAX_BYTES, mediaTypeOf, namesOf, sizeOf } from "../attachments/index.ts";
 import { newId } from "../state/index.ts";
 import type { Attached } from "./send.ts";
 
@@ -30,7 +30,9 @@ export interface Field {
 }
 
 // The adapter through which assistant-ui's message field stages the files
-// that the chat hands it, and reads their content as the message is sent.
+// that the chat hands it, and copies their bytes as the message is sent. The
+// copy takes the place of the file, and the chat reads nothing else of the
+// attachment, so its content stays empty.
 export function attachmentAdapter(): AttachmentAdapter {
   return {
     accept: ACCEPT,
@@ -48,9 +50,7 @@ export function attachmentAdapter(): AttachmentAdapter {
       return Promise.resolve(pending);
     },
     async send(attachment) {
-      const mediaType = attachment.contentType ?? attachment.file.type;
-      const kept = await keptFile(attachment.file, mediaType);
-      const complete: CompleteAttachment = { ...attachment, status: { type: "complete" }, content: [partOf(kept, attachment.name, mediaType)] };
+      const complete: CompleteAttachment = { ...attachment, file: await copiedFile(attachment.file), status: { type: "complete" }, content: [] };
       return complete;
     },
     remove() {
@@ -86,12 +86,11 @@ export async function addFiles(field: Field, files: readonly File[]): Promise<st
 }
 
 // The files of a message that the user sends, as assistant-ui hands them to
-// the chat, each with its content as the plugin's memory keeps it.
+// the chat, each with the copy of its bytes that the plugin's memory keeps.
 export function attachedOf(attachments: readonly CompleteAttachment[]): Attached[] {
   return attachments.flatMap((attachment): Attached[] => {
-    const kept = keptOf(attachment.content);
-    const mediaType = attachment.contentType ?? (attachment.type === "image" ? "image/png" : PDF);
-    return kept === undefined ? [] : [{ name: attachment.name, mediaType, kept }];
+    const { file } = attachment;
+    return file === undefined ? [] : [{ name: attachment.name, mediaType: attachment.contentType ?? file.type, kept: { blob: file } }];
   });
 }
 
@@ -100,26 +99,3 @@ function stagedBytes(field: Field): number {
   return field.getState().attachments.reduce((sum, attachment) => sum + (attachment.file?.size ?? 0), 0);
 }
 
-// The content of a file as a part of assistant-ui's message: a text file's
-// text, an image's data URL, and a PDF's bytes as base64.
-function partOf(kept: KeptFile, name: string, mediaType: string): ThreadUserMessagePart {
-  if ("text" in kept) return { type: "text", text: kept.text };
-  if ("data" in kept && kindOf(mediaType) === "image") return { type: "image", image: `data:${mediaType};base64,${kept.data}`, filename: name };
-  return { type: "file", filename: name, data: "data" in kept ? kept.data : "", mimeType: mediaType };
-}
-
-// A file's content as the plugin's memory keeps it, from the parts that
-// partOf() gave.
-function keptOf(content: readonly ThreadUserMessagePart[]): KeptFile | undefined {
-  const [part] = content;
-  switch (part?.type) {
-    case "text":
-      return { text: part.text };
-    case "image":
-      return { data: part.image.slice(part.image.indexOf(",") + 1) };
-    case "file":
-      return { data: part.data };
-    default:
-      return undefined;
-  }
-}

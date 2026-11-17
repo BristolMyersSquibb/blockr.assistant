@@ -87,14 +87,11 @@ export interface KeptImage {
   readonly mimeType: string;
 }
 
-// A file that the user attached, as the memory keeps it: an image's or a
-// PDF's bytes, as base64, or a text file's text. It is taken once a call that
-// carried it succeeded, so that the provider took it. A file that the
-// provider refused keeps no content.
-export type KeptFile =
-  | { readonly data: string; readonly taken?: true }
-  | { readonly text: string; readonly taken?: true }
-  | { readonly refused: true };
+// A file that the user attached, as the memory keeps it: a copy of its bytes,
+// as binary, which the loop encodes as a turn's calls go out. It is taken once
+// a call that carried it succeeded, so that the provider took it. A file that
+// the provider refused keeps no content.
+export type KeptFile = { readonly blob: Blob; readonly taken?: true } | { readonly refused: true };
 
 export interface Conversations {
   // Resolves once the conversations have opened, and rejects where the

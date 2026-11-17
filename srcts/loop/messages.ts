@@ -11,7 +11,9 @@
 //   text of a skill that the user called become text in a message of pi's
 //   role user.
 // - A file that the user attached goes with its message, from the memory
-//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments):
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
+//   The memory keeps a copy of each file's bytes, which the loop encodes as a
+//   turn's first call goes out, once for the turn (encodeFiles()):
 //   - A text file goes as its text, in a <file-attachment> tag that names
 //     the file and its media type, as today's chat wraps it, since every
 //     model takes text.
@@ -68,7 +70,8 @@ import type {
   Usage,
   UserMessage,
 } from "@earendil-works/pi-ai";
-import { kindOf } from "../attachments/index.ts";
+import { encodedFile, kindOf } from "../attachments/index.ts";
+import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptFile, KeptImage } from "../conversations/index.ts";
 import { newId } from "../state/index.ts";
 import type { AttachmentPart, Message, MessageId, Part, ToolCallPart, ToolResultPart } from "../state/index.ts";
@@ -123,18 +126,53 @@ export interface Carried {
   readonly pdfs: string[];
 }
 
+// The files that the user attached, as a call sends them: the content of each
+// file, as the loop encoded it for the turn, and where the call's messages
+// note what the call carries of the files.
+export interface CallFiles {
+  readonly encoded: (file: Blob) => Encoded | undefined;
+  readonly carried?: Carried;
+}
+
 // The messages of pi for a call: the system prompt with the tools, which pi
-// declares to the model, then the conversation. What the call carries of the
-// files that the user attached goes into `carried`, where it is given.
+// declares to the model, then the conversation, with the files given. A file
+// whose content is not given reads as no longer available.
 export function callMessages(
   messages: readonly Message[],
   kept: (message: MessageId) => Kept | undefined,
   model: Model<Api>,
   tools: readonly Tool[],
   systemPrompt: string,
-  carried?: Carried,
+  files?: CallFiles,
 ): PiMessage[] {
-  return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model, carried)];
+  return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model, files)];
+}
+
+// Encodes each file of the conversation that the memory keeps the bytes of and
+// that `encodings` lacks, into `encodings`, which a turn keeps from call to
+// call, so that it encodes each file once. A file that the browser cannot
+// read is left out, and reads as no longer available.
+export async function encodeFiles(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, encodings: Map<Blob, Encoded>): Promise<void> {
+  const encoding: Promise<void>[] = [];
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const files = kept(message.id)?.files ?? [];
+    const attachments = message.parts.filter((part): part is AttachmentPart => part.type === "attachment");
+    for (const [index, part] of attachments.entries()) {
+      const file = files[index];
+      if (file === undefined || !("blob" in file) || encodings.has(file.blob)) continue;
+      const { blob } = file;
+      encoding.push(
+        encodedFile(blob, part.media_type).then(
+          (encoded) => {
+            encodings.set(blob, encoded);
+          },
+          () => undefined,
+        ),
+      );
+    }
+  }
+  await Promise.all(encoding);
 }
 
 // The system prompt with the declarations of the tools, as pi's message of the
@@ -174,17 +212,16 @@ function appAsUser(message: AppMessage): UserMessage {
   return { role: "user", content: message.content, timestamp: message.timestamp };
 }
 
-// The conversation as pi's messages, for a call to the model given. What the
-// call carries of the files that the user attached goes into `carried`, where
-// it is given.
-export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>, carried?: Carried): PiMessage[] {
+// The conversation as pi's messages, for a call to the model given, with the
+// files given.
+export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>, files?: CallFiles): PiMessage[] {
   const out: PiMessage[] = [];
   for (let i = 0; i < messages.length; i += 1) {
     const message = messages[i];
     if (message === undefined) continue;
     const at = Date.parse(message.created);
     if (message.role === "user") {
-      const content = userContent(message, kept(message.id)?.files ?? [], model, carried);
+      const content = userContent(message, kept(message.id)?.files ?? [], model, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at });
     } else if (message.role === "summary") {
       out.push({ role: "user", content: [text(SUMMARY_REQUEST)], timestamp: at }, otherReply(message.parts, model, at));
@@ -207,7 +244,7 @@ export function piMessages(messages: readonly Message[], kept: (message: Message
 // What a message that the user sent holds, as pi's content, with the files
 // that the memory keeps of it, one for each of its parts of the type
 // attachment.
-function userContent(message: Message, files: readonly KeptFile[], model: Model<Api>, carried: Carried | undefined): (TextContent | ImageContent)[] {
+function userContent(message: Message, files: readonly KeptFile[], model: Model<Api>, sent: CallFiles | undefined): (TextContent | ImageContent)[] {
   let index = -1;
   return message.parts.flatMap((part): (TextContent | ImageContent)[] => {
     switch (part.type) {
@@ -217,35 +254,31 @@ function userContent(message: Message, files: readonly KeptFile[], model: Model<
         return [text(part.text)];
       case "attachment":
         index += 1;
-        return fileContent(part, files[index], { message: message.id, index, name: part.name }, model, carried);
+        return fileContent(part, files[index], { message: message.id, index, name: part.name }, model, sent);
       default:
         return [];
     }
   });
 }
 
-// A file that the user attached, as pi's content, which `carried` notes where
-// the content goes.
-function fileContent(
-  part: AttachmentPart,
-  file: KeptFile | undefined,
-  at: CarriedFile,
-  model: Model<Api>,
-  carried: Carried | undefined,
-): (TextContent | ImageContent)[] {
+// A file that the user attached, as pi's content, which the call's files note
+// where the content goes.
+function fileContent(part: AttachmentPart, file: KeptFile | undefined, at: CarriedFile, model: Model<Api>, sent: CallFiles | undefined): (TextContent | ImageContent)[] {
   const attached = `The user attached the file "${part.name}", of the type ${part.media_type}`;
-  if (file === undefined) return [text(`${attached}, whose content is no longer available.`)];
-  if ("refused" in file) return [text(`${attached}, which the provider refused, so the conversation goes on without its content.`)];
-  if ("text" in file) {
+  if (file !== undefined && "refused" in file) return [text(`${attached}, which the provider refused, so the conversation goes on without its content.`)];
+  const content = file === undefined ? undefined : sent?.encoded(file.blob);
+  if (file === undefined || content === undefined) return [text(`${attached}, whose content is no longer available.`)];
+  const carried = sent?.carried;
+  if ("text" in content) {
     note(file, at, carried);
-    return [text(`<file-attachment name="${attribute(part.name)}" type="${attribute(part.media_type)}">\n${file.text}\n</file-attachment>`)];
+    return [text(`<file-attachment name="${attribute(part.name)}" type="${attribute(part.media_type)}">\n${content.text}\n</file-attachment>`)];
   }
   const kind = kindOf(part.media_type);
   if (kind !== "image" && kind !== "pdf") return [text(`${attached}, which the app cannot send to the model.`)];
   if (!model.input.includes("image")) return [text(`${attached}, which the app did not send, since the model takes no images.`)];
   note(file, at, carried);
   if (kind === "pdf") carried?.pdfs.push(part.name);
-  return [text(`${attached}.`), { type: "image", data: file.data, mimeType: part.media_type }];
+  return [text(`${attached}.`), { type: "image", data: content.data, mimeType: part.media_type }];
 }
 
 // Notes a file whose content a call carries, where no call carried it with

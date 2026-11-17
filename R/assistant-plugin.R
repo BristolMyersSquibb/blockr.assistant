@@ -154,9 +154,10 @@
 #'
 #' The board keeps the name and the media type of each file, but not its
 #' content.
-#' The browser keeps the content while the board stays open, and the assistant
-#' sends it to the model with the message and with each later call of the
-#' conversation.
+#' The browser keeps a copy of the content while the board stays open, so that
+#' the file stays attached once the user deletes or edits it on disk.
+#' The assistant sends the content to the model with the message and with each
+#' later call of the conversation.
 #' It sends a text file as its text, an image as an image, and a PDF in the
 #' block of the API for a file.
 #' Once the board opens again, the model learns only that the user attached

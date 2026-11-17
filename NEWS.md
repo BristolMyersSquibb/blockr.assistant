@@ -269,8 +269,9 @@
   together, which the user picks with its button, drops on the chat or pastes
   (#231).
   A click on a file of a message that the user sent opens it large.
-  The board keeps each file's name and media type, while the browser keeps its
-  content as long as the board stays open.
+  The board keeps each file's name and media type, while the browser keeps a
+  copy of its content as long as the board stays open, so that the file stays
+  attached once the user deletes or edits it on disk.
   The assistant sends that content to the model with the message and with
   each later call of the conversation.
   An image larger than 1568 pixels on its longer side is scaled down, and a

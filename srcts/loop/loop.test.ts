@@ -490,6 +490,11 @@ describe("the files that a call carries", () => {
     created: CREATED,
   };
 
+  // The copies of the PDF and of the image that the memory keeps: the start of
+  // a PDF, "JVBERi0=" as base64, and the start of a PNG, "iVBORw0KGgo=".
+  const report = (): Blob => new Blob(["%PDF-"]);
+  const plot = (): Blob => new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]);
+
   // A reply of pi's fake provider that first asks the page's fetch, as pi's
   // APIs ask it for each call, and so meets the answer of the status given.
   function answered(status: number, reply: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep {
@@ -510,7 +515,7 @@ describe("the files that a call carries", () => {
     });
     const turn = turnWith(replies);
     turn.messages[0] = pdf;
-    turn.kept.set("u1", { files: [{ data: "JVBERi0=", ...(taken ? { taken: true as const } : {}) }, { data: "iVBORw0KGgo=" }] });
+    turn.kept.set("u1", { files: [{ blob: report(), ...(taken ? { taken: true as const } : {}) }, { blob: plot() }] });
     return turn;
   }
 
@@ -569,12 +574,15 @@ describe("the files that a call carries", () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     faux.setResponses([seen(calls, fauxAssistantMessage("Read."))]);
     const given: unknown[] = [];
+    // The memory gives the same copy of a file at each look, as the loop
+    // expects of it.
+    const files = [{ blob: report() }, { blob: plot() }];
     await createLoop(pi, { "anthropic-messages": faux }).run({
       connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
       model: "faux-1",
       tools: [],
       messages: () => [pdf],
-      kept: (id) => (id === "u1" ? { files: [{ data: "JVBERi0=" }, { data: "iVBORw0KGgo=" }] } : undefined),
+      kept: (id) => (id === "u1" ? { files } : undefined),
       appMessage: () => Promise.resolve("The board."),
       onPayload: (payload) => {
         given.push(payload);
@@ -585,12 +593,12 @@ describe("the files that a call carries", () => {
     });
     const mark = { type: "ephemeral" };
     const said = (text: string) => ({ type: "text", text });
-    const report = { type: "base64", media_type: "application/pdf", data: "JVBERi0=" };
-    const plot = { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" };
+    const reportSource = { type: "base64", media_type: "application/pdf", data: "JVBERi0=" };
+    const plotSource = { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" };
     const labels = ['The user attached the file "report.pdf", of the type application/pdf.', 'The user attached the file "plot.png", of the type image/png.'] as const;
     const sent = {
       messages: [
-        { role: "user", content: [said("Read the report."), said(labels[0]), { type: "image", source: report }, said(labels[1]), { type: "image", source: plot }] },
+        { role: "user", content: [said("Read the report."), said(labels[0]), { type: "image", source: reportSource }, said(labels[1]), { type: "image", source: plotSource }] },
         { role: "user", content: [{ ...said("The board."), cache_control: mark }] },
       ],
     };
@@ -598,7 +606,7 @@ describe("the files that a call carries", () => {
       messages: [
         {
           role: "user",
-          content: [said("Read the report."), said(labels[0]), { type: "document", source: report, title: "report.pdf" }, said(labels[1]), { type: "image", source: plot, cache_control: mark }],
+          content: [said("Read the report."), said(labels[0]), { type: "document", source: reportSource, title: "report.pdf" }, said(labels[1]), { type: "image", source: plotSource, cache_control: mark }],
         },
         { role: "user", content: [said("The board.")] },
       ],

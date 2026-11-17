@@ -118,6 +118,12 @@ const CREATED = "2026-11-16T08:00:00.000Z";
 // PDF, as base64.
 const PNG = "iVBORw0KGgo=";
 const PDF = "JVBERi0xLjQK";
+
+// A copy of a file's bytes, as the memory keeps it, of the bytes that base64
+// gives.
+function copyOf(base64: string): Blob {
+  return new Blob([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))]);
+}
 const LABEL_PNG = 'The user attached the file "plot.png", of the type image/png.';
 const LABEL_PDF = 'The user attached the file "report.pdf", of the type application/pdf.';
 const CSV = '<file-attachment name="sales.csv" type="text/csv">\na,b\n1,2\n\n</file-attachment>';
@@ -230,7 +236,8 @@ describe.each(APIS)("the files of a message on $api", ({ api, keyed }) => {
   const deployment = { assistant_base_url: `${mock.origin}${keyed}`, assistant_api: api, assistant_api_key: mock.key, assistant_models: "mock-model" };
 
   test("reach the API in its blocks with every call: an image as an image, a PDF as a file and a text file as text", async () => {
-    const { core, assistant } = await turnedWith(deployment, withFiles, [{ data: PNG }, { data: PDF }, { text: "a,b\n1,2\n" }]);
+    const copies = [copyOf(PNG), copyOf(PDF), new Blob(["a,b\n1,2\n"])] as const;
+    const { core, assistant } = await turnedWith(deployment, withFiles, copies.map((blob) => ({ blob })));
 
     expect(raised(core, "assistant_call_failed")).toEqual([]);
     expect(raised(core, "assistant_attachment_refused")).toEqual([]);
@@ -238,15 +245,15 @@ describe.each(APIS)("the files of a message on $api", ({ api, keyed }) => {
     expect(calls).toHaveLength(2);
     for (const call of calls) expect(blocksOf(sent(call.body).find((item) => item.role === "user"))).toMatchObject(FILE_BLOCKS[api] ?? []);
     expect(assistant.conversations.kept("c1", "u1")?.files).toEqual([
-      { data: PNG, taken: true },
-      { data: PDF, taken: true },
-      { text: "a,b\n1,2\n", taken: true },
+      { blob: copies[0], taken: true },
+      { blob: copies[1], taken: true },
+      { blob: copies[2], taken: true },
     ]);
   });
 
   test("raise assistant_attachment_refused where the API refuses a file, whose refusal the page reads, and the next turn goes without it", async () => {
     const refused: Message = { id: "u1", role: "user", parts: [{ type: "text", text: "Read this." }, { type: "attachment", name: "refused.pdf", media_type: "application/pdf" }], created: CREATED };
-    const { core, assistant } = await turnedWith(deployment, refused, [{ data: PDF }]);
+    const { core, assistant } = await turnedWith(deployment, refused, [{ blob: copyOf(PDF) }]);
 
     const [why] = raised(core, "assistant_attachment_refused");
     expect(why).toMatch(/^The provider refused the file "refused\.pdf", so the conversation goes on without it: .*could not be processed/);

@@ -2,7 +2,7 @@
 // (./attachments.ts, ./read.ts).
 
 import { describe, expect, test } from "vitest";
-import { ACCEPT, attachedFile, keptFile, kindOf, MAX_BYTES, mediaTypeOf, namesOf, pastedFile, PASTED_TEXT, scaledSize, sizeOf } from "./index.ts";
+import { ACCEPT, attachedFile, copiedFile, encodedFile, kindOf, MAX_BYTES, mediaTypeOf, namesOf, pastedFile, PASTED_TEXT, scaledSize, sizeOf } from "./index.ts";
 
 describe("the files that the message field takes", () => {
   test("are images in PNG, JPEG, GIF and WebP, PDFs and text files, each of the media type that the browser gives an image or a PDF", () => {
@@ -72,16 +72,26 @@ describe("an image that the message field attaches", () => {
   });
 });
 
-describe("a file's content as the plugin's memory keeps it", () => {
-  test("is a text file's text, and the bytes of any other file as base64", async () => {
-    await expect(keptFile(new File(["a,b\n1,2\n"], "sales.csv"), "text/csv")).resolves.toEqual({ text: "a,b\n1,2\n" });
-    await expect(keptFile(new File([new Uint8Array([0, 1, 2, 255])], "plot.png"), "image/png")).resolves.toEqual({ data: "AAEC/w==" });
+describe("a file that the user sends", () => {
+  test("is copied, with its name, its media type and its bytes", async () => {
+    const file = new File([new Uint8Array([0, 1, 2, 255])], "plot.png", { type: "image/png" });
+
+    const copy = await copiedFile(file);
+
+    expect(copy).not.toBe(file);
+    expect([copy.name, copy.type, copy.size]).toEqual(["plot.png", "image/png", 4]);
+    expect([...new Uint8Array(await copy.arrayBuffer())]).toEqual([0, 1, 2, 255]);
   });
 
-  test("is the text that a long paste becomes", async () => {
+  test("goes to a call as a text file's text, and as the bytes of any other file as base64", async () => {
+    await expect(encodedFile(new Blob(["a,b\n1,2\n"]), "text/csv")).resolves.toEqual({ text: "a,b\n1,2\n" });
+    await expect(encodedFile(new Blob([new Uint8Array([0, 1, 2, 255])]), "image/png")).resolves.toEqual({ data: "AAEC/w==" });
+  });
+
+  test("is a text file named \"Pasted Text\" where a long paste makes it", async () => {
     const pasted = pastedFile("x".repeat(1200));
     expect(pasted.name).toBe(PASTED_TEXT);
     expect(mediaTypeOf(pasted)).toBe("text/plain");
-    await expect(keptFile(pasted, "text/plain")).resolves.toEqual({ text: "x".repeat(1200) });
+    await expect(encodedFile(pasted, "text/plain")).resolves.toEqual({ text: "x".repeat(1200) });
   });
 });

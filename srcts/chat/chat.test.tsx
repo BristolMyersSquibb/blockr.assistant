@@ -624,11 +624,13 @@ describe("the chat's attachments", () => {
       { type: "attachment", name: "report.pdf", media_type: "application/pdf" },
       { type: "attachment", name: "sales.csv", media_type: "text/csv" },
     ]);
-    expect(assistant.conversations.kept(id ?? "", added?.messages[0]?.id ?? "")?.files).toEqual([
-      { data: "iVBORw0KGgo=", taken: true },
-      { data: "JVBERi0xLjQK", taken: true },
-      { text: "a,b\n1,2\n", taken: true },
-    ]);
+    // The memory keeps a copy of each file's bytes, as binary, which every
+    // call took.
+    const kept = assistant.conversations.kept(id ?? "", added?.messages[0]?.id ?? "")?.files ?? [];
+    expect(kept.map((file) => ("blob" in file ? file.taken : file))).toEqual([true, true, true]);
+    const bytes = await Promise.all(kept.map(async (file) => ("blob" in file ? [...new Uint8Array(await file.blob.arrayBuffer())] : [])));
+    const encoder = new TextEncoder();
+    expect(bytes).toEqual([[137, 80, 78, 71, 13, 10, 26, 10], [...encoder.encode("%PDF-1.4\n")], [...encoder.encode("a,b\n1,2\n")]]);
     expect(seen[0]).toEqual([
       "Read these.",
       'The user attached the file "plot.png", of the type image/png.',
@@ -641,7 +643,7 @@ describe("the chat's attachments", () => {
     const sent = [...el.querySelectorAll(".blockr-assistant-user .blockr-assistant-file")];
     expect(sent.map((file) => file.querySelector(".blockr-assistant-file-name")?.textContent)).toEqual(["plot.png", "report.pdf", "sales.csv"]);
     expect(sent.map((file) => file.tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON"]);
-    expect(sent[0]?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+    expect(sent[0]?.querySelector("img")?.getAttribute("src")).toMatch(/^blob:/);
     expect(sent.slice(1).map((file) => file.querySelector(".blockr-assistant-file-badge")?.textContent)).toEqual(["PDF", "CSV"]);
   });
 
@@ -756,7 +758,13 @@ describe("the files of a message that the user sent", () => {
   test("open large in a dialog where the memory keeps their content: an image as itself, a PDF in the browser's viewer and a text file as its text", async () => {
     const { el, assistant } = await chat({ state: withFiles() });
     act(() => {
-      assistant.conversations.keep("c1", "u1", { files: [{ data: "iVBORw0KGgo=" }, { data: "JVBERi0xLjQK" }, { text: "# Notes" }] });
+      assistant.conversations.keep("c1", "u1", {
+        files: [
+          { blob: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: "image/png" }) },
+          { blob: new Blob(["%PDF-1.4\n"], { type: "application/pdf" }) },
+          { blob: new Blob(["# Notes"], { type: "text/markdown" }) },
+        ],
+      });
     });
     await settle();
     const dialog = (): HTMLDialogElement | null => el.querySelector(".blockr-assistant-file-dialog");
@@ -764,7 +772,7 @@ describe("the files of a message that the user sent", () => {
     click(files(el)[0] ?? null);
     expect(dialog()?.open).toBe(true);
     expect(dialog()?.querySelector("h2")?.textContent).toBe("plot.png");
-    expect(dialog()?.querySelector(".blockr-assistant-file-image")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+    expect(dialog()?.querySelector(".blockr-assistant-file-image")?.getAttribute("src")).toMatch(/^blob:/);
     click(dialog()?.querySelector(".blockr-assistant-file-view-close") ?? null);
     expect(dialog()?.open).toBe(false);
 
@@ -774,6 +782,7 @@ describe("the files of a message that the user sent", () => {
     click(dialog()?.querySelector(".blockr-assistant-file-view-close") ?? null);
 
     click(files(el)[2] ?? null);
+    await until(() => dialog()?.querySelector(".blockr-assistant-file-text") !== null, "the text");
     expect(dialog()?.querySelector(".blockr-assistant-file-text")?.textContent).toBe("# Notes");
   });
 
@@ -787,7 +796,7 @@ describe("the files of a message that the user sent", () => {
     ]);
 
     act(() => {
-      assistant.conversations.keep("c1", "u1", { files: [{ refused: true }, { data: "JVBERi0xLjQK", taken: true }, { text: "# Notes" }] });
+      assistant.conversations.keep("c1", "u1", { files: [{ refused: true }, { blob: new Blob(["%PDF-1.4\n"]), taken: true }, { blob: new Blob(["# Notes"]) }] });
     });
     await settle();
     expect(files(el).map((file) => [file.tagName, file.hasAttribute("data-refused"), file.textContent])).toEqual([

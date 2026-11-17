@@ -25,7 +25,9 @@
 //   onPayload the request as the provider takes it.
 // - Before each call, it builds pi's messages from the conversation as the
 //   plugin holds it then (./messages.ts), with the files that the user
-//   attached, which the memory keeps. Where the caller gives a message of
+//   attached, which the memory keeps as binary. It encodes each file once for
+//   the turn, as base64 or as text, and drops what it encoded as the turn
+//   ends. Where the caller gives a message of
 //   the app's, the loop adds it after the conversation's last message, for the
 //   call alone, as a message of the role user, so that no call goes out for it
 //   alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
@@ -90,13 +92,14 @@ import type { Json } from "@blockr/core";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent } from "@earendil-works/pi-ai";
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
+import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { markBeforeAppMessage } from "./cache.ts";
 import { withFiles } from "./files.ts";
-import { appMessage, callMessages, image, isToolCall, llmMessages, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import { appMessage, callMessages, encodeFiles, image, isToolCall, llmMessages, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered, Carried, CarriedFile } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
@@ -256,6 +259,9 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
+  // The content of each file that the user attached, as the turn's calls send
+  // it, which the loop encodes once for the turn and drops as the turn ends.
+  const encodings = new Map<Blob, Encoded>();
   // What the call that goes out carries of the files that the user attached,
   // and the status of the provider's answer to it, once it answered.
   let carried: Carried = { files: [], pdfs: [] };
@@ -276,8 +282,9 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
       status = undefined;
+      await encodeFiles(transformed, kept, encodings);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
-      const messages = callMessages(transformed, kept, model, turn.tools, prompt, carried);
+      const messages = callMessages(transformed, kept, model, turn.tools, prompt, { encoded: (file) => encodings.get(file), carried });
       return added === undefined ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,

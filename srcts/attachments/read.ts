@@ -6,12 +6,22 @@
 //    A GIF that is scaled down becomes a PNG of its first frame, since a canvas
 //    writes no GIF, as today's chat has it. Where the browser cannot read the
 //    image, as on happy-dom, the file stays as it is.
-// 2. As the message is sent, the file's content goes into the plugin's memory
-//    (../conversations): an image's or a PDF's bytes as base64, and a text
-//    file's text, read as UTF-8, with each byte that is no UTF-8 replaced.
+// 2. As the message is sent, the plugin copies the file's bytes into its
+//    memory (../conversations), as binary. A file that the user picked or
+//    dropped is the browser's handle on the file on disk, which the browser
+//    can no longer read once the user deletes, moves or edits the file. The
+//    copy keeps the file attached, as the user expects, and costs no more
+//    than the file's size, while base64 would cost a third more.
+// 3. As a turn's first call goes out, the loop encodes each file of the
+//    conversation once (../loop): an image's or a PDF's bytes as base64, and
+//    a text file's text, read as UTF-8, with each byte that is no UTF-8
+//    replaced.
 
-import type { KeptFile } from "../conversations/index.ts";
 import { kindOf, scaledSize } from "./attachments.ts";
+
+// A file's content as a call sends it: an image's or a PDF's bytes as base64,
+// or a text file's text.
+export type Encoded = { readonly data: string } | { readonly text: string };
 
 // The file as the message field attaches it, with the media type given: an
 // image scaled down where it is larger than the bound, and any other file as
@@ -21,9 +31,13 @@ export async function attachedFile(file: File, mediaType: string): Promise<File>
   return kindOf(mediaType) === "image" ? scaledDown(typed) : typed;
 }
 
-// The content of a file of the media type given, as the plugin's memory keeps
-// it.
-export async function keptFile(file: Blob, mediaType: string): Promise<KeptFile> {
+// A copy of the file's bytes in memory, with the file's name and media type.
+export async function copiedFile(file: File): Promise<File> {
+  return new File([await file.arrayBuffer()], file.name, { type: file.type });
+}
+
+// The content of a file of the media type given, as a call sends it.
+export async function encodedFile(file: Blob, mediaType: string): Promise<Encoded> {
   if (kindOf(mediaType) === "text") return { text: await file.text() };
   return { data: await base64Of(file) };
 }
