@@ -388,7 +388,7 @@ describe("the chat's field for the visitor's key", () => {
     expect(el.querySelector(".blockr-assistant-key")).toBeNull();
 
     press(field(el), "Enter");
-    await until(() => el.querySelector(".blockr-assistant-reply") !== null, "the reply");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
     expect(keys).toEqual(["sk-visitor"]);
     const stored = [storedIn(localStorage), storedIn(sessionStorage), JSON.stringify([core.store.board(), sent])];
     expect(stored.join("\n")).not.toContain("sk-visitor");
@@ -416,7 +416,7 @@ describe("the chat's field for the visitor's key", () => {
     const key = createVisitorKey();
     key.give("sk-visitor");
     key.lost("sk-visitor");
-    const { el } = await chat({ credential: VISITOR, key, replies: [keyed(keys)] });
+    const { el, assistant } = await chat({ credential: VISITOR, key, replies: [keyed(keys)] });
 
     expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(
       "The connection to faux.invalid was lost, and your key may be wrong. Change it, or send your message again.",
@@ -425,7 +425,7 @@ describe("the chat's field for the visitor's key", () => {
 
     type(el, "How many blocks?");
     press(field(el), "Enter");
-    await until(() => el.querySelector(".blockr-assistant-reply") !== null, "the reply");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
     expect(keys).toEqual(["sk-visitor"]);
     expect(el.querySelector(".blockr-assistant-key")).toBeNull();
