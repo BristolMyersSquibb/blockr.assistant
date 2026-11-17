@@ -272,11 +272,11 @@
   assistant raises the error `assistant_call_failed`, and the chat asks for a
   key again.
   OpenAI's refusal of a call's key reaches the page as a failed connection,
-  so the assistant then asks for the list of models with the same key, which
-  tells a refused key from a lost connection.
+  so the assistant then asks for the list of models with the same key, the
+  app's or the visitor's, which tells a refused key from a lost connection.
   Where the list fails as well, the error says that the connection was lost
   and that the key may be wrong, and the chat shows the field again, holding
-  the key.
+  the visitor's key.
 
 # blockr.assistant 0.1.0.9000
 

@@ -63,21 +63,26 @@
 // withdraw the error once a later call succeeds, and core withdraws it as the
 // next board opens.
 //
-// A failed call with the visitor's key also tells the key what the base URL
-// said of it (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-credential):
-// - Where the call's request got a 401 or a 403, the turn drops the key, so
-//   that the chat asks for a key again.
+// A failed call that carried a key, the deployment's or the visitor's, says
+// what it can of the key
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated):
+// - Where the call's request got a 401 or a 403, the base URL refused the key.
 // - Where the call's request got no answer that the page could read, the
 //   turn has the models ask the base URL for its list of models with the same
 //   key. OpenAI's refusal of a call's key reaches a page that way, while its
 //   list's refusal reaches the page as a 401.
-//   - A list that the base URL refuses for the key drops the key.
+//   - A list that the base URL refuses says that it refused the key, and the
+//     error adds why.
 //   - A list that the base URL gives says that the key works, and the call
 //     fails as any call does.
 //   - Where the list fails as well, the error says that the connection was
-//     lost and that the key may be wrong. The key stays, and the chat asks for
-//     a key again, holding it.
-// A call that succeeds tells the key that the base URL took it.
+//     lost and that the key may be wrong.
+// With the deployment's key, that changes only the error. With the visitor's
+// key, the turn also tells the key what the base URL said of it
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-credential):
+// a refused key goes, so that the chat asks for a key again, and a key that
+// may be wrong stays, while the chat asks for a key again, holding it. A call
+// that succeeds tells the visitor's key that the base URL took it.
 // A turn for which the deployment offers no model raises nothing of its own,
 // since the models raised why already.
 // The memory keeps the failure by the conversation's last message, so that
@@ -155,14 +160,20 @@ export interface Running {
   readonly stopping: boolean;
 }
 
+// A key that a call carried, and whether it is the visitor's.
+interface Carried {
+  readonly key: string;
+  readonly visitor: boolean;
+}
+
 interface State {
   conversation: ConversationId;
   reply: Streamed | undefined;
   results: Readonly<Record<string, Answered>>;
   stopping: boolean;
-  // The visitor's key that the turn's last call carried, where it carried
-  // the visitor's.
-  carried: string | undefined;
+  // The key that the turn's last call carried, and whether it is the
+  // visitor's, where the call carried a key.
+  carried: Carried | undefined;
   readonly controller: AbortController;
 }
 
@@ -214,21 +225,22 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 
   function succeeded(turn: State): void {
     callFailed.withdraw();
-    if (turn.carried !== undefined) options.key.took(turn.carried);
+    if (turn.carried?.visitor === true) options.key.took(turn.carried.key);
   }
 
   // Raises the error of a failed call, once the turn knows what the call says
-  // of the visitor's key, where the call carried it.
+  // of its key, where the call carried one.
   async function failed(turn: State, call: Call & { readonly failure: string }): Promise<void> {
     const why = `The assistant's call to the model failed: ${call.failure}`;
-    const key = turn.carried;
-    if (key === undefined || call.answer === undefined) {
+    const { carried } = turn;
+    if (carried === undefined || call.answer === undefined) {
       fail(turn.conversation, why);
       return;
     }
+    const { key, visitor } = carried;
     if (call.answer === "refused") {
       fail(turn.conversation, why);
-      options.key.refused(key);
+      if (visitor) options.key.refused(key);
       return;
     }
     const checked = await options.models.check(key);
@@ -236,15 +248,15 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     switch (checked.kind) {
       case "refused":
         fail(turn.conversation, `${why} ${checked.message}`);
-        options.key.refused(key);
+        if (visitor) options.key.refused(key);
         return;
       case "listed":
         fail(turn.conversation, why);
-        options.key.took(key);
+        if (visitor) options.key.took(key);
         return;
       case "failed":
         fail(turn.conversation, `${why} ${LOST}`);
-        options.key.lost(key);
+        if (visitor) options.key.lost(key);
         return;
     }
   }
@@ -345,8 +357,8 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     if (stopped(turn)) return;
 
     await loop.run({
-      connection: connectionOf(deployment, options.key, (key) => {
-        turn.carried = key;
+      connection: connectionOf(deployment, options.key, (carried) => {
+        turn.carried = carried;
       }),
       model,
       settings: settings.get(model),
@@ -410,24 +422,34 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 
 // Where the loop's calls go, and the key that each carries: the deployment's,
 // none, or the key that the visitor holds as the call goes out. The
-// connection hands carried() each key of the visitor's that a call carries.
-// A call for which the visitor holds no key fails the turn.
-function connectionOf(deployment: Deployment, visitor: VisitorKey, carried: (key: string) => void): Connection {
+// connection hands carried() each key that a call carries. A call for which
+// the visitor holds no key fails the turn.
+function connectionOf(deployment: Deployment, visitor: VisitorKey, carried: (key: Carried) => void): Connection {
   const { baseUrl, api, credential } = deployment;
-  if (credential.kind !== "visitor") {
-    const key = credential.kind === "deployment" ? credential.key : undefined;
-    return { baseUrl, api, apiKey: () => Promise.resolve(key) };
+  switch (credential.kind) {
+    case "none":
+      return { baseUrl, api, apiKey: () => Promise.resolve(undefined) };
+    case "deployment":
+      return {
+        baseUrl,
+        api,
+        apiKey() {
+          carried({ key: credential.key, visitor: false });
+          return Promise.resolve(credential.key);
+        },
+      };
+    case "visitor":
+      return {
+        baseUrl,
+        api,
+        apiKey() {
+          const key = keyOf(visitor.current());
+          if (key === undefined) return Promise.reject(new Error(NO_KEY));
+          carried({ key, visitor: true });
+          return Promise.resolve(key);
+        },
+      };
   }
-  return {
-    baseUrl,
-    api,
-    apiKey() {
-      const key = keyOf(visitor.current());
-      if (key === undefined) return Promise.reject(new Error(NO_KEY));
-      carried(key);
-      return Promise.resolve(key);
-    },
-  };
 }
 
 function messageOf(error: unknown): string {

@@ -3174,18 +3174,19 @@ function createTurns(core, signal, options) {
   }
   function succeeded(turn) {
     callFailed.withdraw();
-    if (turn.carried !== void 0) options.key.took(turn.carried);
+    if (turn.carried?.visitor === true) options.key.took(turn.carried.key);
   }
   async function failed(turn, call) {
     const why = `The assistant's call to the model failed: ${call.failure}`;
-    const key = turn.carried;
-    if (key === void 0 || call.answer === void 0) {
+    const { carried } = turn;
+    if (carried === void 0 || call.answer === void 0) {
       fail(turn.conversation, why);
       return;
     }
+    const { key, visitor } = carried;
     if (call.answer === "refused") {
       fail(turn.conversation, why);
-      options.key.refused(key);
+      if (visitor) options.key.refused(key);
       return;
     }
     const checked = await options.models.check(key);
@@ -3193,15 +3194,15 @@ function createTurns(core, signal, options) {
     switch (checked.kind) {
       case "refused":
         fail(turn.conversation, `${why} ${checked.message}`);
-        options.key.refused(key);
+        if (visitor) options.key.refused(key);
         return;
       case "listed":
         fail(turn.conversation, why);
-        options.key.took(key);
+        if (visitor) options.key.took(key);
         return;
       case "failed":
         fail(turn.conversation, `${why} ${LOST}`);
-        options.key.lost(key);
+        if (visitor) options.key.lost(key);
         return;
     }
   }
@@ -3291,8 +3292,8 @@ function createTurns(core, signal, options) {
     const settings = await options.settings.checked((id) => loop.inCatalog(id));
     if (stopped(turn)) return;
     await loop.run({
-      connection: connectionOf(deployment, options.key, (key) => {
-        turn.carried = key;
+      connection: connectionOf(deployment, options.key, (carried) => {
+        turn.carried = carried;
       }),
       model: model2,
       settings: settings.get(model2),
@@ -3350,20 +3351,30 @@ function createTurns(core, signal, options) {
 }
 function connectionOf(deployment, visitor, carried) {
   const { baseUrl, api: api2, credential } = deployment;
-  if (credential.kind !== "visitor") {
-    const key = credential.kind === "deployment" ? credential.key : void 0;
-    return { baseUrl, api: api2, apiKey: () => Promise.resolve(key) };
+  switch (credential.kind) {
+    case "none":
+      return { baseUrl, api: api2, apiKey: () => Promise.resolve(void 0) };
+    case "deployment":
+      return {
+        baseUrl,
+        api: api2,
+        apiKey() {
+          carried({ key: credential.key, visitor: false });
+          return Promise.resolve(credential.key);
+        }
+      };
+    case "visitor":
+      return {
+        baseUrl,
+        api: api2,
+        apiKey() {
+          const key = keyOf(visitor.current());
+          if (key === void 0) return Promise.reject(new Error(NO_KEY2));
+          carried({ key, visitor: true });
+          return Promise.resolve(key);
+        }
+      };
   }
-  return {
-    baseUrl,
-    api: api2,
-    apiKey() {
-      const key = keyOf(visitor.current());
-      if (key === void 0) return Promise.reject(new Error(NO_KEY2));
-      carried(key);
-      return Promise.resolve(key);
-    }
-  };
 }
 function messageOf2(error) {
   return error instanceof Error ? error.message : String(error);

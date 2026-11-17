@@ -85,6 +85,14 @@
 #' A conversation talks to its pick of the model where the deployment offers
 #' it, and to the default otherwise.
 #'
+#' OpenAI's refusal of a call's key reaches the page as a failed connection.
+#' So where a call with a key fails that way, the assistant asks the base URL
+#' for its list of models with the same key, which tells a refused key from a
+#' lost connection.
+#' The error `assistant_call_failed` then says that the base URL refused the
+#' key, or, where the list fails as well, that the connection was lost and
+#' that the key may be wrong.
+#'
 #' The visitor's own key stays in the page's memory, and reaches neither the
 #' board, R nor the browser's storage.
 #' So another board that opens in the page keeps the key, and a reload asks
@@ -92,12 +100,8 @@
 #' Until the visitor gives a key, the chat sends nothing.
 #' Where the base URL refuses the key, for a call or for its list of models,
 #' the chat asks for a key again.
-#' OpenAI's refusal of a call's key reaches the page as a failed connection,
-#' so the assistant then asks for the list of models with the same key, which
-#' tells a refused key from a lost connection.
-#' Where the list fails as well, the error `assistant_call_failed` says that
-#' the connection was lost and that the key may be wrong, and the chat shows
-#' the field for the key again, holding the key.
+#' Where the connection was lost and the key may be wrong, the chat shows the
+#' field for the key again, holding the key.
 #'
 #' @section Model settings:
 #' A model's settings say whether it reasons, whether it takes images, how

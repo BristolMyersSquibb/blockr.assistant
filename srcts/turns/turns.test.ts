@@ -579,9 +579,12 @@ function holding(key: string): VisitorKey {
   return held;
 }
 
+// The error of a call whose request got no answer that the page could read,
+// as pi words it.
+const UNREAD = "The assistant's call to the model failed: Connection error.: Failed to fetch";
+
 describe("a turn on the visitor's own key", () => {
   const visitor = (): Promise<Deployment> => Promise.resolve(deployed({ kind: "visitor" }));
-  const why = "The assistant's call to the model failed: Connection error.: Failed to fetch";
 
   test("carries the key that the visitor holds as each call goes out", async () => {
     const seen: { model: string; key: string | undefined }[] = [];
@@ -648,8 +651,8 @@ describe("a turn on the visitor's own key", () => {
 
     expect(checked).toEqual(["sk-wrong"]);
     expect(key.current()).toEqual({ kind: "refused" });
-    expect(raised(core)).toEqual([`${why} ${refusal}`]);
-    expect(conversations.kept("c1", "u1")?.failure).toBe(`${why} ${refusal}`);
+    expect(raised(core)).toEqual([`${UNREAD} ${refusal}`]);
+    expect(conversations.kept("c1", "u1")?.failure).toBe(`${UNREAD} ${refusal}`);
   });
 
   test("fails as any call where the list says that the base URL takes the key, which stays", async () => {
@@ -664,7 +667,7 @@ describe("a turn on the visitor's own key", () => {
     await turns.run("c1");
 
     expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
-    expect(raised(core)).toEqual([why]);
+    expect(raised(core)).toEqual([UNREAD]);
   });
 
   test("says that the connection was lost and the key may be wrong where the list fails as well, and keeps the key in doubt", async () => {
@@ -674,7 +677,7 @@ describe("a turn on the visitor's own key", () => {
     await turns.run("c1");
 
     expect(key.current()).toEqual({ kind: "lost", key: "sk-visitor" });
-    expect(raised(core)).toEqual([`${why} The connection was lost, and the key may be wrong.`]);
+    expect(raised(core)).toEqual([`${UNREAD} The connection was lost, and the key may be wrong.`]);
   });
 
   test("tells a key in doubt that the base URL took it, once a call succeeds", async () => {
@@ -687,24 +690,68 @@ describe("a turn on the visitor's own key", () => {
     expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
   });
 
-  test("leaves the key as it is, and checks nothing, where a call fails otherwise or carries the deployment's key", async () => {
+  test("leaves the key as it is, and checks nothing, where a call fails otherwise", async () => {
     const checked: string[] = [];
-    const check = (given: string): Promise<Listed> => {
-      checked.push(given);
-      return Promise.resolve({ kind: "refused", message: "Refused." });
-    };
     const key = holding("sk-visitor");
-    const other = await opened({ deployment: visitor(), key, check, load: () => Promise.resolve(failing("429 Too Many Requests")) });
-    await other.turns.run("c1");
+    const { core, turns } = await opened({
+      deployment: visitor(),
+      key,
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "refused", message: "Refused." });
+      },
+      load: () => Promise.resolve(failing("429 Too Many Requests")),
+    });
 
-    const deployments = holding("sk-visitor");
-    const deployment = await opened({ key: deployments, check, load: () => Promise.resolve(failing("Connection error.", "unread")) });
-    await deployment.turns.run("c1");
+    await turns.run("c1");
 
     expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
-    expect(deployments.current()).toEqual({ kind: "given", key: "sk-visitor" });
     expect(checked).toEqual([]);
-    expect(raised(other.core)).toEqual(["The assistant's call to the model failed: 429 Too Many Requests"]);
-    expect(raised(deployment.core)).toEqual(["The assistant's call to the model failed: Connection error."]);
+    expect(raised(core)).toEqual(["The assistant's call to the model failed: 429 Too Many Requests"]);
+  });
+
+});
+
+describe("a turn on the deployment's key, or on none", () => {
+  test("checks the deployment's key as well, which changes only the error", async () => {
+    const refusal = 'The base URL refused the assistant\'s key for its list of models at https://faux.invalid/v1/models: it answered 401, "Incorrect API key provided.".';
+    const answers: Listed[] = [{ kind: "refused", message: refusal }, { kind: "failed", message: "The list failed." }];
+    const checked: string[] = [];
+    const key = holding("sk-visitor");
+    const { core, turns, conversations } = await opened({
+      key,
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve(answers.shift() ?? { kind: "listed", models: [], settings: new Map() });
+      },
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+    });
+
+    await turns.run("c1");
+    expect(raised(core)).toEqual([`${UNREAD} ${refusal}`]);
+
+    await conversations.addMessage("c1", asked("u3", "Try again."));
+    await turns.run("c1");
+    expect(raised(core)).toEqual([`${UNREAD} The connection was lost, and the key may be wrong.`]);
+
+    expect(checked).toEqual(["test-key", "test-key"]);
+    expect(key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+  });
+
+  test("checks nothing where the call carries no key, as for a base URL that needs none", async () => {
+    const checked: (string | undefined)[] = [];
+    const { core, turns } = await opened({
+      deployment: Promise.resolve(deployed({ kind: "none" })),
+      check: (given) => {
+        checked.push(given);
+        return Promise.resolve({ kind: "refused", message: "Refused." });
+      },
+      load: () => Promise.resolve(failing("Connection error.: Failed to fetch", "unread")),
+    });
+
+    await turns.run("c1");
+
+    expect(checked).toEqual([]);
+    expect(raised(core)).toEqual([UNREAD]);
   });
 });

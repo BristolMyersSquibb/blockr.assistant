@@ -34,10 +34,10 @@
 // nothing, since the list for the new key follows.
 //
 // The turns have the models check a key through check(), which asks the base
-// URL for its list with that key. The turns do so where a call with the
-// visitor's key got no answer that the page could read, to tell a refused key
-// from a lost connection
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-credential).
+// URL for its list with that key. The turns do so where a call with a key got
+// no answer that the page could read, to tell a refused key from a lost
+// connection
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
 
 import type { CoreApi } from "@blockr/core";
 import type { Deployment } from "../deployment/index.ts";

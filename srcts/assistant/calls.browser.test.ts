@@ -330,3 +330,15 @@ describe("the visitor's own key", () => {
     expect((await reached("GET")).map((request) => request.headers.authorization)).toEqual(["Bearer wrong-key", `Bearer ${mock.key}`]);
   });
 });
+
+describe("the deployment's key", () => {
+  test("is checked against the list of models where OpenAI refuses a call's key with no CORS header, and the error says that the base URL refused it", async () => {
+    const { core } = await turned({ assistant_base_url: `${mock.origin}/openai/v1`, assistant_api_key: "wrong-key", assistant_models: "mock-model" });
+
+    const asked = await reached("GET");
+    expect(asked.map((request) => [request.path, request.headers.authorization])).toEqual([["/openai/v1/models", "Bearer wrong-key"]]);
+    const [why] = raised(core, "assistant_call_failed");
+    expect(why?.startsWith("The assistant's call to the model failed: ")).toBe(true);
+    expect(why?.endsWith(` The base URL refused the assistant's key for its list of models at ${mock.origin}/openai/v1/models: it answered 401, "Incorrect API key provided.".`)).toBe(true);
+  });
+});
