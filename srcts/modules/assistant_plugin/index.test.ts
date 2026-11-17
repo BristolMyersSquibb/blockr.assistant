@@ -4,10 +4,10 @@
 // neither R nor a browser
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#testing).
 
-import type { Json } from "@blockr/core";
+import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import { act } from "react";
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { assistantOf } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
 import * as assistant from "./index.tsx";
@@ -180,15 +180,47 @@ describe("the start of the assistant's plugin class", () => {
     expect(assistantOf(core)).toBeUndefined();
   });
 
-  test("runs no turn until the assistant reads its blockr options, since it has no model to talk to then", async () => {
+  test("fails each turn with the error assistant_call_failed where the app sets no key", async () => {
     const { core, settled } = await started(undefined, three);
     await act(() => settled());
 
     await assistantOf(core)?.turns.run("c1");
 
-    const failed = core.notifications.get().filter((notification) => notification.source.kind === "module" && notification.source.code === "assistant_call_failed");
-    expect(failed.map((notification) => [notification.severity, notification.message])).toEqual([
-      ["error", "The assistant has no model to talk to, since the conversation picked none and the app offers none."],
+    expect(raised(core, "assistant_call_failed")).toEqual([
+      ["error", "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key."],
     ]);
   });
+
+  test("offers the models that the app names in its blockr options, the first being the default", async () => {
+    const { core, settled } = await started(undefined, three, { assistant_api_key: "test-key", assistant_models: "gpt-5.4, gpt-5.4-nano" });
+    await act(() => settled());
+
+    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"] });
+  });
+
+  test("asks the app's base URL for its list of models, with the app's key, as the board opens, where the app names none", async () => {
+    const asked: { url: string; headers: Headers }[] = [];
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+      asked.push({ url, headers: new Headers(init.headers) });
+      return Promise.resolve(Response.json({ object: "list", data: [{ id: "text-embedding-3-small" }, { id: "gpt-5.4" }, { id: "gpt-5.4-mini" }] }));
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const { core, settled } = await started(undefined, three, { assistant_base_url: "https://proxy.invalid/v1/", assistant_api_key: "test-key" });
+    await act(() => settled());
+
+    expect(await assistantOf(core)?.models.offered()).toEqual({ models: ["gpt-5.4", "gpt-5.4-mini"] });
+    expect(asked.map(({ url, headers }) => [url, headers.get("authorization")])).toEqual([["https://proxy.invalid/v1/models", "Bearer test-key"]]);
+    expect(raised(core, "assistant_models_failed")).toEqual([]);
+  });
 });
+
+// The notifications of the code given that the assistant raised, each by its
+// severity and message.
+function raised(core: CoreApi, code: string): [string, string][] {
+  return core.notifications
+    .get()
+    .filter((notification) => notification.source.kind === "module" && notification.source.code === code)
+    .map((notification) => [notification.severity, notification.message]);
+}

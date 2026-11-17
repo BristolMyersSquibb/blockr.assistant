@@ -1,8 +1,8 @@
 // The turns (./turns.ts) on core's CoreApi for tests, with the conversations
 // of the board and the loop on pi's fake provider: a turn's messages and
-// tokens in the state, one turn at a time, the tab's Web Lock, the reply as it
-// streams, a stop, the error of a failed call, the next board, and a
-// conversation that another plugin removes.
+// tokens in the state, the model that it talks to, one turn at a time, the
+// tab's Web Lock, the reply as it streams, a stop, the error of a failed call,
+// the next board, and a conversation that another plugin removes.
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
 
@@ -12,12 +12,15 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { createConversations } from "../conversations/index.ts";
+import type { Deployment } from "../deployment/index.ts";
 import type { Loop } from "../loop/index.ts";
+import type { Offered } from "../models/index.ts";
+import { heldError } from "../notifications/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message } from "../state/index.ts";
-import { fauxLoop } from "../testing/index.ts";
+import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createTurns } from "./turns.ts";
 import type { Locks } from "./lock.ts";
@@ -76,7 +79,11 @@ function fakeLocks() {
 
 interface OpenOptions {
   readonly replies?: FauxResponseStep[];
-  readonly model?: string | null;
+  // What the deployment chose, which calls pi's fake provider with the key
+  // test-key unless given.
+  readonly deployment?: Promise<Deployment>;
+  // The models offered, faux-1 alone unless given.
+  readonly offered?: Offered;
   readonly tools?: readonly Tool[];
   readonly load?: () => Promise<Loop>;
   readonly tokensPerSecond?: number;
@@ -84,9 +91,9 @@ interface OpenOptions {
 }
 
 // Core on a board whose conversations c1 and c2 hold a message that the user
-// sent, c1 with the conversation's pick of the model and c2 with none, and
-// the turns of that board on pi's fake provider, with the replies given. Core
-// stops as the test finishes.
+// sent, c1 with the conversation's pick of the model, faux-1, and c2 with
+// none, and the turns of that board on pi's fake provider, with the replies
+// given. Core stops as the test finishes.
 async function opened(options: OpenOptions = {}) {
   const state: AssistantState = {
     conversations: { c1: conversation("faux-1", asked("u1")), c2: conversation(null, asked("u2")) },
@@ -103,13 +110,17 @@ async function opened(options: OpenOptions = {}) {
   });
   const conversations = createConversations(stubbed.core, controller.signal);
   await conversations.opened;
-  const { faux, loop, connection } = fauxLoop(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond });
+  const { faux, loop } = fauxLoop(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond });
   faux.setResponses(options.replies ?? [fauxAssistantMessage("The board holds no block.")]);
   const locks = fakeLocks();
+  const deployment = options.deployment ?? Promise.resolve(deployed());
+  deployment.catch(() => undefined);
   const turns = createTurns(stubbed.core, controller.signal, {
     conversations,
     tools: options.tools ?? [],
-    connection: { ...connection, model: options.model === undefined ? "faux-1" : options.model },
+    deployment,
+    models: { offered: () => Promise.resolve(options.offered ?? { models: ["faux-1"] }) },
+    callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     load: options.load ?? (() => Promise.resolve(loop)),
     locks: locks.locks,
   });
@@ -117,6 +128,21 @@ async function opened(options: OpenOptions = {}) {
     controller.abort();
   };
   return { ...stubbed, conversations, turns, faux, locks, close };
+}
+
+// A deployment whose calls go to pi's fake provider, with the credential
+// given, the key test-key unless given.
+function deployed(credential: Deployment["credential"] = { kind: "deployment", key: "test-key" }): Deployment {
+  return { baseUrl: "https://faux.invalid/v1", api: FAUX_API, credential, models: undefined };
+}
+
+// A reply of pi's fake provider that records the model and the key of each
+// call that it answers.
+function recording(into: { model: string; key: string | undefined }[], text = "Hello."): FauxResponseStep {
+  return (_context, options, _state, model) => {
+    into.push({ model: model.id, key: options?.apiKey });
+    return fauxAssistantMessage(text);
+  };
 }
 
 function inState(core: CoreApi, id: string): Conversation | undefined {
@@ -145,21 +171,47 @@ describe("a turn of the assistant", () => {
   });
 
   test("runs on the default model where the conversation picked none", async () => {
-    const seen: string[] = [];
-    const { core, turns } = await opened({
-      model: "faux-default",
-      replies: [
-        (_context, _options, _state, model) => {
-          seen.push(model.id);
-          return fauxAssistantMessage("Hello.");
-        },
-      ],
-    });
+    const seen: { model: string; key: string | undefined }[] = [];
+    const { core, turns } = await opened({ offered: { models: ["faux-default", "faux-1"] }, replies: [recording(seen)] });
 
     await turns.run("c2");
 
-    expect(seen).toEqual(["faux-default"]);
+    expect(seen.map(({ model }) => model)).toEqual(["faux-default"]);
     expect(inState(core, "c2")?.messages).toHaveLength(2);
+  });
+
+  test("runs on the conversation's pick where the deployment offers it", async () => {
+    const seen: { model: string; key: string | undefined }[] = [];
+    const { turns } = await opened({ offered: { models: ["faux-default", "faux-1"] }, replies: [recording(seen)] });
+
+    await turns.run("c1");
+
+    expect(seen.map(({ model }) => model)).toEqual(["faux-1"]);
+  });
+
+  test("runs on the default where the deployment does not offer the conversation's pick, which stays in the state", async () => {
+    const seen: { model: string; key: string | undefined }[] = [];
+    const { core, turns } = await opened({ offered: { models: ["faux-default"] }, replies: [recording(seen)] });
+
+    await turns.run("c1");
+
+    expect(seen.map(({ model }) => model)).toEqual(["faux-default"]);
+    expect(inState(core, "c1")?.model).toBe("faux-1");
+  });
+
+  test("calls with the deployment's key, and hands pi no key of the deployment's where the key is none", async () => {
+    const keyed: { model: string; key: string | undefined }[] = [];
+    const first = await opened({ replies: [recording(keyed)] });
+    await first.turns.run("c1");
+
+    const keyless: { model: string; key: string | undefined }[] = [];
+    const second = await opened({ deployment: Promise.resolve(deployed({ kind: "none" })), replies: [recording(keyless)] });
+    await second.turns.run("c1");
+
+    expect(keyed.map(({ key }) => key)).toEqual(["test-key"]);
+    expect(keyless).toHaveLength(1);
+    expect(keyless[0]?.key).not.toBe("test-key");
+    expect(raised(second.core)).toEqual([]);
   });
 
   test("enters the results of its tool calls as one message of the role tool", async () => {
@@ -326,12 +378,37 @@ describe("a turn that fails", () => {
     expect(raised(core)).toEqual([]);
   });
 
-  test("raises the error assistant_call_failed where the turn has no model to talk to", async () => {
-    const { core, turns } = await opened({ model: null });
+  test("keeps why the deployment offers no model by the conversation's last message, and raises nothing of its own", async () => {
+    const why = "The assistant offers no model, since the list of models at https://proxy.invalid/v1/models holds none that takes tools.";
+    const { core, turns, conversations } = await opened({ offered: { models: [], failure: why } });
 
     await turns.run("c2");
 
-    expect(raised(core)).toEqual(["The assistant has no model to talk to, since the conversation picked none and the app offers none."]);
+    expect(raised(core)).toEqual([]);
+    expect(conversations.kept("c2", "u2")?.failure).toBe(why);
+    expect(inState(core, "c2")?.messages.map((m) => m.id)).toEqual(["u2"]);
+  });
+
+  test("raises the error assistant_call_failed where the deployment sets no key", async () => {
+    const { core, turns, conversations } = await opened({ deployment: Promise.resolve(deployed({ kind: "visitor" })) });
+
+    await turns.run("c1");
+
+    const why = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+    expect(raised(core)).toEqual([why]);
+    expect(conversations.kept("c1", "u1")?.failure).toBe(why);
+  });
+
+  test("raises the error assistant_call_failed where a blockr option of the deployment holds a value that it does not take", async () => {
+    const wrong = new TypeError('The blockr option assistant_api is "openai", where it takes the API that the base URL speaks.');
+    const deployment = Promise.reject(wrong);
+    // The turns read the deployment only as a turn starts.
+    deployment.catch(() => undefined);
+    const { core, turns } = await opened({ deployment });
+
+    await turns.run("c1");
+
+    expect(raised(core)).toEqual(['The assistant cannot call a model: The blockr option assistant_api is "openai", where it takes the API that the base URL speaks.']);
   });
 
   test("raises the error assistant_call_failed where the loop's code fails to load", async () => {

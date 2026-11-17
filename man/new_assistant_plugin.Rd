@@ -66,6 +66,58 @@ assistant in every app that does not narrow its plugins.
 The class's \code{ui} draws the assistant's panel, an empty one, wherever the
 frontend places the plugin.
 }
+\section{Model access}{
+
+The assistant calls its model from the browser, never through R.
+Four blockr options say where the calls go, how they are authenticated and
+which models the assistant offers.
+A deployment sets each as an R option, such as \code{blockr.assistant_models},
+or as an environment variable, such as \code{BLOCKR_ASSISTANT_MODELS}.
+\itemize{
+\item The blockr option \code{assistant_base_url} gives the base URL that every call
+goes to, OpenAI's \verb{https://api.openai.com/v1} by default.
+A gateway, such as OpenRouter at \verb{https://openrouter.ai/api/v1}, or a
+company's own proxy can take its place.
+Anthropic's API is at \verb{https://api.anthropic.com}, without \verb{/v1}, since
+the assistant appends \verb{/v1/messages} to it.
+\item The blockr option \code{assistant_api} gives the API that the base URL speaks:
+OpenAI's Responses API as \code{"openai-responses"}, the default, OpenAI's
+Chat Completions API as \code{"openai-completions"}, or Anthropic's Messages
+API as \code{"anthropic-messages"}.
+The assistant does not work out which API a base URL speaks.
+\item The blockr option \code{assistant_api_key} gives the key that every call
+carries, or \code{"none"} for a base URL that needs no key, so that no call
+carries one.
+The assistant reads a key from this option alone, never from a variable
+such as \code{OPENAI_API_KEY}, so that a key set for code in R reaches no
+browser unless the deployment sets it here.
+Any visitor who can use the assistant can read the key from the page.
+Where the option is unset, each turn fails with the error
+\code{assistant_call_failed}.
+\item The blockr option \code{assistant_models} gives the ids of the models offered,
+the first being the default, as a character vector or as one string that
+separates them by commas, such as \code{"gpt-5.4,gpt-5.4-nano"}.
+Where it is unset, the assistant offers the models of the base URL's list
+of models that take tools, the first being the default.
+}
+
+The assistant asks for the base URL's list with the key as each board
+opens.
+Where the base URL refuses the key, it raises the error
+\code{assistant_call_failed}.
+Where the list fails otherwise, or holds no model that takes tools, it
+raises the error \code{assistant_models_failed}, and asks again as the user
+sends.
+A conversation talks to its pick of the model where the deployment offers
+it, and to the default otherwise.
+
+The library pi, which runs the assistant's turns, knows the settings of
+OpenAI's and Anthropic's models.
+Any other model, such as one that a company's own proxy names, does not
+reason, takes images, has a context window of 128,000 tokens and takes up
+to 16,384 tokens for a reply.
+}
+
 \section{Requests}{
 
 The class answers five requests in R, through its method of

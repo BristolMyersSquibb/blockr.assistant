@@ -35,6 +35,11 @@ import type { Tool, ToolResult } from "../tools/index.ts";
 export { recordSpans } from "./spans.ts";
 export type { Recorded } from "./spans.ts";
 
+// A request as the mock of the APIs and of the lists of models recorded it,
+// which the browser tests read. They run in the page, so they import none of
+// the mock's code (./mock-apis.ts).
+export type { RecordedRequest } from "./mock-apis.ts";
+
 // A request of the assistant's, as R gets it.
 export interface AssistantRequest {
   readonly name: string;

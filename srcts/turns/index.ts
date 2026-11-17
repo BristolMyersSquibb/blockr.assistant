@@ -2,5 +2,5 @@
 // class's start, holding the tab's Web Lock while one runs.
 
 export { createTurns } from "./turns.ts";
-export type { Connection, Running, Turns, TurnsOptions } from "./turns.ts";
+export type { Running, Turns, TurnsOptions } from "./turns.ts";
 export type { Locks } from "./lock.ts";

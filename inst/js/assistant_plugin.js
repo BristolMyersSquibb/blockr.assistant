@@ -582,6 +582,73 @@ function compacted(messages, summary2, from, conversation2) {
   return [summary2, ...messages.slice(messages.findIndex((message2) => message2.id === from))];
 }
 
+// srcts/deployment/deployment.ts
+var OPENAI = "https://api.openai.com/v1";
+var APIS = ["openai-responses", "openai-completions", "anthropic-messages"];
+async function readDeployment(core) {
+  const [baseUrl, api2, key, models] = await Promise.all([
+    core.blockrOption("assistant_base_url"),
+    core.blockrOption("assistant_api"),
+    core.blockrOption("assistant_api_key"),
+    core.blockrOption("assistant_models")
+  ]);
+  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api2), credential: credentialOf(key), models: modelsOf(models) };
+}
+function baseUrlOf(sent2) {
+  if (sent2 === void 0) return OPENAI;
+  const url = typeof sent2 === "string" ? sent2.trim() : "";
+  if (!isWebUrl(url)) {
+    throw new TypeError(`The blockr option assistant_base_url is ${JSON.stringify(sent2)}, where it takes the URL that the assistant's calls go to, such as "${OPENAI}".`);
+  }
+  return url.replace(/\/+$/, "");
+}
+function apiOf(sent2) {
+  if (sent2 === void 0) return "openai-responses";
+  const api2 = typeof sent2 === "string" ? sent2.trim() : "";
+  if (!APIS.includes(api2)) {
+    throw new TypeError(
+      `The blockr option assistant_api is ${JSON.stringify(sent2)}, where it takes the API that the base URL speaks: "openai-responses", "openai-completions" or "anthropic-messages".`
+    );
+  }
+  return api2;
+}
+function credentialOf(sent2) {
+  if (sent2 === void 0) return { kind: "visitor" };
+  const key = typeof sent2 === "string" ? sent2.trim() : "";
+  if (key === "") {
+    throw new TypeError(
+      `The blockr option assistant_api_key holds ${kindOf(sent2)}, where it takes the deployment's key as a string, or "none" for a base URL that needs no key.`
+    );
+  }
+  return key === "none" ? { kind: "none" } : { kind: "deployment", key };
+}
+function modelsOf(sent2) {
+  if (sent2 === void 0) return void 0;
+  const ids = typeof sent2 === "string" ? sent2.split(",") : Array.isArray(sent2) && sent2.every((id) => typeof id === "string") ? sent2 : [];
+  const named = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
+  if (named.length === 0) {
+    throw new TypeError(
+      `The blockr option assistant_models is ${JSON.stringify(sent2)}, where it takes the ids of the models offered, the first being the default, as an array of strings or as one string that separates them by commas, such as "gpt-5.4,gpt-5.4-nano".`
+    );
+  }
+  return named;
+}
+function isWebUrl(text2) {
+  try {
+    const { protocol } = new URL(text2);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+function kindOf(sent2) {
+  if (sent2 === null) return "null";
+  if (typeof sent2 === "string") return "an empty string";
+  if (typeof sent2 === "boolean") return "true or false";
+  if (typeof sent2 === "number") return "a number";
+  return Array.isArray(sent2) ? "an array" : "an object";
+}
+
 // srcts/loop/loop.ts
 import { context as context2 } from "@opentelemetry/api";
 
@@ -859,6 +926,7 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var PROVIDER = "blockr.assistant";
+var NO_KEY = "blockr-assistant-no-key";
 function createLoop(pi, apis = {}) {
   const streams = {
     "anthropic-messages": pi.anthropicMessages,
@@ -910,7 +978,8 @@ async function runAgent(pi, streams, turn, span) {
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);
       return callMessages(transformed, kept, model2, turn.tools, prompt);
     },
-    getApiKey: () => turn.connection.apiKey(),
+    getApiKey: async () => await turn.connection.apiKey() ?? NO_KEY,
+    fetch: keyless,
     ...turn.onPayload === void 0 ? {} : { onPayload: turn.onPayload }
   };
   const emit = async (event) => {
@@ -956,11 +1025,11 @@ function modelOf(pi, id, connection) {
     return {
       ...at2,
       name: id,
-      reasoning: true,
+      reasoning: false,
       input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 2e5,
-      maxTokens: 32e3
+      contextWindow: 128e3,
+      maxTokens: 16384
     };
   }
   return { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
@@ -970,6 +1039,12 @@ function catalogModel(pi, id) {
     if (Object.hasOwn(catalog, id)) return catalog[id];
   }
   return void 0;
+}
+function keyless(input, init) {
+  const headers = new Headers(init?.headers);
+  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
+  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+  return globalThis.fetch(input, { ...init, headers });
 }
 function callOf(reply) {
   const written = replyOf(reply);
@@ -1007,6 +1082,175 @@ function answeredOf(result, isError) {
   const text2 = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
   const images = result.content.flatMap((block) => block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []);
   return { text: text2, isError, images };
+}
+
+// srcts/notifications/notifications.ts
+function heldError(core, signal, code) {
+  let withdraw;
+  signal.addEventListener(
+    "abort",
+    () => {
+      withdraw = void 0;
+    },
+    { once: true }
+  );
+  return {
+    raise(message2) {
+      if (signal.aborted) return;
+      withdraw?.();
+      withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code, message: message2 });
+    },
+    withdraw() {
+      withdraw?.();
+      withdraw = void 0;
+    }
+  };
+}
+
+// srcts/models/list.ts
+var NO_TOOLS = /* @__PURE__ */ new Set([
+  "audio",
+  "babbage",
+  "dall",
+  "davinci",
+  "embedding",
+  "evaluation",
+  "image",
+  "instruct",
+  "live",
+  "moderation",
+  "realtime",
+  "reranking",
+  "search",
+  "sora",
+  "speech",
+  "transcribe",
+  "transcription",
+  "tts",
+  "video",
+  "whisper"
+]);
+var CALLS = {
+  "openai-responses": "/responses",
+  "openai-completions": "/chat/completions",
+  "anthropic-messages": "/v1/messages"
+};
+async function askList(deployment, key, fetch, signal) {
+  const url = listUrl(deployment);
+  const none = (why) => ({ kind: "failed", message: `The assistant offers no model, since ${why}` });
+  let response;
+  try {
+    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+  } catch (error) {
+    return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { kind: "refused", message: `The base URL refused the assistant's key for its list of models at ${url}: it answered ${await answerOf(response)}.` };
+  }
+  if (!response.ok) {
+    return none(`the base URL gives no list of models at ${url}: it answered ${await answerOf(response)}. An app on such a base URL names its models in the blockr option assistant_models.`);
+  }
+  let entries;
+  try {
+    const body = await response.json();
+    entries = isRecord(body) ? body.data : void 0;
+  } catch (error) {
+    return none(`the answer at ${url} is no list of models: ${messageOf(error)}`);
+  }
+  if (!Array.isArray(entries)) {
+    return none(`the answer at ${url} holds no list of models in its data. An app on such a base URL names its models in the blockr option assistant_models.`);
+  }
+  const models = toolModels(entries, deployment.api);
+  if (models.length === 0) {
+    return none(`the list of models at ${url} holds none that takes tools. An app on such a base URL names its models in the blockr option assistant_models.`);
+  }
+  return { kind: "listed", models };
+}
+function toolModels(entries, api2) {
+  const kept = /* @__PURE__ */ new Set();
+  for (const entry of entries) {
+    if (isRecord(entry) && typeof entry.id === "string" && entry.id !== "" && takesTools(entry, entry.id, api2)) kept.add(entry.id);
+  }
+  return [...kept];
+}
+function takesTools(entry, id, api2) {
+  if (typeof entry.type === "string" && NO_TOOLS.has(entry.type)) return false;
+  const path = CALLS[api2] ?? "";
+  if (Array.isArray(entry.endpoints) && !entry.endpoints.some((endpoint) => typeof endpoint === "string" && endpoint.endsWith(path))) return false;
+  const parameters = Array.isArray(entry.supported_parameters) ? entry.supported_parameters : void 0;
+  const tags = Array.isArray(entry.tags) ? entry.tags : void 0;
+  if (parameters !== void 0 || tags !== void 0) {
+    return (parameters?.includes("tools") ?? false) || (tags?.includes("tool-use") ?? false);
+  }
+  return !id.toLowerCase().split(/[^a-z0-9]+/).some((word) => NO_TOOLS.has(word));
+}
+function listUrl(deployment) {
+  return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
+}
+function listHeaders(api2, key) {
+  if (api2 === "anthropic-messages") {
+    return {
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+      ...key === void 0 ? {} : { "x-api-key": key }
+    };
+  }
+  return key === void 0 ? {} : { authorization: `Bearer ${key}` };
+}
+async function answerOf(response) {
+  let message2;
+  try {
+    const body = await response.json();
+    message2 = isRecord(body) && isRecord(body.error) ? body.error.message : void 0;
+  } catch {
+    message2 = void 0;
+  }
+  return typeof message2 === "string" && message2 !== "" ? `${String(response.status)}, "${message2}"` : String(response.status);
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// srcts/models/models.ts
+var NONE = { offered: { models: [] }, again: false };
+function createModels(core, signal, options) {
+  const modelsFailed = heldError(core, signal, "assistant_models_failed");
+  const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  async function ask() {
+    let deployment;
+    try {
+      deployment = await options.deployment;
+    } catch {
+      return NONE;
+    }
+    if (deployment.models !== void 0) return { offered: { models: deployment.models }, again: false };
+    const { credential } = deployment;
+    if (credential.kind === "visitor") return NONE;
+    const listed = await askList(deployment, credential.kind === "deployment" ? credential.key : void 0, fetch, signal);
+    if (signal.aborted) return NONE;
+    switch (listed.kind) {
+      case "listed":
+        modelsFailed.withdraw();
+        return { offered: { models: listed.models }, again: false };
+      case "refused":
+        modelsFailed.withdraw();
+        options.callFailed.raise(listed.message);
+        return { offered: { models: [], failure: listed.message }, again: true };
+      case "failed":
+        modelsFailed.raise(listed.message);
+        return { offered: { models: [], failure: listed.message }, again: true };
+    }
+  }
+  let last = ask();
+  return {
+    offered() {
+      last = last.then((asked) => asked.again && !signal.aborted ? ask() : asked);
+      return last.then((asked) => asked.offered);
+    }
+  };
 }
 
 // srcts/requests/requests.ts
@@ -2322,37 +2566,34 @@ function nothing() {
 var STOP = new DOMException("The user stopped the turn.", "AbortError");
 var CLOSED = new DOMException("Another board opened, which ended the turn.", "AbortError");
 var GONE = new DOMException("The turn's conversation took no more messages.", "AbortError");
-var NO_MODEL = "The assistant has no model to talk to, since the conversation picked none and the app offers none.";
+var NO_KEY2 = "The assistant has no key for its calls, since the app sets none in the blockr option assistant_api_key.";
+var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 function createTurns(core, signal, options) {
-  const { conversations, connection } = options;
+  const { conversations, callFailed } = options;
   const locks = "locks" in options ? options.locks : pageLocks();
   const listeners = /* @__PURE__ */ new Set();
   let running;
   let snapshot;
-  let withdraw;
-  signal.addEventListener(
-    "abort",
-    () => {
-      withdraw = void 0;
-    },
-    { once: true }
-  );
   function closed2() {
     return signal.aborted;
+  }
+  function stopped(turn) {
+    return closed2() || turn.controller.signal.aborted;
   }
   function changed() {
     snapshot = running === void 0 ? void 0 : { conversation: running.conversation, reply: running.reply, results: running.results, stopping: running.stopping };
     for (const listener of listeners) listener();
   }
   function fail(conversation2, why) {
-    withdraw?.();
-    withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_call_failed", message: why });
+    callFailed.raise(why);
+    keep2(conversation2, why);
+  }
+  function keep2(conversation2, why) {
     const last = conversations.get(conversation2)?.messages.at(-1);
     if (last !== void 0) conversations.keep(conversation2, last.id, { failure: why });
   }
   function succeeded() {
-    withdraw?.();
-    withdraw = void 0;
+    callFailed.withdraw();
   }
   function handlers(turn) {
     let writes = true;
@@ -2363,7 +2604,7 @@ function createTurns(core, signal, options) {
       } catch (error) {
         writes = false;
         turn.controller.abort(GONE);
-        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf(error)}`);
+        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf2(error)}`);
       }
     };
     return {
@@ -2400,23 +2641,36 @@ function createTurns(core, signal, options) {
     };
   }
   async function runTurn2(turn) {
-    const held = conversations.get(turn.conversation);
-    if (held === void 0) return;
-    const model2 = held.model ?? connection.model;
-    if (model2 === null) {
-      fail(turn.conversation, NO_MODEL);
+    if (conversations.get(turn.conversation) === void 0) return;
+    let deployment;
+    try {
+      deployment = await options.deployment;
+    } catch (error) {
+      if (!closed2()) fail(turn.conversation, `The assistant cannot call a model: ${messageOf2(error)}`);
+      return;
+    }
+    if (deployment.credential.kind === "visitor") {
+      fail(turn.conversation, NO_KEY2);
+      return;
+    }
+    const offered = await options.models.offered();
+    if (stopped(turn)) return;
+    const picked = conversations.get(turn.conversation)?.model ?? null;
+    const model2 = picked !== null && offered.models.includes(picked) ? picked : offered.models[0];
+    if (model2 === void 0) {
+      keep2(turn.conversation, offered.failure ?? NO_MODEL);
       return;
     }
     let loop;
     try {
       loop = await options.load();
     } catch (error) {
-      if (!closed2()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf(error)}`);
+      if (!closed2()) fail(turn.conversation, `The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
       return;
     }
-    if (turn.controller.signal.aborted) return;
+    if (stopped(turn)) return;
     await loop.run({
-      connection,
+      connection: connectionOf(deployment),
       model: model2,
       tools: options.tools,
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
@@ -2442,7 +2696,7 @@ function createTurns(core, signal, options) {
       try {
         await runTurn2(turn);
       } catch (error) {
-        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf(error)}`);
+        if (!closed2()) fail(conversation2, `The assistant's turn failed: ${messageOf2(error)}`);
       } finally {
         release();
         signal.removeEventListener("abort", close);
@@ -2467,17 +2721,16 @@ function createTurns(core, signal, options) {
     }
   };
 }
-function messageOf(error) {
+function connectionOf(deployment) {
+  const { credential } = deployment;
+  const key = credential.kind === "deployment" ? credential.key : void 0;
+  return { baseUrl: deployment.baseUrl, api: deployment.api, apiKey: () => Promise.resolve(key) };
+}
+function messageOf2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
 // srcts/assistant/assistant.ts
-var UNSET = {
-  baseUrl: "https://api.openai.com/v1",
-  api: "openai-responses",
-  apiKey: () => Promise.resolve(void 0),
-  model: null
-};
 var opened = /* @__PURE__ */ new WeakMap();
 function openAssistant(core, signal, options = {}) {
   const conversations = createConversations(core, signal);
@@ -2485,14 +2738,20 @@ function openAssistant(core, signal, options = {}) {
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
+  const deployment = options.deployment ?? readDeployment(core);
+  deployment.catch(() => void 0);
+  const callFailed = heldError(core, signal, "assistant_call_failed");
+  const models = createModels(core, signal, { deployment, callFailed, fetch: options.fetch });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
-    connection: options.connection ?? UNSET,
+    deployment,
+    models,
+    callFailed,
     load: options.load ?? loadLoop,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  const assistant = { conversations, skills, turns };
+  const assistant = { conversations, skills, models, turns };
   opened.set(core, assistant);
   signal.addEventListener(
     "abort",

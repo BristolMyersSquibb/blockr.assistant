@@ -6,13 +6,14 @@
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
-import type { SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
+import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { Message } from "../state/index.ts";
-import { fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
 import { STOPPED } from "./messages.ts";
@@ -32,10 +33,11 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "systemPrompt" | "transformContext" | "onPayload">> = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "systemPrompt" | "transformContext" | "onPayload">> & { readonly key?: string | undefined } = {},
   tokensPerSecond?: number,
 ) {
-  const { faux, loop, connection } = fauxLoop(tokensPerSecond === undefined ? {} : { tokensPerSecond });
+  const { key, ...rest } = given;
+  const { faux, loop, connection } = fauxLoop({ ...(tokensPerSecond === undefined ? {} : { tokensPerSecond }), ...("key" in given ? { key } : {}) });
   faux.setResponses(replies);
   const messages: Message[] = [asked];
   const kept = new Map<string, Kept>();
@@ -79,7 +81,7 @@ function turnWith(
         return Promise.resolve();
       },
     },
-    ...given,
+    ...rest,
   };
 
   return { run: () => loop.run(turn), messages, kept, calls, streamed, returned, controller, keys: () => keys };
@@ -158,6 +160,76 @@ describe("a turn on the loop", () => {
     expect(calls.map((c) => c.options?.apiKey)).toEqual(["test-key", "test-key"]);
     expect(calls[0]?.options?.reasoning).toBe("medium");
     expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("hands pi a placeholder where the connection gives no key, which the loop's fetch takes off the request", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { run } = turnWith([seen(calls, fauxAssistantMessage("Two."))], { key: undefined });
+    await run();
+    const sent: Headers[] = [];
+    vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers));
+      return Promise.resolve(new Response("{}"));
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const placeholder = calls[0]?.options?.apiKey ?? "";
+    const fetch = calls[0]?.options?.fetch;
+    await fetch?.("https://proxy.invalid/v1/chat/completions", { headers: { authorization: `Bearer ${placeholder}`, "content-type": "application/json" } });
+    await fetch?.("https://proxy.invalid/v1/messages", { headers: new Headers({ "x-api-key": placeholder, "anthropic-version": "2023-06-01" }) });
+    await fetch?.("https://api.openai.com/v1/responses", { headers: { authorization: "Bearer sk-test" } });
+
+    expect(placeholder).not.toBe("");
+    expect(sent.map((headers) => Object.fromEntries(headers))).toEqual([
+      { "content-type": "application/json" },
+      { "anthropic-version": "2023-06-01" },
+      { authorization: "Bearer sk-test" },
+    ]);
+  });
+
+  test("gives a model that pi's catalogs lack settings that every API takes", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith(
+      [
+        (_context, _options, _state, model) => {
+          models.push(model);
+          return fauxAssistantMessage("Two.");
+        },
+      ],
+      { model: "company-gpt-4o" },
+    );
+
+    await run();
+
+    expect(models[0]).toMatchObject({
+      id: "company-gpt-4o",
+      api: FAUX_API,
+      baseUrl: "https://faux.invalid/v1",
+      reasoning: false,
+      input: ["text", "image"],
+      contextWindow: 128_000,
+      maxTokens: 16_384,
+    });
+  });
+
+  test("gives a model that pi's catalog holds the catalog's settings, at the connection's base URL", async () => {
+    const models: Model<Api>[] = [];
+    const { run } = turnWith(
+      [
+        (_context, _options, _state, model) => {
+          models.push(model);
+          return fauxAssistantMessage("Two.");
+        },
+      ],
+      { model: "gpt-5.4" },
+    );
+
+    await run();
+
+    const { reasoning, input, contextWindow, maxTokens } = OPENAI_MODELS["gpt-5.4"];
+    expect(models[0]).toMatchObject({ id: "gpt-5.4", baseUrl: "https://faux.invalid/v1", reasoning, input, contextWindow, maxTokens });
   });
 
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
