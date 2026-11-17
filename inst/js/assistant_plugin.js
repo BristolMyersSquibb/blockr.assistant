@@ -738,7 +738,7 @@ function conversationText(messages) {
   return messages.flatMap((message2) => paragraphsOf(message2)).join("\n\n");
 }
 function paragraphsOf(message2) {
-  const calls = message2.parts.flatMap((part) => part.type === "tool_call" ? [`${part.tool}(${argsOf(part.args)})`] : []);
+  const calls = message2.parts.flatMap((part) => part.type === "tool_call" ? [`${part.tool}(${formatArgs(part.args)})`] : []);
   const others = message2.parts.flatMap((part) => paragraphOf(message2, part));
   return calls.length === 0 ? others : [...others, `[Assistant tool calls]: ${calls.join("; ")}`];
 }
@@ -753,12 +753,12 @@ function paragraphOf(message2, part) {
     case "attachment":
       return [`[The user attached a file]: ${part.name}, of the type ${part.media_type}`];
     case "tool_result":
-      return [`[Tool result]: ${cut(part.text)}${imagesOf(part)}${part.error === true ? "\n(The call failed.)" : ""}`];
+      return [`[Tool result]: ${cut(part.text)}${describeImages(part)}${part.error === true ? "\n(The call failed.)" : ""}`];
     case "tool_call":
       return [];
   }
 }
-function argsOf(args) {
+function formatArgs(args) {
   return Object.entries(args).map(([name, value]) => `${name}=${JSON.stringify(value)}`).join(", ");
 }
 function cut(text3) {
@@ -767,7 +767,7 @@ function cut(text3) {
 
 [... ${String(text3.length - RESULT_CHARACTERS)} more characters truncated]`;
 }
-function imagesOf(part) {
+function describeImages(part) {
   const count = part.images ?? 0;
   if (count === 0) return "";
   return count === 1 ? "\n(The result also held an image.)" : `
@@ -1452,7 +1452,7 @@ function imagesGone(count) {
 function toolResult(call, content, isError, at2) {
   return { role: "toolResult", toolCallId: call.id, toolName: call.tool, content, isError, timestamp: at2 };
 }
-function replyOf(reply) {
+function convertReply(reply) {
   const parts = partsOf(reply);
   if (parts.length === 0) return void 0;
   const reasoning = reasoningOf(reply);
@@ -1523,14 +1523,14 @@ function tracer() {
 }
 function startSpan(parent, options, callback) {
   const naming = namingOf(options);
-  const span = tracer().startSpan(naming.name, { kind: naming.kind, attributes: naming.attributes, links: linksOf(options.links ?? []) }, parent);
+  const span = tracer().startSpan(naming.name, { kind: naming.kind, attributes: naming.attributes, links: convertLinks(options.links ?? []) }, parent);
   const active = trace.setSpan(parent, span);
   let ended = false;
   let status;
   const given2 = {
     startSpan: (childOptions, childCallback) => ended ? startInert(childCallback) : startSpan(active, childOptions, childCallback),
     addLink(link) {
-      const linked = ended ? void 0 : linkOf(link);
+      const linked = ended ? void 0 : convertLink(link);
       if (linked !== void 0) span.addLink(linked);
     },
     addEvent(name, attributes) {
@@ -1584,12 +1584,12 @@ var INERT = {
 async function startInert(callback) {
   return await callback(INERT);
 }
-function linkOf(link) {
+function convertLink(link) {
   const linked = started.get(link.context);
   return linked === void 0 ? void 0 : { context: linked, attributes: defined(link.attributes ?? {}) };
 }
-function linksOf(links) {
-  return links.flatMap((link) => linkOf(link) ?? []);
+function convertLinks(links) {
+  return links.flatMap((link) => convertLink(link) ?? []);
 }
 function defined(attributes) {
   const kept = {};
@@ -1703,7 +1703,7 @@ async function runAgent(pi, streams, turn, span) {
         return;
       case "tool_execution_end":
         if (!given2.has(event.toolCallId) && !turn.signal.aborted) {
-          answered.set(event.toolCallId, answeredOf(event.result, event.isError));
+          answered.set(event.toolCallId, convertToolResult(event.result, event.isError));
         }
         turn.on.returned(event.toolCallId, answer(event.toolCallId));
         return;
@@ -1774,7 +1774,7 @@ function buildModel(pi, id, connection, given2 = {}, listed3 = {}) {
     ...at2,
     name: id,
     reasoning: false,
-    input: inputOf(["text", "image"], listed3.images),
+    input: includeImages(["text", "image"], listed3.images),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: listed3.contextWindow ?? 128e3,
     maxTokens: listed3.maxTokens ?? 16384
@@ -1783,13 +1783,13 @@ function buildModel(pi, id, connection, given2 = {}, listed3 = {}) {
   return {
     ...base,
     reasoning: given2.reasoning ?? base.reasoning,
-    input: inputOf(base.input, given2.images),
+    input: includeImages(base.input, given2.images),
     contextWindow: given2.contextWindow ?? base.contextWindow,
     maxTokens: given2.maxTokens ?? base.maxTokens,
     ...anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" } } : {}
   };
 }
-function inputOf(input, images) {
+function includeImages(input, images) {
   if (images === void 0) return input;
   const others = input.filter((kind) => kind !== "image");
   return images ? [...others, "image"] : others;
@@ -1807,7 +1807,7 @@ function keyless(input, init) {
   return globalThis.fetch(input, { ...init, headers });
 }
 function callOf(pi, reply, model2) {
-  const written = replyOf(reply);
+  const written = convertReply(reply);
   const failed2 = reply.stopReason === "error";
   return {
     ...written === void 0 ? {} : { reply: written },
@@ -1840,7 +1840,7 @@ function agentTool(tool2, given2, turn) {
     }
   };
 }
-function answeredOf(result, isError) {
+function convertToolResult(result, isError) {
   const text3 = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
   const images = result.content.flatMap((block) => block.type === "image" ? [{ data: block.data, mimeType: block.mimeType }] : []);
   return { text: text3, isError, images };
@@ -1943,9 +1943,9 @@ async function readSettings(core, signal, failed2) {
 function settingsOf(reply) {
   if (reply === null) return NONE;
   if (!isObject2(reply)) throw new TypeError(`${FILE} gives ${shown2(reply)}, where it gives each model's settings by the model's id.`);
-  return new Map(Object.entries(reply).map(([id, entry]) => [id, entryOf(id, entry)]));
+  return new Map(Object.entries(reply).map(([id, entry]) => [id, parseEntry(id, entry)]));
 }
-function entryOf(id, entry) {
+function parseEntry(id, entry) {
   if (entry === null) return {};
   if (!isObject2(entry)) {
     throw new TypeError(`${FILE} gives the model ${id} ${shown2(entry)}, where it gives the model's settings by their names, such as reasoning: true.`);
@@ -2078,7 +2078,7 @@ function listedSettings(entries, models) {
 function settingsOf2(entry) {
   const contextWindow = tokensOf(entry.context_length) ?? tokensOf(entry.context_window) ?? tokensOf(entry.max_input_tokens);
   const maxTokens = tokensOf(fieldOf(entry.top_provider, "max_completion_tokens")) ?? tokensOf(entry.max_tokens);
-  const images = imagesOf2(fieldOf(entry.architecture, "input_modalities")) ?? imagesOf2(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
+  const images = takesImages(fieldOf(entry.architecture, "input_modalities")) ?? takesImages(fieldOf(entry.modalities, "input")) ?? flagOf(fieldOf(fieldOf(entry.capabilities, "image_input"), "supported"));
   return {
     ...contextWindow === void 0 ? {} : { contextWindow },
     ...maxTokens === void 0 ? {} : { maxTokens },
@@ -2091,7 +2091,7 @@ function fieldOf(value, name) {
 function tokensOf(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
 }
-function imagesOf2(value) {
+function takesImages(value) {
   return Array.isArray(value) && value.every((input) => typeof input === "string") ? value.includes("image") : void 0;
 }
 function flagOf(value) {
@@ -3441,14 +3441,14 @@ function boardSection(core, max) {
   const parts = blocks.length + links.length + stacks.length === 0 ? [`${counts} (empty board -- no blocks yet)`] : [
     counts,
     "",
-    ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${listedAfter(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
+    ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
     ...part("Links", links.map(([id, { from, to, input }]) => `- ${id}: ${from} -> ${to}${input === "" ? "" : `$${input}`}`), "list_links"),
     ...part("Stacks", stacks.map(([id, { name, blocks: held }]) => `- ${id} "${name}"${held.length === 0 ? "" : `: ${held.join(", ")}`}`), "list_stacks"),
     ...optionPart(core, Object.keys(board.options), part)
   ];
   return ["## Board", ...parts, ...part("Plugins", pluginLines(core), "list_plugins"), ...part("Views", viewLines(core), `get_plugin_state("${DOCK}")`)].join("\n");
 }
-function listedAfter(names) {
+function joinNames(names) {
   return names.length === 0 ? "" : ` ${names.join(", ")}`;
 }
 function withMarkers(line, status) {
