@@ -708,8 +708,14 @@ function systemMessage(prompt, tools) {
   const declared = tools.map((tool2) => ({ name: tool2.name, description: tool2.description, parameters: tool2.parameters }));
   return { role: "system", content: prompt, ...declared.length > 0 ? { toolsAdded: declared } : {}, timestamp: Date.now() };
 }
-function appMessage(text3) {
-  return { role: "user", content: [{ type: "text", text: text3 }], timestamp: Date.now() };
+function appMessage(written) {
+  return { role: "app", content: [text(written)], timestamp: Date.now() };
+}
+function llmMessages(messages) {
+  return messages.map((message2) => message2.role === "app" ? appAsUser(message2) : message2);
+}
+function appAsUser(message2) {
+  return { role: "user", content: message2.content, timestamp: message2.timestamp };
 }
 function piMessages(messages, kept, model2) {
   const out = [];
@@ -1010,10 +1016,9 @@ async function runAgent(pi, streams, turn, span) {
     model: model2,
     reasoning: "medium",
     identity: { attribution: null },
-    // The loop writes each message of a call, the message of the app's
-    // among them, in one of pi's own roles, so they go to the model as they
-    // are.
-    convertToLlm: (messages) => messages,
+    // Every message goes to the model as it is, but the message of the app's,
+    // which goes as a message of the role user.
+    convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
       const conversation2 = turn.messages();
       const transformed = turn.transformContext === void 0 ? conversation2 : await turn.transformContext(conversation2, signal ?? turn.signal);

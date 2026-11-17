@@ -28,8 +28,11 @@
 //   the app's, the loop adds it after the conversation's last message, for the
 //   call alone, as a message of the role user, so that no call goes out for it
 //   alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
-//   The loop knows the message, since it adds it, so pi's messages carry no
-//   mark of the app's, and the message's own text says that the app writes it.
+//   It adds it as a message of the role app, which it declares among the
+//   messages of pi's agent, so that pi's messages tell it from the user's,
+//   and pi's convertToLlm turns it into a message of the role user for the
+//   call (./messages.ts). The message's text opens with the preamble that says
+//   that the app writes it.
 // - The message of the app's changes from call to call, so on Anthropic's API
 //   the loop moves the cache mark that pi puts on it to the block before it,
 //   which ends the conversation (./cache.ts). It does so through pi's
@@ -74,7 +77,7 @@ import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { markBeforeAppMessage } from "./cache.ts";
-import { appMessage, callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import { appMessage, callMessages, image, isToolCall, llmMessages, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
@@ -233,10 +236,9 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     model,
     reasoning: "medium",
     identity: { attribution: null },
-    // The loop writes each message of a call, the message of the app's
-    // among them, in one of pi's own roles, so they go to the model as they
-    // are.
-    convertToLlm: (messages) => messages,
+    // Every message goes to the model as it is, but the message of the app's,
+    // which goes as a message of the role user.
+    convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
