@@ -649,6 +649,9 @@ function kindOf(sent2) {
   return Array.isArray(sent2) ? "an array" : "an object";
 }
 
+// srcts/loop/loop.ts
+import { context as context2 } from "@opentelemetry/api";
+
 // srcts/loop/messages.ts
 var ENDED = "The turn ended before this call returned.";
 var STOPPED = "The user stopped the turn before this call returned.";
@@ -787,6 +790,140 @@ function image(kept) {
   return { type: "image", data: kept.data, mimeType: kept.mimeType };
 }
 
+// srcts/loop/telemetry.ts
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+var SCOPE = "blockr.assistant";
+var PI_CALL = "pi.ai.request";
+var PROVIDERS = /* @__PURE__ */ new Map([
+  ["anthropic-messages", "anthropic"],
+  ["openai-completions", "openai"],
+  ["openai-responses", "openai"]
+]);
+var RENAMED = /* @__PURE__ */ new Map([
+  ["model", "gen_ai.request.model"],
+  ["response.id", "gen_ai.response.id"],
+  ["usage.output", "gen_ai.usage.output_tokens"]
+]);
+var INPUT = ["usage.input", "usage.cache_read", "usage.cache_write"];
+var started = /* @__PURE__ */ new WeakMap();
+function telemetryUnder(parent) {
+  return { startSpan: (options, callback) => startSpan(parent, options, callback) };
+}
+function providerName(api2) {
+  return PROVIDERS.get(api2) ?? api2;
+}
+function tracer() {
+  return trace.getTracer(SCOPE);
+}
+function startSpan(parent, options, callback) {
+  const naming = namingOf(options);
+  const span = tracer().startSpan(naming.name, { kind: naming.kind, attributes: naming.attributes, links: linksOf(options.links ?? []) }, parent);
+  const active = trace.setSpan(parent, span);
+  let ended = false;
+  let status;
+  const given = {
+    startSpan: (childOptions, childCallback) => ended ? startInert(childCallback) : startSpan(active, childOptions, childCallback),
+    addLink(link) {
+      const linked = ended ? void 0 : linkOf(link);
+      if (linked !== void 0) span.addLink(linked);
+    },
+    addEvent(name, attributes) {
+      if (!ended) span.addEvent(name, defined(attributes ?? {}));
+    },
+    setAttributes(attributes) {
+      if (!ended) span.setAttributes(naming.set(attributes));
+    },
+    setStatus(set) {
+      if (!ended) status = set;
+    }
+  };
+  started.set(given, span.spanContext());
+  return settled(
+    () => context.with(active, () => callback(given)),
+    (failure) => {
+      ended = true;
+      end(span, status ?? failure);
+    }
+  );
+}
+async function settled(run, end2) {
+  let value;
+  try {
+    value = await run();
+  } catch (error) {
+    end2(failureOf(error));
+    throw error;
+  }
+  end2();
+  return value;
+}
+function failureOf(error) {
+  return error instanceof Error ? { status: "error", error: { name: error.name, message: error.message } } : { status: "error" };
+}
+function end(span, status) {
+  if (status?.status === "error") {
+    const { error } = status;
+    span.setStatus(error === void 0 ? { code: SpanStatusCode.ERROR } : { code: SpanStatusCode.ERROR, message: error.message });
+    if (error !== void 0) span.setAttribute("error.type", error.name);
+  }
+  span.end();
+}
+var INERT = {
+  startSpan: (_options, callback) => startInert(callback),
+  addLink: () => void 0,
+  addEvent: () => void 0,
+  setAttributes: () => void 0,
+  setStatus: () => void 0
+};
+async function startInert(callback) {
+  return await callback(INERT);
+}
+function linkOf(link) {
+  const linked = started.get(link.context);
+  return linked === void 0 ? void 0 : { context: linked, attributes: defined(link.attributes ?? {}) };
+}
+function linksOf(links) {
+  return links.flatMap((link) => linkOf(link) ?? []);
+}
+function defined(attributes) {
+  const kept = {};
+  for (const [name, value] of Object.entries(attributes)) {
+    if (value !== void 0) kept[name] = typeof value === "object" ? value.slice() : value;
+  }
+  return kept;
+}
+function namingOf(options) {
+  const attributes = options.attributes ?? {};
+  if (options.name !== PI_CALL) return { name: options.name, kind: SpanKind.INTERNAL, attributes: defined(attributes), set: defined };
+  const set = callAttributes();
+  return {
+    name: typeof attributes.model === "string" ? `chat ${attributes.model}` : "chat",
+    kind: SpanKind.CLIENT,
+    attributes: { "gen_ai.operation.name": "chat", ...set(attributes) },
+    set
+  };
+}
+function callAttributes() {
+  const input = /* @__PURE__ */ new Map();
+  return (attributes) => {
+    const given = defined(attributes);
+    const named = {};
+    for (const [name, value] of Object.entries(given)) {
+      if (name === "provider") continue;
+      if (name === "api" && typeof value === "string") named["gen_ai.provider.name"] = providerName(value);
+      if (isInput(name) && typeof value === "number") input.set(name, value);
+      named[RENAMED.get(name) ?? name] = value;
+    }
+    if (INPUT.some((name) => Object.hasOwn(given, name))) {
+      named["gen_ai.usage.input_tokens"] = [...input.values()].reduce((sum, tokens2) => sum + tokens2, 0);
+    }
+    return named;
+  };
+}
+function isInput(name) {
+  return INPUT.includes(name);
+}
+
 // srcts/loop/loop.ts
 var PROVIDER = "blockr.assistant";
 var NO_KEY = "blockr-assistant-no-key";
@@ -802,7 +939,15 @@ function createLoop(pi, apis = {}) {
 async function loadLoop() {
   return createLoop(await import("./pi-73d60f71.js"));
 }
-async function runTurn(pi, streams, turn) {
+function runTurn(pi, streams, turn) {
+  const attributes = {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": providerName(turn.connection.api),
+    "gen_ai.request.model": turn.model
+  };
+  return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, (span) => runAgent(pi, streams, turn, span));
+}
+async function runAgent(pi, streams, turn, span) {
   const model2 = modelOf(pi, turn.model, turn.connection);
   const models = pi.createModels();
   models.setProvider(
@@ -818,7 +963,7 @@ async function runTurn(pi, streams, turn) {
   const given = /* @__PURE__ */ new Map();
   const answered = /* @__PURE__ */ new Map();
   const answer = (id) => given.get(id) ?? answered.get(id) ?? { text: STOPPED, isError: true, images: [] };
-  const tools = turn.tools.map((tool2) => agentTool(tool2, given));
+  const tools = turn.tools.map((tool2) => agentTool(tool2, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
   const config = {
@@ -864,8 +1009,14 @@ async function runTurn(pi, streams, turn) {
         return;
     }
   };
-  const context3 = { messages: callMessages(turn.messages(), kept, model2, turn.tools, prompt), tools };
-  await pi.runAgentLoopContinue(context3, config, emit, turn.signal, models.streamSimple.bind(models));
+  const begun = { messages: callMessages(turn.messages(), kept, model2, turn.tools, prompt), tools };
+  await pi.runAgentLoopContinue(
+    begun,
+    config,
+    emit,
+    turn.signal,
+    (called, messages, options) => models.streamSimple(called, messages, { ...options, telemetry: span })
+  );
 }
 function modelOf(pi, id, connection) {
   const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
@@ -903,7 +1054,7 @@ function callOf(reply) {
     ...reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}
   };
 }
-function agentTool(tool2, given) {
+function agentTool(tool2, given, turn) {
   return {
     name: tool2.name,
     label: tool2.name,
@@ -911,7 +1062,16 @@ function agentTool(tool2, given) {
     parameters: tool2.parameters,
     executionMode: tool2.executionMode,
     async execute(id, args, signal) {
-      const result = await tool2.execute(args, signal ?? new AbortController().signal);
+      const attributes = {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": tool2.name,
+        "gen_ai.tool.description": tool2.description,
+        "gen_ai.tool.call.id": id
+      };
+      const result = await turn.startSpan(
+        { name: `execute_tool ${tool2.name}`, attributes },
+        () => tool2.execute(args, signal ?? new AbortController().signal)
+      );
       given.set(id, { text: result.text, isError: result.isError, images: result.images });
       const content = [{ type: "text", text: result.text }, ...result.images.map(image)];
       return { content, details: void 0, isError: result.isError };
@@ -1192,7 +1352,7 @@ function flag(fields, name) {
 }
 
 // srcts/tools/edit.ts
-import { context as context2 } from "@opentelemetry/api";
+import { context as context4 } from "@opentelemetry/api";
 
 // srcts/commands/command.ts
 function command(definition) {
@@ -1477,8 +1637,8 @@ function skillBlurb(name, description, max) {
 function own(record, key) {
   return Object.hasOwn(record, key) ? record[key] : void 0;
 }
-async function skillsNaming(context3, kind, id) {
-  const [listed, max] = await Promise.all([context3.skills.list(), readToolCap(context3.core, "assistant_skill_description_max_chars")]);
+async function skillsNaming(context6, kind, id) {
+  const [listed, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
   return listed.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
 }
 
@@ -1590,7 +1750,7 @@ function noSkill(name) {
 }
 
 // srcts/tools/review.ts
-import { context } from "@opentelemetry/api";
+import { context as context3 } from "@opentelemetry/api";
 
 // srcts/tools/conditions.ts
 async function toolRequest(core, name, args, opts = {}) {
@@ -1787,7 +1947,7 @@ async function requested(core, reads, signal, active) {
   }
 }
 async function sent(core, reads, signal, active) {
-  const { answer, conditions } = await context.with(
+  const { answer, conditions } = await context3.with(
     active,
     () => toolRequest(core, "describe_result", {}, { reads: [...reads], signal })
   );
@@ -1870,7 +2030,7 @@ function editTools(core, board) {
       ),
       executionMode: "sequential",
       run: async ({ commands }, signal) => {
-        const active = context2.active();
+        const active = context4.active();
         const caps = await reviewCaps(core);
         const refused = refusedAhead(core, commands);
         if (refused !== void 0) return refused;
@@ -1879,7 +2039,7 @@ function editTools(core, board) {
         const hearing = hear(core);
         let refusal;
         try {
-          await context2.with(
+          await context4.with(
             active,
             () => core.commands.run(
               commands.map(({ command: command2, args }) => args === void 0 ? { id: command2 } : { id: command2, args }),
@@ -1905,14 +2065,14 @@ function editTools(core, board) {
       parameters: object({}, []),
       executionMode: "sequential",
       run: async (_args, signal) => {
-        const active = context2.active();
+        const active = context4.active();
         const caps = await reviewCaps(core);
         signal.throwIfAborted();
         if (!core.store.canUndo(ORIGIN2)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
         const before = conditionsNow(core);
         const hearing = hear(core);
         try {
-          context2.with(active, () => {
+          context4.with(active, () => {
             core.store.undo(ORIGIN2);
           });
         } catch (error) {
@@ -2012,8 +2172,8 @@ function boardTools({ core }) {
 }
 
 // srcts/tools/block-types.ts
-function blockTypeTools(context3) {
-  const { core } = context3;
+function blockTypeTools(context6) {
+  const { core } = context6;
   return [
     tool({
       name: "list_block_types",
@@ -2038,7 +2198,7 @@ function blockTypeTools(context3) {
       parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
       run: async ({ id }) => {
         if (own(core.blockRegistry(), id) === void 0) throw new Error(noBlockType(id));
-        const skills = await skillsNaming(context3, "blocks", id);
+        const skills = await skillsNaming(context6, "blocks", id);
         const entry = own(core.blockRegistry(), id);
         if (entry === void 0) throw new Error(noBlockType(id));
         const described = {
@@ -2070,8 +2230,8 @@ function blockTypeTools(context3) {
 // srcts/tools/blocks.ts
 var STATE_HINT2 = "call get_block_state for the full argument values";
 var ID = { type: "string", description: "The block's id, as list_blocks gives it." };
-function blockTools(context3) {
-  const { core } = context3;
+function blockTools(context6) {
+  const { core } = context6;
   const found = (id) => {
     const block = own(core.store.board().blocks, id);
     if (block === void 0) throw new Error(noBlock(id));
@@ -2102,7 +2262,7 @@ function blockTools(context3) {
       parameters: object({ id: ID }, ["id"]),
       run: async ({ id }) => {
         const [skills, valueMax, summaryMax] = await Promise.all([
-          skillsNaming(context3, "blocks", found(id).registry_id),
+          skillsNaming(context6, "blocks", found(id).registry_id),
           readToolCap(core, "assistant_state_value_max_chars"),
           readToolCap(core, "assistant_summary_max_chars")
         ]);
@@ -2226,8 +2386,8 @@ function optionTools({ core }) {
 }
 
 // srcts/tools/plugins.ts
-function pluginTools(context3) {
-  const { core } = context3;
+function pluginTools(context6) {
+  const { core } = context6;
   const named = (id) => {
     const plugin = id === ASSISTANT ? void 0 : own(core.plugins.appPlugins(), id);
     if (plugin === void 0) throw new Error(noPlugin(id));
@@ -2259,7 +2419,7 @@ function pluginTools(context3) {
       parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
       run: async ({ id }) => {
         named(id);
-        const [skills, max] = await Promise.all([skillsNaming(context3, "plugins", id), readToolCap(core, "assistant_state_max_chars")]);
+        const [skills, max] = await Promise.all([skillsNaming(context6, "plugins", id), readToolCap(core, "assistant_state_max_chars")]);
         const name = named(id);
         const described = {
           id,
@@ -2275,6 +2435,7 @@ function pluginTools(context3) {
 }
 
 // srcts/tools/read-skill.ts
+import { context as context5 } from "@opentelemetry/api";
 function skillTools({ core, skills }) {
   return [
     tool({
@@ -2294,10 +2455,11 @@ function skillTools({ core, skills }) {
         ["name"]
       ),
       run: async ({ name, file }, signal) => {
+        const active = context5.active();
         const skill = (await skills.list()).find((listed) => listed.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given = { name, packages: appPackages(core), ...file === void 0 ? {} : { path: file } };
-        const { answer, conditions } = await toolRequest(core, "read_skill", given, { signal });
+        const { answer, conditions } = await context5.with(active, () => toolRequest(core, "read_skill", given, { signal }));
         return withConditions(core, answeredText(answer, "read_skill"), conditions);
       }
     })
@@ -2364,16 +2526,16 @@ function resultTools({ core }) {
 
 // srcts/tools/read-tools.ts
 function readTools(core, skills) {
-  const context3 = { core, skills };
+  const context6 = { core, skills };
   return [
-    ...blockTools(context3),
-    ...boardTools(context3),
-    ...blockTypeTools(context3),
-    ...commandTools(context3),
-    ...pluginTools(context3),
-    ...optionTools(context3),
-    ...resultTools(context3),
-    ...skillTools(context3)
+    ...blockTools(context6),
+    ...boardTools(context6),
+    ...blockTypeTools(context6),
+    ...commandTools(context6),
+    ...pluginTools(context6),
+    ...optionTools(context6),
+    ...resultTools(context6),
+    ...skillTools(context6)
   ];
 }
 

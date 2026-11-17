@@ -8,7 +8,15 @@
 //   the tools' definitions change only with a release of blockr.assistant.
 // - The result gives the warnings and messages of R's reply after the text
 //   (./conditions.ts).
+// - It awaits the skills that R listed before it sends its request. So it
+//   keeps the context that is active as the tool is called, in which the
+//   tool's span is active. It then sends the request inside context.with()
+//   of that context, as the edit tool does. Core puts the request's span
+//   under the span that is active as request() is called, so the request's
+//   span goes under the tool's span
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 
+import { context } from "@opentelemetry/api";
 import { object } from "../commands/index.ts";
 import { answeredText, appPackages } from "../requests/index.ts";
 import { toolRequest, withConditions } from "./conditions.ts";
@@ -38,10 +46,11 @@ export function skillTools({ core, skills }: ToolContext): Tool[] {
         ["name"],
       ),
       run: async ({ name, file }, signal) => {
+        const active = context.active();
         const skill = (await skills.list()).find((listed) => listed.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given = { name, packages: appPackages(core), ...(file === undefined ? {} : { path: file }) };
-        const { answer, conditions } = await toolRequest(core, "read_skill", given, { signal });
+        const { answer, conditions } = await context.with(active, () => toolRequest(core, "read_skill", given, { signal }));
         return withConditions(core, answeredText(answer, "read_skill"), conditions);
       },
     }),

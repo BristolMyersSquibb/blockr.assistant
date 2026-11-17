@@ -52,7 +52,7 @@ const MOCK_KEY = "test-key";
 const DONE = "The board holds the blocks that list_blocks listed.";
 
 // A request as the mock recorded it.
-export interface Recorded {
+export interface RecordedRequest {
   readonly method: string;
   readonly path: string;
   readonly headers: Readonly<Record<string, string>>;
@@ -101,7 +101,7 @@ const LISTS: Readonly<Record<string, unknown>> = {
 };
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const recorded: Recorded[] = [];
+  const recorded: RecordedRequest[] = [];
   const server = createServer((request, response) => {
     void serve(request, response, recorded).catch((error: unknown) => {
       response.writeHead(500, { "access-control-allow-origin": "*" });
@@ -122,7 +122,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     });
 }
 
-async function serve(request: IncomingMessage, response: ServerResponse, recorded: Recorded[]): Promise<void> {
+async function serve(request: IncomingMessage, response: ServerResponse, recorded: RecordedRequest[]): Promise<void> {
   const url = new URL(request.url ?? "/", "http://mock.invalid");
   const origin = request.headers.origin ?? "*";
   const [, base = "", ...rest] = url.pathname.split("/");

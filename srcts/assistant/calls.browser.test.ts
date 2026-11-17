@@ -11,7 +11,7 @@
 import type { CoreApi, Json } from "@blockr/core";
 import { beforeEach, describe, expect, inject, test } from "vitest";
 import { startAssistant } from "../testing/index.ts";
-import type { Recorded } from "../testing/index.ts";
+import type { RecordedRequest } from "../testing/index.ts";
 import { assistantOf } from "./index.ts";
 
 const mock = inject("mockApis");
@@ -21,9 +21,9 @@ beforeEach(async () => {
 });
 
 // The requests that reached the mock, with the method given.
-async function reached(method: string): Promise<Recorded[]> {
+async function reached(method: string): Promise<RecordedRequest[]> {
   const response = await fetch(`${mock.origin}/__requests`);
-  return ((await response.json()) as Recorded[]).filter((request) => request.method === method);
+  return ((await response.json()) as RecordedRequest[]).filter((request) => request.method === method);
 }
 
 // The assistant of a board on core's CoreApi for tests, where R holds the
