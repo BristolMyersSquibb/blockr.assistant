@@ -138,6 +138,19 @@
   The tool `undo_edit` takes back the assistant's last undo step, and returns
   the same review of what the undo changed.
 
+* The assistant records a span for each turn and each tool call, as ellmer
+  did, and has pi record a span for each call to the model under the turn's
+  span (#234).
+  The spans take ellmer's names, `invoke_agent`, `execute_tool <tool>` and
+  `chat <model>`, with OpenTelemetry's attributes for generative AI, such as
+  the model, the tokens and the tool's name.
+  Each call's span names its provider after the API that the call speaks,
+  `anthropic` or `openai`.
+  The spans go into core's traces.
+  So core's spans of the commands that a tool runs and of the requests that it
+  sends sit under the tool's span.
+  The metrics that ellmer recorded go, since core records none in the client.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
