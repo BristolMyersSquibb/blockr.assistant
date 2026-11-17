@@ -529,6 +529,13 @@
 .blockr-assistant-working span:nth-child(3) {
   animation-delay: 0.4s;
 }
+.blockr-assistant-compacting {
+  margin: 0;
+  padding: 6px 2px;
+  font-size: 12px;
+  color: var(--blockr-assistant-text-muted);
+  animation: blockr-assistant-pulse 1.6s ease-in-out infinite;
+}
 .blockr-assistant-composer {
   flex: 0 0 auto;
   padding: 8px 12px 6px;
@@ -976,6 +983,7 @@
 @media (prefers-reduced-motion: reduce) {
   .blockr-assistant-tool-mark[data-state=running],
   .blockr-assistant-working span,
+  .blockr-assistant-compacting,
   .blockr-assistant-stop[data-stopping],
   .blockr-assistant-drawer-running {
     animation: none;

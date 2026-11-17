@@ -9,9 +9,11 @@
 //    and holds a reply of the model. So a first turn that failed before the
 //    model replied leaves the title to the next turn that the model answers.
 // 2. The plugin asks the model that the conversation talks to for a title,
-//    once for each conversation while the board stays open. The call runs
-//    beside the turns rather than as one, so that the next turn may start
-//    while the model writes the title
+//    once for each conversation while the board stays open. It prepares the
+//    call as a turn prepares its calls (../turns), and the loop makes it as a
+//    model call of the plugin's own, as it makes the call that writes a
+//    summary (../loop). The call runs beside the turns rather than as one, so
+//    that the next turn may start while the model writes the title
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 // 3. The call sends shinychat's prompt for titles, with the exchange that the
 //    model answered first: the message that the user sent, and the model's
@@ -31,15 +33,10 @@
 
 import type { CoreApi } from "@blockr/core";
 import type { Conversations } from "../conversations/index.ts";
-import type { Deployment } from "../deployment/index.ts";
-import type { Loop } from "../loop/index.ts";
-import type { ModelSettingsFile } from "../model-settings/index.ts";
-import { talksTo } from "../models/index.ts";
-import type { Models } from "../models/index.ts";
-import { isNote, NEW_CONVERSATION, textOf } from "../state/index.ts";
+import { isNote, joinText, NEW_CONVERSATION } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
-import { connectionOf } from "../turns/index.ts";
-import type { Turns } from "../turns/index.ts";
+import { messageOf, prepareCall } from "../turns/index.ts";
+import type { CallOptions, Turns } from "../turns/index.ts";
 
 // What shinychat tells the model that titles a conversation
 // (R/chat_history_title.R#L1-L5 at 6cb1417).
@@ -51,15 +48,11 @@ export const TITLE_PROMPT =
 const EXCERPT = 500;
 const LONGEST = 80;
 
-export interface TitlesOptions {
+// What the titles read, beside what preparing a call reads, as the turns and
+// compaction read it.
+export interface TitlesOptions extends CallOptions {
   readonly conversations: Conversations;
   readonly turns: Pick<Turns, "current" | "subscribe">;
-  // What the deployment chose, where the call goes as a turn's calls go.
-  readonly deployment: Promise<Deployment>;
-  readonly models: Pick<Models, "offered">;
-  readonly settings: Pick<ModelSettingsFile, "checked">;
-  // Loads the loop, which a turn has loaded already where the model replied.
-  readonly load: () => Promise<Loop>;
 }
 
 // Titles each conversation of the open board once its first exchange that
@@ -90,7 +83,7 @@ export function titleConversations(core: Pick<CoreApi, "log">, signal: AbortSign
     if (closed() || asked.has(conversation)) return;
     const held = conversations.get(conversation);
     if (held?.title !== NEW_CONVERSATION) return;
-    const excerpt = excerptOf(held.messages);
+    const excerpt = buildExcerpt(held.messages);
     if (excerpt === undefined) return;
     asked.add(conversation);
     title(conversation, excerpt).catch((error: unknown) => {
@@ -100,29 +93,17 @@ export function titleConversations(core: Pick<CoreApi, "log">, signal: AbortSign
   }
 
   async function title(conversation: ConversationId, excerpt: string): Promise<void> {
-    const deployment = await options.deployment;
-    const offered = await options.models.offered();
-    const model = talksTo(offered, conversations.get(conversation)?.model ?? null);
-    if (model === undefined) throw new Error(offered.failure ?? "The app offers no model.");
-    const loop = await options.load();
-    const settings = await options.settings.checked((id) => loop.inCatalog(id));
-    if (closed()) return;
+    const prepared = await prepareCall(options, () => conversations.get(conversation)?.model ?? null, closed);
+    if (prepared.kind === "stopped") return;
+    if (prepared.kind === "failed") throw new Error(prepared.why);
 
-    const reply = await loop.callModel({
-      connection: connectionOf(deployment),
-      model,
-      settings: settings.get(model),
-      listed: offered.settings?.get(model),
-      systemPrompt: TITLE_PROMPT,
-      text: excerpt,
-      signal,
-    });
+    const reply = await prepared.loop.callModel({ ...prepared.model, systemPrompt: TITLE_PROMPT, prompt: excerpt, signal });
     if (closed() || conversations.get(conversation) === undefined) return;
 
     const { input, output } = reply.usage;
     if (input > 0 || output > 0) await conversations.addUsage(conversation, input, output);
     if (reply.failure !== undefined) throw new Error(`The call to the model failed: ${reply.failure}`);
-    const written = titleOf(reply.text);
+    const written = normalizeTitle(reply.text ?? "");
     if (written === undefined) throw new Error("The model gave no title.");
     if (closed() || conversations.get(conversation)?.title !== NEW_CONVERSATION) return;
     await conversations.renameConversation(conversation, written);
@@ -134,7 +115,7 @@ export function titleConversations(core: Pick<CoreApi, "log">, signal: AbortSign
 // reply that holds text, up to 500 characters of each, each after the role
 // that shinychat names it by. It is undefined where the model has not
 // replied.
-export function excerptOf(messages: readonly Message[]): string | undefined {
+export function buildExcerpt(messages: readonly Message[]): string | undefined {
   const first = messages.findIndex((message) => message.role === "assistant");
   if (first < 0) return undefined;
   const asked = messages
@@ -144,10 +125,10 @@ export function excerptOf(messages: readonly Message[]): string | undefined {
   const answer = messages
     .slice(first)
     .filter((message) => message.role === "assistant")
-    .map((message) => textOf(message).trim())
+    .map((message) => joinText(message).trim())
     .find((text) => text !== "");
   const lines = [
-    ...(asked === undefined ? [] : [`user: ${textOf(asked).trim().slice(0, EXCERPT)}`]),
+    ...(asked === undefined ? [] : [`user: ${joinText(asked).trim().slice(0, EXCERPT)}`]),
     ...(answer === undefined ? [] : [`assistant: ${answer.slice(0, EXCERPT)}`]),
   ];
   return lines.length === 0 ? undefined : lines.join("\n\n");
@@ -155,12 +136,8 @@ export function excerptOf(messages: readonly Message[]): string | undefined {
 
 // The title that the model wrote, with its white space collapsed, and cut to
 // 80 characters, as shinychat cuts it, or undefined where it holds none.
-export function titleOf(text: string): string | undefined {
+export function normalizeTitle(text: string): string | undefined {
   const title = text.trim().split(/\s+/).join(" ");
   if (title === "") return undefined;
   return title.length > LONGEST ? `${title.slice(0, LONGEST - 3)}...` : title;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -14,10 +14,11 @@
 //   output, from its usage, without the cached input, as today's meter shows
 //   them (R/ext-server.R#L1281-L1309 at fcbdb27), and none on the greeting
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-meter).
-//   The usage counts the tokens of the conversation's titles too.
+//   The usage counts the tokens of the conversation's titles and summaries
+//   too.
 
 import type { ReactElement } from "react";
-import { talksTo } from "../models/index.ts";
+import { resolveModel } from "../models/index.ts";
 import type { Offered } from "../models/index.ts";
 import type { Usage } from "../state/index.ts";
 
@@ -50,7 +51,7 @@ export function Footer({ usage, pick, offered, onPick, onDrawer }: FooterProps):
 }
 
 function Model({ pick, offered, onPick }: { readonly pick: string | null; readonly offered: Offered; readonly onPick: (model: string) => void }): ReactElement | null {
-  const next = talksTo(offered, pick);
+  const next = resolveModel(offered, pick);
   const unoffered = pick !== null && pick !== next ? pick : undefined;
   const choosable = !offered.named || offered.models.length > 1;
   if (next === undefined || (!choosable && unoffered === undefined)) return null;

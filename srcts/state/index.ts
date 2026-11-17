@@ -10,11 +10,12 @@ export {
   findConversation,
   holdsMessage,
   isNote,
+  joinText,
   messagesToDrop,
   NEW_CONVERSATION,
   newConversation,
   newId,
-  textOf,
+  opensExchange,
 } from "./state.ts";
 export type {
   AssistantState,

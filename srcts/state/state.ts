@@ -79,7 +79,7 @@ export function canCompact(messages: readonly Message[], summary: Message, from:
 // The text of a message, its parts of text joined by line breaks, without the
 // text of a skill that a slash command carries. So a message that the user
 // sent gives the text as the user typed it.
-export function textOf(message: Message): string {
+export function joinText(message: Message): string {
   return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
@@ -112,7 +112,7 @@ export function messagesToDrop(messages: readonly Message[], keep: number): numb
 }
 
 // Whether a message opens an exchange: one that the user sent, or a summary.
-function opensExchange(message: Message): boolean {
+export function opensExchange(message: Message): boolean {
   return message.role === "summary" || (message.role === "user" && !isNote(message));
 }
 

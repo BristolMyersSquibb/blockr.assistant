@@ -27,7 +27,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, ReactElement } from "react";
 import type { Conversation, ConversationId } from "../state/index.ts";
-import { titleOf } from "../titles/index.ts";
+import { normalizeTitle } from "../titles/index.ts";
 
 export interface DrawerProps {
   // Whether the drawer shows.
@@ -67,7 +67,7 @@ export function Drawer(props: DrawerProps): ReactElement {
     if (!shown && dialog.open) dialog.close();
   }, [shown]);
 
-  const groups = useMemo(() => groupsOf(conversations, query), [conversations, query]);
+  const groups = useMemo(() => groupConversations(conversations, query), [conversations, query]);
   const empty = Object.keys(conversations).length === 0;
 
   return (
@@ -184,7 +184,7 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
       >
         <span className="blockr-assistant-drawer-title">{conversation.title}</span>
         {running ? <span className="blockr-assistant-drawer-running" role="img" aria-label="A turn runs" title="A turn runs in this conversation" /> : null}
-        <span className="blockr-assistant-drawer-time">{whenOf(conversation.updated)}</span>
+        <span className="blockr-assistant-drawer-time">{formatUpdated(conversation.updated)}</span>
       </button>
       {mode === "shown" ? (
         <span className="blockr-assistant-drawer-actions">
@@ -267,7 +267,7 @@ function Rename({ title, onDone }: { readonly title: string; readonly onDone: (t
   const keys = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === "Enter") {
       event.preventDefault();
-      const renamed = titleOf(draft);
+      const renamed = normalizeTitle(draft);
       if (renamed !== undefined) onDone(renamed);
     } else if (event.key === "Escape") {
       // Escape leaves the field, and the drawer stays open.
@@ -300,7 +300,7 @@ interface Group {
 
 // The conversations whose titles hold the query, the last updated first, in
 // today's groups.
-export function groupsOf(conversations: Readonly<Record<ConversationId, Conversation>>, query: string, now = new Date()): Group[] {
+export function groupConversations(conversations: Readonly<Record<ConversationId, Conversation>>, query: string, now = new Date()): Group[] {
   const sought = query.trim().toLowerCase();
   const sorted = Object.entries(conversations)
     .filter(([, conversation]) => sought === "" || conversation.title.toLowerCase().includes(sought))
@@ -309,19 +309,19 @@ export function groupsOf(conversations: Readonly<Record<ConversationId, Conversa
   today.setHours(0, 0, 0, 0);
   const week = today.getTime() - 7 * DAY;
   const labels = ["Today", "Last 7 days", "Previous"] as const;
-  const labelOf = (updated: string): (typeof labels)[number] => {
+  const findLabel = (updated: string): (typeof labels)[number] => {
     const time = Date.parse(updated);
     return time >= today.getTime() ? "Today" : time >= week ? "Last 7 days" : "Previous";
   };
   return labels.flatMap((label) => {
-    const items = sorted.filter(([, conversation]) => labelOf(conversation.updated) === label);
+    const items = sorted.filter(([, conversation]) => findLabel(conversation.updated) === label);
     return items.length === 0 ? [] : [{ label, items }];
   });
 }
 
 // When a conversation was last updated: the time of day for today, and the
 // date before, as today's drawer gives it.
-function whenOf(updated: string, now = new Date()): string {
+function formatUpdated(updated: string, now = new Date()): string {
   const then = new Date(updated);
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);

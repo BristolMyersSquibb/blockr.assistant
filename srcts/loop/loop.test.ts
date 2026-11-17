@@ -5,6 +5,9 @@
 // before it, a stop, a failed call and the tree of a turn's spans. The test
 // plays the turns, which keep each message that the loop reports in a
 // conversation of their own.
+// One test runs a call on pi's own code for Chat Completions instead, and
+// stops the call before it goes out, to read the marks of Anthropic's cache
+// that pi puts in the request.
 
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
@@ -38,7 +41,9 @@ const listed = tool("list_blocks", () => Promise.resolve({ text: '["a","b"]', is
 // the replies given, and what the loop reported of it.
 function turnWith(
   replies: FauxResponseStep[],
-  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload">> & { readonly key?: string | undefined } = {},
+  given: Partial<Pick<Turn, "tools" | "model" | "settings" | "listed" | "systemPrompt" | "transformContext" | "appMessage" | "onPayload" | "beforeCall">> & {
+    readonly key?: string | undefined;
+  } = {},
   tokensPerSecond?: number,
 ) {
   const { key, ...rest } = given;
@@ -314,6 +319,29 @@ describe("a turn on the loop", () => {
     expect(models[0]).toMatchObject({ input, contextWindow, maxTokens });
   });
 
+  test("gives a model whose id starts with anthropic/ pi's compat with Anthropic's format of cache marks on OpenRouter's Chat Completions alone", async () => {
+    const models: Model<Api>[] = [];
+    const runOn = async (baseUrl: string, model: string) => {
+      const faux = createFauxCore({ api: "openai-completions", provider: PROVIDER });
+      faux.setResponses([modelOfCall(models)]);
+      await createLoop(pi, { "openai-completions": faux }).run({
+        connection: { baseUrl, api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+        model,
+        tools: [],
+        messages: () => [asked],
+        kept: () => undefined,
+        signal: new AbortController().signal,
+        on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+      });
+    };
+
+    await runOn("https://openrouter.ai/api/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://gateway.invalid/v1", "anthropic/claude-haiku-5.5");
+    await runOn("https://openrouter.ai/api/v1", "openai/gpt-5.4");
+
+    expect(models.map((model) => model.compat)).toEqual([{ cacheControlFormat: "anthropic" }, undefined, undefined]);
+  });
+
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const board: Message = { id: "board", role: "user", parts: [{ type: "text", text: "The board holds a and b." }], created: CREATED };
@@ -350,7 +378,7 @@ describe("a turn on the loop", () => {
     expect(JSON.stringify(messages)).not.toContain("goes out");
   });
 
-  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's as the caller leaves it", async () => {
+  test("hands pi an onPayload that applies the caller's, and keeps the request of an API other than Anthropic's Messages API and Chat Completions as the caller leaves it", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     const given: unknown[] = [];
     const onPayload = (payload: unknown): unknown => {
@@ -404,6 +432,45 @@ describe("a turn on the loop", () => {
     expect(given).toEqual([moved]);
   });
 
+  test("has pi mark the system prompt, the last tool and the end of the conversation of a call to one of Anthropic's models on OpenRouter's Chat Completions, and not the message of the app's", async () => {
+    const sent: unknown[] = [];
+    const conversation: Message[] = [
+      asked,
+      { id: "a1", role: "assistant", parts: [{ type: "tool_call", id: "c1", tool: "list_blocks", args: {} }], created: CREATED },
+      { id: "t1", role: "tool", parts: [{ type: "tool_result", id: "c1", text: '["a","b"]' }], created: CREATED },
+    ];
+    await createLoop(pi).run({
+      connection: { baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
+      model: "anthropic/claude-haiku-5.5",
+      tools: [listed],
+      systemPrompt: "You are an assistant.",
+      messages: () => conversation,
+      kept: () => undefined,
+      appMessage: () => Promise.resolve("The board."),
+      onPayload: (payload) => {
+        sent.push(payload);
+        throw new Error("The test stops the call before it goes out.");
+      },
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+
+    const mark = { type: "ephemeral" };
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      model: "anthropic/claude-haiku-5.5",
+      messages: [
+        { role: "system", content: [{ type: "text", text: "You are an assistant.", cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "How many blocks?" }] },
+        { role: "assistant", tool_calls: [{ id: "c1" }] },
+        { role: "tool", tool_call_id: "c1", content: [{ type: "text", text: '["a","b"]', cache_control: mark }] },
+        { role: "user", content: [{ type: "text", text: "The board." }] },
+      ],
+      tools: [{ function: { name: "list_blocks" }, cache_control: mark }],
+    });
+    expect(JSON.stringify(sent[0]).match(/"cache_control"/g)).toHaveLength(3);
+  });
+
   test("answers a call to a tool that it does not offer as pi answers it, as an error", async () => {
     const { run, messages } = turnWith([fauxAssistantMessage([fauxToolCall("list_views", {}, { id: "c1" })], { stopReason: "toolUse" }), fauxAssistantMessage("No views.")]);
 
@@ -413,42 +480,58 @@ describe("a turn on the loop", () => {
   });
 });
 
-describe("a model call of the plugin's own on the loop", () => {
-  test("sends the system prompt and the text as the user's message, with no tools, as a turn's calls go, and gives the reply's text and tokens", async () => {
-    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
-    const { faux, loop, connection } = fauxLoop();
-    faux.setResponses([seen(calls, fauxAssistantMessage("Counting the blocks"))]);
-
-    const reply = await loop.callModel({ connection, model: "faux-1", systemPrompt: "You title chat conversations.", text: "user: How many blocks?", signal: new AbortController().signal });
-
-    expect(reply.text).toBe("Counting the blocks");
-    expect(reply.failure).toBeUndefined();
-    expect(reply.usage.output).toBeGreaterThan(0);
-    expect(reply.usage.total).toBeGreaterThanOrEqual(reply.usage.input + reply.usage.output);
-    const sent = calls[0]?.context?.messages ?? [];
-    expect(sent).toMatchObject([
-      { role: "system", content: "You title chat conversations." },
-      { role: "user", content: "user: How many blocks?" },
-    ]);
-    expect(sent[0]).not.toHaveProperty("toolsAdded");
-    expect(calls[0]?.options).toMatchObject({ apiKey: "test-key", reasoning: "medium", identity: { attribution: null } });
-  });
-
-  test("gives why the call failed, where it failed", async () => {
-    const { faux, loop, connection } = fauxLoop();
-    faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "The model is overloaded." })]);
-
-    const reply = await loop.callModel({ connection, model: "faux-1", systemPrompt: "You title chat conversations.", text: "user: Hello.", signal: new AbortController().signal });
-
-    expect(reply).toMatchObject({ text: "", failure: "The model is overloaded." });
-  });
-});
-
 describe("the catalogs of the loop", () => {
   test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
     const { loop } = fauxLoop();
 
     expect(["gpt-5.4", "claude-sonnet-5-5", "company-gpt", "openai/gpt-5.4"].map((id) => loop.inCatalog(id))).toEqual([true, true, false, false]);
+  });
+
+  test("give the context window of a model as pi takes it, from the model settings, the catalog, the list or the default", () => {
+    const { loop, connection } = fauxLoop();
+
+    expect(loop.contextWindow({ connection, model: "gpt-5.4" })).toBe(OPENAI_MODELS["gpt-5.4"].contextWindow);
+    expect(loop.contextWindow({ connection, model: "gpt-5.4", settings: { contextWindow: 100_000 } })).toBe(100_000);
+    expect(loop.contextWindow({ connection, model: "deepseek/deepseek-v3.2", listed: { contextWindow: 163_840 } })).toBe(163_840);
+    expect(loop.contextWindow({ connection, model: "company-gpt" })).toBe(128_000);
+  });
+});
+
+describe("a model call of the plugin's own", () => {
+  const call = { model: "faux-1", systemPrompt: "Summarize.", prompt: "<conversation>[User]: Hi.</conversation>", signal: new AbortController().signal };
+
+  test("sends the system prompt and one message of the role user, with no tools, and gives the text with the call's tokens", async () => {
+    const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([seen(calls, fauxAssistantMessage([fauxThinking("Short."), fauxText("The user said hi.")]))]);
+
+    const reply = await loop.callModel({ ...call, connection });
+
+    expect(reply.text).toBe("The user said hi.");
+    expect(reply.failure).toBeUndefined();
+    expect(reply.usage.input).toBeGreaterThan(0);
+    expect(reply.usage.total).toBe(reply.usage.input + reply.usage.output);
+    const messages = calls[0]?.context?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ role: "system", content: "Summarize." });
+    expect(messages[0]).not.toHaveProperty("toolsAdded");
+    expect(messages[1]).toMatchObject({ role: "user", content: [{ type: "text", text: call.prompt }] });
+    expect(calls[0]?.options).toMatchObject({ apiKey: "test-key", reasoning: "medium", cacheRetention: "none" });
+    expect(calls[0]?.options?.identity?.attribution).toBeNull();
+  });
+
+  test("gives why the model wrote no text, as for a failed call, a reply that the cap cut off or an empty one", async () => {
+    const { faux, loop, connection } = fauxLoop();
+    faux.setResponses([
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "Rate limited." }),
+      fauxAssistantMessage("The user", { stopReason: "length" }),
+      fauxAssistantMessage(" "),
+    ]);
+
+    const failures = [];
+    for (let i = 0; i < 3; i += 1) failures.push((await loop.callModel({ ...call, connection })).failure);
+
+    expect(failures).toEqual(["Rate limited.", "The reply reached the model's cap for a reply, so it was cut off.", "The model wrote no text."]);
   });
 });
 
@@ -560,8 +643,40 @@ describe("a turn that stops or fails", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.failure).toBe("401 Unauthorized");
+    expect(calls[0]?.overflow).toBeUndefined();
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(kept.get(messages[1]?.id ?? "")?.reply).toBeUndefined();
+  });
+
+  test("reports a call that failed since the conversation outgrew the window, as pi tells it from the provider's error", async () => {
+    const { run, calls } = turnWith([fauxAssistantMessage([], { stopReason: "error", errorMessage: "Your input exceeds the context window of this model." })]);
+
+    await run();
+
+    expect(calls[0]?.overflow).toBe(true);
+  });
+});
+
+describe("before each call", () => {
+  test("the loop waits for what the caller does, and then reads the conversation", async () => {
+    const contexts: TranscriptContext[] = [];
+    const record: FauxResponseStep = (context) => {
+      contexts.push(context);
+      return fauxAssistantMessage("Two.");
+    };
+    let before = 0;
+    const turn = turnWith([record], {
+      beforeCall: async () => {
+        before += 1;
+        await Promise.resolve();
+        turn.messages.splice(0, 1, { ...asked, parts: [{ type: "text", text: "How many blocks now?" }] });
+      },
+    });
+
+    await turn.run();
+
+    expect(before).toBe(1);
+    expect(contexts[0]?.messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "How many blocks now?" }] });
   });
 });
 

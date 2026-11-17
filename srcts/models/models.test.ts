@@ -7,7 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { Deployment } from "../deployment/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { Fetch } from "./list.ts";
-import { createModels, talksTo } from "./models.ts";
+import { createModels, resolveModel } from "./models.ts";
 
 // A core that holds the notifications that the assistant raises.
 function holding() {
@@ -196,9 +196,9 @@ describe("what the chat reads of the models offered", () => {
   test("gives the model that a conversation talks to: its pick where the models offered hold it, and the default otherwise", () => {
     const offered = { models: ["gpt-5.4", "gpt-5.4-nano"], named: true };
 
-    expect(talksTo(offered, "gpt-5.4-nano")).toBe("gpt-5.4-nano");
-    expect(talksTo(offered, null)).toBe("gpt-5.4");
-    expect(talksTo(offered, "gpt-4o")).toBe("gpt-5.4");
-    expect(talksTo({ models: [], named: false }, "gpt-5.4")).toBeUndefined();
+    expect(resolveModel(offered, "gpt-5.4-nano")).toBe("gpt-5.4-nano");
+    expect(resolveModel(offered, null)).toBe("gpt-5.4");
+    expect(resolveModel(offered, "gpt-4o")).toBe("gpt-5.4");
+    expect(resolveModel({ models: [], named: false }, "gpt-5.4")).toBeUndefined();
   });
 });

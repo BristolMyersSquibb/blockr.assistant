@@ -1,6 +1,6 @@
-// An error that the assistant raises from start through notify(), naming its
-// class's id, so that it holds once the panel closes, which holds one
-// notification of its code at a time
+// An error, or a warning, that the assistant raises from start through
+// notify(), naming its class's id, so that it holds once the panel closes,
+// which holds one notification of its code at a time
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 // Core gives each notification that a plugin raises an id of its own, so two
 // raises of one code would be two notifications. Each raise therefore
@@ -19,7 +19,12 @@ export interface HeldError {
   withdraw(): void;
 }
 
-export function heldError(core: { readonly notifications: Pick<CoreApi["notifications"], "notify"> }, signal: AbortSignal, code: string): HeldError {
+export function heldError(
+  core: { readonly notifications: Pick<CoreApi["notifications"], "notify"> },
+  signal: AbortSignal,
+  code: string,
+  severity: "error" | "warning" = "error",
+): HeldError {
   let withdraw: (() => void) | undefined;
   signal.addEventListener(
     "abort",
@@ -33,7 +38,7 @@ export function heldError(core: { readonly notifications: Pick<CoreApi["notifica
     raise(message) {
       if (signal.aborted) return;
       withdraw?.();
-      withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code, message });
+      withdraw = core.notifications.notify(ASSISTANT, { severity, code, message });
     },
     withdraw() {
       withdraw?.();

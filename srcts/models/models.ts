@@ -90,7 +90,7 @@ const NONE: Asked = { offered: { models: [], named: false }, again: false };
 // none is offered. The pick stays in the state, so that the conversation
 // talks to its model again under a deployment that offers it
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
-export function talksTo(offered: Offered, pick: string | null): string | undefined {
+export function resolveModel(offered: Offered, pick: string | null): string | undefined {
   return pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
 }
 

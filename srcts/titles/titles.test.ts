@@ -20,7 +20,7 @@ import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
 import { FAUX_API, fauxLoop } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
-import { excerptOf, TITLE_PROMPT, titleConversations, titleOf } from "./titles.ts";
+import { buildExcerpt, normalizeTitle, TITLE_PROMPT, titleConversations } from "./titles.ts";
 
 const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
@@ -113,6 +113,7 @@ async function opened(replies: FauxResponseStep[]) {
     settings,
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     prompt: { system: () => Promise.resolve("You answer questions about a board."), appMessage: () => Promise.resolve("The board holds no block.") },
+    compaction: { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     load,
     locks: undefined,
   });
@@ -233,22 +234,22 @@ describe("what a title's call sends", () => {
       message("a3", "assistant", text("You are welcome.")),
     ];
 
-    expect(excerptOf(messages)).toBe("user: /compare the sales\n\nassistant: The board holds no block.");
+    expect(buildExcerpt(messages)).toBe("user: /compare the sales\n\nassistant: The board holds no block.");
   });
 
   test("cuts each message to 500 characters, and is nothing before the model replied", () => {
     const long = "x".repeat(600);
-    const excerpt = excerptOf([message("u1", "user", text(long)), message("a1", "assistant", text(long))]);
+    const excerpt = buildExcerpt([message("u1", "user", text(long)), message("a1", "assistant", text(long))]);
 
     expect(excerpt).toBe(`user: ${"x".repeat(500)}\n\nassistant: ${"x".repeat(500)}`);
-    expect(excerptOf([message("u1", "user", text("Hello."))])).toBeUndefined();
+    expect(buildExcerpt([message("u1", "user", text("Hello."))])).toBeUndefined();
   });
 });
 
 describe("the title that the model wrote", () => {
   test("collapses its white space, cuts it to 80 characters, as shinychat does, and is nothing where the model wrote none", () => {
-    expect(titleOf("  Sales \n by   region ")).toBe("Sales by region");
-    expect(titleOf("y".repeat(100))).toBe(`${"y".repeat(77)}...`);
-    expect(titleOf(" \n ")).toBeUndefined();
+    expect(normalizeTitle("  Sales \n by   region ")).toBe("Sales by region");
+    expect(normalizeTitle("y".repeat(100))).toBe(`${"y".repeat(77)}...`);
+    expect(normalizeTitle(" \n ")).toBeUndefined();
   });
 });

@@ -20,14 +20,14 @@
 //   that the loop uses, since pi's root entry point breaks a bundle. The
 //   build fails where vendor.ts imports any other package.
 // - Those parts are bundled, minified, into a file of their own,
-//   pi-<hash>.js, which the loop loads as the first turn starts, as core
-//   bundles the parts of OpenTelemetry's SDK that it loads on demand into
-//   opentelemetry-<hash>.js. The name holds a hash of the content, so that no
-//   browser runs an old copy from its cache. The bundle takes the build
-//   preset too, so that an import of React or of OpenTelemetry's API that pi
-//   makes stays an import of the one copy on the page. The loop's dynamic
-//   import of srcts/loop/vendor.ts becomes an import of that file, beside the
-//   module, where R serves it too.
+//   pi-<hash>.js, which the loop loads as the page prepares its first call,
+//   as core bundles the parts of OpenTelemetry's SDK that it loads on demand
+//   into opentelemetry-<hash>.js. The name holds a hash of the content, so
+//   that no browser runs an old copy from its cache. The bundle takes the
+//   build preset too, so that an import of React or of OpenTelemetry's API
+//   that pi makes stays an import of the one copy on the page. The loop's
+//   dynamic import of srcts/loop/vendor.ts becomes an import of that file,
+//   beside the module, where R serves it too.
 // - The chat's libraries, assistant-ui, its Markdown and remark-gfm, are
 //   vendored the same way: srcts/chat/vendor.ts names the parts that the chat
 //   draws with, which are bundled, minified, into chat-<hash>.js. The chat

@@ -33,29 +33,31 @@
 //   and pi's convertToLlm turns it into a message of the role user for the
 //   call (./messages.ts). The message's text opens with the preamble that says
 //   that the app writes it.
-// - The message of the app's changes from call to call, so on Anthropic's API
-//   the loop moves the cache mark that pi puts on it to the block before it,
-//   which ends the conversation (./cache.ts). It does so through pi's
-//   onPayload, before the caller's onPayload sees the request.
+// - The message of the app's changes from call to call.
+//   So where pi marks it for Anthropic's cache, the loop moves the mark to the
+//   end of the conversation before it, on Anthropic's Messages API and on
+//   Chat Completions (./cache.ts).
+//   It does so through pi's onPayload, before the caller's onPayload sees the
+//   request.
+//
+// Before each call, the loop awaits what the caller does then, as compaction
+// puts a summary in place where the conversation nears the model's context
+// window (../compaction). It reads the conversation only after that.
 //
 // It reports to its caller as the turn runs, and pi waits for each report
 // before it goes on, so that a reply is in the conversation before the next
 // call goes out:
 // - The reply as it streams.
 // - Each call to the model once it ended, with its reply, its tokens, and why
-//   it failed, where it failed.
+//   it failed, where it failed. A call that failed since the conversation
+//   outgrew the model's context window says so, as pi tells from the
+//   provider's error.
 // - Each tool call once it returned, before the reply's other calls return.
 // - The results of a reply's tool calls, as one message of the role tool.
 //
 // Where the turn's signal aborts, pi stops the model's stream, and each tool
 // call left without a result gets one that says the user stopped the turn.
 // The tools stop waiting themselves, since each takes the signal.
-//
-// It also makes the model calls of the plugin's own, which run beside the
-// turns rather than as turns, as the call that titles a conversation
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
-// Such a call has no tools, and goes out as a turn's calls go, through the
-// plugin's provider, with the same credential, identity and thinking level.
 //
 // The loop records the turn's spans, under the names that ellmer gives the
 // spans of today's turns (./telemetry.ts):
@@ -72,6 +74,17 @@
 //    or else inside context.with() of the context that it kept from before
 //    that await. So core puts its spans of them under the tool's span.
 // 5. The turn's span ends once the turn ends.
+//
+// The loop also makes the model calls of the plugin's own, which run on pi's
+// models alone, not on its agent loop: the call that writes a summary for
+// compaction (../compaction), and the call that titles a conversation
+// (../titles). Such a call goes to the model through the same provider, with
+// the same credential, identity and thinking level as a turn's calls, but
+// with the caller's system prompt and one message of the role user. It
+// declares no tools and holds no message of the app's
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+// The loop also gives the context window of a model as pi takes it, by which
+// compaction judges when a conversation needs a summary.
 
 import { context } from "@opentelemetry/api";
 import type { Json } from "@blockr/core";
@@ -109,14 +122,23 @@ export interface Connection {
 // loop's fetch takes off the request.
 const NO_KEY = "blockr-assistant-no-key";
 
-export interface Turn {
+// OpenRouter's base URL, as a deployment gives it.
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+// The model that a call talks to, which a turn and a model call of the
+// plugin's own both name: where the call goes, the model's id, and its
+// settings.
+export interface CallModel {
   readonly connection: Connection;
-  // The id of the model that the turn talks to, such as "gpt-5.4".
+  // The id of the model, such as "gpt-5.4".
   readonly model: string;
   // The settings that the deployment's model settings give the model, and
   // those that the base URL's list gives it, where either gives any.
   readonly settings?: ModelSettings | undefined;
   readonly listed?: ListedSettings | undefined;
+}
+
+export interface Turn extends CallModel {
   readonly tools: readonly Tool[];
   // The conversation as the plugin holds it, as a call goes out: the messages
   // that the memory holds, then those of the state.
@@ -133,6 +155,10 @@ export interface Turn {
   readonly transformContext?: (messages: readonly Message[], signal: AbortSignal) => Promise<readonly Message[]>;
   readonly appMessage?: () => Promise<string>;
   readonly onPayload?: (payload: unknown) => unknown;
+  // What the caller does before each call goes out, which the call waits for,
+  // as compaction does. Where it rejects, the turn rejects before the call
+  // goes out.
+  readonly beforeCall?: (signal: AbortSignal) => Promise<void>;
   readonly signal: AbortSignal;
   readonly on: Handlers;
 }
@@ -168,29 +194,30 @@ export interface Call {
   // Why the call failed, where it failed. A call that the turn's signal
   // stopped did not fail.
   readonly failure?: string;
+  // Whether the call failed since the conversation outgrew the model's
+  // context window, as pi's isContextOverflow() tells from the provider's
+  // error.
+  readonly overflow?: boolean;
 }
 
-// A model call of the plugin's own, beside the turns: one call with no tools,
-// which sends the system prompt and the text given as the user's message.
-export interface ModelCall {
-  readonly connection: Connection;
-  // The id of the model that the call talks to, such as "gpt-5.4".
-  readonly model: string;
-  // The settings that the deployment's model settings give the model, and
-  // those that the base URL's list gives it, where either gives any.
-  readonly settings?: ModelSettings | undefined;
-  readonly listed?: ListedSettings | undefined;
+// A model call of the plugin's own, as for a summary or a title: one message
+// of the role user, under a system prompt of its own, with no tools
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#compaction).
+export interface ModelCall extends CallModel {
   readonly systemPrompt: string;
-  // The user's message.
-  readonly text: string;
+  // The text of the message of the role user.
+  readonly prompt: string;
   readonly signal: AbortSignal;
 }
 
-// What a model call of the plugin's own gave: the text of its reply, its
-// tokens, as a turn's call gives them, and why it failed, where it failed.
+// What a model call of the plugin's own gave: the text that the model wrote,
+// or why it wrote none.
 export interface ModelReply {
-  readonly text: string;
+  // The text, where the model wrote one.
+  readonly text?: string;
+  // The tokens of the call, as a turn's call gives them.
   readonly usage: Call["usage"];
+  // Why the model wrote no text, where it wrote none.
   readonly failure?: string;
 }
 
@@ -203,6 +230,8 @@ export interface Loop {
   // however it ends. It rejects where the call cannot go out, as where the
   // credential cannot be read.
   callModel(call: ModelCall): Promise<ModelReply>;
+  // The context window of the model, in tokens, as the loop gives it to pi.
+  contextWindow(model: CallModel): number;
   // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
   // of the id given, whose settings a model of the deployment's model
   // settings may take through its like.
@@ -222,12 +251,14 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
   return {
     run: (turn) => runTurn(pi, streams, turn),
     callModel: (call) => callModel(pi, streams, call),
+    contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
     inCatalog: (id) => catalogModel(pi, id) !== undefined,
   };
 }
 
 // The loop, once the page has imported pi's bundle.
-// The browser imports the bundle once, as the board's first turn starts.
+// The browser imports the bundle once, as the page prepares its first call
+// (../turns/prepare.ts).
 export async function loadLoop(): Promise<Loop> {
   return createLoop(await import("./vendor.ts"));
 }
@@ -244,7 +275,7 @@ function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, tur
 
 // Runs the turn on pi's agent loop, under the turn's span.
 async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
-  const model = modelOf(pi, turn.model, turn.connection, turn.settings, turn.listed);
+  const model = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
   const models = modelsAt(pi, streams, turn.connection, model);
 
   // The results that the tools gave, and those that pi gave in place of a
@@ -268,6 +299,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     // which goes as a message of the role user.
     convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
+      await turn.beforeCall?.(signal ?? turn.signal);
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       added = turn.appMessage === undefined ? undefined : await turn.appMessage();
@@ -277,7 +309,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
     fetch: keyless,
     onPayload: (payload) => {
-      const moved = model.api === "anthropic-messages" && added !== undefined ? markBeforeAppMessage(payload, added) : undefined;
+      const moved = added === undefined ? undefined : markBeforeAppMessage(payload, added, model.api);
       if (turn.onPayload === undefined) return moved;
       return turn.onPayload(moved ?? payload) ?? moved;
     },
@@ -290,7 +322,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
         if (event.message.role === "assistant") turn.on.streaming({ parts: partsOf(event.message), reasoning: reasoningOf(event.message) });
         return;
       case "message_end":
-        if (event.message.role === "assistant") await turn.on.called(callOf(event.message));
+        if (event.message.role === "assistant") await turn.on.called(callOf(pi, event.message, model));
         return;
       case "tool_execution_end":
         if (!given.has(event.toolCallId) && !turn.signal.aborted) {
@@ -319,36 +351,56 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   );
 }
 
-// Makes a model call of the plugin's own, as one call of pi's with no tools.
-async function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
-  const model = modelOf(pi, call.model, call.connection, call.settings, call.listed);
-  const models = modelsAt(pi, streams, call.connection, model);
-  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
-  const reply = await models.completeSimple(
-    model,
-    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: call.text, timestamp: Date.now() }] },
-    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal },
-  );
-  const { usage } = callOf(reply);
-  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-  return { text, usage, ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}) };
-}
-
-// Pi's models, with the plugin's provider at the connection's base URL, which
-// serves the model given.
+// The models of pi, with the plugin's provider at the connection's base URL,
+// which serves the model given. The credential comes with each call, so the provider
+// takes none.
 function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, connection: Connection, model: Model<Api>): ReturnType<Pi["createModels"]> {
   const models = pi.createModels();
   models.setProvider(
     pi.createProvider({
       id: PROVIDER,
       baseUrl: connection.baseUrl,
-      // The credential comes with each call, so the provider takes none.
       auth: { apiKey: { name: "The assistant's credential", resolve: () => Promise.resolve({ auth: {} }) } },
       models: [model],
       api: streams,
     }),
   );
   return models;
+}
+
+// Makes a model call of the plugin's own, with the settings of a turn's calls:
+// the same model, credential, identity and thinking level. It asks the
+// provider to cache nothing, since no later call starts as this one does, as
+// pi's own CLI asks for its summaries.
+async function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
+  const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+  const models = modelsAt(pi, streams, call.connection, model);
+  const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
+  const reply = await models.completeSimple(
+    model,
+    { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
+    { reasoning: "medium", identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none" },
+  );
+  const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
+  const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
+  const failure = findFailure(reply, text);
+  return failure === undefined ? { text, usage } : { usage, failure };
+}
+
+// Why the model wrote no text, or undefined where it wrote one. A reply that
+// the model's cap for a reply cut off counts as none, since it may end
+// mid-sentence, as pi's CLI has it for a summary.
+function findFailure(reply: AssistantMessage, text: string): string | undefined {
+  switch (reply.stopReason) {
+    case "error":
+      return reply.errorMessage ?? "The provider gave no reason.";
+    case "aborted":
+      return "The call was stopped before the model wrote its reply.";
+    case "length":
+      return "The reply reached the model's cap for a reply, so it was cut off.";
+    default:
+      return text === "" ? "The model wrote no text." : undefined;
+  }
 }
 
 // The model of the id given, at the connection's base URL, in its API,
@@ -377,7 +429,13 @@ function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, co
 //      takes. The cap goes out with every call, and pi lowers it only as the
 //      input nears the window.
 //    - Its cost is unknown, so pi counts none.
-function modelOf(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
+//
+// A model whose id starts with anthropic/, on OpenRouter's Chat Completions,
+// also takes pi's compat with Anthropic's format of cache marks.
+// Through OpenRouter, Anthropic's cache keeps only what a call marks
+// (https://openrouter.ai/docs/features/prompt-caching), and pi marks the
+// calls of such a model only where its provider is named openrouter.
+function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
   const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
   const known = catalogModel(pi, given.like ?? id);
   // The catalog's headers belong to the catalog's provider, so they go.
@@ -393,12 +451,14 @@ function modelOf(pi: Pi, id: string, connection: Connection, given: ModelSetting
           maxTokens: listed.maxTokens ?? 16_384,
         }
       : { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
+  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
   return {
     ...base,
     reasoning: given.reasoning ?? base.reasoning,
     input: inputOf(base.input, given.images),
     contextWindow: given.contextWindow ?? base.contextWindow,
     maxTokens: given.maxTokens ?? base.maxTokens,
+    ...(anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" as const } } : {}),
   };
 }
 
@@ -429,13 +489,15 @@ function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response
   return globalThis.fetch(input, { ...init, headers });
 }
 
-// A call that ended, with the reply that pi wrote.
-function callOf(reply: AssistantMessage): Call {
+// A call that ended, with the reply that pi wrote, to the model given.
+function callOf(pi: Pi, reply: AssistantMessage, model: Model<Api>): Call {
   const written = replyOf(reply);
+  const failed = reply.stopReason === "error";
   return {
     ...(written === undefined ? {} : { reply: written }),
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
-    ...(reply.stopReason === "error" ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(failed ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {}),
+    ...(failed && pi.isContextOverflow(reply, model.contextWindow) ? { overflow: true } : {}),
   };
 }
 

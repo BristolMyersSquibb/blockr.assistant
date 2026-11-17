@@ -12,9 +12,12 @@
 //   which assistant-ui's message field holds while the chat is mounted, and
 //   the pick of the model for the next conversation that it adds, below.
 // - The user's message goes to the conversations and starts a turn
-//   (./send.ts). Sending waits while a turn runs in any conversation.
+//   (./send.ts). Sending waits while a turn runs in any conversation. While
+//   the model writes a summary that the user asked for, a turn starts, and
+//   its first call waits for the summary (../compaction).
 // - The stop button, which shows in the turn's conversation, and Escape
-//   anywhere in the chat stop the turn.
+//   anywhere in the chat stop the turn, with a summary that the turn waits
+//   for, while a summary that the user asked for goes on.
 // - The footer, under the message field, opens the drawer of conversations,
 //   shows the meter and offers the pick of the model (./footer.tsx,
 //   ./drawer.tsx).
@@ -48,7 +51,7 @@ import type { KeyboardEvent, ReactElement } from "react";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { CoreApi } from "@blockr/core";
 import type { Assistant } from "../assistant/index.ts";
-import { isNote, textOf } from "../state/index.ts";
+import { isNote, joinText } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
 import type { Turns } from "../turns/index.ts";
 import { Composer } from "./composer.tsx";
@@ -56,7 +59,7 @@ import { ChatActionsContext, ChatStateContext } from "./context.ts";
 import type { ChatActions, ChatState } from "./context.ts";
 import { Drawer } from "./drawer.tsx";
 import { Footer } from "./footer.tsx";
-import { useConversations, useOffered, useRunning } from "./hooks.ts";
+import { useCompacting, useConversations, useOffered, useRunning } from "./hooks.ts";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
 import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
@@ -66,7 +69,7 @@ import { Transcript } from "./transcript.tsx";
 
 export function Chat({ core, assistant }: { readonly core: CoreApi; readonly assistant: Assistant }): ReactElement {
   const { AssistantRuntimeProvider, useExternalStoreRuntime } = libraries();
-  const { conversations, turns, models } = assistant;
+  const { conversations, turns, models, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const offered = useOffered(models);
@@ -81,6 +84,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const conversation = open === undefined ? undefined : all[open];
   const messages = conversation?.messages ?? NO_MESSAGES;
   const runsHere = running !== undefined && running.conversation === open;
+  const compacting = useCompacting(compaction, open);
 
   // Assistant-ui keeps what it converted of each item that the chat gives it
   // again, so a long conversation converts only what changed as a reply
@@ -146,7 +150,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     isRunning: runsHere,
     isSendDisabled: running !== undefined,
     onNew: async (message: AppendMessage) => {
-      const text = fieldText(message);
+      const text = textOf(message);
       try {
         await send(text);
       } catch (error) {
@@ -178,17 +182,18 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     [core, send, turns],
   );
 
-  const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(textOf).filter((text) => text !== ""), [messages]);
+  const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(joinText).filter((text) => text !== ""), [messages]);
   const waiting = useMemo(() => waitingCalls(messages, runsHere ? running : undefined), [messages, running, runsHere]);
   const state = useMemo<ChatState>(
     () => ({
       running,
       runsHere,
+      compacting,
       waiting,
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
     }),
-    [all, history, running, runsHere, waiting],
+    [all, compacting, history, running, runsHere, waiting],
   );
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -284,7 +289,7 @@ function turnEnds(turns: Pick<Turns, "current" | "subscribe">, conversation: Con
 }
 
 // The text of a message that the message field sends.
-function fieldText(message: AppendMessage): string {
+function textOf(message: AppendMessage): string {
   return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
