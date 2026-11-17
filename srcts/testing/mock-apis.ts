@@ -26,10 +26,11 @@
 // A call whose request holds a file named refused.pdf, in the block of any
 // API for a file, gets an answer of 400 that says that the file could not be
 // processed, with a CORS header, as a provider refuses a file.
-// The mock records each request, with the body of a POST, which the tests
-// read at /__requests and clear with a POST to /__reset. The setup gives the tests the mock's origin,
-// its key and the reply DONE through Vitest's inject(), since the tests run in
-// the browser, which cannot import this file.
+// The mock records each request, with the JSON of its body, which the tests
+// read at /__requests and clear with a POST to /__reset. The setup gives the
+// tests the mock's origin, its key and the reply DONE through Vitest's
+// inject(), since the tests run in the browser, which cannot import this
+// file.
 
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -54,19 +55,19 @@ export interface MockApis {
 const MOCK_KEY = "test-key";
 const DONE = "The board holds the blocks that list_blocks listed.";
 
-// A request as the mock recorded it.
+type Body = Readonly<Record<string, unknown>>;
+
+// A request as the mock recorded it, with the JSON of its body, which is
+// empty for a request that sends none.
 export interface RecordedRequest {
   readonly method: string;
   readonly path: string;
   readonly headers: Readonly<Record<string, string>>;
-  // The JSON of a POST's body.
-  readonly body?: unknown;
+  readonly body: Body;
 }
 
 // The name of the file that the mock refuses.
 const REFUSED_FILE = "refused.pdf";
-
-type Body = Readonly<Record<string, unknown>>;
 
 const LISTS: Readonly<Record<string, unknown>> = {
   openai: {
@@ -170,14 +171,13 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
 
+  const body = request.method === "POST" ? await bodyOf(request) : {};
+  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), body });
   if (request.method === "OPTIONS") {
-    recorded.push({ method: request.method, path: url.pathname, headers: headersOf(request) });
     preflight(request, response, base, origin);
     return;
   }
 
-  const body = request.method === "POST" ? await bodyOf(request) : {};
-  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), ...(request.method === "POST" ? { body } : {}) });
   const refusal = refused(request, base);
   if (refusal !== undefined) {
     respond(response, 401, origin, { error: { message: refusal, type: "invalid_request_error" } });

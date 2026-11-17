@@ -19,16 +19,28 @@
 //   OpenRouter, and the thinking level medium
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
 // - It hands pi the tools as they are, with each tool's executionMode, and
-//   takes the system prompt, a transformContext and an onPayload from its
-//   caller.
+//   takes from its caller the system prompt, a transformContext, the message
+//   of the app's and an onPayload.
 //   The transformContext takes the conversation in the state's shape, and the
 //   onPayload the request as the provider takes it.
 // - Before each call, it builds pi's messages from the conversation as the
 //   plugin holds it then (./messages.ts), with the files that the user
-//   attached, which the memory keeps.
+//   attached, which the memory keeps. Where the caller gives a message of
+//   the app's, the loop adds it after the conversation's last message, for the
+//   call alone, as a message of the role user, so that no call goes out for it
+//   alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#what-a-call-sends-and-in-which-order).
+//   It adds it as a message of the role app, which it declares among the
+//   messages of pi's agent, so that pi's messages tell it from the user's,
+//   and pi's convertToLlm turns it into a message of the role user for the
+//   call (./messages.ts). The message's text opens with the preamble that says
+//   that the app writes it.
+// - The message of the app's changes from call to call, so on Anthropic's API
+//   the loop moves the cache mark that pi puts on it to the block before it,
+//   which ends the conversation (./cache.ts). It does so through pi's
+//   onPayload, before the caller's onPayload sees the request.
 // - It hands pi each PDF as an image, and turns it into the block of the
 //   call's API for a file in the request that pi writes (./files.ts). It does
-//   so through pi's onPayload, before the caller's onPayload sees the request.
+//   so through pi's onPayload as well, before it moves the cache mark.
 //
 // A provider may refuse a file that a call carries, as an image that it
 // cannot read, a PDF on an API that takes none, or a file larger than it
@@ -79,8 +91,9 @@ import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
+import { markBeforeAppMessage } from "./cache.ts";
 import { withFiles } from "./files.ts";
-import { callMessages, image, isToolCall, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
+import { appMessage, callMessages, image, isToolCall, llmMessages, partsOf, reasoningOf, replyOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered, Carried, CarriedFile } from "./messages.ts";
 import { providerName, telemetryUnder } from "./telemetry.ts";
 import type * as vendor from "./vendor.ts";
@@ -121,10 +134,14 @@ export interface Turn {
   // What the memory keeps of a message of the conversation.
   kept(message: MessageId): Kept | undefined;
   // What the caller adds to each call: the system prompt, a transform of the
-  // conversation for the call alone, and a transform of the request that goes
-  // to the provider, whose undefined keeps the request as it is.
+  // conversation for the call alone, the text of the message of the app's
+  // that follows the conversation's last message, and a transform of the
+  // request that goes to the provider, whose undefined keeps the request as it
+  // is. The loop asks for the message of the app's as each call goes out.
+  // Where that rejects, the turn rejects before the call goes out.
   readonly systemPrompt?: string;
   readonly transformContext?: (messages: readonly Message[], signal: AbortSignal) => Promise<readonly Message[]>;
+  readonly appMessage?: () => Promise<string>;
   readonly onPayload?: (payload: unknown) => unknown;
   readonly signal: AbortSignal;
   readonly on: Handlers;
@@ -237,20 +254,25 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   // and the status of the provider's answer to it, once it answered.
   let carried: Carried = { files: [], pdfs: [] };
   let status: number | undefined;
+  // The text of the message of the app's that the call going out holds, if
+  // any.
+  let added: string | undefined;
 
   const config: AgentLoopConfig = {
     model,
     reasoning: "medium",
     identity: { attribution: null },
-    // The loop adds no messages of its own to pi's, so they go to the model
-    // as they are.
-    convertToLlm: (messages) => messages,
+    // Every message goes to the model as it is, but the message of the app's,
+    // which goes as a message of the role user.
+    convertToLlm: (messages) => llmMessages(messages),
     transformContext: async (_messages, signal) => {
       const conversation = turn.messages();
       const transformed = turn.transformContext === undefined ? conversation : await turn.transformContext(conversation, signal ?? turn.signal);
       carried = { files: [], pdfs: [] };
       status = undefined;
-      return callMessages(transformed, kept, model, turn.tools, prompt, carried);
+      added = turn.appMessage === undefined ? undefined : await turn.appMessage();
+      const messages = callMessages(transformed, kept, model, turn.tools, prompt, carried);
+      return added === undefined ? messages : [...messages, appMessage(added)];
     },
     getApiKey: async () => (await turn.connection.apiKey()) ?? NO_KEY,
     fetch: async (input, init) => {
@@ -258,10 +280,14 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
       status = response.status;
       return response;
     },
+    // The loop turns the PDFs into the API's blocks for a file, then moves
+    // the cache mark, and then hands the request to the caller's onPayload.
     onPayload: (payload) => {
       const filed = carried.pdfs.length === 0 ? undefined : withFiles(model.api, payload, carried.pdfs);
-      if (turn.onPayload === undefined) return filed;
-      return turn.onPayload(filed ?? payload) ?? filed;
+      const moved = model.api === "anthropic-messages" && added !== undefined ? markBeforeAppMessage(filed ?? payload, added) : undefined;
+      const changed = moved ?? filed;
+      if (turn.onPayload === undefined) return changed;
+      return turn.onPayload(changed ?? payload) ?? changed;
     },
   };
 

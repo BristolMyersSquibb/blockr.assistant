@@ -14,6 +14,18 @@ import { configDefaults, defineConfig } from "vitest/config";
 //   `npx playwright install chromium` downloads.
 const BROWSER = "srcts/**/*.browser.test.ts";
 
+// Gives a Markdown file that a module imports with { type: "text" }, as the
+// texts of the system prompt are, as a module whose default export is the
+// file's text, as esbuild's build gives it. Vite reads it as JavaScript
+// otherwise.
+const markdownText = {
+  name: "blockr-assistant-markdown-text",
+  enforce: "pre" as const,
+  transform(code: string, id: string) {
+    return id.replace(/\?.*$/, "").endsWith(".md") ? { code: `export default ${JSON.stringify(code)};`, map: null } : undefined;
+  },
+};
+
 function chromium() {
   if (process.env.CI !== undefined) return { channel: "chrome" };
   const path = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -24,6 +36,7 @@ export default defineConfig({
   test: {
     projects: [
       {
+        plugins: [markdownText],
         test: {
           name: "happy-dom",
           environment: "happy-dom",
@@ -32,6 +45,7 @@ export default defineConfig({
         },
       },
       {
+        plugins: [markdownText],
         test: {
           name: "browser",
           include: [BROWSER],

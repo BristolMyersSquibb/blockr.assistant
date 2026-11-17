@@ -7,6 +7,8 @@
 // with the blockr options of a deployment that point at the mock. A turn then
 // runs on pi's own code for the API, through the page's fetch: the model calls
 // the tool list_blocks, and replies once it has the tool's result.
+// The mock records the body of each call, which shows where pi puts the system
+// prompt and the message of the app's in each API's request.
 // The files that the user attaches reach each API in its blocks, and the mock
 // refuses a file named refused.pdf, as a provider refuses a file
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
@@ -66,6 +68,41 @@ function lastText(conversation: Awaited<ReturnType<typeof turned>>["conversation
   return part?.type === "text" ? part.text : undefined;
 }
 
+type Item = Readonly<Record<string, unknown>>;
+
+// The messages of a call's request: the input of OpenAI's Responses API, or
+// the messages of the two others.
+function sent(body: Item): readonly Item[] {
+  const items = Array.isArray(body.input) ? body.input : body.messages;
+  return Array.isArray(items) ? (items as readonly Item[]) : [];
+}
+
+// The blocks of a message, or the message's text as one block.
+function blocksOf(item: Item | undefined): readonly Item[] {
+  const content = item?.content;
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) ? (content as readonly Item[]) : [];
+}
+
+// The text of a message, in whichever API's shape.
+function textOf(item: Item | undefined): string {
+  return blocksOf(item)
+    .map((block) => (typeof block.text === "string" ? block.text : ""))
+    .join("");
+}
+
+// The system prompt of a call's request: Anthropic's system, or the first
+// message of the role system or developer.
+function systemOf(body: Item): string {
+  if (Array.isArray(body.system)) return textOf({ content: body.system });
+  return textOf(sent(body).find((item) => item.role === "system" || item.role === "developer"));
+}
+
+// Whether a message holds the result of a tool call, in whichever API's shape.
+function holdsResult(item: Item | undefined): boolean {
+  return item?.type === "function_call_output" || item?.role === "tool" || blocksOf(item).some((block) => block.type === "tool_result");
+}
+
 // Runs a turn of a conversation whose message of the user's, the message
 // given, holds files whose content the memory keeps as given.
 async function turnedWith(blockrOptions: Readonly<Record<string, Json>>, message: Message, files: readonly KeptFile[]) {
@@ -74,14 +111,6 @@ async function turnedWith(blockrOptions: Readonly<Record<string, Json>>, message
   await assistant.conversations.addMessage("c1", message, { files });
   await assistant.turns.run("c1");
   return { core, assistant };
-}
-
-// The content of the first message of the user's in a request's body, in
-// whichever API's shape.
-function userContent(body: unknown): unknown {
-  const { input, messages } = body as { input?: unknown; messages?: unknown };
-  const items = (Array.isArray(input) ? input : Array.isArray(messages) ? messages : []) as { role?: unknown; content?: unknown }[];
-  return items.find((item) => item.role === "user")?.content;
 }
 
 const CREATED = "2026-11-16T08:00:00.000Z";
@@ -108,7 +137,7 @@ const withFiles: Message = {
 // What the first message of the user's holds on each API: the text, the
 // image as an image, the PDF in the API's block for a file, and the text file
 // as text.
-const SENT: Readonly<Record<string, unknown[]>> = {
+const FILE_BLOCKS: Readonly<Record<string, unknown[]>> = {
   "openai-responses": [
     { type: "input_text", text: "Read these." },
     { type: "input_text", text: LABEL_PNG },
@@ -163,6 +192,21 @@ describe.each(APIS)("a turn on $api", ({ api, keyed, keyless, calls: path, heade
     expect(calls.map((call) => call.headers[header])).toEqual([key, key]);
   });
 
+  test("sends each call the system prompt, and after the conversation's last message the message of the app's with the board", async () => {
+    await turned({ assistant_base_url: `${mock.origin}${keyed}`, assistant_api: api, assistant_api_key: mock.key, assistant_models: "mock-model" });
+
+    const calls = (await reached("POST")).map((call) => call.body);
+    expect(calls).toHaveLength(2);
+    for (const body of calls) {
+      expect(systemOf(body)).toMatch(/^You are an assistant embedded next to a blockr data analysis board\.\n/);
+      expect(sent(body).at(-1)?.role).toBe("user");
+      expect(textOf(sent(body).at(-1))).toMatch(/^This message comes from the app, not from the user\.\n[^]*\n## Board\n6 block\(s\), 7 link\(s\), 1 stack\(s\)\.\n/);
+    }
+    const [first, second] = calls.map(sent);
+    expect(textOf(first?.at(-2))).toBe("Which blocks does the board hold?");
+    expect(holdsResult(second?.at(-2))).toBe(true);
+  });
+
   test("calls a base URL that takes no key with no key, which a preflight that allows no key header lets through", async () => {
     const { core, conversation } = await turned({
       assistant_base_url: `${mock.origin}${keyless}`,
@@ -192,7 +236,7 @@ describe.each(APIS)("the files of a message on $api", ({ api, keyed }) => {
     expect(raised(core, "assistant_attachment_refused")).toEqual([]);
     const calls = await reached("POST");
     expect(calls).toHaveLength(2);
-    for (const call of calls) expect(userContent(call.body)).toMatchObject(SENT[api] ?? []);
+    for (const call of calls) expect(blocksOf(sent(call.body).find((item) => item.role === "user"))).toMatchObject(FILE_BLOCKS[api] ?? []);
     expect(assistant.conversations.kept("c1", "u1")?.files).toEqual([
       { data: PNG, taken: true },
       { data: PDF, taken: true },
@@ -219,6 +263,20 @@ describe.each(APIS)("the files of a message on $api", ({ api, keyed }) => {
     for (const call of calls) {
       expect(JSON.stringify(call.body)).not.toContain(PDF);
       expect(JSON.stringify(call.body)).toContain("which the provider refused, so the conversation goes on without its content.");
+    }
+  });
+});
+
+describe("a turn on Anthropic's Messages API", () => {
+  test("marks for the cache the block before the message of the app's, the end of the conversation, and not that message", async () => {
+    await turned({ assistant_base_url: `${mock.origin}/anthropic`, assistant_api: "anthropic-messages", assistant_api_key: mock.key, assistant_models: "mock-model" });
+
+    const calls = (await reached("POST")).map((call) => sent(call.body));
+    expect(calls).toHaveLength(2);
+    for (const messages of calls) {
+      expect(blocksOf(messages.at(-1)).some((block) => "cache_control" in block)).toBe(false);
+      expect(blocksOf(messages.at(-2)).at(-1)).toHaveProperty("cache_control", { type: "ephemeral" });
+      expect(messages.slice(0, -2).flatMap(blocksOf).some((block) => "cache_control" in block)).toBe(false);
     }
   });
 });
