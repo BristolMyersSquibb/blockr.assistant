@@ -2638,7 +2638,7 @@ function shownOf(messages, running, kept) {
   let failure;
   const end = (last) => {
     const results = last ? running?.results : void 0;
-    const reply = last ? running?.reply : void 0;
+    const reply = last && span.at(-1)?.role !== "assistant" ? running?.reply : void 0;
     if (span.length > 0 || failure !== void 0 || results !== void 0 && Object.keys(results).length > 0 || reply !== void 0) {
       shown2.push(turnOf(opener, span, span.map((message2) => kept(message2.id)), failure, results, reply));
     }

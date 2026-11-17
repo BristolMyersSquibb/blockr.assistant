@@ -15,6 +15,11 @@
 //   calls, and at the end why the turn failed, where it failed.
 // A note of what others changed shows nothing, since the user sees on the
 // board what changed, and it does not end a turn.
+// A reply streams only after the message that opened the turn or after the
+// results of the calls before it. So where the turn's last message is a
+// reply, the reply that the turn holds as it streams has entered the
+// conversation already, in the moment before the turn lets it go, and the
+// chat shows it once, from the conversation.
 //
 // A turn keeps its id while it runs, the id of the message that opened it
 // with "-turn", so that React keeps what it drew of the turn as its first
@@ -80,7 +85,7 @@ export function shownOf(messages: readonly Message[], running: Running | undefin
 
   const end = (last: boolean): void => {
     const results = last ? running?.results : undefined;
-    const reply = last ? running?.reply : undefined;
+    const reply = last && span.at(-1)?.role !== "assistant" ? running?.reply : undefined;
     if (span.length > 0 || failure !== undefined || (results !== undefined && Object.keys(results).length > 0) || reply !== undefined) {
       shown.push(turnOf(opener, span, span.map((message) => kept(message.id)), failure, results, reply));
     }

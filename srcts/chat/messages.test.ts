@@ -56,6 +56,16 @@ describe("what the chat shows of a conversation", () => {
     expect(shownOf(answered, undefined, none)[1]).toBe(shownOf(answered, undefined, none)[1]);
   });
 
+  test("shows a reply once that entered the conversation while the turn still holds it as it streams", () => {
+    const streamed = running({ reply: { parts: [{ type: "text", text: "Looking." }, call("t1")], reasoning: [] } });
+    const stored = shownOf([message("u1", "user"), message("a1", "assistant", { type: "text", text: "Looking." }, call("t1"))], streamed, none);
+
+    expect(threadMessageOf(stored[1] as Turn).content).toEqual([
+      { type: "text", text: "Looking." },
+      { type: "tool-call", toolCallId: "t1", toolName: "list_blocks", args: {} },
+    ]);
+  });
+
   test("gives a turn anew where what the memory keeps of its messages changed", () => {
     const messages = [message("u1", "user"), message("a1", "assistant")];
     const before = shownOf(messages, undefined, none)[1];
