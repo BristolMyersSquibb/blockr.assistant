@@ -38,7 +38,8 @@ test_that("R writes the conversations by the schema beside the module", {
 
   written <- function(plugin) {
     board <- blockr_ser(new_board(plugins = list(plugin)))
-    board[["board"]][["plugins"]][["blockr.assistant-assistant_plugin"]]
+    plugins <- board[["board"]][["plugins"]]
+    plugins[["blockr.assistant-assistant_plugin"]][["state"]]
   }
 
   expect_identical(

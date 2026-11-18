@@ -50,6 +50,11 @@ export default defineConfig({
           name: "browser",
           include: [BROWSER],
           globalSetup: ["srcts/testing/mock-apis.ts"],
+          // The test files share the mock's record of requests, and each file
+          // clears it before each of its tests.
+          // So the files run one at a time, and neither clears the requests
+          // that a test of the other is about to read.
+          fileParallelism: false,
           browser: {
             enabled: true,
             headless: true,
