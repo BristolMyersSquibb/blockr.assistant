@@ -151,8 +151,8 @@ was.
 Once the visitor authorizes the app, OpenRouter sends that window to the
 page \code{js/login.html}, which the package ships beside the plugin's module.
 That page hands the login's code to the app's page, and closes the window.
-The plugin then trades the code for the key, and keeps the key as it keeps
-a typed key.
+The plugin then exchanges the code for the key, and keeps the key as it
+keeps a typed key.
 The key expires after a day, unless the visitor changes the expiry as they
 authorize the app.
 The chat offers the login only on a page that the browser deems secure,
