@@ -8,6 +8,7 @@
 
 import { createContext, useContext } from "react";
 import type { CoreApi } from "@blockr/core";
+import type { LoginState } from "../login/index.ts";
 import type { Running } from "../turns/index.ts";
 import type { KeyState } from "../visitor-key/index.ts";
 import type { OpenedFile } from "./files.tsx";
@@ -27,13 +28,25 @@ export interface ChatActions {
   readonly openFile: (file: OpenedFile) => void;
   // Gives the visitor's own key, which the calls carry from then on.
   readonly giveKey: (key: string) => void;
+  // Opens the login that the field for the key offers, in a window of its
+  // own, as the visitor clicks its button.
+  readonly logIn: () => void;
 }
 
 // What the field for the visitor's key shows: why the chat asks for a key,
-// and the host of the base URL that the key is for, such as api.openai.com.
+// the host of the base URL that the key is for, such as api.openai.com, and
+// the login that the field offers beside the key, if any.
 export interface KeyField {
   readonly state: Exclude<KeyState, { readonly kind: "given" }>;
   readonly host: string;
+  readonly login: OfferedLogin | undefined;
+}
+
+// The login that the field for the key offers: the name of its service, such
+// as OpenRouter, and what the login is doing.
+export interface OfferedLogin {
+  readonly name: string;
+  readonly state: LoginState;
 }
 
 export interface ChatState {

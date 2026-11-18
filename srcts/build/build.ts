@@ -36,6 +36,13 @@
 // - The stylesheet of the module, srcts/modules/assistant_plugin/index.css,
 //   is bundled, unminified, into assistant_plugin.css, beside the module,
 //   where core finds it and puts it on the page with the module.
+// - The page that the login calls back, srcts/login/login.html, goes into
+//   login.html beside the module, where core serves it with the module
+//   (srcts/login). Its script, srcts/login/callback.ts, is bundled,
+//   unminified, into login-<hash>.js beside it, which the page loads in place
+//   of the source. The script's name holds a hash of its content, so that no
+//   browser runs an old copy from its cache. The page's own URL needs none,
+//   since each login calls it back with a new code in its query.
 // - The licenses of what the files in inst/js hold from other projects go
 //   into LICENSES beside them, as blockr.core's build writes its own
 //   (BristolMyersSquibb/blockr.core#650), since none of the bundled files
@@ -117,9 +124,11 @@ export async function build(root: string): Promise<string[]> {
   if (results.some((result) => result.warnings.length > 0)) {
     throw new Error("esbuild warned, as printed above");
   }
+  const login = await loginPage(root, out);
 
   return [
     ...results.flatMap((result) => Object.keys(result.metafile.outputs)),
+    ...login,
     schema,
     ...[...vendored.values()].map(({ file }) => relative(root, join(out, file))),
     licensed,
@@ -141,6 +150,37 @@ async function preloadList(root: string, out: string, metafiles: readonly esbuil
   const file = join(out, "preload.json");
   await writeFile(file, `${JSON.stringify(Object.fromEntries(lists.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))), null, 2)}\n`);
   return relative(root, file);
+}
+
+// Writes the page that the login calls back into `out`, as login.html, with
+// its script bundled into login-<hash>.js, and gives the paths of both from
+// `root`.
+async function loginPage(root: string, out: string): Promise<string[]> {
+  const dir = join(root, "srcts", "login");
+  const result = await esbuild.build({
+    ...preset,
+    absWorkingDir: root,
+    entryPoints: [join(dir, "callback.ts")],
+    write: false,
+    metafile: true,
+    logLevel: "warning",
+    plugins: [...preset.plugins, vendorCheck],
+  });
+  if (result.warnings.length > 0) {
+    throw new Error("esbuild warned, as printed above");
+  }
+
+  const text = result.outputFiles[0]?.text ?? "";
+  const script = join(out, `login-${createHash("sha256").update(text).digest("hex").slice(0, 8)}.js`);
+  await writeFile(script, text);
+  const source = await readFile(join(dir, "login.html"), "utf8");
+  const loads = 'src="./callback.ts"';
+  if (!source.includes(loads)) {
+    throw new Error(`The file srcts/login/login.html does not load its script with ${loads}.`);
+  }
+  const page = join(out, "login.html");
+  await writeFile(page, source.replace(loads, `src="./${relative(out, script)}"`));
+  return [relative(root, page), relative(root, script)];
 }
 
 // The files that name the parts of other projects that the client uses, each

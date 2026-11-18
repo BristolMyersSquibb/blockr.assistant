@@ -22,7 +22,8 @@
 //   dialog (./files.tsx).
 // - Where the deployment leaves the key to the visitor, the chat asks for the
 //   visitor's own key in a field above the message field, and sends nothing
-//   while it lacks one (./key.tsx).
+//   while it lacks one (./key.tsx). Where the base URL is OpenRouter's, the
+//   field offers OpenRouter's login beside the key (../login).
 // - The stop button, which shows in the turn's conversation, and Escape
 //   anywhere in the chat stop the turn, with a summary that the turn waits
 //   for, while a summary that the user asked for goes on.
@@ -71,7 +72,7 @@ import { Drawer } from "./drawer.tsx";
 import { FileDialog } from "./files.tsx";
 import type { OpenedFile } from "./files.tsx";
 import { Footer } from "./footer.tsx";
-import { useCompacting, useConversations, useDeployment, useOffered, useRunning, useVisitorKey } from "./hooks.ts";
+import { useCompacting, useConversations, useDeployment, useLogin, useOffered, useRunning, useVisitorKey } from "./hooks.ts";
 import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
@@ -89,6 +90,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const offered = useOffered(models);
   const deployment = useDeployment(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
+  const login = useLogin(assistant.login);
   const [chosen, setChosen] = useState(storedConversation);
   const [nextPick, setNextPick] = useNextPick(assistant);
   const [drawer, setDrawer] = useState(false);
@@ -112,14 +114,15 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
   // Where the deployment leaves the key to the visitor, the chat shows the
   // field for the key unless the key is given, and sends nothing while it
-  // lacks a key.
+  // lacks a key. The field offers the login where the base URL is the
+  // login's.
   const visitorAuthenticates = deployment?.credential.kind === "visitor";
   const noKey = visitorAuthenticates && keyOf(visitorKey) === undefined;
-  const keyField = useMemo<KeyField | undefined>(
-    () =>
-      deployment !== undefined && visitorAuthenticates && visitorKey.kind !== "given" ? { state: visitorKey, host: new URL(deployment.baseUrl).host } : undefined,
-    [deployment, visitorAuthenticates, visitorKey],
-  );
+  const keyField = useMemo<KeyField | undefined>(() => {
+    if (deployment === undefined || !visitorAuthenticates || visitorKey.kind === "given") return undefined;
+    const offered = assistant.login.offers(deployment.baseUrl) ? { name: assistant.login.service.name, state: login } : undefined;
+    return { state: visitorKey, host: new URL(deployment.baseUrl).host, login: offered };
+  }, [assistant, deployment, login, visitorAuthenticates, visitorKey]);
 
   // Assistant-ui keeps what it converted of each item that the chat gives it
   // again, so a long conversation converts only what changed as a reply
@@ -226,6 +229,9 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       openFile: setFile,
       giveKey: (key) => {
         assistant.key.give(key);
+      },
+      logIn: () => {
+        assistant.login.start();
       },
     }),
     [assistant, core, runtime, send, turns],

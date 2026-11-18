@@ -980,8 +980,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 
 /*
  * The field for the visitor's key, above the message field, with a note above
- * it, in the colour of danger where the chat asks for a key again. Its button
- * is a primary button of core's.
+ * it, in the colour of danger where the chat asks for a key again or the login
+ * failed. Its button is a primary button of core's. Where the field offers a
+ * login, the login's button sits between the note and the key, as wide as the
+ * field.
  */
 .blockr-assistant-key {
   flex: 0 0 auto;
@@ -994,8 +996,33 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   color: var(--blockr-assistant-text-muted);
 }
 
-.blockr-assistant-key:is([data-asks="refused"], [data-asks="lost"]) .blockr-assistant-key-note {
+.blockr-assistant-key:is([data-asks="refused"], [data-asks="lost"], [data-login="blocked"], [data-login="failed"]) .blockr-assistant-key-note {
   color: var(--blockr-assistant-text-danger);
+}
+
+.blockr-assistant-login {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  margin: 0 0 6px;
+  padding: 2px 12px;
+  border: 1px solid var(--blockr-assistant-border);
+  border-radius: var(--blockr-assistant-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--blockr-assistant-text);
+  cursor: pointer;
+  transition: background var(--blockr-assistant-transition);
+}
+
+.blockr-assistant-login:hover:not(:disabled) {
+  background: var(--blockr-assistant-bg-subtle);
+}
+
+.blockr-assistant-login:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .blockr-assistant-key-field {

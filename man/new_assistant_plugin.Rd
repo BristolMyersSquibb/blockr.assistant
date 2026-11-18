@@ -138,6 +138,25 @@ Where the base URL refuses the key, for a call or for its list of models,
 the chat asks for a key again.
 Where the connection was lost and the key may be wrong, the chat shows the
 field for the key again, holding the key.
+
+Where the base URL is OpenRouter's, \verb{https://openrouter.ai/api/v1}, the
+chat also offers OpenRouter's login beside the field for the key.
+The login gives the page a key on the visitor's own OpenRouter account,
+which OpenRouter bills to the visitor's credits.
+So an app that sets \verb{BLOCKR_ASSISTANT_BASE_URL=https://openrouter.ai/api/v1}
+and \code{BLOCKR_ASSISTANT_API=openai-completions}, and no key, lets each
+visitor log in.
+The login runs in a window of its own, so that the app's page stays as it
+was.
+Once the visitor authorizes the app, OpenRouter sends that window to the
+page \code{js/login.html}, which the package ships beside the plugin's module.
+That page hands the login's code to the app's page, and closes the window.
+The plugin then trades the code for the key, and keeps the key as it keeps
+a typed key.
+The key expires after a day, unless the visitor changes the expiry as they
+authorize the app.
+The chat offers the login only on a page that the browser deems secure,
+such as one served over HTTPS or from localhost.
 }
 
 \section{Model settings}{

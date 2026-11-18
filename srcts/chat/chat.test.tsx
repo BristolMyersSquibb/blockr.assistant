@@ -11,6 +11,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, tes
 import { openAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
 import type { Credential } from "../deployment/index.ts";
+import { CHANNEL, createLogin } from "../login/index.ts";
+import type { Login, OpenWindow } from "../login/index.ts";
 import { ENDED } from "../loop/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
@@ -68,6 +70,9 @@ interface Options {
   readonly credential?: Credential;
   // The visitor's own key, which holds none unless given.
   readonly key?: VisitorKey;
+  // The login that gives the visitor's key, the key's login with OpenRouter
+  // unless given.
+  readonly login?: Login;
 }
 
 // Core on a board that holds the assistant's state given, with the assistant
@@ -104,6 +109,7 @@ async function chat(options: Options = {}) {
     load: () => Promise.resolve(loop),
     locks: undefined,
     key: options.key ?? createVisitorKey(),
+    ...(options.login === undefined ? {} : { login: options.login }),
   });
   await act(() => assistant.conversations.opened);
   await act(() => loadLibraries());
@@ -264,7 +270,44 @@ function giveKey(el: HTMLElement, key: string): void {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, key);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  click(el.querySelector(".blockr-assistant-key button"));
+  click(el.querySelector(".blockr-assistant-key-field button"));
+}
+
+// A login with OpenRouter whose service the chat finds at the faux base URL,
+// so that the chat offers it, with the visitor's key given. Its exchange of a
+// code gets the answer given, which gives the key sk-or-login unless given,
+// and the window that it opens is the test's own, unless the test opens it.
+function fauxLogin(key: VisitorKey, answer: () => Promise<Response> = () => Promise.resolve(Response.json({ key: "sk-or-login" })), open?: OpenWindow) {
+  const sentTo: string[] = [];
+  const login = createLogin({
+    key,
+    service: { name: "OpenRouter", baseUrl: "https://faux.invalid/v1", authUrl: "https://openrouter.invalid/auth", keysUrl: "https://openrouter.invalid/api/v1/auth/keys" },
+    callbackUrl: "https://app.invalid/blockr.assistant/js/login.html",
+    secure: true,
+    fetch: answer,
+    open:
+      open ??
+      (() =>
+        ({
+          opener: window,
+          location: {
+            replace: (url: string) => {
+              sentTo.push(url);
+            },
+          },
+        }) as unknown as WindowProxy),
+  });
+  return { login, sentTo };
+}
+
+// Posts a code on the login's channel, with the state of the URL to which the
+// login sent its window, as the page that the login calls back does.
+function callBack(sentTo: string | undefined): void {
+  const channel = new BroadcastChannel(CHANNEL);
+  onTestFinished(() => {
+    channel.close();
+  });
+  channel.postMessage({ code: "code-1", state: new URL(sentTo ?? "").searchParams.get("state") });
 }
 
 // A reply of pi's fake provider that records the key of the call.
@@ -459,6 +502,7 @@ describe("the chat's field for the visitor's key", () => {
     const login = el.querySelector<HTMLInputElement>(".blockr-assistant-key input[autocomplete=username]");
     expect(login?.value).toBe("faux.invalid");
     expect(login?.hidden).toBe(true);
+    expect(el.querySelector(".blockr-assistant-login")).toBeNull();
     expect([...el.querySelectorAll<HTMLButtonElement>(".blockr-assistant-suggestion")].every((button) => button.disabled)).toBe(true);
     expect(el.querySelector(".blockr-assistant-send")?.getAttribute("aria-label")).toBe("Sends once you enter your key");
 
@@ -515,6 +559,86 @@ describe("the chat's field for the visitor's key", () => {
 
     expect(keys).toEqual(["sk-visitor"]);
     expect(el.querySelector(".blockr-assistant-key")).toBeNull();
+  });
+
+  test("offers OpenRouter's login above the key where the base URL is the login's, which gives the key that the calls then carry", async () => {
+    const keys: (string | undefined)[] = [];
+    const key = createVisitorKey();
+    const { login, sentTo } = fauxLogin(key);
+    const { el, assistant } = await chat({ credential: VISITOR, key, login, replies: [keyed(keys)] });
+
+    expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(
+      "Log in with OpenRouter, or enter your API key for faux.invalid. The assistant keeps the key only until the page reloads.",
+    );
+    expect(el.querySelector(".blockr-assistant-key-note + .blockr-assistant-login + .blockr-assistant-key-field")).not.toBeNull();
+    const button = el.querySelector<HTMLButtonElement>(".blockr-assistant-login");
+    expect(button?.type).toBe("button");
+    expect(button?.textContent).toBe("Log in with OpenRouter");
+    expect(el.querySelector<HTMLButtonElement>(".blockr-assistant-send")?.disabled).toBe(true);
+
+    click(button);
+    await until(() => sentTo.length > 0, "the login's window");
+    callBack(sentTo[0]);
+    await until(() => el.querySelector(".blockr-assistant-key") === null, "the key");
+    expect(assistant.key.current()).toEqual({ kind: "given", key: "sk-or-login" });
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
+    expect(keys).toEqual(["sk-or-login"]);
+  });
+
+  test("says that it logs in while the login exchanges the code, and why the login failed, until the visitor logs in again", async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const key = createVisitorKey();
+    const { login, sentTo } = fauxLogin(
+      key,
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { el } = await chat({ credential: VISITOR, key, login });
+
+    click(el.querySelector(".blockr-assistant-login"));
+    await until(() => sentTo.length > 0, "the login's window");
+    callBack(sentTo[0]);
+    await until(() => el.querySelector<HTMLButtonElement>(".blockr-assistant-login")?.disabled === true, "the exchange");
+    expect(el.querySelector(".blockr-assistant-login")?.textContent).toBe("Logging in…");
+
+    answer(Response.json({ error: { message: "Invalid code or code_verifier", code: 403 } }, { status: 403 }));
+    await until(() => el.querySelector(".blockr-assistant-key")?.getAttribute("data-login") === "failed", "the failure");
+    const note = el.querySelector(".blockr-assistant-key-note");
+    expect(note?.textContent).toBe("OpenRouter refused the login: Invalid code or code_verifier. Log in again, or enter your API key.");
+    expect(note?.getAttribute("role")).toBe("alert");
+    expect(el.querySelector<HTMLButtonElement>(".blockr-assistant-login")?.disabled).toBe(false);
+    expect(key.current()).toEqual({ kind: "missing" });
+
+    click(el.querySelector(".blockr-assistant-login"));
+    expect(el.querySelector(".blockr-assistant-key")?.getAttribute("data-login")).toBe("idle");
+    expect(el.querySelector(".blockr-assistant-key-note")?.getAttribute("role")).toBeNull();
+  });
+
+  test("says that the browser blocked the login's window", async () => {
+    const key = createVisitorKey();
+    const { login } = fauxLogin(key, undefined, () => null);
+    const { el } = await chat({ credential: VISITOR, key, login });
+
+    click(el.querySelector(".blockr-assistant-login"));
+
+    const note = el.querySelector(".blockr-assistant-key-note");
+    expect(note?.textContent).toBe("The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.");
+    expect(note?.getAttribute("role")).toBe("alert");
+  });
+
+  test("names the login where the base URL refused the key", async () => {
+    const key = createVisitorKey();
+    key.give("sk-wrong");
+    key.refused("sk-wrong");
+    const { login } = fauxLogin(key);
+    const { el } = await chat({ credential: VISITOR, key, login });
+
+    expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe("The server at faux.invalid refused your key. Log in with OpenRouter, or enter another key.");
   });
 
   test("shows no field where the app sets a key, or none", async () => {

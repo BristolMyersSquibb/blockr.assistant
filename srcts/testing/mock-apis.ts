@@ -19,6 +19,14 @@
 //   not ask for the header by which a page opts in, as Anthropic does.
 // - /openrouter/api/v1 and /vercel/v1 give the lists of OpenRouter and of
 //   Vercel's AI Gateway, which take any key or none.
+// - /openrouter/auth is OpenRouter's page for its login, which sends the
+//   window at once to the URL in callback_url, with a code and the state, as
+//   after a visitor authorized the app. The mock keeps the code_challenge of
+//   each code.
+// - /openrouter/api/v1/auth/keys exchanges a code for the key of the login,
+//   where the SHA-256 of the code_verifier, in base64url, is the code's
+//   challenge, once for each code. It answers another with a 403, in
+//   OpenRouter's words.
 // - /keyless/v1 and /keyless speak all three APIs and give OpenAI's list
 //   without a key, as a company's own proxy may. They refuse a preflight that
 //   asks for Authorization or x-api-key, so that a request that carries a key
@@ -35,12 +43,13 @@
 // A call whose request holds a file named refused.pdf, in the block of any
 // API for a file, gets an answer of 400 that says that the file could not be
 // processed, with a CORS header, as a provider refuses a file.
-// The mock records each request, with the JSON of its body, which the tests
-// read at /__requests and clear with a POST to /__reset. The setup gives the
-// tests the mock's origin, its key and the reply DONE through Vitest's
-// inject(), since the tests run in the browser, which cannot import this
-// file.
+// The mock records each request, with its query and the JSON of its body,
+// which the tests read at /__requests and clear with a POST to /__reset. The
+// setup gives the tests the mock's origin, its key, the key of its login and
+// the reply DONE through Vitest's inject(), since the tests run in the
+// browser, which cannot import this file.
 
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -57,20 +66,24 @@ export interface MockApis {
   readonly origin: string;
   // The key that the mock's keyed base URLs take.
   readonly key: string;
+  // The key that the mock's login with OpenRouter gives.
+  readonly loginKey: string;
   // The reply of a call whose request holds the result of a tool.
   readonly done: string;
 }
 
 const MOCK_KEY = "test-key";
+const LOGIN_KEY = "sk-or-v1-login";
 const DONE = "The board holds the blocks that list_blocks listed.";
 
 type Body = Readonly<Record<string, unknown>>;
 
-// A request as the mock recorded it, with the JSON of its body, which is
-// empty for a request that sends none.
+// A request as the mock recorded it, with the parameters of its query and
+// the JSON of its body, which is empty for a request that sends none.
 export interface RecordedRequest {
   readonly method: string;
   readonly path: string;
+  readonly query: Readonly<Record<string, string>>;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Body;
 }
@@ -144,8 +157,10 @@ const LISTS: Readonly<Record<string, unknown>> = {
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const recorded: RecordedRequest[] = [];
+  // The challenge of each code that the login gave, until it is exchanged.
+  const codes = new Map<string, string>();
   const server = createServer((request, response) => {
-    void serve(request, response, recorded).catch((error: unknown) => {
+    void serve(request, response, recorded, codes).catch((error: unknown) => {
       response.writeHead(500, { "access-control-allow-origin": "*" });
       response.end(String(error));
     });
@@ -154,7 +169,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     server.listen(0, "127.0.0.1", resolve);
   });
   const { port } = server.address() as AddressInfo;
-  project.provide("mockApis", { origin: `http://127.0.0.1:${String(port)}`, key: MOCK_KEY, done: DONE });
+  project.provide("mockApis", { origin: `http://127.0.0.1:${String(port)}`, key: MOCK_KEY, loginKey: LOGIN_KEY, done: DONE });
   return () =>
     new Promise<void>((resolve) => {
       server.closeAllConnections();
@@ -164,7 +179,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     });
 }
 
-async function serve(request: IncomingMessage, response: ServerResponse, recorded: RecordedRequest[]): Promise<void> {
+async function serve(request: IncomingMessage, response: ServerResponse, recorded: RecordedRequest[], codes: Map<string, string>): Promise<void> {
   const url = new URL(request.url ?? "/", "http://mock.invalid");
   const origin = request.headers.origin ?? "*";
   const [, base = "", ...rest] = url.pathname.split("/");
@@ -181,7 +196,7 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
   }
 
   const body = request.method === "POST" ? await bodyOf(request) : {};
-  recorded.push({ method: request.method ?? "GET", path: url.pathname, headers: headersOf(request), body });
+  recorded.push({ method: request.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers: headersOf(request), body });
   if (base === "unreachable") {
     response.writeHead(502);
     response.end();
@@ -189,6 +204,22 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
   }
   if (request.method === "OPTIONS") {
     preflight(request, response, base, origin);
+    return;
+  }
+
+  if (base === "openrouter" && request.method === "GET" && path === "/auth") {
+    authorize(url, response, codes);
+    return;
+  }
+  if (base === "openrouter" && request.method === "POST" && path === "/api/v1/auth/keys") {
+    const { code, code_verifier: verifier, code_challenge_method: method } = body;
+    const challenge = typeof code === "string" ? codes.get(code) : undefined;
+    if (typeof code === "string") codes.delete(code);
+    if (challenge === undefined || method !== "S256" || typeof verifier !== "string" || sha256(verifier) !== challenge) {
+      respond(response, 403, origin, { error: { message: "Invalid code or code_verifier", code: 403 } });
+    } else {
+      respond(response, 200, origin, { key: LOGIN_KEY, user_id: "user_1" });
+    }
     return;
   }
 
@@ -230,6 +261,33 @@ async function serve(request: IncomingMessage, response: ServerResponse, recorde
     return;
   }
   respond(response, 404, origin, { error: { message: `No route ${request.method ?? ""} ${url.pathname}.` } });
+}
+
+// Sends the window of the login to its callback, with a new code and the
+// state, as OpenRouter's page does once the visitor authorized the app, and
+// keeps the code's challenge.
+function authorize(url: URL, response: ServerResponse, codes: Map<string, string>): void {
+  const callback = url.searchParams.get("callback_url");
+  const challenge = url.searchParams.get("code_challenge");
+  const state = url.searchParams.get("state");
+  if (callback === null || challenge === null || state === null || url.searchParams.get("code_challenge_method") !== "S256") {
+    response.writeHead(400, { "content-type": "text/plain" });
+    response.end("The login takes a callback_url, a code_challenge of the method S256 and a state.");
+    return;
+  }
+  const code = `code-${String(codes.size + 1)}-${randomUUID()}`;
+  codes.set(code, challenge);
+  const to = new URL(callback);
+  to.searchParams.set("code", code);
+  to.searchParams.set("state", state);
+  response.writeHead(302, { location: to.href });
+  response.end();
+}
+
+// The SHA-256 of the text, in base64url, as PKCE's method S256 makes a
+// challenge.
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("base64url");
 }
 
 // Answers a preflight: with every header that it asks for, but where the base
