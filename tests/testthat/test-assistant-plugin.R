@@ -54,6 +54,13 @@ test_that("R writes the conversations by the schema beside the module", {
   expect_length(c1[["messages"]], 1L)
   expect_null(names(c1[["messages"]][[1L]][["parts"]]))
   expect_length(c1[["messages"]][[1L]][["parts"]], 1L)
+  expect_null(c1[["thinking_level"]])
+
+  picked <- conversation()
+  picked[["thinking_level"]] <- "high"
+  state <- written(new_assistant_plugin(list(c1 = picked)))
+
+  expect_identical(state[["conversations"]][["c1"]][["thinking_level"]], "high")
 })
 
 test_that("the plugin prints a line for each conversation", {
@@ -63,6 +70,7 @@ test_that("the plugin prints a line for each conversation", {
   revenue <- conversation("Revenue by month")
   revenue[["updated"]] <- "2026-11-16T09:30:00Z"
   revenue[["model"]] <- "gpt-5.4"
+  revenue[["thinking_level"]] <- "high"
   revenue[["messages"]] <- c(
     revenue[["messages"]],
     list(

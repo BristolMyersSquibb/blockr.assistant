@@ -12,7 +12,7 @@
 //   is left starts on a message that the user sent, or on a summary.
 
 import type { Board, Json } from "@blockr/core";
-import type { AssistantState, Conversation, ConversationId, Message, MessageId, Usage } from "./types.ts";
+import type { AssistantState, Conversation, ConversationId, Message, MessageId, ThinkingLevel, Usage } from "./types.ts";
 
 // The id of the assistant's plugin class, under which the board holds the
 // assistant's state, at /plugins/blockr.assistant-assistant_plugin.
@@ -51,9 +51,22 @@ export function newId(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-// A conversation that holds no message, which spent no token, added now.
-export function newConversation(title: string, model: string | null): Conversation {
-  return { title, updated: new Date().toISOString(), messages: [], usage: { input: 0, output: 0, last: 0 }, model };
+// The thinking levels, in pi's order, from none to the most.
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+// A conversation that holds no message, which spent no token, added now, with
+// its picks of the model and of the thinking level, of which it lacks the
+// latter where that is null or undefined.
+export function newConversation(title: string, model: string | null, thinkingLevel?: ThinkingLevel | null): Conversation {
+  const conversation = { title, updated: new Date().toISOString(), messages: [], usage: { input: 0, output: 0, last: 0 }, model };
+  return withThinkingLevel(conversation, thinkingLevel ?? null);
+}
+
+// The conversation with the pick of the thinking level given, or without a
+// pick where that is null.
+export function withThinkingLevel(conversation: Conversation, thinkingLevel: ThinkingLevel | null): Conversation {
+  const { title, updated, messages, usage, model } = conversation;
+  return { title, updated, messages, usage, model, ...(thinkingLevel === null ? {} : { thinking_level: thinkingLevel }) };
 }
 
 // The usage of a conversation once a call's input and output tokens are

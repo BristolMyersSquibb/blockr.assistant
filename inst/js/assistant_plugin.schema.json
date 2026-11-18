@@ -45,6 +45,10 @@
             "null"
           ],
           "description": "The conversation's pick of the model, such as \"gpt-5.4\", or null for the default."
+        },
+        "thinking_level": {
+          "$ref": "#/definitions/ThinkingLevel",
+          "description": "The conversation's pick of the thinking level, which a conversation that nobody picked a level for lacks."
         }
       },
       "required": [
@@ -330,6 +334,19 @@
       ],
       "additionalProperties": false,
       "description": "The tokens that a conversation's calls to the model spent."
+    },
+    "ThinkingLevel": {
+      "type": "string",
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "description": "A thinking level, at which a model reasons, from none to the most."
     }
   }
 }

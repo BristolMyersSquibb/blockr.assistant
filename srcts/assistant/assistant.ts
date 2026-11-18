@@ -43,6 +43,11 @@
 //
 // Once a conversation's first exchange that the model answered ends, the
 // assistant has a model call of its own title the conversation (../titles).
+//
+// The chat's footer offers the thinking levels that the model of a
+// conversation's next turn takes, which the assistant reads from pi's
+// catalogs once the chat first mounts (../thinking-levels). The catalogs load
+// apart from the rest of pi, and the calls read the same (../loop).
 
 import type { CoreApi } from "@blockr/core";
 import { createCompaction } from "../compaction/index.ts";
@@ -51,8 +56,8 @@ import { createConversations } from "../conversations/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
 import type { Deployment } from "../deployment/index.ts";
-import { loadLoop } from "../loop/index.ts";
-import type { Loop } from "../loop/index.ts";
+import { loadCatalogs, loadLoop } from "../loop/index.ts";
+import type { Catalogs, Loop } from "../loop/index.ts";
 import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
@@ -64,6 +69,8 @@ import type { OpenRouterLogin } from "../openrouter/index.ts";
 import { createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
+import { createThinkingLevels } from "../thinking-levels/index.ts";
+import type { ThinkingLevels } from "../thinking-levels/index.ts";
 import { titleConversations } from "../titles/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
@@ -79,6 +86,8 @@ export interface Assistant {
   readonly compaction: Compaction;
   // The notes of what others changed in the board.
   readonly notes: Notes;
+  // The thinking levels that the footer offers.
+  readonly thinkingLevels: ThinkingLevels;
   // What the deployment chose, which the chat reads to tell whether it asks
   // the visitor for a key. It rejects where an option holds a value that it
   // does not take.
@@ -96,8 +105,11 @@ export interface AssistantOptions {
   // What the deployment chose, which the assistant reads from its blockr
   // options unless given.
   readonly deployment?: Promise<Deployment>;
-  // Loads the loop, which imports pi's bundle.
-  readonly load?: () => Promise<Loop>;
+  // Loads the loop for the calls to the base URL given, which imports pi's
+  // bundle.
+  readonly load?: (baseUrl: string) => Promise<Loop>;
+  // Loads pi's catalogs for the calls to the base URL given.
+  readonly catalogs?: (baseUrl: string) => Promise<Catalogs>;
   // The tab's Web Locks, the page's by default.
   readonly locks?: Locks | undefined;
   // How the assistant asks the base URL for its list of models, through the
@@ -133,7 +145,8 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
-  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
+  const catalogs = options.catalogs ?? loadCatalogs;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, catalogs, load });
   // The notes read which conversation's turn runs only as the store announces
   // a change, once the turns are made.
   const notes = createNotes(core, signal, { running: () => turns.current()?.conversation });
@@ -148,12 +161,14 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     prompt,
     compaction,
     notes,
+    catalogs,
     load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
-  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
+  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, catalogs, load });
+  const thinkingLevels = createThinkingLevels(signal, { deployment, settings, catalogs });
 
-  const assistant = { conversations, skills, models, turns, compaction, notes, deployment, key, openRouterLogin, signal };
+  const assistant = { conversations, skills, models, turns, compaction, notes, thinkingLevels, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

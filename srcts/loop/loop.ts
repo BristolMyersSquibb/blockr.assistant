@@ -25,10 +25,11 @@
 //   call, since it retries none.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter.
-// - It gives pi the thinking level that the deployment's model settings give
-//   the model. Otherwise it gives the level medium, but the level off on Chat
-//   Completions for a model of pi's catalog of OpenAI's models
-//   (thinkingLevel()).
+// - It builds the model of each call from pi's catalogs, which load apart from
+//   the rest of pi, and gives pi the thinking level that they give the call:
+//   the conversation's pick of the level, where it applies to the model, or
+//   else the level that the deployment's model settings give the model, or
+//   else the loop's default (./catalogs.ts).
 // - It hands pi the tools as they are, with each tool's executionMode, and
 //   takes from its caller the system prompt, a transformContext, the message
 //   of the app's and an onPayload.
@@ -128,14 +129,15 @@
 import { context } from "@opentelemetry/api";
 import type { Json } from "@blockr/core";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextContent, ThinkingLevel as PiThinkingLevel } from "@earendil-works/pi-ai";
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
-import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
-import type { Message, MessageId, Part, ToolCallPart } from "../state/index.ts";
+import type { Message, MessageId, Part, ThinkingLevel, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { markBeforeAppMessage } from "./cache.ts";
+import { buildModel, levelOf, loadCatalogParts, PROVIDER } from "./catalogs.ts";
+import type { CallModel, CatalogParts } from "./catalogs.ts";
 import { withFiles } from "./files.ts";
 import { appMessage, callMessages, convertReply, encodeFiles, image, isToolCall, llmMessages, partsOf, reasoningOf, resultsOf, STOPPED } from "./messages.ts";
 import type { Answered, Carried, CarriedFile } from "./messages.ts";
@@ -144,10 +146,6 @@ import type * as vendor from "./vendor.ts";
 
 // The parts of pi that the loop uses, as ./vendor.ts names them.
 export type Pi = typeof vendor;
-
-// The id of the provider through which every call goes. It names no service,
-// since the base URL of a deployment may belong to any.
-export const PROVIDER = "blockr.assistant";
 
 // Where a turn's calls go: a base URL, and the API that it speaks, by pi's
 // name for it, such as "openai-responses".
@@ -162,22 +160,6 @@ export interface Connection {
 // The key that the loop gives pi for a call that carries none, which the
 // loop's fetch takes off the request.
 const NO_KEY = "blockr-assistant-no-key";
-
-// OpenRouter's base URL, as a deployment gives it.
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-// The model that a call talks to, which a turn and a model call of the
-// plugin's own both name: where the call goes, the model's id, and its
-// settings.
-export interface CallModel {
-  readonly connection: Connection;
-  // The id of the model, such as "gpt-5.4".
-  readonly model: string;
-  // The settings that the deployment's model settings give the model, and
-  // those that the base URL's list gives it, where either gives any.
-  readonly settings?: ModelSettings | undefined;
-  readonly listed?: ListedSettings | undefined;
-}
 
 export interface Turn extends CallModel {
   readonly tools: readonly Tool[];
@@ -284,18 +266,12 @@ export interface Loop {
   // however it ends. It rejects where the call cannot go out, as where the
   // credential cannot be read.
   callModel(call: ModelCall): Promise<ModelReply>;
-  // The context window of the model, in tokens, as the loop gives it to pi.
-  contextWindow(model: CallModel): number;
-  // Whether pi's catalog of OpenAI's or of Anthropic's models holds a model
-  // of the id given, whose settings a model of the deployment's model
-  // settings may take through its like.
-  inCatalog(id: string): boolean;
 }
 
-// The loop on the parts of pi given, with the three APIs that the assistant
-// speaks, and the APIs given beside them, by pi's name for each, as a test
-// gives pi's fake API.
-export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams>> = {}): Loop {
+// The loop on the parts of pi given and on its catalogs, with the three APIs
+// that the assistant speaks, and the APIs given beside them, by pi's name for
+// each, as a test gives pi's fake API.
+export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record<string, ProviderStreams>> = {}): Loop {
   const streams: Readonly<Record<string, ProviderStreams>> = {
     "anthropic-messages": pi.anthropicMessages,
     "openai-completions": pi.openaiCompletions,
@@ -303,23 +279,23 @@ export function createLoop(pi: Pi, apis: Readonly<Record<string, ProviderStreams
     ...apis,
   };
   return {
-    run: (turn) => runTurn(pi, streams, turn),
-    callModel: (call) => callModel(pi, streams, call),
-    contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
-    inCatalog: (id) => catalogModel(pi, id) !== undefined,
+    run: (turn) => runTurn(pi, catalogs, streams, turn),
+    callModel: (call) => callModel(pi, catalogs, streams, call),
   };
 }
 
-// The loop, once the page has imported pi's bundle.
+// The loop for the calls to the base URL, once the page has imported pi's
+// bundle and the catalogs for the base URL (./catalogs.ts).
 // The browser imports the bundle once, as the page prepares its first call
 // (../turns/prepare.ts).
-export async function loadLoop(): Promise<Loop> {
-  return createLoop(await import("./vendor.ts"));
+export async function loadLoop(baseUrl: string): Promise<Loop> {
+  const [pi, catalogs] = await Promise.all([import("./vendor.ts"), loadCatalogParts(baseUrl)]);
+  return createLoop(pi, catalogs);
 }
 
 // Runs the turn in its span, invoke_agent.
-function runTurn(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
-  return startAgentSpan(turn, (span) => runAgent(pi, streams, turn, span));
+function runTurn(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn): Promise<void> {
+  return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
 }
 
 // Runs the callback in a span invoke_agent under the context that is active
@@ -335,11 +311,11 @@ function startAgentSpan<T>(call: CallModel, callback: (span: TelemetrySpan) => P
 }
 
 // Runs the turn on pi's agent loop, under the turn's span.
-async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
+async function runAgent(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record<string, ProviderStreams>>, turn: Turn, span: TelemetrySpan): Promise<void> {
   // The context in which the turn's span is active, which the loop can read
   // only before its first await.
   const turnContext = context.active();
-  const model = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
+  const model = buildModel(catalogs, turn);
   const models = modelsAt(pi, streams, turn.connection, model);
 
   // The results that the tools gave, and those that pi gave in place of a
@@ -351,7 +327,7 @@ async function runAgent(pi: Pi, streams: Readonly<Record<string, ProviderStreams
   const tools = turn.tools.map((tool) => agentTool(tool, given, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message: MessageId): Kept | undefined => turn.kept(message);
-  const level = thinkingLevel(pi, turn);
+  const level = piLevel(levelOf(catalogs, turn, model));
   // The content of each file that the user attached, as the turn's calls send
   // it, which the loop encodes once for the turn and drops as the turn ends.
   const encodings = new Map<Blob, Encoded>();
@@ -467,12 +443,12 @@ function modelsAt(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, co
 // settings of a turn's calls: the same model, credential, identity and
 // thinking level. It asks the provider to cache nothing, since no later call
 // starts as this one does, as pi's own CLI asks for its summaries.
-function callModel(pi: Pi, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
+function callModel(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record<string, ProviderStreams>>, call: ModelCall): Promise<ModelReply> {
   return startAgentSpan(call, async (span) => {
-    const model = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+    const model = buildModel(catalogs, call);
     const models = modelsAt(pi, streams, call.connection, model);
     const apiKey = (await call.connection.apiKey()) ?? NO_KEY;
-    const level = thinkingLevel(pi, call);
+    const level = piLevel(levelOf(catalogs, call, model));
     const reply = await models.completeSimple(
       model,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
@@ -501,104 +477,10 @@ function findFailure(reply: AssistantMessage, text: string): string | undefined 
   }
 }
 
-// The model of the id given, at the connection's base URL, in its API,
-// through the plugin's provider. It takes each setting from the first of these
-// that gives it
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
-// 1. The deployment's model settings, which give the model's settings by its
-//    id (../model-settings).
-// 2. The model of pi's catalog of OpenAI's or of Anthropic's models that the
-//    model settings name in like, or else the catalog's model of the same id.
-//    Such a model takes the catalog's settings, such as the thinking that it
-//    takes, which Anthropic's current models refuse in any other form. It
-//    takes the catalog's settings for the API alone where the catalog's model
-//    speaks the connection's API.
-// 3. The base URL's list of models, which may give the model's context window,
-//    its cap for a reply and whether it takes images (../models).
-// 4. Settings that every API takes:
-//    - The model does not reason, so that pi sends no reasoning effort and
-//      asks for no thinking, which a model that does not reason refuses, and
-//      the model reasons as its provider has it, as today's calls leave it
-//      to.
-//    - It takes images, so that the plots of inspect_results reach the model,
-//      as today's assistant sends them to every model.
-//    - Its context window holds 128,000 tokens, as gpt-4o's does, and each
-//      call asks for up to 16,384 tokens for its reply, the most that gpt-4o
-//      takes. The cap goes out with every call, and pi lowers it only as the
-//      input nears the window.
-//    - Its cost is unknown, so pi counts none.
-//
-// A model whose id starts with anthropic/, on OpenRouter's Chat Completions,
-// also takes pi's compat with Anthropic's format of cache marks.
-// Through OpenRouter, Anthropic's cache keeps only what a call marks
-// (https://openrouter.ai/docs/features/prompt-caching), and pi marks the
-// calls of such a model only where its provider is named openrouter.
-function buildModel(pi: Pi, id: string, connection: Connection, given: ModelSettings = {}, listed: ListedSettings = {}): Model<Api> {
-  const at = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
-  const known = catalogModel(pi, given.like ?? id);
-  // The catalog's headers belong to the catalog's provider, so they go.
-  const base: Model<Api> =
-    known === undefined
-      ? {
-          ...at,
-          name: id,
-          reasoning: false,
-          input: includeImages(["text", "image"], listed.images),
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: listed.contextWindow ?? 128_000,
-          maxTokens: listed.maxTokens ?? 16_384,
-        }
-      : { ...known, ...at, headers: undefined, compat: known.api === connection.api ? known.compat : undefined };
-  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
-  return {
-    ...base,
-    reasoning: given.reasoning ?? base.reasoning,
-    input: includeImages(base.input, given.images),
-    contextWindow: given.contextWindow ?? base.contextWindow,
-    maxTokens: given.maxTokens ?? base.maxTokens,
-    ...(anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" as const } } : {}),
-  };
-}
-
-// The inputs of a model, with images or without them, as the setting given
-// says, or as they are where it says nothing.
-function includeImages(input: Model<Api>["input"], images: boolean | undefined): Model<Api>["input"] {
-  if (images === undefined) return input;
-  const others = input.filter((kind) => kind !== "image");
-  return images ? [...others, "image"] : others;
-}
-
-// The model of the id given in pi's catalog of OpenAI's or of Anthropic's
-// models, or undefined.
-function catalogModel(pi: Pi, id: string): Model<Api> | undefined {
-  for (const catalog of [pi.ANTHROPIC_MODELS, pi.OPENAI_MODELS] as readonly Readonly<Record<string, Model<Api>>>[]) {
-    if (Object.hasOwn(catalog, id)) return catalog[id];
-  }
-  return undefined;
-}
-
-// The thinking level of a call to the model, a turn's or a model call of the
-// plugin's own, or undefined for the level off, which pi takes as no level
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
-// - The level that the deployment's model settings give the model, where they
-//   give one (../model-settings).
-// - Otherwise, on OpenAI's Chat Completions API, a model of pi's catalog of
-//   OpenAI's models takes the level off. There OpenAI refuses function tools
-//   with any reasoning effort but none for the GPT-5.4 models, and documents
-//   no list of the models that it refuses them for (blockr.assistant#260).
-//   The loop finds the model in the catalog as buildModel() does, by the like
-//   that the deployment's model settings give it, or else by its id.
-// - Every other call takes the level medium.
-// For the level off, pi sends the effort that the catalog gives the model for
-// off, which is none for the GPT-5.4 models. Where the catalog gives the model
-// no effort for off, as for gpt-5 and o3, pi sends no effort at all, and the
-// model reasons as OpenAI has it. A level that the model does not take, pi
-// moves to the next level up that it takes, or else to the next one down.
-function thinkingLevel(pi: Pi, call: CallModel): ThinkingLevel | undefined {
-  const given = call.settings?.thinkingLevel;
-  if (given !== undefined) return given === "off" ? undefined : given;
-  const openai = Object.hasOwn(pi.OPENAI_MODELS, call.settings?.like ?? call.model);
-  return call.connection.api === "openai-completions" && openai ? undefined : "medium";
+// The level that the loop gives pi for the level given: none for the level
+// off, which pi takes as no level, and the level itself otherwise.
+function piLevel(level: ThinkingLevel): PiThinkingLevel | undefined {
+  return level === "off" ? undefined : level;
 }
 
 // The page's fetch, but for the placeholder of a call that carries no key,

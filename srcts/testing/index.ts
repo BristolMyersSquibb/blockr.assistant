@@ -14,20 +14,29 @@
 // app that names no file. R's reply carries the conditions that the test
 // gives under the request's name, and none unless it gives some.
 // The loop runs on pi's fake provider, whose replies a test scripts, so that
-// the tests call no model.
+// the tests call no model, and on pi's catalogs, with those of both gateways
+// (../loop/catalogs.ts).
 // A test records the spans that core and the assistant start in memory, with
 // recordSpans() (./spans.ts).
 
 import type { Condition, CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCore, StubCoreOptions } from "@blockr/core/stubs";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
 import { onTestFinished } from "vitest";
-import { createLoop, PROVIDER } from "../loop/index.ts";
-import type { Connection, Loop } from "../loop/index.ts";
-// The parts of pi, as the page's bundle of pi holds them.
+import { createCatalogs, createLoop, PROVIDER } from "../loop/index.ts";
+import type { CatalogParts, Catalogs, Connection, Loop } from "../loop/index.ts";
+// The parts of pi, as the page's bundle of pi holds them, and pi's catalogs,
+// as the page's files of them hold them.
 // eslint-disable-next-line no-restricted-imports
 import * as pi from "../loop/vendor.ts";
+// eslint-disable-next-line no-restricted-imports
+import * as catalogs from "../loop/vendor-catalogs.ts";
+// eslint-disable-next-line no-restricted-imports
+import { OPENROUTER_MODELS } from "../loop/vendor-openrouter.ts";
+// eslint-disable-next-line no-restricted-imports
+import { VERCEL_AI_GATEWAY_MODELS } from "../loop/vendor-vercel.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
@@ -37,6 +46,23 @@ import type { Tool, ToolResult } from "../tools/index.ts";
 import { reloadPageKey } from "../visitor-key/index.ts";
 
 export { recordSpans } from "./spans.ts";
+
+// Pi's catalogs, with those of OpenRouter's models and of the models of
+// Vercel's AI Gateway under the hosts of the gateways' base URLs, as the page
+// holds them once it loaded each.
+export const CATALOG_PARTS: CatalogParts = {
+  pi: catalogs,
+  gateways: new Map<string, Readonly<Record<string, Model<Api>>>>([
+    ["openrouter.ai", OPENROUTER_MODELS],
+    ["ai-gateway.vercel.sh", VERCEL_AI_GATEWAY_MODELS],
+  ]),
+};
+
+// The catalogs on those parts, as the calls and the footer load them for any
+// base URL.
+export function testCatalogs(): Promise<Catalogs> {
+  return Promise.resolve(createCatalogs(CATALOG_PARTS));
+}
 export type { Recorded } from "./spans.ts";
 
 // A request as the mock of the APIs and of the lists of models recorded it,
@@ -225,7 +251,7 @@ export function fauxLoop(options: FauxOptions = {}): FauxLoop {
   const key = "key" in options ? options.key : "test-key";
   return {
     faux,
-    loop: createLoop(pi, { [FAUX_API]: faux }),
+    loop: createLoop(pi, CATALOG_PARTS, { [FAUX_API]: faux }),
     connection: { baseUrl: "https://faux.invalid/v1", api: FAUX_API, apiKey: () => Promise.resolve(key) },
   };
 }

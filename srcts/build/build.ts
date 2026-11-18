@@ -13,7 +13,8 @@
 // - The build of the module takes the vendor check that blockr.core ships
 //   beside the preset. It fails the build where the module's bundle would
 //   hold code from node_modules, as where a file of the assistant imports pi
-//   other than through srcts/loop/vendor.ts.
+//   other than through srcts/loop/vendor.ts or the files of pi's catalogs
+//   beside it.
 // - The packages that the assistant bundles from other projects are those
 //   that package.json lists in `dependencies`, pi's two, as blockr.dock's
 //   build takes the dock's. Of them, srcts/loop/vendor.ts names the parts
@@ -28,6 +29,14 @@
 //   that pi makes stays an import of the one copy on the page. The loop's
 //   dynamic import of srcts/loop/vendor.ts becomes an import of that file,
 //   beside the module, where R serves it too.
+// - Pi's catalogs of models are vendored the same way, apart from the rest of
+//   pi, since the chat reads them as it first mounts: those of OpenAI's and of
+//   Anthropic's models, with pi's two functions of thinking levels, from
+//   srcts/loop/vendor-catalogs.ts into catalogs-<hash>.js, and those of
+//   OpenRouter's models and of the models of Vercel's AI Gateway, from
+//   srcts/loop/vendor-openrouter.ts and srcts/loop/vendor-vercel.ts into
+//   catalog-openrouter-<hash>.js and catalog-vercel-<hash>.js, which the page
+//   loads only where the base URL is the gateway's.
 // - The chat's libraries, assistant-ui, its Markdown and remark-gfm, are
 //   vendored the same way: srcts/chat/vendor.ts names the parts that the chat
 //   draws with, which are bundled, minified, into chat-<hash>.js. The chat
@@ -186,9 +195,12 @@ async function openRouterPage(root: string, out: string): Promise<string[]> {
 
 // The files that name the parts of other projects that the client uses, each
 // with the start of the name of the file that bundles them: pi's parts, which
-// the loop uses, and the libraries that the chat draws with.
+// the loop uses, pi's catalogs, and the libraries that the chat draws with.
 const VENDORED: ReadonlyMap<string, string> = new Map([
   ["pi", join("srcts", "loop", "vendor.ts")],
+  ["catalogs", join("srcts", "loop", "vendor-catalogs.ts")],
+  ["catalog-openrouter", join("srcts", "loop", "vendor-openrouter.ts")],
+  ["catalog-vercel", join("srcts", "loop", "vendor-vercel.ts")],
   ["chat", join("srcts", "chat", "vendor.ts")],
 ]);
 

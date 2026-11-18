@@ -203,11 +203,12 @@ describe("the conversations under a cap of 0", () => {
   test("change the memory alone, with the checks of the commands", async () => {
     const { core, conversations } = await opened({ conversations: { c1: three } }, 0);
 
-    await conversations.addConversation("c2", "New conversation", "gpt-5.4");
+    await conversations.addConversation("c2", "New conversation", { model: "gpt-5.4", thinkingLevel: "low" });
     await conversations.addMessage("c2", message("u1", "user"));
     await conversations.renameConversation("c2", "Plots");
     await conversations.addUsage("c2", 100, 20, 130);
     await conversations.addUsage("c2", 40, 8);
+    await conversations.setThinkingLevel("c2", "high");
     await conversations.compactConversation("c1", message("s1", "summary"), "u3");
     await conversations.removeConversation("c1");
 
@@ -216,13 +217,17 @@ describe("the conversations under a cap of 0", () => {
     expect(conversations.get("c2")).toMatchObject({
       title: "Plots",
       model: "gpt-5.4",
+      thinking_level: "high",
       usage: { input: 140, output: 28, last: 130 },
       updated: "2026-11-16T08:00:00.000Z",
     });
+    await conversations.setThinkingLevel("c2", null);
+    expect(conversations.get("c2")).not.toHaveProperty("thinking_level");
     expect(ids(conversations.get("c2"))).toEqual(["u1"]);
     await expect(conversations.addConversation("c2", "Again")).rejects.toThrow(/holds a conversation "c2" already/);
     await expect(conversations.addMessage("c2", message("u1", "user"))).rejects.toThrow(/holds a message "u1" already/);
     await expect(conversations.setModel("c9", null)).rejects.toThrow(/holds no conversation "c9"/);
+    await expect(conversations.setThinkingLevel("c9", "high")).rejects.toThrow(/holds no conversation "c9"/);
   });
 });
 

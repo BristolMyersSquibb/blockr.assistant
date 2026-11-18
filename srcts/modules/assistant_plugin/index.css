@@ -1074,9 +1074,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 
 /*
  * The footer, one row under the message field: the button of the drawer and
- * the pick of the model at its start, the meter at its end. The pick shrinks,
- * and cuts the model's name, before the meter does, so that the row fits a
- * rail.
+ * the picks of the model and of the thinking level at its start, the meter at
+ * its end. The picks shrink, and cut the model's name, before the meter does,
+ * so that the row fits a rail.
  */
 .blockr-assistant-footer {
   display: flex;
@@ -1129,56 +1129,37 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex: 0 1 auto;
 }
 
-.blockr-assistant-model-select {
-  min-width: 0;
-  max-width: 100%;
-  height: 24px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.blockr-assistant-model-select:hover {
-  border-color: var(--blockr-assistant-border);
-  color: var(--blockr-assistant-text);
-}
-
 /*
- * Where the browser lets a page style a select, its list takes the look of
- * the chat's dialogs, in the top layer, and otherwise the browser draws its
- * own.
+ * The picks of the model and of the thinking level, which core's select draws
+ * in core's theme, at the height of the footer's row and in its type. Each
+ * shrinks before the meter does.
  */
-@supports (appearance: base-select) {
-  .blockr-assistant-model-select,
-  .blockr-assistant-model-select::picker(select) {
-    appearance: base-select;
-  }
+.blockr-assistant-pick {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 
-  .blockr-assistant-model-select::picker(select) {
-    padding: 4px;
-    border: 1px solid var(--blockr-assistant-border);
-    border-radius: var(--blockr-assistant-radius-sm);
-    background: var(--blockr-assistant-bg-raised);
-    box-shadow:
-      0 4px 6px -1px rgb(0 0 0 / 0.1),
-      0 2px 4px -2px rgb(0 0 0 / 0.1);
-    color: var(--blockr-assistant-text);
-  }
+.blockr-assistant-pick-model {
+  width: 14rem;
+}
 
-  .blockr-assistant-model-select option {
-    padding: 3px 8px;
-    border-radius: var(--blockr-assistant-radius-sm);
-    font-size: 12px;
-  }
+.blockr-assistant-pick-level {
+  width: 7.5rem;
+}
 
-  .blockr-assistant-model-select option:hover {
-    background: var(--blockr-assistant-bg-subtle);
-  }
+.blockr-assistant-footer .blockr-assistant-pick [role="group"] {
+  min-height: 24px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.blockr-assistant-footer .blockr-assistant-pick input {
+  font-size: 12px;
+}
+
+/* Core's select rings its whole field while its text field holds the focus. */
+.blockr-assistant-footer .blockr-assistant-pick input:focus-visible {
+  outline: none;
 }
 
 .blockr-assistant-meter {

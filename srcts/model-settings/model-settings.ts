@@ -27,11 +27,8 @@ import type { CoreApi, Json } from "@blockr/core";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import { failureMessage, sendUntilReplied } from "../requests/index.ts";
-
-// A thinking level of pi's, by its name.
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-
-const LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+import { THINKING_LEVELS } from "../state/index.ts";
+import type { ThinkingLevel } from "../state/index.ts";
 
 // A model's settings, each of which is undefined where its source gives none.
 export interface ModelSettings {
@@ -169,7 +166,7 @@ function text(id: string, name: string, value: Json): string {
 
 function level(id: string, name: string, value: Json): ThinkingLevel {
   const given = one(value);
-  const found = LEVELS.find((known) => known === given);
+  const found = THINKING_LEVELS.find((known) => known === given);
   if (found !== undefined) return found;
   throw refused(id, name, value, "off, minimal, low, medium, high, xhigh or max");
 }

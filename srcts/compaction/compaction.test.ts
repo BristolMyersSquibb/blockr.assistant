@@ -23,7 +23,7 @@ import type { Offered } from "../models/index.ts";
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import { heldError } from "../notifications/index.ts";
 import type { AssistantState, Conversation, Message, Role } from "../state/index.ts";
-import { FAUX_API, fauxLoop, recordSpans } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, recordSpans, testCatalogs } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import { createCompaction } from "./compaction.ts";
@@ -114,6 +114,7 @@ async function opened(options: OpenOptions) {
     },
     settings: { checked: () => Promise.resolve(new Map([["faux-1", { contextWindow: WINDOW }]])) },
     key: createVisitorKey(),
+    catalogs: testCatalogs,
     load: () => Promise.resolve(loop),
   };
   const compaction = createCompaction(stubbed.core, controller.signal, { conversations, ...calls });

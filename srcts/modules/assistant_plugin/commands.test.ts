@@ -75,6 +75,7 @@ describe("the assistant's commands", () => {
       "blockr.assistant-compact_conversation",
       "blockr.assistant-add_usage",
       "blockr.assistant-set_model",
+      "blockr.assistant-set_thinking_level",
     ]);
 
     const fresh = await stubCore({
@@ -90,6 +91,8 @@ describe("the assistant's commands", () => {
 
     await core.commands.run("blockr.assistant-add_conversation", { id: "c2", title: "New conversation" });
     await core.commands.run("blockr.assistant-add_conversation", { id: "c3", title: "Plots", model: "gpt-5.4" });
+    await core.commands.run("blockr.assistant-add_conversation", { id: "c4", title: "Joins", model: null, thinking_level: "high" });
+    await core.commands.run("blockr.assistant-add_conversation", { id: "c5", title: "Maps", thinking_level: null });
 
     expect(heldIn(core, "c2")).toEqual({
       title: "New conversation",
@@ -99,6 +102,9 @@ describe("the assistant's commands", () => {
       model: null,
     });
     expect(heldIn(core, "c3")?.model).toBe("gpt-5.4");
+    expect(heldIn(core, "c4")).toMatchObject({ model: null, thinking_level: "high" });
+    expect(heldIn(core, "c5")).not.toHaveProperty("thinking_level");
+    expect(core.commands.preflight("blockr.assistant-add_conversation", { id: "c6", title: "Odd", thinking_level: "extreme" })).toBe(false);
     expect(core.commands.preflight("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).toBe(false);
     await expect(core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).rejects.toThrow(
       /fails its preflight/,
@@ -116,6 +122,24 @@ describe("the assistant's commands", () => {
 
     await core.commands.run("blockr.assistant-set_model", { conversation: "c1", model: null });
     expect(heldIn(core, "c1")?.model).toBeNull();
+  });
+
+  test("set_thinking_level sets the conversation's pick of the level, or removes it with null, with no undo step", async () => {
+    const core = await started();
+
+    await core.commands.run("blockr.assistant-set_thinking_level", { conversation: "c1", thinking_level: "high" });
+    expect(heldIn(core, "c1")?.thinking_level).toBe("high");
+    await core.commands.run("blockr.assistant-set_thinking_level", { conversation: "c1", thinking_level: "low" });
+    expect(heldIn(core, "c1")?.thinking_level).toBe("low");
+    expect(core.store.canUndo()).toBe(false);
+
+    await core.commands.run("blockr.assistant-set_thinking_level", { conversation: "c1", thinking_level: null });
+    expect(heldIn(core, "c1")).not.toHaveProperty("thinking_level");
+    await core.commands.run("blockr.assistant-set_thinking_level", { conversation: "c1", thinking_level: null });
+    expect(heldIn(core, "c1")).not.toHaveProperty("thinking_level");
+
+    expect(core.commands.preflight("blockr.assistant-set_thinking_level", { conversation: "c1", thinking_level: "extreme" })).toBe(false);
+    expect(core.commands.preflight("blockr.assistant-set_thinking_level", { conversation: "gone", thinking_level: "high" })).toBe(false);
   });
 
   test("add_usage without a total, as for a call that titles the conversation, leaves the conversation's last as it was", async () => {
@@ -238,9 +262,11 @@ describe("the assistant's commands", () => {
 
     await core.commands.run("blockr.assistant-add_conversation", { id: "c2", title: "New conversation" });
     await core.commands.run("blockr.assistant-add_message", { conversation: "c2", message: message("u1", "user") });
+    await core.commands.run("blockr.assistant-set_thinking_level", { conversation: "c2", thinking_level: "high" });
     await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" });
 
     expect(Object.keys(stateIn(core).conversations)).toEqual(["c2"]);
+    expect(heldIn(core, "c2")?.thinking_level).toBe("high");
     expect(
       core.commands.preflight("blockr.core-set_plugin_state", {
         plugin: ASSISTANT,

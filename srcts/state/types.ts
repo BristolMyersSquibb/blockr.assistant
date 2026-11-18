@@ -42,7 +42,12 @@ export type Conversation = {
   readonly usage: Usage;
   /** The conversation's pick of the model, such as "gpt-5.4", or null for the default. */
   readonly model: string | null;
+  /** The conversation's pick of the thinking level, which a conversation that nobody picked a level for lacks. */
+  readonly thinking_level?: ThinkingLevel;
 };
+
+/** A thinking level, at which a model reasons, from none to the most. */
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** The tokens that a conversation's calls to the model spent. */
 export type Usage = {

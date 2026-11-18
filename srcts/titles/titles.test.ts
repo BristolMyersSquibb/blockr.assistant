@@ -18,7 +18,7 @@ import { heldError } from "../notifications/index.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { FAUX_API, fauxLoop } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import { buildExcerpt, normalizeTitle, TITLE_PROMPT, titleConversations } from "./titles.ts";
@@ -109,6 +109,7 @@ async function opened(replies: FauxResponseStep[]) {
   const key = createVisitorKey();
   const settings = { checked: () => Promise.resolve(new Map()) };
   const load = () => Promise.resolve(loop);
+  const catalogs = testCatalogs;
   const turns = createTurns(stubbed.core, controller.signal, {
     conversations,
     tools: [],
@@ -120,10 +121,11 @@ async function opened(replies: FauxResponseStep[]) {
     prompt: { system: () => Promise.resolve("You answer questions about a board."), appMessage: () => Promise.resolve("The board holds no block.") },
     compaction: { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     notes: { take: () => Promise.resolve(undefined) },
+    catalogs,
     load,
     locks: undefined,
   });
-  titleConversations(stubbed.core, controller.signal, { conversations, turns, deployment, models, settings, key, load });
+  titleConversations(stubbed.core, controller.signal, { conversations, turns, deployment, models, settings, key, catalogs, load });
   return { ...stubbed, conversations, turns, faux };
 }
 

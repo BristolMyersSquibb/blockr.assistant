@@ -10,7 +10,8 @@
 // - It keeps only what is the screen's alone: which conversation is open,
 //   which local storage keeps (./open.ts), the text typed and not sent,
 //   which assistant-ui's message field holds while the chat is mounted, and
-//   the pick of the model for the next conversation that it adds, below.
+//   the picks of the model and of the thinking level for the next
+//   conversation that it adds, below.
 // - The user's message goes to the conversations and starts a turn
 //   (./send.ts). Sending waits while a turn runs in any conversation. While
 //   the model writes a summary that the user asked for, a turn starts, and
@@ -28,8 +29,8 @@
 //   anywhere in the chat stop the turn, with a summary that the turn waits
 //   for, while a summary that the user asked for goes on.
 // - The footer, under the message field, opens the drawer of conversations,
-//   shows the meter and offers the pick of the model (./footer.tsx,
-//   ./drawer.tsx).
+//   shows the meter and offers the picks of the model and of the thinking
+//   level (./footer.tsx, ./drawer.tsx).
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 //
@@ -41,12 +42,13 @@
 //   drawer, as today's drawer lists no conversation before its first reply.
 // - Deleting the open conversation opens none.
 // Each time it goes from a conversation to none, the chat takes that
-// conversation's pick of the model as the pick for the next conversation that
-// it adds, so that the next conversation goes on with the last pick
+// conversation's picks of the model and of the thinking level as the picks
+// for the next conversation that it adds, so that the next conversation goes
+// on with the last picks
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
-// While no conversation is open, a pick in the footer changes that pick. The
-// chat holds it for the board, so that a mount of the chat again, as when the
-// dock redraws a view, holds it too.
+// While no conversation is open, a pick in the footer changes those picks.
+// The chat holds them for the board, so that a mount of the chat again, as
+// when the dock redraws a view, holds them too.
 //
 // Deleting the conversation whose turn runs takes three steps
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs):
@@ -60,8 +62,9 @@ import type { DragEvent, KeyboardEvent, ReactElement } from "react";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { CoreApi } from "@blockr/core";
 import type { Assistant } from "../assistant/index.ts";
+import type { Picks } from "../conversations/index.ts";
 import { isNote, joinText } from "../state/index.ts";
-import type { ConversationId, Message } from "../state/index.ts";
+import type { Conversation, ConversationId, Message, ThinkingLevel } from "../state/index.ts";
 import type { Turns } from "../turns/index.ts";
 import { keyOf } from "../visitor-key/index.ts";
 import { addFiles, attachedOf, attachmentAdapter } from "./attach.ts";
@@ -72,7 +75,7 @@ import { Drawer } from "./drawer.tsx";
 import { FileDialog } from "./files.tsx";
 import type { OpenedFile } from "./files.tsx";
 import { Footer } from "./footer.tsx";
-import { useCompacting, useConversations, useDeployment, useOffered, useOpenRouterLogin, useRunning, useVisitorKey } from "./hooks.ts";
+import { useCompacting, useConversations, useDeployment, useOffered, useOpenRouterLogin, useRunning, useThinkingLevels, useVisitorKey } from "./hooks.ts";
 import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
@@ -88,11 +91,12 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const offered = useOffered(models);
+  const levelsOf = useThinkingLevels(assistant.thinkingLevels);
   const deployment = useDeployment(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
   const openRouterLogin = useOpenRouterLogin(assistant.openRouterLogin);
   const [chosen, setChosen] = useState(storedConversation);
-  const [nextPick, setNextPick] = useNextPick(assistant);
+  const [nextPicks, setNextPicks] = useNextPicks(assistant);
   const [drawer, setDrawer] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const [link, setLink] = useState<string | undefined>(undefined);
@@ -138,9 +142,9 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const send = useCallback(
     (text: string, files: readonly Attached[] = []): Promise<void> => {
       if ((text.trim() === "" && files.length === 0) || turns.current() !== undefined || noKey) return Promise.resolve();
-      return sendMessage(assistant, open, text, files, nextPick, openConversation);
+      return sendMessage(assistant, open, text, files, nextPicks, openConversation);
     },
-    [assistant, nextPick, noKey, open, openConversation, turns],
+    [assistant, nextPicks, noKey, open, openConversation, turns],
   );
 
   const logError = useCallback(
@@ -150,17 +154,22 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     [core],
   );
 
-  // A pick of the model sets the open conversation's, which applies from its
-  // next turn, or the pick for the next conversation where none is open.
+  // A pick of the model or of the thinking level sets the open
+  // conversation's, which applies from its next turn, or the pick for the next
+  // conversation where none is open.
   const pick = (model: string): void => {
-    if (open === undefined) setNextPick(model);
+    if (open === undefined) setNextPicks({ ...nextPicks, model });
     else conversations.setModel(open, model).catch(logError);
   };
+  const pickLevel = (level: ThinkingLevel): void => {
+    if (open === undefined) setNextPicks({ ...nextPicks, thinkingLevel: level });
+    else conversations.setThinkingLevel(open, level).catch(logError);
+  };
 
-  // The drawer's New opens the greeting, and takes the pick of the conversation
-  // that was open for the next one.
+  // The drawer's New opens the greeting, and takes the picks of the
+  // conversation that was open for the next one.
   const startNew = (): void => {
-    if (conversation !== undefined) setNextPick(conversation.model);
+    if (conversation !== undefined) setNextPicks(picksOf(conversation));
     openConversation(undefined);
     setDrawer(false);
   };
@@ -179,7 +188,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       logError(error);
       throw error;
     }
-    if (wasOpen) setNextPick(removed?.model ?? null);
+    if (wasOpen) setNextPicks(removed === undefined ? NO_PICKS : picksOf(removed));
   };
 
   const runtime = useExternalStoreRuntime({
@@ -260,10 +269,11 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
   const escape = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== "Escape" || event.defaultPrevented || running === undefined) return;
-    // Escape in the drawer closes the drawer alone, which takes it first,
+    // Escape in the drawer closes the drawer alone, which takes it first, and
     // Escape in the dialog before a link or in that of a file closes the
-    // dialog alone, and Escape in the pick of the model closes its list.
-    if (event.target instanceof Element && event.target.closest("dialog, select") !== null) return;
+    // dialog alone. Escape in a pick of the footer closes its list alone,
+    // since the pick prevents the default.
+    if (event.target instanceof Element && event.target.closest("dialog") !== null) return;
     event.preventDefault();
     turns.stop();
   };
@@ -303,9 +313,11 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
               <Composer />
               <Footer
                 usage={conversation?.usage}
-                pick={conversation === undefined ? nextPick : conversation.model}
+                picks={conversation === undefined ? nextPicks : picksOf(conversation)}
                 offered={offered}
+                levelsOf={levelsOf}
                 onPick={pick}
+                onPickLevel={pickLevel}
                 opener={opener}
                 onDrawer={() => {
                   setDrawer(true);
@@ -348,22 +360,29 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 
 const NO_MESSAGES: readonly Message[] = [];
 
-// The pick of the model for the next conversation that the chat adds while no
-// conversation is open, by the assistant of each board, so that a mount of
-// the chat again holds it while the board stays open. It is null, for the
-// default, until the user picks.
-const nextPicks = new WeakMap<Assistant, string | null>();
+// The picks of the next conversation that the chat adds while no conversation
+// is open, by the assistant of each board, so that a mount of the chat again
+// holds them while the board stays open. They are the default model and no
+// thinking level until the user picks.
+const heldPicks = new WeakMap<Assistant, Picks>();
 
-function useNextPick(assistant: Assistant): readonly [string | null, (pick: string | null) => void] {
-  const [nextPick, setPick] = useState(() => nextPicks.get(assistant) ?? null);
-  const setNextPick = useCallback(
-    (pick: string | null) => {
-      nextPicks.set(assistant, pick);
-      setPick(pick);
+const NO_PICKS: Picks = { model: null };
+
+function useNextPicks(assistant: Assistant): readonly [Picks, (picks: Picks) => void] {
+  const [nextPicks, setPicks] = useState(() => heldPicks.get(assistant) ?? NO_PICKS);
+  const setNextPicks = useCallback(
+    (picks: Picks) => {
+      heldPicks.set(assistant, picks);
+      setPicks(picks);
     },
     [assistant],
   );
-  return [nextPick, setNextPick];
+  return [nextPicks, setNextPicks];
+}
+
+// The picks of a conversation.
+function picksOf(conversation: Conversation): Picks {
+  return { model: conversation.model, thinkingLevel: conversation.thinking_level };
 }
 
 // Resolves once no turn runs in the conversation, as once the turn that the

@@ -11,7 +11,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, tes
 import { openAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
 import type { Credential } from "../deployment/index.ts";
-import { ENDED } from "../loop/index.ts";
+import { ENDED, loadCatalogs } from "../loop/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistantModule from "../modules/assistant_plugin/index.tsx";
@@ -31,10 +31,10 @@ const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
 const KEY = "blockr.assistant-open_conversation";
 
-// The file imports the chat's libraries once, before its tests: the first
-// import of libraries that large can take longer than a test's time on a busy
-// machine.
-beforeAll(() => loadLibraries(), 60_000);
+// The file imports the chat's libraries and pi's catalogs once, before its
+// tests: the first import of libraries that large can take longer than a
+// test's time on a busy machine.
+beforeAll(() => Promise.all([loadLibraries(), loadCatalogs("https://faux.invalid/v1")]), 60_000);
 
 beforeEach(() => {
   localStorage.clear();
@@ -222,13 +222,40 @@ function inState(assistant: Assistant): AssistantState["conversations"] {
   return assistant.conversations.all();
 }
 
-// Picks the option of the value given in the select, as the user would.
-function choose(select: Element | null, value: string): void {
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Nothing to choose from.");
-  act(() => {
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+// The text field of the footer's select that the label names, or null where
+// the footer offers no such pick.
+function pickField(el: HTMLElement, label: string): HTMLInputElement | null {
+  return el.querySelector<HTMLInputElement>(`.blockr-assistant-footer input[aria-label="${label}"]`);
+}
+
+// The options of the select's list, which the field names while the list is
+// open, as React Aria draws the list at the end of the page's body.
+function optionsOf(field: HTMLInputElement): HTMLElement[] {
+  const id = field.getAttribute("aria-controls");
+  const list = id === null ? null : document.getElementById(id);
+  return [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
+}
+
+// The texts of the options that the select offers, whose list it opens and
+// closes again.
+async function offeredBy(field: HTMLInputElement | null): Promise<string[]> {
+  if (field === null) throw new Error("The footer offers no such pick.");
+  click(field);
+  await settle();
+  const texts = optionsOf(field).map((option) => option.textContent);
+  press(field, "Escape");
+  await settle();
+  return texts;
+}
+
+// Opens the select's list and picks the option of the text given, as the user
+// would.
+async function choose(field: HTMLInputElement | null, text: string): Promise<void> {
+  if (field === null) throw new Error("The footer offers no such pick.");
+  click(field);
+  await settle();
+  click(optionsOf(field).find((option) => option.textContent === text) ?? null);
+  await settle();
 }
 
 // The footer's button that opens the drawer of conversations.
@@ -842,22 +869,20 @@ describe("the chat's footer", () => {
     localStorage.setItem(KEY, "c1");
     const { el, assistant, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } }, models: ["faux-1", "faux-2"] });
 
-    const select = el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select");
-    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual(["faux-1", "faux-2"]);
-    expect(select?.value).toBe("faux-1");
+    expect(await offeredBy(pickField(el, "Model"))).toEqual(["faux-1", "faux-2"]);
+    expect(pickField(el, "Model")?.value).toBe("faux-1");
 
-    choose(select, "faux-2");
-    await settle();
+    await choose(pickField(el, "Model"), "faux-2");
 
     expect(inState(assistant).c1?.model).toBe("faux-2");
     expect(core.store.canUndo()).toBe(false);
-    expect(el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select")?.value).toBe("faux-2");
+    expect(pickField(el, "Model")?.value).toBe("faux-2");
   });
 
   test("gives a pick made while no conversation is open to the conversation that the first message adds", async () => {
     const { el, assistant } = await chat({ models: ["faux-1", "faux-2"] });
 
-    choose(el.querySelector(".blockr-assistant-model-select"), "faux-2");
+    await choose(pickField(el, "Model"), "faux-2");
     type(el, "How many blocks?");
     press(field(el), "Enter");
     await until(() => Object.keys(inState(assistant)).length === 1, "the conversation");
@@ -872,7 +897,77 @@ describe("the chat's footer", () => {
     expect(el.querySelector(".blockr-assistant-model-unoffered s")?.textContent).toBe("gpt-4o");
     expect(el.querySelector(".blockr-assistant-model-unoffered")?.getAttribute("title")).toBe("The app does not offer gpt-4o, so the calls go to faux-1.");
     expect(el.querySelector(".blockr-assistant-model-name")?.textContent).toBe("faux-1");
-    expect(el.querySelector(".blockr-assistant-model-select")).toBeNull();
+    expect(pickField(el, "Model")).toBeNull();
+  });
+
+  // The test runs a turn and opens a list, which takes a busy machine more
+  // than the five seconds that a test gets by default.
+  test("closes a pick's list on Escape, and leaves the turn that runs to go on, which Escape in the message field stops", { timeout: 15_000 }, async () => {
+    const { el, assistant } = await chat({ models: ["faux-1", "faux-2"], replies: [heldReply("Two blocks.").reply] });
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => assistant.turns.current() !== undefined, "the turn");
+
+    const pick = pickField(el, "Model");
+    if (pick === null) throw new Error("The footer offers no pick of the model.");
+    click(pick);
+    await settle();
+    expect(optionsOf(pick)).toHaveLength(2);
+    press(pick, "Escape");
+    await settle();
+
+    expect(optionsOf(pick)).toHaveLength(0);
+    expect(assistant.turns.current()).toBeDefined();
+    press(field(el), "Escape");
+    await until(() => assistant.turns.current() === undefined, "the turn to end");
+  });
+
+  test("offers the thinking levels that the model of the next turn takes, and a pick sets the open conversation's, with no undo step", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el, assistant, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } }, models: ["gpt-5.4"] });
+
+    expect(await offeredBy(pickField(el, "Thinking level"))).toEqual(["off", "low", "medium", "high", "xhigh"]);
+    expect(pickField(el, "Thinking level")?.value).toBe("medium");
+
+    await choose(pickField(el, "Thinking level"), "high");
+
+    expect(inState(assistant).c1?.thinking_level).toBe("high");
+    expect(core.store.canUndo()).toBe(false);
+    expect(pickField(el, "Thinking level")?.value).toBe("high");
+  });
+
+  test("offers no pick of the level for a model that takes one level or none", async () => {
+    localStorage.setItem(KEY, "c1");
+    const { el } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } }, models: ["faux-1", "gpt-5-pro"] });
+
+    expect(pickField(el, "Model")).not.toBeNull();
+    expect(pickField(el, "Thinking level")).toBeNull();
+    await choose(pickField(el, "Model"), "gpt-5-pro");
+    expect(pickField(el, "Thinking level")).toBeNull();
+  });
+
+  test("lists the levels of the model that the conversation picks, and shows the level that the calls take for a pick that the model does not take", async () => {
+    localStorage.setItem(KEY, "c1");
+    const picked = { ...conversation("Sales", message("u1", "user")), model: "claude-opus-5-5", thinking_level: "off" as const };
+    const { el, assistant } = await chat({ state: { conversations: { c1: picked } }, models: ["gpt-5.4", "claude-opus-5-5"] });
+
+    expect(await offeredBy(pickField(el, "Thinking level"))).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(pickField(el, "Thinking level")?.value).toBe("low");
+    expect(inState(assistant).c1?.thinking_level).toBe("off");
+
+    await choose(pickField(el, "Model"), "gpt-5.4");
+    expect(pickField(el, "Thinking level")?.value).toBe("off");
+  });
+
+  test("gives a pick of the level made while no conversation is open to the conversation that the first message adds", async () => {
+    const { el, assistant } = await chat({ models: ["gpt-5.4"] });
+
+    await choose(pickField(el, "Thinking level"), "low");
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => Object.keys(inState(assistant)).length === 1, "the conversation");
+
+    expect(Object.values(inState(assistant))[0]).toMatchObject({ model: null, thinking_level: "low" });
   });
 });
 
@@ -931,9 +1026,9 @@ describe("the chat's drawer of conversations", () => {
     expect(el.querySelector(".blockr-assistant-user-text")?.textContent).toBe("And the costs?");
   });
 
-  test("starts a conversation from the greeting, with the pick of the one that was open, once the first message is sent", async () => {
+  test("starts a conversation from the greeting, with the picks of the one that was open, once the first message is sent", async () => {
     localStorage.setItem(KEY, "c1");
-    const state: AssistantState = { conversations: { c1: { ...conversation("Sales", message("u1", "user")), model: "faux-2" } } };
+    const state: AssistantState = { conversations: { c1: { ...conversation("Sales", message("u1", "user")), model: "faux-2", thinking_level: "high" } } };
     const { el, assistant } = await chat({ state, models: ["faux-1", "faux-2"] });
 
     const drawer = openDrawer(el);
@@ -944,13 +1039,13 @@ describe("the chat's drawer of conversations", () => {
     expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
     expect(localStorage.getItem(KEY)).toBeNull();
     expect(Object.keys(inState(assistant))).toEqual(["c1"]);
-    expect(el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select")?.value).toBe("faux-2");
+    expect(pickField(el, "Model")?.value).toBe("faux-2");
 
     type(el, "How many blocks?");
     press(field(el), "Enter");
     await until(() => Object.keys(inState(assistant)).length === 2, "the new conversation");
     const added = Object.entries(inState(assistant)).find(([id]) => id !== "c1")?.[1];
-    expect(added).toMatchObject({ title: "New conversation", model: "faux-2" });
+    expect(added).toMatchObject({ title: "New conversation", model: "faux-2", thinking_level: "high" });
   });
 
   test("renames a conversation in its row on Enter, and keeps its title on Escape, with the drawer still open", async () => {

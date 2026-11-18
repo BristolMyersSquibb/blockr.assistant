@@ -42,6 +42,11 @@ export const model: JsonSchema = {
   description: 'The conversation\'s pick of the model, such as "gpt-5.4", or null for the default.',
 };
 
+export const thinkingLevel: JsonSchema = {
+  anyOf: [{ $ref: "#/$defs/ThinkingLevel" }, { type: "null" }],
+  description: 'The conversation\'s pick of the thinking level, such as "high", or null for none.',
+};
+
 export const message: JsonSchema = {
   $ref: "#/$defs/Message",
   description: "The message, which no message of the conversation has the id of.",
