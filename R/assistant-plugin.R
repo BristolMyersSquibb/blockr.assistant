@@ -369,7 +369,7 @@
 #'
 #' @return The constructor `new_assistant_plugin()` returns a `plugin` object,
 #' as [blockr.core::new_plugin()] returns it.
-#' The method of `plugin_requests()` returns the five requests, a list of
+#' The method of `plugin_requests()` returns the six requests, a list of
 #' functions by name.
 #'
 #' @examples
