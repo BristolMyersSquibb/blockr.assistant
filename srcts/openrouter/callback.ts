@@ -1,8 +1,8 @@
-// The script of the page that the login calls back, ./login.html, which the
-// build writes beside the plugin's module, where R serves it with the module
-// (../build). The service of the login sends the login's window to this page,
-// with the code and the state in its query, once the visitor has authorized
-// the app (./login.ts).
+// The script of the page that OpenRouter's login calls back,
+// ./openrouter.html, which the build writes beside the plugin's module, where
+// R serves it with the module (../build). OpenRouter sends the login's window
+// to this page, with the code and the state in its query, once the visitor
+// has authorized the app (./login.ts).
 // The script posts the code and the state on the channel of ./channel.ts,
 // where the page that started the login takes them, and then closes the
 // window. Where the window stays open, the page says that the visitor can

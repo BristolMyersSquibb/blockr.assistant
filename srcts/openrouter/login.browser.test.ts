@@ -4,8 +4,8 @@
 // these steps, as on the page of an app:
 // 1. The login opens its window and sends it to the mock's page for the login.
 // 2. The mock sends the window to the page that the login calls back, which
-//    Vite serves from srcts/login/login.html, as core serves login.html beside
-//    the plugin's module.
+//    Vite serves from srcts/openrouter/openrouter.html, as core serves
+//    openrouter.html beside the plugin's module.
 // 3. That page posts the code on the channel and closes its window.
 // 4. The login exchanges the code at the mock, across origins, as a page
 //    exchanges it at OpenRouter.
@@ -13,13 +13,12 @@
 import { beforeEach, expect, inject, test } from "vitest";
 import type { RecordedRequest } from "../testing/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
-import { CHANNEL, createLogin } from "./index.ts";
-import type { LoginService, OpenWindow } from "./index.ts";
+import { CHANNEL, createOpenRouterLogin } from "./index.ts";
+import type { OpenRouterUrls, OpenWindow } from "./index.ts";
 
 const mock = inject("mockApis");
 
-const SERVICE: LoginService = {
-  name: "OpenRouter",
+const URLS: OpenRouterUrls = {
   baseUrl: `${mock.origin}/openrouter/api/v1`,
   authUrl: `${mock.origin}/openrouter/auth`,
   keysUrl: `${mock.origin}/openrouter/api/v1/auth/keys`,
@@ -60,7 +59,7 @@ function windowsOpened(): { readonly open: OpenWindow; readonly opened: WindowPr
 test("gives the key that the service makes, through a window of its own whose page hands the code back and closes", async () => {
   const key = createVisitorKey();
   const { open, opened } = windowsOpened();
-  const login = createLogin({ key, service: SERVICE, open });
+  const login = createOpenRouterLogin({ key, urls: URLS, open });
 
   login.start();
   await until(() => key.current().kind === "given", "the key");
@@ -69,7 +68,7 @@ test("gives the key that the service makes, through a window of its own whose pa
   expect(login.current()).toEqual({ kind: "idle" });
   const [auth] = await reached("/openrouter/auth");
   expect(auth?.query).toEqual({
-    callback_url: `${location.origin}/srcts/login/login.html`,
+    callback_url: `${location.origin}/srcts/openrouter/openrouter.html`,
     code_challenge: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) as unknown,
     code_challenge_method: "S256",
     state: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/) as unknown,
@@ -87,7 +86,7 @@ test("fails in the service's words where the service refuses the code, whose ref
   // A window that the login sends to the service's page, which this test
   // reads and leaves alone, so that the test calls the login back itself.
   const open: OpenWindow = () => ({ opener: window, location: { replace: (url: string) => (sentTo = url) } }) as unknown as WindowProxy;
-  const login = createLogin({ key, service: SERVICE, open });
+  const login = createOpenRouterLogin({ key, urls: URLS, open });
 
   login.start();
   await until(() => sentTo !== undefined, "the login to send its window");

@@ -1,16 +1,16 @@
 // The hooks through which the chat follows the board, the conversations, the
-// turn that runs, the models offered, the visitor's key and the login, as
-// React's useSyncExternalStore() follows a store. Each source gives the same
-// object until it changes, so the chat draws again only then. The chat also
-// reads what the deployment chose, once the assistant has read it.
+// turn that runs, the models offered, the visitor's key and OpenRouter's
+// login, as React's useSyncExternalStore() follows a store. Each source gives
+// the same object until it changes, so the chat draws again only then. The
+// chat also reads what the deployment chose, once the assistant has read it.
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Board, CoreApi } from "@blockr/core";
 import type { Compaction } from "../compaction/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import type { Deployment } from "../deployment/index.ts";
-import type { Login, LoginState } from "../login/index.ts";
 import type { Models, Offered } from "../models/index.ts";
+import type { OpenRouterLogin, OpenRouterLoginState } from "../openrouter/index.ts";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import type { Running, Turns } from "../turns/index.ts";
 import type { KeyState, VisitorKey } from "../visitor-key/index.ts";
@@ -55,7 +55,7 @@ export function useVisitorKey(key: VisitorKey): KeyState {
   return useSyncExternalStore(subscribe, current);
 }
 
-export function useLogin(login: Login): LoginState {
+export function useOpenRouterLogin(login: OpenRouterLogin): OpenRouterLoginState {
   const subscribe = useCallback((changed: () => void) => login.subscribe(changed), [login]);
   const current = useCallback(() => login.current(), [login]);
   return useSyncExternalStore(subscribe, current);

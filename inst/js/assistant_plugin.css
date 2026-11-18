@@ -745,10 +745,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   font-size: 12px;
   color: var(--blockr-assistant-text-muted);
 }
-.blockr-assistant-key:is([data-asks=refused], [data-asks=lost], [data-login=blocked], [data-login=failed]) .blockr-assistant-key-note {
+.blockr-assistant-key:is([data-asks=refused], [data-asks=lost], [data-openrouter=blocked], [data-openrouter=failed]) .blockr-assistant-key-note {
   color: var(--blockr-assistant-text-danger);
 }
-.blockr-assistant-login {
+.blockr-assistant-openrouter {
   display: block;
   width: 100%;
   min-height: 30px;
@@ -763,10 +763,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   cursor: pointer;
   transition: background var(--blockr-assistant-transition);
 }
-.blockr-assistant-login:hover:not(:disabled) {
+.blockr-assistant-openrouter:hover:not(:disabled) {
   background: var(--blockr-assistant-bg-subtle);
 }
-.blockr-assistant-login:disabled {
+.blockr-assistant-openrouter:disabled {
   opacity: 0.5;
   cursor: default;
 }

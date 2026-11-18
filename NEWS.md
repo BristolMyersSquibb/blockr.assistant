@@ -344,9 +344,9 @@
   which OpenRouter bills to the visitor's credits.
   It runs in a window of its own, so that the app's page keeps what the board
   holds unsaved.
-  OpenRouter sends that window back to the page `js/login.html`, which the
-  package ships beside the plugin's module, and that page hands the login's
-  code to the app's page.
+  OpenRouter sends that window back to the page `js/openrouter.html`, which
+  the package ships beside the plugin's module, and that page hands the
+  login's code to the app's page.
   The plugin exchanges the code for the key, and keeps the key in the page's
   memory, as it keeps a typed key.
   OpenRouter's page labels the key `blockr`, and has it expire after a day.

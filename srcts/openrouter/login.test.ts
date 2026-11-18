@@ -13,10 +13,10 @@ import type { Fetch } from "../models/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
 import { CHANNEL } from "./channel.ts";
-import { createLogin, loginOf, OPENROUTER } from "./login.ts";
-import type { LoginOptions } from "./login.ts";
+import { createOpenRouterLogin, OPENROUTER, openRouterLoginOf } from "./login.ts";
+import type { OpenRouterLoginOptions } from "./login.ts";
 
-const CALLBACK = "https://app.example/blockr.assistant/js/login.html";
+const CALLBACK = "https://app.example/blockr.assistant/js/openrouter.html";
 
 // The channels that the tests post on, which they close after each test.
 const posters: BroadcastChannel[] = [];
@@ -55,12 +55,12 @@ interface Asked {
 // A login of the key given on a secure page, whose windows and exchanges the
 // test reads, with the answer of the service given to each exchange, which
 // gives the key sk-or-login unless given.
-function started(options: { readonly key?: VisitorKey; readonly answer?: Fetch; readonly open?: LoginOptions["open"] } = {}) {
+function started(options: { readonly key?: VisitorKey; readonly answer?: Fetch; readonly open?: OpenRouterLoginOptions["open"] } = {}) {
   const key = options.key ?? createVisitorKey();
   const windows: { readonly url: string; readonly target: string; readonly features: string; readonly opened: Opened }[] = [];
   const asked: Asked[] = [];
   const answer: Fetch = options.answer ?? (() => Promise.resolve(Response.json({ key: "sk-or-login", user_id: "user_1" })));
-  const login = createLogin({
+  const login = createOpenRouterLogin({
     key,
     callbackUrl: CALLBACK,
     secure: true,
@@ -272,8 +272,8 @@ describe("the login", () => {
 
 describe("where the chat offers the login", () => {
   test("at the service's base URL alone, on a page that the browser deems secure", () => {
-    const secure = createLogin({ key: createVisitorKey(), secure: true });
-    const insecure = createLogin({ key: createVisitorKey(), secure: false });
+    const secure = createOpenRouterLogin({ key: createVisitorKey(), secure: true });
+    const insecure = createOpenRouterLogin({ key: createVisitorKey(), secure: false });
 
     expect(secure.offers("https://openrouter.ai/api/v1")).toBe(true);
     expect(secure.offers("https://api.openai.com/v1")).toBe(false);
@@ -286,8 +286,7 @@ describe("the login of a key", () => {
   test("is one login with OpenRouter for each key", () => {
     const key = createVisitorKey();
 
-    expect(loginOf(key)).toBe(loginOf(key));
-    expect(loginOf(key).service).toBe(OPENROUTER);
-    expect(loginOf(createVisitorKey())).not.toBe(loginOf(key));
+    expect(openRouterLoginOf(key)).toBe(openRouterLoginOf(key));
+    expect(openRouterLoginOf(createVisitorKey())).not.toBe(openRouterLoginOf(key));
   });
 });

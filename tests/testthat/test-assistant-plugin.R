@@ -145,11 +145,11 @@ test_that("the package ships the module that it lists for the class", {
   expect_true(nzchar(system.file(module, package = "blockr.assistant")))
 })
 
-test_that("the login's page and its script ship beside the module", {
+test_that("OpenRouter's login page and its script ship beside the module", {
 
   dir <- system.file("js", package = "blockr.assistant")
-  page <- readLines(file.path(dir, "login.html"))
-  script <- regmatches(page, regexpr("login-[0-9a-f]{8}[.]js", page))
+  page <- readLines(file.path(dir, "openrouter.html"))
+  script <- regmatches(page, regexpr("openrouter-[0-9a-f]{8}[.]js", page))
 
   expect_length(script, 1L)
   expect_true(file.exists(file.path(dir, script)))

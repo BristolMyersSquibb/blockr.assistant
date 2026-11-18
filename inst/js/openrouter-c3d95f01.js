@@ -1,7 +1,7 @@
-// srcts/login/channel.ts
-var CHANNEL = "blockr.assistant-login";
+// srcts/openrouter/channel.ts
+var CHANNEL = "blockr.assistant-openrouter";
 
-// srcts/login/callback.ts
+// srcts/openrouter/callback.ts
 var query = new URLSearchParams(location.search);
 var code = query.get("code");
 var state = query.get("state");

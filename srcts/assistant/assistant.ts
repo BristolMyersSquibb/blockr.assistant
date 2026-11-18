@@ -33,7 +33,7 @@
 // and the compaction read the visitor's own key, which the page keeps across
 // boards, and which the chat asks for (../visitor-key). Where the base URL is
 // OpenRouter's, the chat also offers OpenRouter's login, which gives the key,
-// and which the page keeps with the key (../login).
+// and which the page keeps with the key (../openrouter).
 //
 // Once a conversation's first exchange that the model answered ends, the
 // assistant has a model call of its own title the conversation (../titles).
@@ -45,14 +45,14 @@ import { createConversations } from "../conversations/index.ts";
 import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
 import type { Deployment } from "../deployment/index.ts";
-import { loginOf } from "../login/index.ts";
-import type { Login } from "../login/index.ts";
 import { loadLoop } from "../loop/index.ts";
 import type { Loop } from "../loop/index.ts";
 import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
+import { openRouterLoginOf } from "../openrouter/index.ts";
+import type { OpenRouterLogin } from "../openrouter/index.ts";
 import { createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
@@ -75,9 +75,9 @@ export interface Assistant {
   readonly deployment: Promise<Deployment>;
   // The visitor's own key.
   readonly key: VisitorKey;
-  // The login that gives the visitor's key, which the chat offers where the
-  // base URL is the login's.
-  readonly login: Login;
+  // OpenRouter's login, which gives the visitor's key, and which the chat
+  // offers where the base URL is OpenRouter's.
+  readonly openRouterLogin: OpenRouterLogin;
   // The signal that aborts as the next board opens, which ends the assistant.
   readonly signal: AbortSignal;
 }
@@ -95,9 +95,9 @@ export interface AssistantOptions {
   readonly fetch?: Fetch;
   // The visitor's own key, the page's unless given.
   readonly key?: VisitorKey;
-  // The login that gives the visitor's key, the key's login with OpenRouter
-  // unless given.
-  readonly login?: Login;
+  // OpenRouter's login, which gives the visitor's key, the key's own unless
+  // given.
+  readonly openRouterLogin?: OpenRouterLogin;
 }
 
 const opened = new WeakMap<CoreApi, Assistant>();
@@ -119,7 +119,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const key = options.key ?? pageKey();
-  const login = options.login ?? loginOf(key);
+  const openRouterLogin = options.openRouterLogin ?? openRouterLoginOf(key);
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
@@ -139,7 +139,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   });
   titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
 
-  const assistant = { conversations, skills, models, turns, compaction, deployment, key, login, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

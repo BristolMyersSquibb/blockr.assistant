@@ -149,7 +149,8 @@ visitor log in.
 The login runs in a window of its own, so that the app's page stays as it
 was.
 Once the visitor authorizes the app, OpenRouter sends that window to the
-page \code{js/login.html}, which the package ships beside the plugin's module.
+page \code{js/openrouter.html}, which the package ships beside the plugin's
+module.
 That page hands the login's code to the app's page, and closes the window.
 The plugin then exchanges the code for the key, and keeps the key as it
 keeps a typed key.
