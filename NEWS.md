@@ -337,6 +337,21 @@
   and that the key may be wrong, and the chat shows the field again, holding
   the visitor's key.
 
+* Where the app sets no key and its base URL is OpenRouter's,
+  `https://openrouter.ai/api/v1`, the chat also offers OpenRouter's login
+  beside the field for the key (#237).
+  The login gives the page a key on the visitor's own OpenRouter account,
+  which OpenRouter bills to the visitor's credits.
+  It runs in a window of its own, so that the app's page keeps what the board
+  holds unsaved.
+  OpenRouter sends that window back to the page `js/openrouter.html`, which
+  the package ships beside the plugin's module, and that page hands the
+  login's code to the app's page.
+  The plugin exchanges the code for the key, and keeps the key in the page's
+  memory, as it keeps a typed key.
+  OpenRouter's page labels the key `blockr`, and has it expire after a day.
+  The visitor can change both as they authorize the app.
+
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).
   The drawer opens over the chat, in the element that the frontend gives the
@@ -366,6 +381,26 @@
   "New conversation" for the user to rename.
   The command `blockr.assistant-add_usage` takes no `total` for such a call,
   and leaves the conversation's `last` as it was.
+
+* The vignette "Migration notes for app scripts and skills" lists each change
+  that an app script, its deployment and a deployment's skills need, written
+  so that an AI can apply them (#240).
+  It says what takes the place of `new_assistant_extension()`, of its
+  argument `system_prompt` and of `default_system_prompt()`, of the blockr
+  options `chat_function` and `assistant_tools`, and of the board options
+  `llm_model`, `chat_compact_tokens` and `chat_compact_keep`.
+  It also says how a skill names block classes and plugin classes, and where
+  each tool that it names goes.
+
+* The examples in `inst/examples` are back for the new stack (#239).
+  Each builds its board with `new_board()`, with the plugin that
+  `new_assistant_plugin()` makes, and serves it with `serve()`.
+  A comment in each names the blockr options that a deployment sets for the
+  assistant's calls.
+  The examples `empty-board` and `populated-board` run under the frontend that
+  the app's packages give.
+  The example `layout-control` runs under the dock, whose view Workbench
+  places the assistant's panel with `plg()`.
 
 * Before each call to the model, the assistant tells the model what others
   changed in the board's blocks, links and stacks since the conversation's

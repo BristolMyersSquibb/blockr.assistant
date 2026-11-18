@@ -1,0 +1,19 @@
+<!doctype html>
+<!--
+  The page that the assistant's login with OpenRouter calls back, in the
+  login's own window. Its script hands the login's code to the page that
+  started the login, and closes the window. The build writes this page beside
+  the plugin's module, from srcts/openrouter/openrouter.html, with the script
+  of srcts/openrouter/callback.ts bundled under a name of its own.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log in with OpenRouter</title>
+    <script type="module" src="./callback.ts"></script>
+  </head>
+  <body>
+    <p id="note">You can close this window.</p>
+  </body>
+</html>

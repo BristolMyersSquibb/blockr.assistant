@@ -26,10 +26,20 @@ Imports:
     grDevices,
     yaml
 Suggests:
+    blockr.dock (>= 0.2.1),
+    chromote,
+    jsonlite,
+    knitr,
+    quarto,
+    rmarkdown,
+    shinytest2,
     testthat (>= 3.0.0),
+    webfakes,
     withr
 Remotes:
-    BristolMyersSquibb/blockr.core@js-state
+    BristolMyersSquibb/blockr.core@js-state,
+    BristolMyersSquibb/blockr.dock@js-state
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
+VignetteBuilder: quarto
 Config/roxygen2/version: 8.1.0

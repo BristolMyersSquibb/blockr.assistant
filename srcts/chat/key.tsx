@@ -16,9 +16,19 @@
 // its password manager can save the key, where the visitor lets it, and fill
 // it in after a reload or in another tab. The plugin keeps the key in its
 // memory alone, as the visitor gives it (../visitor-key).
+//
+// Where the base URL is OpenRouter's, the field offers OpenRouter's login, in
+// a button above the key (../openrouter):
+// - A click opens the login in a window of its own.
+// - While the login exchanges the code that OpenRouter sent for the key, the
+//   button says so, and takes no click.
+// - Where the browser blocked the login's window, or the exchange failed, the
+//   note says why, until the visitor clicks again.
+// - Once the login gives the key, the field goes, as for a typed key.
 
 import { useId } from "react";
 import type { ReactElement, SubmitEvent } from "react";
+import type { OpenRouterLoginState } from "../openrouter/index.ts";
 import { useChat, useChatActions } from "./context.ts";
 import type { KeyField } from "./context.ts";
 
@@ -33,7 +43,7 @@ export function KeyForm(): ReactElement | null {
 function Field({ field }: { readonly field: KeyField }): ReactElement {
   const { giveKey } = useChatActions();
   const note = useId();
-  const { state } = field;
+  const { state, openRouterLogin } = field;
 
   const submit = (event: SubmitEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -43,10 +53,11 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
   };
 
   return (
-    <form className="blockr-assistant-key" data-asks={state.kind} onSubmit={submit}>
-      <p id={note} className="blockr-assistant-key-note" role={state.kind === "missing" ? undefined : "alert"}>
+    <form className="blockr-assistant-key" data-asks={state.kind} data-openrouter={openRouterLogin?.kind} onSubmit={submit}>
+      <p id={note} className="blockr-assistant-key-note" role={alerts(field) ? "alert" : undefined}>
         {noteOf(field)}
       </p>
+      {openRouterLogin === undefined ? null : <OpenRouterButton login={openRouterLogin} />}
       <div className="blockr-assistant-key-field">
         <input type="text" name="username" value={field.host} autoComplete="username" readOnly hidden />
         <input
@@ -65,13 +76,36 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
   );
 }
 
-// What the field says of why the chat asks for a key.
-export function noteOf({ state, host }: KeyField): string {
+function OpenRouterButton({ login }: { readonly login: OpenRouterLoginState }): ReactElement {
+  const { logInWithOpenRouter } = useChatActions();
+  const exchanging = login.kind === "exchanging";
+  return (
+    <button type="button" className="blockr-assistant-openrouter" disabled={exchanging} onClick={logInWithOpenRouter}>
+      {exchanging ? "Logging in…" : "Log in with OpenRouter"}
+    </button>
+  );
+}
+
+// Whether the note says that something failed, so that a screen reader reads
+// it at once.
+function alerts({ state, openRouterLogin }: KeyField): boolean {
+  return state.kind !== "missing" || openRouterLogin?.kind === "blocked" || openRouterLogin?.kind === "failed";
+}
+
+// What the field says of why the chat asks for a key, or of why OpenRouter's
+// login failed.
+export function noteOf({ state, host, openRouterLogin }: KeyField): string {
+  if (openRouterLogin?.kind === "blocked") return "The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.";
+  if (openRouterLogin?.kind === "failed") return `${openRouterLogin.reason} Log in again, or enter your API key.`;
   switch (state.kind) {
     case "missing":
-      return `Enter your API key for ${host}. The assistant keeps it only until the page reloads.`;
+      return openRouterLogin === undefined
+        ? `Enter your API key for ${host}. The assistant keeps it only until the page reloads.`
+        : `Log in with OpenRouter, or enter your API key for ${host}. The assistant keeps the key only until the page reloads.`;
     case "refused":
-      return `The server at ${host} refused your key. Enter another one.`;
+      return openRouterLogin === undefined
+        ? `The server at ${host} refused your key. Enter another one.`
+        : `The server at ${host} refused your key. Log in with OpenRouter, or enter another key.`;
     case "lost":
       return `The connection to ${host} was lost, and your key may be wrong. Change it, or send your message again.`;
   }

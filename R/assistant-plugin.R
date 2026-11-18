@@ -111,6 +111,26 @@
 #' Where the connection was lost and the key may be wrong, the chat shows the
 #' field for the key again, holding the key.
 #'
+#' Where the base URL is OpenRouter's, `https://openrouter.ai/api/v1`, the
+#' chat also offers OpenRouter's login beside the field for the key.
+#' The login gives the page a key on the visitor's own OpenRouter account,
+#' which OpenRouter bills to the visitor's credits.
+#' So an app that sets `BLOCKR_ASSISTANT_BASE_URL=https://openrouter.ai/api/v1`
+#' and `BLOCKR_ASSISTANT_API=openai-completions`, and no key, lets each
+#' visitor log in.
+#' The login runs in a window of its own, so that the app's page stays as it
+#' was.
+#' Once the visitor authorizes the app, OpenRouter sends that window to the
+#' page `js/openrouter.html`, which the package ships beside the plugin's
+#' module.
+#' That page hands the login's code to the app's page, and closes the window.
+#' The plugin then exchanges the code for the key, and keeps the key as it
+#' keeps a typed key.
+#' OpenRouter's page labels the key `blockr`, and has it expire after a day.
+#' The visitor can change both as they authorize the app.
+#' The chat offers the login only on a page that the browser deems secure,
+#' such as one served over HTTPS or from localhost.
+#'
 #' @section Model settings:
 #' A model's settings say whether it reasons and at which thinking level,
 #' whether it takes images, how many tokens its context window holds, and how
