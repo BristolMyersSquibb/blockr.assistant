@@ -1,11 +1,11 @@
 // The turns (./turns.ts) on core's CoreApi for tests, with the conversations
 // of the board and the loop on pi's fake provider: a turn's messages and
 // tokens in the state, the model that it talks to and its settings, the
-// system prompt and the message of the app's of each call, one turn at a
-// time, the tab's Web Lock, the reply as it streams, a stop, the error of a
-// failed call, the next board, a conversation that another plugin removes,
-// and the visitor's own key, which the calls carry and of which a failed call
-// tells what it can.
+// system prompt and the message of the app's of each call, the note of what
+// others changed in the board, one turn at a time, the tab's Web Lock, the
+// reply as it streams, a stop, the error of a failed call, the next board, a
+// conversation that another plugin removes, and the visitor's own key, which
+// the calls carry and of which a failed call tells what it can.
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
 
@@ -20,6 +20,7 @@ import type { Deployment } from "../deployment/index.ts";
 import type { Call, Loop } from "../loop/index.ts";
 import type { ModelSettingsFile } from "../model-settings/index.ts";
 import type { Listed, Offered } from "../models/index.ts";
+import { createNotes } from "../notes/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
 // The module of the assistant's class, which core imports as the page does.
@@ -151,6 +152,7 @@ async function opened(options: OpenOptions = {}) {
   const locks = fakeLocks();
   const deployment = options.deployment ?? Promise.resolve(deployed());
   deployment.catch(() => undefined);
+  const notes = createNotes(stubbed.core, controller.signal, { running: () => turns.current()?.conversation });
   const turns = createTurns(stubbed.core, controller.signal, {
     conversations,
     tools: options.tools ?? [],
@@ -164,6 +166,7 @@ async function opened(options: OpenOptions = {}) {
     key: options.key ?? createVisitorKey(),
     prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
     compaction: options.compaction ?? { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
+    notes,
     load: options.load ?? (() => Promise.resolve(loop)),
     locks: locks.locks,
   });
@@ -402,6 +405,85 @@ describe("a turn of the assistant", () => {
     expect(streamed.length).toBeGreaterThan(1);
     expect(streamed.at(-1)).toBe("The board holds no block.");
     expect(turns.current()).toBeUndefined();
+  });
+});
+
+// A tool that runs the command given on the board that `at` holds by then,
+// with the origin given, as the user's edit while the tool runs, or as the
+// assistant's edit tool.
+function running(at: { core?: CoreApi }, id: string, args: Json, origin: string): Tool {
+  return {
+    name: "touch_board",
+    description: "Change the board.",
+    parameters: { type: "object", properties: {} },
+    executionMode: "parallel",
+    execute: async () => {
+      if (at.core === undefined) throw new Error("No board is open.");
+      await at.core.commands.run(id, args, origin);
+      return { text: "Done.", isError: false, images: [] };
+    },
+  };
+}
+
+// A reply that calls touch_board, then one that ends the turn.
+function touching(id: string): FauxResponseStep[] {
+  return [fauxAssistantMessage([fauxToolCall("touch_board", {}, { id })], { stopReason: "toolUse" }), fauxAssistantMessage("Done.")];
+}
+
+describe("the note of what others changed in the board", () => {
+  test("goes into the conversation before the call that follows the change, after the conversation's last message and before the message of the app's", async () => {
+    const contexts: { readonly role: string; readonly content: unknown }[][] = [];
+    const read = (step: ReturnType<typeof fauxAssistantMessage>): FauxResponseStep => (context) => {
+      contexts.push(context.messages.map(({ role, content }) => ({ role, content })));
+      return step;
+    };
+    const at: { core?: CoreApi } = {};
+    const tool = running(at, "blockr.core-add_stack", { id: "s9", name: "Charts" }, "user");
+    const [first, second] = touching("t-1") as [ReturnType<typeof fauxAssistantMessage>, ReturnType<typeof fauxAssistantMessage>];
+    const open = await opened({ tools: [tool], replies: [read(first), read(second)] });
+    at.core = open.core;
+
+    await open.turns.run("c1");
+
+    const held = inState(open.core, "c1");
+    expect(held?.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "user", "assistant"]);
+    const note = held?.messages[3];
+    expect(note?.parts).toHaveLength(1);
+    expect(note?.parts[0]?.type).toBe("changes");
+    expect(note?.parts[0]?.type === "changes" ? note.parts[0].text : "").toContain("- Stack s9: added by the user.");
+    expect(contexts[0]?.map(({ role }) => role)).toEqual(["system", "user", "user"]);
+    expect(contexts[1]?.map(({ role }) => role)).toEqual(["system", "user", "assistant", "toolResult", "user", "user"]);
+    expect(contexts[1]?.at(-2)).toEqual({ role: "user", content: [{ type: "text", text: note?.parts[0]?.type === "changes" ? note.parts[0].text : "" }] });
+    expect(contexts[1]?.at(-1)).toEqual({ role: "user", content: [{ type: "text", text: APP_MESSAGE }] });
+  });
+
+  test("takes the conversation's own edits for its own, and those of another conversation's turn for the assistant's in another conversation", async () => {
+    const at: { core?: CoreApi } = {};
+    const tool = running(at, "blockr.core-add_stack", { id: "s9", name: "Charts" }, "assistant");
+    const open = await opened({ tools: [tool], replies: [fauxAssistantMessage("Hello."), ...touching("t-1"), fauxAssistantMessage("Hello again.")] });
+    at.core = open.core;
+
+    await open.turns.run("c2");
+    await open.turns.run("c1");
+    await open.conversations.addMessage("c2", asked("u3", "And now?"));
+    await open.turns.run("c2");
+
+    const c1 = inState(open.core, "c1");
+    const c2 = inState(open.core, "c2");
+    expect(c1?.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(c2?.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "user", "assistant"]);
+    const note = c2?.messages[3]?.parts[0];
+    expect(note?.type === "changes" ? note.text : "").toContain("- Stack s9: added by the assistant in another conversation.");
+  });
+
+  test("goes to no conversation's first call, and to no call where nothing changed since the conversation's previous call", async () => {
+    const tool: Tool = { ...listBlocks, name: "touch_board" };
+    const { core, turns } = await opened({ tools: [tool], replies: touching("t-1") });
+    await core.commands.run("blockr.core-add_stack", { id: "s8", name: "Before" }, "user");
+
+    await turns.run("c1");
+
+    expect(inState(core, "c1")?.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
   });
 });
 

@@ -5,7 +5,10 @@
 //    change only with a release of blockr.assistant.
 // 2. The system prompt: the board's template (./template.ts), then the rules
 //    in ./rules.md, and then the Skills section (./skills.ts).
-// 3. The conversation's messages, which the loop sends.
+// 3. The conversation's messages, which the loop sends. Where others changed
+//    the board since the conversation's previous call, the last of them is
+//    the note of what they changed, which the turn adds before the call
+//    (../notes).
 // 4. The message of the app's, which the loop adds after the conversation's
 //    last message, for the call alone: its preamble, which says that the app
 //    writes it, then the Board section (./board.ts) and the Focus section
