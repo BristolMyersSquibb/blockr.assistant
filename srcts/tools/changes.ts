@@ -88,12 +88,16 @@ export function addedAndRemoved(heard: readonly Heard[]): { added: Ids; removed:
   return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
 }
 
-// Whether the step sets or removes board option values alone, which takes no
-// undo step, since an undo leaves board options as they are
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.2#undo).
-// A step that changes nothing sets nothing else either.
-export function setsOnlyOptions(heard: readonly Heard[]): boolean {
-  return heard.every(({ delta }) => holds(delta).every((part) => part === "options"));
+// Whether the step took an undo step: whether one of its deltas lacks
+// `undo: false` and changes something besides board options. Those are the
+// deltas whose inverse the store keeps. An undo leaves board options as they
+// are (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.2#undo).
+// Nor does it take back what a command with `undo: false` changed, whether
+// the command ran alone or in a list: the command registry sets `undo: false`
+// on each of the command's deltas. A step that changes nothing takes no undo
+// step.
+export function tookUndoStep(heard: readonly Heard[]): boolean {
+  return heard.some(({ delta }) => delta.undo !== false && holds(delta).some((part) => part !== "options"));
 }
 
 export type Ids = Partial<Record<"blocks" | "links" | "stacks", string[]>>;

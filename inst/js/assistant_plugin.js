@@ -3160,8 +3160,8 @@ function addedAndRemoved(heard) {
   if (first === void 0 || last === void 0) return { added: {}, removed: {} };
   return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
 }
-function setsOnlyOptions(heard) {
-  return heard.every(({ delta }) => holds2(delta).every((part) => part === "options"));
+function tookUndoStep(heard) {
+  return heard.some(({ delta }) => delta.undo !== false && holds2(delta).some((part) => part !== "options"));
 }
 function missing(board, other) {
   const ids = {};
@@ -3480,7 +3480,7 @@ var STOPPED_PREPARING = "The user stopped the turn while a command of the list p
 var NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo.";
 var UNDID_NOTHING = "The undo changed nothing, since what the edit changed is no longer on the board.";
 var CHANGED_NOTHING = "The commands changed nothing on the board, so there is nothing to review. The board may hold what they set already.";
-var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
+var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back. An undo never takes back a board option's value, or what a command whose `undo` is false changes, such as the active view. So an edit that changes nothing else takes no undo step.";
 var UNDO_DESCRIPTION = "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. That edit may come from another of the assistant's conversations. The tool returns a review of what the undo changed, as edit does. Where the assistant has no edit left to take back, it changes nothing and says so.";
 function editTools(core, board) {
   return [
@@ -3532,7 +3532,7 @@ function editTools(core, board) {
         }
         if (refusal !== void 0) return refusedList(core, commands, refusal.error, signal.aborted);
         const heard = hearing.heard();
-        const head = { applied: true, undo_step: tookUndoStep(core, commands, heard) };
+        const head = { applied: true, undo_step: tookUndoStep(heard) };
         const notes = heard.length === 0 ? [CHANGED_NOTHING] : [];
         if (signal.aborted) return json({ ...stepResult(heard, head), notes: [STOPPED_PREPARING, ...notes] });
         return json(await reviewed(core, { heard, before, head, what: "the commands", notes, caps }, { turn: signal, board }, active));
@@ -3591,10 +3591,6 @@ function refusedList(core, commands, error, stopped) {
 }
 function refusedResult(value) {
   return { text: json(value), isError: true, images: [] };
-}
-function tookUndoStep(core, commands, heard) {
-  const registered = core.commands.registered();
-  return commands.some(({ command: command2 }) => own(registered, command2)?.undo !== false) && !setsOnlyOptions(heard);
 }
 function failuresOf(error) {
   if (error instanceof Error && (error.name === "CommandError" || error.name === "StoreError")) {

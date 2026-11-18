@@ -16,10 +16,10 @@
 //   what to check, and on a locked board, that the lock may be why, since a
 //   lock makes some commands fail their preflight
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.11#plugins-on-a-locked-board).
-// - The step took an undo step unless every command of the list has
-//   `undo: false`, or the changes that the tool heard set only board options.
-//   Where the commands changed nothing, as where the board held what they set
-//   already, the tool says so.
+// - The step took an undo step where the store kept the inverse of one of its
+//   deltas: where a delta that the tool heard lacks `undo: false` and changes
+//   something besides board options (./changes.ts). Where the commands changed
+//   nothing, as where the board held what they set already, the tool says so.
 // - The tool undo_edit takes back the assistant's last undo step with
 //   core.store.undo("assistant"), which applies the undo as a new edit and
 //   announces it with the origin "assistant". That step may be another
@@ -54,8 +54,7 @@ import type { CommandError, CoreApi, Json } from "@blockr/core";
 import { assistantCommands, object } from "../commands/index.ts";
 import { failureMessage } from "../requests/index.ts";
 import { ASSISTANT } from "../state/index.ts";
-import { hear, ORIGIN, setsOnlyOptions } from "./changes.ts";
-import type { Heard } from "./changes.ts";
+import { hear, ORIGIN, tookUndoStep } from "./changes.ts";
 import { own } from "./context.ts";
 import { noCommand } from "./failures.ts";
 import { conditionsNow, reviewCaps, reviewed, stepResult } from "./review.ts";
@@ -86,7 +85,7 @@ const UNDID_NOTHING = "The undo changed nothing, since what the edit changed is 
 const CHANGED_NOTHING = "The commands changed nothing on the board, so there is nothing to review. The board may hold what they set already.";
 
 const EDIT_DESCRIPTION =
-  "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
+  "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back. An undo never takes back a board option's value, or what a command whose `undo` is false changes, such as the active view. So an edit that changes nothing else takes no undo step.";
 
 const UNDO_DESCRIPTION =
   "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. That edit may come from another of the assistant's conversations. The tool returns a review of what the undo changed, as edit does. Where the assistant has no edit left to take back, it changes nothing and says so.";
@@ -149,7 +148,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
 
         if (refusal !== undefined) return refusedList(core, commands, refusal.error, signal.aborted);
         const heard = hearing.heard();
-        const head = { applied: true, undo_step: tookUndoStep(core, commands, heard) };
+        const head = { applied: true, undo_step: tookUndoStep(heard) };
         const notes = heard.length === 0 ? [CHANGED_NOTHING] : [];
         if (signal.aborted) return json({ ...stepResult(heard, head), notes: [STOPPED_PREPARING, ...notes] });
         return json(await reviewed(core, { heard, before, head, what: "the commands", notes, caps }, { turn: signal, board }, active));
@@ -227,14 +226,6 @@ function refusedList(core: CoreApi, commands: readonly Listed[], error: unknown,
 
 function refusedResult(value: Readonly<Record<string, Json>>): ToolResult {
   return { text: json(value), isError: true, images: [] };
-}
-
-// Whether the step took an undo step: unless every command of the list has
-// `undo: false`, or the step set only board options, as one that changed
-// nothing does.
-function tookUndoStep(core: CoreApi, commands: readonly Listed[], heard: readonly Heard[]): boolean {
-  const registered = core.commands.registered();
-  return commands.some(({ command }) => own(registered, command)?.undo !== false) && !setsOnlyOptions(heard);
 }
 
 // The failures with which the command registry or the store refused, each in
