@@ -2,15 +2,16 @@
 // turn that runs, the models offered, the visitor's key and OpenRouter's
 // login, as React's useSyncExternalStore() follows a store. Each source gives
 // the same object until it changes, so the chat draws again only then. The
-// chat also reads what the deployment chose, once the assistant has read it.
+// chat also reads what the deployment chose and the skills that R listed,
+// once the assistant has them.
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Board, CoreApi } from "@blockr/core";
 import type { Compaction } from "../compaction/index.ts";
 import type { Conversations } from "../conversations/index.ts";
-import type { Deployment } from "../deployment/index.ts";
 import type { Models, Offered } from "../models/index.ts";
 import type { OpenRouterLogin, OpenRouterLoginState } from "../openrouter/index.ts";
+import type { Skill, Skills } from "../skills/index.ts";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import type { Running, Turns } from "../turns/index.ts";
 import type { KeyState, VisitorKey } from "../visitor-key/index.ts";
@@ -61,22 +62,31 @@ export function useOpenRouterLogin(login: OpenRouterLogin): OpenRouterLoginState
   return useSyncExternalStore(subscribe, current);
 }
 
-// What the deployment chose, once the assistant has read it, or undefined
-// until then and where its blockr options cannot be read, which the turns
-// report.
-export function useDeployment(deployment: Promise<Deployment>): Deployment | undefined {
-  const [read, setRead] = useState<{ readonly of: Promise<Deployment>; readonly deployment: Deployment } | undefined>(undefined);
+// What the promise resolves with, once it has, or undefined until then and
+// where it rejects, as what the deployment chose rejects where its blockr
+// options cannot be read, which the turns report.
+export function useResolved<T>(promise: Promise<T>): T | undefined {
+  const [read, setRead] = useState<{ readonly of: Promise<T>; readonly value: T } | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    deployment.then(
-      (given) => {
-        if (live) setRead({ of: deployment, deployment: given });
+    promise.then(
+      (value) => {
+        if (live) setRead({ of: promise, value });
       },
       () => undefined,
     );
     return () => {
       live = false;
     };
-  }, [deployment]);
-  return read?.of === deployment ? read.deployment : undefined;
+  }, [promise]);
+  return read?.of === promise ? read.value : undefined;
 }
+
+// The skills that R listed for the open board, or none until R answers and
+// where R could not list them.
+export function useSkills(skills: Skills): readonly Skill[] {
+  const listed = useMemo(() => skills.list(), [skills]);
+  return useResolved(listed) ?? NO_SKILLS;
+}
+
+const NO_SKILLS: readonly Skill[] = [];

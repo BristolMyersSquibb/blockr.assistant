@@ -16,9 +16,21 @@
 // 5. They drop the conditions of R's reply, ok or error, since R logs each.
 //    So core raises no notification for them, and R's error reaches the user
 //    only in assistant_skills_failed.
+//
+// They also read a skill's text, for a /name that the user types in the chat
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands):
+// 1. They send the request read_skill, with the skill's name and the app's
+//    packages, and ask again where R's session ends before R replies, as for
+//    the list.
+// 2. Where R cannot read the skill, they raise the error
+//    assistant_skills_failed, which says why, and the chat sends nothing.
+// 3. A later read that succeeds withdraws that error, and core withdraws it
+//    as the next board opens.
+// No read meets a failed list, since the chat then knows no skill to read.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { answeredTexts, appPackages, failureMessage, sendUntilReplied } from "../requests/index.ts";
+import { heldError } from "../notifications/index.ts";
+import { answeredText, answeredTexts, appPackages, failureMessage, sendUntilReplied } from "../requests/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 
 // A skill, as R lists it.
@@ -40,6 +52,10 @@ export interface Skills {
   // Resolves with the skills that R listed for the open board, in R's order,
   // or with none where R could not list them. It never rejects.
   list(): Promise<readonly Skill[]>;
+  // Resolves with the text of the skill of the name given, without its
+  // frontmatter, as R reads it. It rejects where R cannot read the skill,
+  // having raised assistant_skills_failed, unless the next board opened.
+  read(name: string): Promise<string>;
 }
 
 // What of CoreApi the skills read.
@@ -51,7 +67,21 @@ interface Core {
 
 export function createSkills(core: Core, signal: AbortSignal): Skills {
   const listed = listSkills(core, signal);
-  return { list: () => listed };
+  const readFailed = heldError(core, signal, "assistant_skills_failed");
+  return {
+    list: () => listed,
+    async read(name) {
+      try {
+        const { answer } = await sendUntilReplied(core, "read_skill", { name, packages: appPackages(core) }, { signal });
+        const text = answeredText(answer, "read_skill");
+        readFailed.withdraw();
+        return text;
+      } catch (error) {
+        readFailed.raise(`The chat sent nothing, since R could not read the skill ${name}: ${failureMessage(error)}`);
+        throw error;
+      }
+    },
+  };
 }
 
 async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {

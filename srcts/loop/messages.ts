@@ -7,8 +7,14 @@
 // back.
 //
 // On the way into pi's messages:
-// - A message that the user sent and the text of a skill that the user called
-//   become text in a message of pi's role user.
+// - A message that the user sent becomes text in a message of pi's role user.
+// - A message of a skill that the user called with /name holds the line that
+//   the user typed and a part of the type skill, which holds the skill's
+//   text. It goes as today's prompt words it (R/skills-invoke.R#L106-L114 at
+//   fcbdb27), without the line: "The user invoked the `filters` skill. Its
+//   instructions:", the skill's text, and then the rest of the line as "The
+//   user's request", where the user typed more than the command
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 // - A note of what others changed in the board, which the conversation keeps
 //   as a message of the role user, goes as a message of the app's, as the
 //   board does (below), so that pi's messages tell it from the user's
@@ -79,8 +85,8 @@ import type {
 import { encodedFile, kindOf } from "../attachments/index.ts";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptFile, KeptImage } from "../conversations/index.ts";
-import { isNote, newId } from "../state/index.ts";
-import type { AttachmentPart, Message, MessageId, Part, ToolCallPart, ToolResultPart } from "../state/index.ts";
+import { isNote, joinText, newId } from "../state/index.ts";
+import type { AttachmentPart, Message, MessageId, Part, SkillPart, ToolCallPart, ToolResultPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 
 // The result of a tool call that has no result, as in a board saved during a
@@ -256,13 +262,16 @@ export function piMessages(messages: readonly Message[], kept: (message: Message
 // that the memory keeps of it, one for each of its parts of the type
 // attachment.
 function userContent(message: Message, files: readonly KeptFile[], model: Model<Api>, sent: CallFiles | undefined): (TextContent | ImageContent)[] {
+  const called = message.parts.some((part) => part.type === "skill");
   let index = -1;
   return message.parts.flatMap((part): (TextContent | ImageContent)[] => {
     switch (part.type) {
       case "text":
+        return called ? [] : [text(part.text)];
       case "changes":
-      case "skill":
         return [text(part.text)];
+      case "skill":
+        return [text(skillPrompt(part, joinText(message)))];
       case "attachment":
         index += 1;
         return fileContent(part, files[index], { message: message.id, index, name: part.name }, model, sent);
@@ -270,6 +279,16 @@ function userContent(message: Message, files: readonly KeptFile[], model: Model<
         return [];
     }
   });
+}
+
+// The text of a skill that the user called with /name, as today's prompt
+// words it, with the rest of the line that the user typed as the user's
+// request. The line starts with the command, which the chat checked.
+function skillPrompt(part: SkillPart, line: string): string {
+  const command = `/${part.name}`;
+  const request = (line.startsWith(command) ? line.slice(command.length) : line).trim();
+  const asked = request === "" ? "" : `\n\nThe user's request: ${request}`;
+  return `The user invoked the \`${part.name}\` skill. Its instructions:\n\n${part.text}${asked}`;
 }
 
 // A file that the user attached, as pi's content, which the call's files note
