@@ -337,6 +337,21 @@
   and that the key may be wrong, and the chat shows the field again, holding
   the visitor's key.
 
+* Where the app sets no key and its base URL is OpenRouter's,
+  `https://openrouter.ai/api/v1`, the chat also offers OpenRouter's login
+  beside the field for the key (#237).
+  The login gives the page a key on the visitor's own OpenRouter account,
+  which OpenRouter bills to the visitor's credits.
+  It runs in a window of its own, so that the app's page keeps what the board
+  holds unsaved.
+  OpenRouter sends that window back to the page `js/openrouter.html`, which
+  the package ships beside the plugin's module, and that page hands the
+  login's code to the app's page.
+  The plugin exchanges the code for the key, and keeps the key in the page's
+  memory, as it keeps a typed key.
+  OpenRouter's page labels the key `blockr`, and has it expire after a day.
+  The visitor can change both as they authorize the app.
+
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).
   The drawer opens over the chat, in the element that the frontend gives the

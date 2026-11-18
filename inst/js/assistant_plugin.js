@@ -1300,11 +1300,11 @@ function contextTokens(conversation2) {
   const estimated = (from) => messages.slice(from).reduce((sum, message2) => sum + estimatedTokens(message2), 0);
   return counts ? usage.last + estimated(reply + 1) : estimated(0);
 }
-function needsSummary(conversation2, window) {
-  return contextTokens(conversation2) > window - RESERVE;
+function needsSummary(conversation2, window2) {
+  return contextTokens(conversation2) > window2 - RESERVE;
 }
-function keptTokens(window) {
-  return Math.floor(window / 4);
+function keptTokens(window2) {
+  return Math.floor(window2 / 4);
 }
 function cutOf(messages, kept) {
   const start = messages[0]?.role === "summary" ? 1 : 0;
@@ -2667,6 +2667,164 @@ function isObject2(value) {
 function shown2(value) {
   if (value instanceof Blob) return "a file";
   return JSON.stringify(one(value) ?? value);
+}
+
+// srcts/openrouter/channel.ts
+var CHANNEL = "blockr.assistant-openrouter";
+function isCallback(data) {
+  if (typeof data !== "object" || data === null) return false;
+  const { code, state } = data;
+  return typeof code === "string" && code !== "" && typeof state === "string" && state !== "";
+}
+
+// srcts/openrouter/login.ts
+var OPENROUTER = {
+  baseUrl: "https://openrouter.ai/api/v1",
+  authUrl: "https://openrouter.ai/auth",
+  keysUrl: "https://openrouter.ai/api/v1/auth/keys"
+};
+var LABEL = "blockr";
+var EXPIRATION = "1-day";
+var IDLE = { kind: "idle" };
+var EXCHANGING = { kind: "exchanging" };
+var BLOCKED = { kind: "blocked" };
+function createOpenRouterLogin(options) {
+  const urls = options.urls ?? OPENROUTER;
+  const callbackUrl = options.callbackUrl ?? new URL("openrouter.html", import.meta.url).href;
+  const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const open2 = options.open ?? ((url, target, features) => window.open(url, target, features));
+  const secure = options.secure ?? globalThis.isSecureContext;
+  const listeners = /* @__PURE__ */ new Set();
+  const pending = /* @__PURE__ */ new Map();
+  let state = IDLE;
+  let channel;
+  function set(next) {
+    if (next === state) return;
+    state = next;
+    for (const listener of [...listeners]) listener();
+  }
+  function forget(loginState) {
+    if (loginState === void 0) pending.clear();
+    else pending.delete(loginState);
+    if (pending.size > 0) return;
+    channel?.close();
+    channel = void 0;
+  }
+  async function received(callback) {
+    const verifier = pending.get(callback.state);
+    if (verifier === void 0) return;
+    forget(callback.state);
+    set(EXCHANGING);
+    const exchanged = await exchange(urls, fetch, callback.code, verifier);
+    if (exchanged.kind === "failed") {
+      set({ kind: "failed", reason: exchanged.reason });
+      return;
+    }
+    forget();
+    options.key.give(exchanged.key);
+    set(IDLE);
+  }
+  return {
+    offers(baseUrl) {
+      return secure && baseUrl === urls.baseUrl;
+    },
+    current() {
+      return state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    start() {
+      const login = open2("", "_blank", windowFeatures());
+      if (login === null) {
+        set(BLOCKED);
+        return;
+      }
+      login.opener = null;
+      const verifier = randomToken(32);
+      const loginState = randomToken(16);
+      pending.set(loginState, verifier);
+      if (channel === void 0) {
+        channel = new BroadcastChannel(CHANNEL);
+        channel.addEventListener("message", (event) => {
+          if (isCallback(event.data)) void received(event.data);
+        });
+      }
+      set(IDLE);
+      void challengeOf(verifier).then((challenge) => {
+        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState));
+      });
+    }
+  };
+}
+var logins = /* @__PURE__ */ new WeakMap();
+function openRouterLoginOf(key) {
+  const kept = logins.get(key);
+  if (kept !== void 0) return kept;
+  const login = createOpenRouterLogin({ key });
+  logins.set(key, login);
+  return login;
+}
+function authUrlOf(urls, callbackUrl, challenge, state) {
+  const url = new URL(urls.authUrl);
+  url.search = new URLSearchParams({
+    callback_url: callbackUrl,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+    key_label: LABEL,
+    expiration: EXPIRATION
+  }).toString();
+  return url.href;
+}
+async function challengeOf(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64url(new Uint8Array(digest));
+}
+async function exchange(urls, fetch, code, verifier) {
+  let response;
+  try {
+    response = await fetch(urls.keysUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: verifier, code_challenge_method: "S256" })
+    });
+  } catch {
+    return { kind: "failed", reason: `The page could not reach ${new URL(urls.keysUrl).host}.` };
+  }
+  const body = await response.json().catch(() => void 0);
+  if (!response.ok) {
+    return { kind: "failed", reason: `OpenRouter refused the login: ${messageOf3(body) ?? `HTTP ${String(response.status)}.`}` };
+  }
+  const key = typeof body === "object" && body !== null && "key" in body && typeof body.key === "string" ? body.key.trim() : "";
+  if (key === "") return { kind: "failed", reason: "OpenRouter sent no key." };
+  return { kind: "key", key };
+}
+function messageOf3(body) {
+  if (typeof body !== "object" || body === null || !("error" in body)) return void 0;
+  const { error } = body;
+  if (typeof error !== "object" || error === null || !("message" in error) || typeof error.message !== "string") return void 0;
+  const message2 = error.message.trim();
+  if (message2 === "") return void 0;
+  return /[.!?]$/.test(message2) ? message2 : `${message2}.`;
+}
+function windowFeatures() {
+  const width = 520;
+  const height = 720;
+  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+  const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+  return `popup,width=${String(width)},height=${String(height)},left=${String(left)},top=${String(top)}`;
+}
+function randomToken(bytes) {
+  return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+function base64url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 // srcts/tools/caps.ts
@@ -4219,6 +4377,7 @@ function openAssistant(core, signal, options = {}) {
   deployment.catch(() => void 0);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const key = options.key ?? pageKey();
+  const openRouterLogin = options.openRouterLogin ?? openRouterLoginOf(key);
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
@@ -4237,7 +4396,7 @@ function openAssistant(core, signal, options = {}) {
     ..."locks" in options ? { locks: options.locks } : {}
   });
   titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
-  const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
@@ -4932,6 +5091,11 @@ function useVisitorKey(key) {
   const current = useCallback(() => key.current(), [key]);
   return useSyncExternalStore(subscribe, current);
 }
+function useOpenRouterLogin(login) {
+  const subscribe = useCallback((changed) => login.subscribe(changed), [login]);
+  const current = useCallback(() => login.current(), [login]);
+  return useSyncExternalStore(subscribe, current);
+}
 function useDeployment(deployment) {
   const [read, setRead] = useState3(void 0);
   useEffect3(() => {
@@ -4960,15 +5124,16 @@ function KeyForm() {
 function Field({ field }) {
   const { giveKey } = useChatActions();
   const note2 = useId2();
-  const { state } = field;
+  const { state, openRouterLogin } = field;
   const submit = (event) => {
     event.preventDefault();
     const given2 = new FormData(event.currentTarget).get("key");
     const key = typeof given2 === "string" ? given2.trim() : "";
     if (key !== "") giveKey(key);
   };
-  return /* @__PURE__ */ jsxs5("form", { className: "blockr-assistant-key", "data-asks": state.kind, onSubmit: submit, children: [
-    /* @__PURE__ */ jsx5("p", { id: note2, className: "blockr-assistant-key-note", role: state.kind === "missing" ? void 0 : "alert", children: noteOf(field) }),
+  return /* @__PURE__ */ jsxs5("form", { className: "blockr-assistant-key", "data-asks": state.kind, "data-openrouter": openRouterLogin?.kind, onSubmit: submit, children: [
+    /* @__PURE__ */ jsx5("p", { id: note2, className: "blockr-assistant-key-note", role: alerts(field) ? "alert" : void 0, children: noteOf(field) }),
+    openRouterLogin === void 0 ? null : /* @__PURE__ */ jsx5(OpenRouterButton, { login: openRouterLogin }),
     /* @__PURE__ */ jsxs5("div", { className: "blockr-assistant-key-field", children: [
       /* @__PURE__ */ jsx5("input", { type: "text", name: "username", value: field.host, autoComplete: "username", readOnly: true, hidden: true }),
       /* @__PURE__ */ jsx5(
@@ -4988,12 +5153,22 @@ function Field({ field }) {
     ] })
   ] });
 }
-function noteOf({ state, host }) {
+function OpenRouterButton({ login }) {
+  const { logInWithOpenRouter } = useChatActions();
+  const exchanging = login.kind === "exchanging";
+  return /* @__PURE__ */ jsx5("button", { type: "button", className: "blockr-assistant-openrouter", disabled: exchanging, onClick: logInWithOpenRouter, children: exchanging ? "Logging in\u2026" : "Log in with OpenRouter" });
+}
+function alerts({ state, openRouterLogin }) {
+  return state.kind !== "missing" || openRouterLogin?.kind === "blocked" || openRouterLogin?.kind === "failed";
+}
+function noteOf({ state, host, openRouterLogin }) {
+  if (openRouterLogin?.kind === "blocked") return "The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.";
+  if (openRouterLogin?.kind === "failed") return `${openRouterLogin.reason} Log in again, or enter your API key.`;
   switch (state.kind) {
     case "missing":
-      return `Enter your API key for ${host}. The assistant keeps it only until the page reloads.`;
+      return openRouterLogin === void 0 ? `Enter your API key for ${host}. The assistant keeps it only until the page reloads.` : `Log in with OpenRouter, or enter your API key for ${host}. The assistant keeps the key only until the page reloads.`;
     case "refused":
-      return `The server at ${host} refused your key. Enter another one.`;
+      return openRouterLogin === void 0 ? `The server at ${host} refused your key. Enter another one.` : `The server at ${host} refused your key. Log in with OpenRouter, or enter another key.`;
     case "lost":
       return `The connection to ${host} was lost, and your key may be wrong. Change it, or send your message again.`;
   }
@@ -5665,6 +5840,7 @@ function Chat({ core, assistant }) {
   const offered = useOffered(models);
   const deployment = useDeployment(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
+  const openRouterLogin = useOpenRouterLogin(assistant.openRouterLogin);
   const [chosen, setChosen] = useState5(storedConversation);
   const [nextPick, setNextPick] = useNextPick(assistant);
   const [drawer, setDrawer] = useState5(false);
@@ -5682,10 +5858,11 @@ function Chat({ core, assistant }) {
   const compacting = useCompacting(compaction, open2);
   const visitorAuthenticates = deployment?.credential.kind === "visitor";
   const noKey = visitorAuthenticates && keyOf(visitorKey) === void 0;
-  const keyField = useMemo4(
-    () => deployment !== void 0 && visitorAuthenticates && visitorKey.kind !== "given" ? { state: visitorKey, host: new URL(deployment.baseUrl).host } : void 0,
-    [deployment, visitorAuthenticates, visitorKey]
-  );
+  const keyField = useMemo4(() => {
+    if (deployment === void 0 || !visitorAuthenticates || visitorKey.kind === "given") return void 0;
+    const offered2 = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : void 0;
+    return { state: visitorKey, host: new URL(deployment.baseUrl).host, openRouterLogin: offered2 };
+  }, [assistant, deployment, openRouterLogin, visitorAuthenticates, visitorKey]);
   const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const openConversation = useCallback2((id) => {
     storeConversation(id);
@@ -5773,6 +5950,9 @@ function Chat({ core, assistant }) {
       openFile: setFile,
       giveKey: (key) => {
         assistant.key.give(key);
+      },
+      logInWithOpenRouter: () => {
+        assistant.openRouterLogin.start();
       }
     }),
     [assistant, core, runtime, send, turns]

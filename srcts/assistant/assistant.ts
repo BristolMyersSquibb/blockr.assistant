@@ -31,7 +31,9 @@
 // opens, which the turns hand the loop (../model-settings).
 // Where the deployment leaves the key to the visitor, the models, the turns
 // and the compaction read the visitor's own key, which the page keeps across
-// boards, and which the chat asks for (../visitor-key).
+// boards, and which the chat asks for (../visitor-key). Where the base URL is
+// OpenRouter's, the chat also offers OpenRouter's login, which gives the key,
+// and which the page keeps with the key (../openrouter).
 //
 // Once a conversation's first exchange that the model answered ends, the
 // assistant has a model call of its own title the conversation (../titles).
@@ -49,6 +51,8 @@ import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
 import { heldError } from "../notifications/index.ts";
+import { openRouterLoginOf } from "../openrouter/index.ts";
+import type { OpenRouterLogin } from "../openrouter/index.ts";
 import { createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
@@ -71,6 +75,9 @@ export interface Assistant {
   readonly deployment: Promise<Deployment>;
   // The visitor's own key.
   readonly key: VisitorKey;
+  // OpenRouter's login, which gives the visitor's key, and which the chat
+  // offers where the base URL is OpenRouter's.
+  readonly openRouterLogin: OpenRouterLogin;
   // The signal that aborts as the next board opens, which ends the assistant.
   readonly signal: AbortSignal;
 }
@@ -88,6 +95,9 @@ export interface AssistantOptions {
   readonly fetch?: Fetch;
   // The visitor's own key, the page's unless given.
   readonly key?: VisitorKey;
+  // OpenRouter's login, which gives the visitor's key, the key's own unless
+  // given.
+  readonly openRouterLogin?: OpenRouterLogin;
 }
 
 const opened = new WeakMap<CoreApi, Assistant>();
@@ -109,6 +119,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
   const key = options.key ?? pageKey();
+  const openRouterLogin = options.openRouterLogin ?? openRouterLoginOf(key);
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
@@ -128,7 +139,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   });
   titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
 
-  const assistant = { conversations, skills, models, turns, compaction, deployment, key, signal };
+  const assistant = { conversations, skills, models, turns, compaction, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
