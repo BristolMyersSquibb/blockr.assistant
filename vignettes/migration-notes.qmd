@@ -529,7 +529,7 @@ The blockr options `assistant_base_url`, `assistant_api`, `assistant_api_key`, `
 In version 0.1, the generics `describe_block()`, `describe_board()` and `describe_stack()` write the board for the model, in R.
 In version 0.2, the plugin writes the board in the browser, from the board that the browser holds, so the three generics go.
 A package that gives a method of one of them drops the method.
-The model reads a block class through what the class registers instead: its description, its guidance, its arg specs and the JSON Schema of its state.
+The model reads a block class through what the class registers instead: its description, its guidance and the JSON Schema of its state.
 
 The generic `describe_result()` stays, with the methods that packages give it.
 R answers the assistant's request for the summary of a block's result through it.
@@ -619,7 +619,7 @@ Each tool of version 0.1 goes as follows:
 | Version 0.1 | Version 0.2 |
 |---|---|
 | `list_blocks`, `describe_block`, `get_block_state`, `get_block_conditions`, `list_links`, `list_stacks`, `describe_stack` and `list_block_types` | The tools of the same names |
-| `describe_block_type` | The tool of the same name, without the worked examples that a class registered, each a complete state of its block. It still gives the example of each arg and the class's guidance in full |
+| `describe_block_type` | The tool of the same name, which gives the class's guidance in full and the JSON Schema of the class's state. The schema gives each state arg's type and description, in place of the `arguments` of version 0.1. The tool gives no example of an arg, and none of the worked examples that a class registered, each a complete state of its block |
 | `get_block_result` | The tool of the same name |
 | `inspect_results` | The tool of the same name, which binds the results of only the blocks that its `blocks` names, by their ids, where version 0.1 bound the result of every block. The result of a block that draws a plot is a `captured_plot` or a ggplot, which draws as it is printed, so the code `chart` draws the block `chart`, in place of `evaluate::replay(chart)` |
 | `read_skill` | The tool of the same name |

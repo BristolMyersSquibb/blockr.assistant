@@ -43,7 +43,7 @@ describe("list_block_types", () => {
 });
 
 describe("describe_block_type", () => {
-  test("gives the class in full, with the example and the type of each argument, the schema of its state and the skills that name it", async () => {
+  test("gives the class in full, with the schema of its state and the skills that name it", async () => {
     const skills = [skill("heads", { blocks: ["blockr.core-head_block"] }), skill("subsets", { blocks: ["blockr.core-subset_block"] })];
     const { core, tools } = await started({}, skills);
     const entry = core.blockRegistry()["blockr.core-head_block"];
@@ -55,14 +55,6 @@ describe("describe_block_type", () => {
       description: "Data head/tail",
       guidance: entry?.guidance,
       inputs: ["data"],
-      arguments: {
-        n: { description: "Number of rows to keep.", example: 10, type: { type: "integer" } },
-        direction: {
-          description: "Row end to keep, either head (first) or tail (last).",
-          example: "tail",
-          type: { type: "string", enum: ["head", "tail"] },
-        },
-      },
       schema: entry?.schema,
       skills: [{ name: "heads", description: "What heads covers." }],
     });

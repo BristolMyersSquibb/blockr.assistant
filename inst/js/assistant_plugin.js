@@ -3656,7 +3656,7 @@ function blockTypeTools(context6) {
   return [
     tool({
       name: "list_block_types",
-      description: `List every block class that the app offers, the types that a block can have, each with its registry id, its name, its category, its data inputs and its description. Call describe_block_type for one class's guidance, arguments and the JSON Schema of its state before you add a block of it. The inputs are the names that a link into such a block takes as its input: a class with none takes no link, and one whose inputs are ["..."] takes any number of links.`,
+      description: `List every block class that the app offers, the types that a block can have, each with its registry id, its name, its category, its data inputs and its description. Call describe_block_type for one class's guidance and the JSON Schema of its state before you add a block of it. The inputs are the names that a link into such a block takes as its input: a class with none takes no link, and one whose inputs are ["..."] takes any number of links.`,
       parameters: object({}, []),
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
@@ -3673,7 +3673,7 @@ function blockTypeTools(context6) {
     }),
     tool({
       name: "describe_block_type",
-      description: "Describe one block class in full: its name, its category, its description and guidance, its data inputs, each argument of a block's state with its description, an example and its type, the JSON Schema that a block's state has to fit, and the skills of this deployment that name the class. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
+      description: "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills of this deployment that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
       run: async ({ id }) => {
         if (own(core.blockRegistry(), id) === void 0) throw new Error(noBlockType(id));
@@ -3687,16 +3687,6 @@ function blockTypeTools(context6) {
           description: entry.description,
           ...entry.guidance === void 0 ? {} : { guidance: entry.guidance },
           inputs: [...entry.inputs],
-          arguments: Object.fromEntries(
-            Object.entries(entry.arguments).map(([arg, spec]) => [
-              arg,
-              {
-                ...spec.description === void 0 ? {} : { description: spec.description },
-                ...spec.example === void 0 ? {} : { example: spec.example },
-                ...spec.type === void 0 ? {} : { type: spec.type }
-              }
-            ])
-          ),
           schema: entry.schema,
           ...skills.length === 0 ? {} : { skills }
         };
