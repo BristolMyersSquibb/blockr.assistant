@@ -21,8 +21,16 @@ knitr::opts_chunk$set(
 [![coverage](https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg?token=TxIZnzIqo2)](https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant)
 <!-- badges: end -->
 
-An [`ellmer`](https://ellmer.tidyverse.org/)-powered chat panel for [`blockr.dock`](https://github.com/BristolMyersSquibb/blockr.dock) boards.
-The assistant ships as a `dock_extension` that slots into the board layout like any other panel; the chat UI is built on [`shinychat`](https://github.com/posit-dev/shinychat).
+The assistant is a plugin for [blockr](https://github.com/BristolMyersSquibb/blockr) boards.
+Its model reads the board and edits it beside the user.
+Each edit runs commands that blockr.core and the app's packages register, as the user's own edits do.
+So the user's undo takes back an edit of the assistant's as it takes back any other.
+The assistant runs its agent loop in the browser.
+It calls its model from the browser too, never through R.
+
+A deployment chooses where the calls go, how they are authenticated and which models the assistant offers, through blockr options.
+It can also give the model skills and a template of its own.
+A package can teach the model about what it offers, such as its block classes and its results.
 
 ## Installation
 
@@ -35,24 +43,12 @@ pak::pak("BristolMyersSquibb/blockr.assistant")
 
 ## Example
 
-Mount the assistant on a small board.
-The chat is wired to whichever `ellmer` model the board's `llm_model` option resolves to (by default `ellmer::chat_openai()`); set the `blockr.chat_function` option to swap providers.
+An app script puts the assistant's plugin on its board with `new_assistant_plugin()`:
 
 ```{r example-code, code=readLines("inst/examples/populated-board/app.R"), eval=FALSE}
 ```
 
-![Assistant panel mounted next to a small `blockr.dock` board.](man/figures/screenshot.png)
+![The assistant's panel on the left rail of the dock, beside the blocks of a small board.](man/figures/screenshot.png)
 
-## Status
-
-The assistant is feature-complete for the initial roadmap: read
-tools (`list_blocks`, `describe_block`, `inspect_results`, ...),
-mutation tools (`add_block`, `modify_block`, ...) flushed
-atomically per turn, and a system prompt refreshed on every
-materialized board change so the model always sees the current
-shape of the board.
-
-See the
-[roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
-for the staged plan and the per-phase design notes for what was
-shipped in each phase.
+The guide, [Get started](https://bristolmyerssquibb.github.io/blockr.assistant/articles/get-started.html), says how an app offers the assistant and how a package teaches its model.
+An app script written for blockr.assistant 0.1 changes as the [migration notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/migration-notes.html) say.

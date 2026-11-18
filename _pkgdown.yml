@@ -8,6 +8,13 @@ navbar:
     right: [search, reference, articles, news, github]
   components:
     home: ~
+    articles:
+      text: Articles
+      menu:
+      - text: Get started
+        href: articles/get-started.html
+      - text: Migration notes for app scripts and skills
+        href: articles/migration-notes.html
 
 reference:
   - title: Assistant plugin

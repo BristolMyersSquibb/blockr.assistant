@@ -39,7 +39,7 @@
   Under `0`, the board keeps no conversation, and the plugin keeps every one in
   that memory alone.
 
-* The assistant's class answers five requests in R, through its method of
+* The assistant's class answers requests in R, through its method of
   `plugin_requests()` (#222).
   The request `describe_result` gives what `describe_result()` writes about
   the result of each block that it reads.

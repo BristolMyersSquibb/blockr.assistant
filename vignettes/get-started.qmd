@@ -1,0 +1,572 @@
+---
+title: "Get started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Get started}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  render = function(x, ...) {
+    if (inherits(x, "shiny.appobj")) invisible() else knitr::knit_print(x, ...)
+  }
+)
+```
+
+```{r setup, message = FALSE}
+library(blockr.core)
+library(blockr.assistant)
+```
+
+The assistant is a plugin for blockr boards.
+Its model reads the board and edits it beside the user.
+Each edit runs commands that blockr.core and the app's packages register, as the user's own edits do.
+So the user's undo takes back an edit of the assistant's as it takes back any other.
+The assistant runs its agent loop in the browser.
+It calls its model from the browser too, never through R.
+R answers only what needs R, such as what a block's result holds.
+
+This vignette has two readers.
+The first is an app that offers the assistant: the app script, and the deployment that serves it.
+The sections from [The assistant's panel](#the-assistants-panel) to [What the assistant keeps and returns](#what-the-assistant-keeps-and-returns) are for this reader.
+The second is a package that teaches the model about what the package offers, such as its block classes and its results.
+The last section, [A package that teaches the model](#a-package-that-teaches-the-model), is for that reader.
+An app script that was written for blockr.assistant 0.1 changes as the migration notes say (`vignette("migration-notes", package = "blockr.assistant")`).
+
+## The assistant's panel
+
+An app script puts the assistant on its board with `new_assistant_plugin()`, in the `plugins` of `new_board()`:
+
+```{r}
+board <- new_board(
+  blocks = c(
+    data = new_dataset_block("iris"),
+    head = new_head_block(n = 10L)
+  ),
+  links = new_link("data", "head"),
+  plugins = list(assistant = new_assistant_plugin())
+)
+
+serve(board)
+```
+
+The plugin is of the class `blockr.assistant-assistant_plugin`.
+Its state holds the board's conversations ([What the assistant keeps and returns](#what-the-assistant-keeps-and-returns)).
+
+The argument `plugins` of `serve()` defaults to every plugin class that `available_plugins()` lists.
+That list holds the assistant's class wherever blockr.assistant is installed.
+So `serve()` runs the assistant even where the board holds no plugin of its class.
+A script does not rely on that, and puts the assistant's plugin on its board, as above.
+
+The plugin draws its chat wherever the app's frontend places it.
+The dock of blockr.dock places the chat in a panel.
+On a board that has no views, the dock adds a view, which shows that panel on its left rail.
+A script that arranges a grid of its own places the panel with `plg()`, by the plugin's name in `plugins`:
+
+```{r, eval = FALSE}
+library(blockr.dock)
+
+board <- new_board(
+  blocks = c(
+    data = new_dataset_block("iris"),
+    head = new_head_block(n = 10L)
+  ),
+  links = new_link("data", "head"),
+  plugins = list(
+    new_dock_plugin(
+      views = list(
+        main = dock_view(
+          dock_grid(
+            panels("data", "head"),
+            rail(plg("assistant"), position = "right")
+          )
+        )
+      )
+    ),
+    assistant = new_assistant_plugin()
+  )
+)
+```
+
+The panel shows the open conversation, the message field and the stop button.
+Under the message field, a footer holds the button that opens the drawer of conversations, the pick of the model, and a meter of the tokens that the open conversation spent.
+
+## Where the calls go
+
+The assistant calls its model from the browser.
+Four blockr options say where the calls go, how they are authenticated and which models the assistant offers.
+A deployment sets each as an R option, such as `blockr.assistant_models`, or as an environment variable, such as `BLOCKR_ASSISTANT_MODELS`.
+A deployment that sets them as environment variables, as on Posit Connect, leaves the app script as it is.
+
+| Blockr option | What it holds | Where it is unset |
+|---|---|---|
+| `assistant_base_url` | The base URL that every call goes to | OpenAI's API, `https://api.openai.com/v1` |
+| `assistant_api` | The API that the base URL speaks: `"openai-responses"` for OpenAI's Responses API, `"openai-completions"` for its Chat Completions API, or `"anthropic-messages"` for Anthropic's Messages API | `"openai-responses"` |
+| `assistant_api_key` | The key that every call carries, or `"none"` for a base URL that needs no key | The chat asks each visitor for a key of their own |
+| `assistant_models` | The ids of the models that the assistant offers, the first being the default, as a character vector or as one string that separates them by commas | The models of the base URL's list that take tools |
+
+A demo on OpenAI's models sets two of them, the deployment's key and the model that the demo offers:
+
+```sh
+BLOCKR_ASSISTANT_API_KEY=<the deployment's key>
+BLOCKR_ASSISTANT_MODELS=gpt-5.4
+```
+
+Its visitors need no account with any provider, since every call carries the deployment's key.
+But any of them can take that key from the page, as [How a call is authenticated](#how-a-call-is-authenticated) says.
+
+An app whose visitors log in with OpenRouter sets two others, OpenRouter's base URL and the API through which the assistant calls it:
+
+```sh
+BLOCKR_ASSISTANT_BASE_URL=https://openrouter.ai/api/v1
+BLOCKR_ASSISTANT_API=openai-completions
+```
+
+It sets no key, so the chat asks each visitor for a key.
+Beside the field for the key, the chat offers OpenRouter's login.
+Each visitor then pays for their own calls.
+The app names no models either, so the assistant offers each model of OpenRouter's list that takes tools.
+
+The assistant does not work out which API a base URL speaks.
+So a deployment that sets a base URL sets `assistant_api` too, unless that base URL speaks OpenAI's Responses API.
+A deployment of Anthropic's models names Anthropic's base URL and API:
+
+```{r, eval = FALSE}
+options(
+  blockr.assistant_base_url = "https://api.anthropic.com",
+  blockr.assistant_api = "anthropic-messages",
+  blockr.assistant_models = "claude-sonnet-5-5"
+)
+```
+
+Anthropic's base URL has no `/v1`, since the assistant appends `/v1/messages` to it.
+
+A base URL may belong to a provider, such as OpenAI or Anthropic.
+It may also belong to a gateway, such as OpenRouter or Vercel's AI Gateway.
+A gateway reaches the models of many providers through one base URL and one key.
+Or the base URL may be a company's own proxy.
+Such a proxy holds the provider's key inside the company's network, and decides who may call.
+A deployment reaches a model through a gateway or a proxy wherever the browser cannot call the model's provider:
+
+- The provider, such as AWS Bedrock, speaks none of the three APIs.
+- The provider, such as Ollama's cloud, refuses calls from a page of another origin.
+- The model runs on a network that the server reaches and the visitor's browser does not.
+
+### The models that the assistant offers
+
+The assistant offers the models that `assistant_models` names, and the first is the default.
+With one model, every conversation talks to it, and the chat offers no pick.
+With several, the user picks one for each conversation, in the chat's footer.
+
+Where the deployment names no models, the assistant asks the base URL for its list of models as each board opens.
+It offers the models of that list that take tools, and the first of them is the default.
+OpenRouter's list says which models take tools.
+OpenAI's list says nothing of it.
+So from OpenAI's list, the assistant leaves out only the models whose ids name a kind of model that takes no tools, such as `embedding` or `tts`.
+OpenAI's list follows no documented order, so a deployment on OpenAI's API names its models where the default matters.
+A company's own proxy may give no list.
+The assistant then raises the error `assistant_models_failed`, and offers no model.
+So a deployment on such a base URL names its models.
+
+Each conversation keeps its own pick of the model, in the state of the assistant's plugin.
+So a conversation talks to the same model after a reload, and in a saved board.
+A new conversation starts on the pick of the conversation that was open.
+Where the deployment does not offer a conversation's pick, the conversation talks to the default.
+The footer then names both models.
+
+### The model's settings
+
+A model's settings say whether it reasons and at which thinking level, whether it takes images, how many tokens its context window holds, and how many tokens each call asks for the reply.
+The assistant knows the settings of OpenAI's and Anthropic's models from the catalogs of pi, the library that runs its turns.
+Where the assistant offers the models of the base URL's list, it also takes some of their settings from the list.
+OpenRouter's, Vercel's and Anthropic's lists give each model's context window, its cap for a reply and whether it takes images.
+
+A model that neither the catalogs nor the list holds gets the defaults.
+It does not reason, takes images, has a context window of 128,000 tokens and takes up to 16,384 tokens for a reply.
+A model that a company's own proxy serves under a name of its own is such a model.
+A deployment gives such a model its settings in a YAML file, under the model's id.
+The blockr option `assistant_model_settings` names the file:
+
+```yaml
+corp-claude:
+  like: claude-sonnet-5-5
+corp-gpt:
+  reasoning: true
+  thinking_level: high
+  context_window: 200000
+```
+
+The setting `like` names a model of pi's catalogs.
+The model then takes the settings of that model wherever the file gives none.
+The section Model settings of `?new_assistant_plugin` describes each setting.
+
+The context window also sets when the assistant compacts a conversation.
+Before each call, the assistant estimates the tokens that the call would send.
+Where they pass the window less 16,384 tokens, a call of the assistant's own first writes a summary of the older messages.
+The summary then takes their place in the conversation.
+
+## How a call is authenticated
+
+The blockr options decide how a call is authenticated:
+
+- Where `assistant_api_key` holds a key, every call carries the deployment's key.
+- Where it holds `"none"`, no call carries a key.
+- Where it is unset, the chat asks each visitor for a key of their own.
+  Where the base URL is OpenRouter's, `https://openrouter.ai/api/v1`, the chat also offers OpenRouter's login beside the field for the key.
+
+The four ways differ in what the hoster provides, what a visitor needs, who pays, and what a visitor can copy from the page:
+
+| Way | The hoster provides | A visitor needs | Who pays | What a visitor can copy |
+|---|---|---|---|---|
+| The deployment's key | A key, in `assistant_api_key` | Nothing | The hoster | The hoster's key, which works until the hoster revokes it |
+| No key, for a base URL that needs none, such as a company's own proxy | `"none"` in `assistant_api_key` | Nothing | The hoster | Nothing |
+| The visitor's own key | Nothing | A key of their own, which they trust the app with | The visitor | Their own key, and nothing of the hoster's |
+| A login with OpenRouter | OpenRouter's base URL, in `assistant_base_url` | An account with OpenRouter | The visitor | A key on their own account, which expires after a day unless they chose otherwise as they logged in |
+
+### The deployment's key
+
+Any visitor who can use the assistant can take the deployment's key from the page.
+The browser makes the calls, so the key has to reach the page.
+
+A visitor who can run R can read the key from R as well, since R reads the blockr option.
+Such a visitor runs R through a block that takes their code, such as the subset block of blockr.core.
+They also run R through the tool `inspect_results`, which runs the R code that the model writes.
+So where visitors can run R, a key in the page only makes visible what they could read already.
+
+No visitor runs R where the blockr options `locked` and `lock_load` are both on, and no block is left open with `locked = FALSE`.
+There, a key in the page is exposed as a key in R is not.
+A deployment that must keep its key from such visitors holds the key in a proxy of its own.
+The page then calls the proxy with no key, and the proxy decides who may call.
+
+Limiting the key is the deployment's job.
+That matters most for an app on the public internet, whose visitors are anyone.
+A deployment can, for instance, give the app a key of its own.
+The deployment can then revoke that key without breaking anything else.
+Where the provider can limit what a key spends, the deployment sets that limit too.
+
+The assistant reads a key only from `assistant_api_key`.
+It never reads a variable of a provider's own clients, such as `OPENAI_API_KEY`.
+So a key that a deployment sets for code in R reaches no browser, unless the deployment sets it in `assistant_api_key` too.
+
+### No key
+
+A company's own proxy may hold the provider's key itself, and then needs no key from the page.
+Under `"none"`, a call carries no key in its headers.
+So the proxy's answer to the browser's preflight need not allow a header for a key.
+Such a proxy trusts that its callers are on the company's network.
+So it allows only the app's origin, in its CORS headers.
+If it allowed every origin, any page that someone on the network opens could call the proxy through their browser, at the company's cost.
+
+### The visitor's own key
+
+Where the deployment sets no key, the chat asks the visitor for a key of their own, in a field above the message field.
+It sends nothing until the visitor gives one.
+The plugin keeps the key in the page's memory.
+It writes the key to neither the board, R nor the browser's storage.
+So a reload asks for the key again.
+The browser takes the field for a login.
+So where the visitor lets it, the browser's password manager saves the key and fills it in after a reload.
+Where the base URL refuses the key, the chat asks for a key again.
+
+### The login with OpenRouter
+
+Where the base URL is OpenRouter's and the deployment sets no key, the chat offers OpenRouter's login beside the field for the key.
+The login gives the page a key on the visitor's own OpenRouter account.
+OpenRouter bills the calls made with that key to the visitor's credits.
+It runs in a window of its own, so the app's page stays as it was.
+OpenRouter labels the key `blockr` and has it expire after a day.
+The visitor can change both as they authorize the app.
+The plugin keeps the key in the page's memory, as it keeps a typed key.
+So a reload asks the visitor to log in again.
+The chat offers the login only on a page that the browser deems secure, such as one served over HTTPS or from localhost.
+
+## A deployment's skills
+
+A skill gives the model guidance for one kind of task, such as building the summary tables of a study.
+The model reads a skill only where the skill's description says that it bears on the task at hand.
+A deployment adds skills of its own in a directory, which the blockr option `assistant_skills` names:
+
+```{r, eval = FALSE}
+options(blockr.assistant_skills = "/srv/blockr/skills")
+```
+
+Each skill is a directory in it, with a `SKILL.md` and any files that the skill bundles:
+
+```
+skills/
+  exposure-tables/
+    SKILL.md
+    column-conventions.md
+```
+
+The file `SKILL.md` starts with YAML frontmatter, and its body holds the skill's instructions:
+
+```markdown
+---
+name: exposure-tables
+description: >-
+  How the tables of exposure data are filtered here. Read before you
+  filter such a table.
+blocks: [blockr.core-subset_block]
+requires:
+  - blockr.core (>= 0.2.0)
+---
+
+Keep only the rows where `SAFFL` is `"Y"` before you summarise the table.
+Read `column-conventions.md` for what each column holds.
+```
+
+The frontmatter takes these keys:
+
+| Key | What it holds |
+|---|---|
+| `name` | The skill's name, which is the name of its directory, in lowercase letters, digits and hyphens |
+| `description` | What the skill covers and when to read it |
+| `blocks` | The block classes that the skill bears on, by their registry ids, such as `blockr.core-subset_block` |
+| `plugins` | The plugin classes that the skill bears on, by their ids, such as `blockr.dock-dock_plugin` |
+| `requires` | The packages that the skill needs, each as a dependency in `DESCRIPTION`, such as `blockr.core (>= 0.2.0)` |
+| `user-invocable` | Whether the user may call the skill by its name |
+| `disable-model-invocation` | Whether the model may not read the skill |
+
+Only `name` and `description` are required.
+R skips a skill that lacks either, and logs a warning.
+R also leaves out a skill whose `requires` names a package that is not installed, or not at the version given.
+R ignores any other key.
+Of those, it warns only of `allowed-tools`, which the assistant does not honour.
+The functions `available_blocks()` and `available_plugins()` list each class with its package and its id.
+The two make up the id in full, `{pkg}-{id}`, which `blocks` and `plugins` take.
+
+A skill that names no class goes into the system prompt, in its Skills section, with its description.
+A skill that names a class is listed where the model reads that class.
+The tools `describe_block` and `describe_block_type` list the skills that name a block's class.
+The tool `get_plugin_state` lists the skills that name a plugin's class.
+Wherever the model learns of a skill, it reads the skill with the tool `read_skill`.
+The same tool reads a file that the skill bundles.
+So a skill for one class names it, and stays out of the system prompt, which every call sends.
+
+The user can call a skill that sets `user-invocable: true`.
+The user types `/` and the skill's name at the start of a message, such as `/exposure-tables by treatment arm`.
+The chat sends the skill's text with the message.
+The model gets that text with the message on this call and on every later call of the conversation.
+A skill that sets `disable-model-invocation: true` is neither in the system prompt nor in a tool's list, and `read_skill` refuses it.
+So only the user can call such a skill.
+A skill that sets `disable-model-invocation` but not `user-invocable` can be read by nobody, so R logs a warning.
+
+R lists the skills of the app's packages first, in the order of the packages' names ([Skills of its own](#skills-of-its-own)).
+It then lists those of the deployment's directory.
+A skill takes the place of one of the same name that R listed before it.
+So a deployment's skill takes the place of a package's skill of the same name.
+For instance, blockr.dock gives the model the skill `layout`, on arranging the dock's views.
+A deployment can replace it with a skill `layout` of its own.
+
+The system prompt and the tools cut each skill's description at the blockr option `assistant_skill_description_max_chars`, 1024 characters by default.
+Every call sends the descriptions of the skills in the system prompt.
+So R logs a warning where those descriptions together pass the blockr option `assistant_skill_catalogue_max_chars`, 4000 characters by default.
+A skill that names its classes does not count towards that total.
+
+As each board opens, the plugin has R list the skills.
+R reads a skill's text whenever the model or the user asks for it.
+So an edit to a skill reaches the model without a restart of the app.
+Where R cannot list the skills, as for a directory in `assistant_skills` that does not exist, the plugin raises the error `assistant_skills_failed`.
+The assistant then goes on without skills until the next board opens.
+
+A skill is instructions, not a capability.
+It cannot widen what the assistant's tools do.
+Where a skill contradicts the system prompt, the system prompt tells the model that the prompt wins.
+So a deployment that wants to change the assistant's own instructions writes a template instead ([A deployment's template](#a-deployments-template)).
+No visitor can add a skill.
+The directory comes from a blockr option, which the deployment sets, and no tool of the assistant's writes a skill.
+
+## A deployment's template
+
+Some of what the model is told is a matter of taste: who the assistant is, whether it builds or asks first, and how it answers.
+A deployment may want these otherwise.
+The template of blockr.assistant holds them in three sections, each with an id:
+
+| Id | What the section tells the model |
+|---|---|
+| `role` | That it is an assistant next to a blockr data analysis board |
+| `build` | To build what the user wants analysed, with defaults from the data, rather than ask first |
+| `style` | To answer concisely |
+
+The template names each section as `<<id>>` on a line of its own, in the order in which the model reads them:
+
+```markdown
+<<role>>
+
+<<build>>
+
+<<style>>
+```
+
+A deployment's template is a Markdown file, which the blockr option `assistant_template` names.
+It takes the place of the template of blockr.assistant.
+In it, `<<id>>` puts in the section of that id from the template of blockr.assistant.
+So the file keeps a section by naming it, and moves the sections by the order in which it names them.
+It leaves a section out by not naming it, and adds text of its own around the sections.
+
+A template for analysts who want to agree on a plan first leaves out `build`, and says what to do instead:
+
+```markdown
+<<role>>
+
+Before you change the board, say in a few lines what you would build.
+Then wait until the user agrees.
+
+<<style>>
+
+Answer in German.
+```
+
+```{r, eval = FALSE}
+options(blockr.assistant_template = "/srv/blockr/template.md")
+```
+
+Instructions for every call go in a template, and so do instructions that change those of the template of blockr.assistant.
+Instructions for one kind of task go in a skill ([A deployment's skills](#a-deployments-skills)).
+
+The rules and what the plugin writes reach the model whatever the file holds:
+
+1. After the template, the system prompt holds the rules of blockr.assistant, on the board and the assistant's tools.
+2. After the rules, the system prompt holds its Skills section, with the skills that name no class.
+3. Where others changed the board's blocks, links or stacks since the conversation's previous call, the conversation ends on a note of the app's, which says what changed and who changed it.
+4. After the conversation's last message, a message of the app's holds the board, in its Board section, and what the user has on screen, in its Focus section.
+
+No template can leave these out or move them.
+The section Template of `?new_assistant_plugin` lists every part of what a call sends, in the order in which the model reads them.
+
+As each board opens, the plugin has R read the template.
+Where R cannot read the file, or where the file names an id that is none of the three, the plugin raises the error `assistant_template_failed`.
+The calls then go on with the template of blockr.assistant until the next board opens.
+
+The ids of the sections are part of the interface of blockr.assistant, since a deployment's template names them.
+A release that renames a section thus fails every template that names the old id, with the error above.
+So the deployment sees the change, rather than losing the section without notice.
+A section that a release adds reaches the model under a deployment's template only once the file names it.
+
+## What the assistant keeps and returns
+
+### The conversations that a board keeps
+
+The board holds the assistant's conversations, as the state of its plugin.
+So a saved board holds them too, and whoever opens the saved board reads them.
+That reader may be someone else, such as a colleague to whom the user sends the file.
+
+The blockr option `chat_save_turns` caps the messages of each conversation that the board holds.
+It is 50 by default, `0` for none and `-1` for every message.
+The board keeps whole exchanges, each from a message that the user sent.
+The plugin keeps the older messages in the browser's memory while the board stays open.
+So the chat still shows them, and the model still gets them.
+
+Whether a conversation may land in a file that others open is the deployment's call.
+Under `0`, the board holds no conversation, and the plugin keeps each conversation in the browser's memory alone:
+
+```{r, eval = FALSE}
+options(blockr.chat_save_turns = 0)
+```
+
+A reload then loses every conversation.
+Under any value, the board holds the name and the type of each file that the user attaches, but never the file's content, and never a key.
+
+### The caps of the tools
+
+The model reads the board, the results and the skills through the assistant's tools.
+Blockr options cap what the tools give the model, and what the plugin writes for the model about the board.
+A text cut at its cap ends with a mark that says how many characters were cut.
+Where another tool reads the rest, the mark names that tool.
+
+| Blockr option | What it caps | Default |
+|---|---|---|
+| `assistant_summary_max_chars` | What `describe_result()` writes about a block's result, what `describe_block` and `describe_stack` give, and the state of each block that an edit added, in the edit's review | 2000 characters |
+| `assistant_state_max_chars` | The state that `get_block_state` or `get_plugin_state` gives | 20000 characters |
+| `assistant_state_value_max_chars` | A value of a block's state in `describe_block` and in an edit's review, past which the value is left out | 128 characters |
+| `assistant_description_max_chars` | A description in the lists of `list_block_types`, `list_commands` and `list_plugins` | 1000 characters |
+| `assistant_skill_description_max_chars` | A skill's description, in the system prompt and where a tool lists the skills of a class | 1024 characters |
+| `assistant_skill_catalogue_max_chars` | The descriptions of the skills in the system prompt, together, past which R logs a warning and cuts nothing | 4000 characters |
+| `assistant_board_section_max_chars` | Each part of the Board section, such as its list of blocks, and the list in the note of what others changed | 1500 characters |
+| `assistant_eval_max_chars` | What the model's R code prints in `inspect_results`, and the warnings and messages of R's reply to a tool's request | 16000 characters |
+| `assistant_review_max_blocks` | The blocks that an edit's review covers | 50 blocks |
+| `assistant_plot_render_px` | The width and the height of a plot of `inspect_results`, where the model gives none | 768 pixels |
+| `assistant_plot_render_range` | The smallest and the largest width and height that a plot of `inspect_results` takes, whatever the model gives | 200 to 2000 pixels |
+| `assistant_plot_render_max` | The plots that one call of `inspect_results` returns | 4 plots |
+
+A cap that the plugin reads takes a whole number of 0 or more.
+Any other value fails the tool or the turn that reads the cap, with a message that names the value.
+
+## A package that teaches the model
+
+A package teaches the model about what it offers in five ways: through skills of its own, and through what its block classes, plugin classes, commands and results tell the model.
+
+### Skills of its own
+
+A package gives skills of its own in `inst/assistant/skills` of its source, one directory for each.
+Each takes the form of a deployment's skill ([A deployment's skills](#a-deployments-skills)).
+The package needs no dependency on blockr.assistant for its skills, since R reads them as files.
+R does not read a package's `inst/skills`, where btw finds the skills that it gives coding agents.
+So a skill that a package writes for its developers stays out of the app's model, and the other way round.
+
+R lists the skills of each package that the app uses.
+Those are the packages that give the app a block class, a plugin class, a board option, a module or a renderer.
+So the model sees a package's skills only in an app that uses the package.
+A skill that names no class goes into the system prompt of every such app, as the skill `layout` of blockr.dock does.
+A skill for one class names it in `blocks` or `plugins`, so that the model reads the skill only where it works with that class.
+A deployment's skill takes the place of a package's skill of the same name.
+
+### Block classes
+
+The model reads a block class through what the class registers: its description, its guidance, and the JSON Schema of its state.
+The tool `list_block_types` gives each class's description.
+The tool `describe_block_type` gives one class's guidance in full, with its schema.
+The guidance holds what the model needs to know as it sets up a block of the class, such as the rules that the class's state follows.
+The `description` keywords of the schema say what each arg of the state holds.
+The vignette on block classes says how a package registers them (`vignette("create-block", package = "blockr.core")`).
+
+### Plugin classes
+
+The model reads a plugin through the JSON Schema of its class's state.
+The tool `list_plugins` gives each of the app's plugins with the description at the top of that schema.
+The tool `get_plugin_state` gives one plugin's state, with the schema.
+The `description` keywords of the schema say what each part of the state holds.
+So the model changes the state as the schema has it, through the command `blockr.core-set_plugin_state` or through a command of the plugin's class.
+
+### Commands
+
+The model changes the board through the tool `edit`, which runs a list of the commands that the app registers.
+The tool `list_commands` gives each command's id and description.
+The tool `describe_command` gives one command's description in full, with the JSON Schema of its args.
+So a command that a package registers with `core.commands.register()` reaches the model through its `description`, which says what the command does and when to use it.
+It reaches the model through the `description` keywords of its `args` too.
+A package that needs a tool of its own for the model registers a command, since the loop in the browser cannot call an R function.
+
+### Results
+
+R tells the model what a block's result holds through the generic `describe_result()`.
+The tool `get_block_result` and an edit's review read what it writes.
+Its default method describes a result through `btw::btw_this()`.
+A package whose results that default describes poorly gives a method for their class:
+
+```{r}
+describe_result.arm_summary <- function(x, ...) {
+  c(
+    paste("Summary table of", nrow(x), "treatment arms."),
+    paste("Columns:", paste(names(x), collapse = ", "))
+  )
+}
+
+arms <- structure(
+  data.frame(arm = c("Placebo", "Drug"), n = c(86L, 84L)),
+  class = c("arm_summary", "data.frame")
+)
+
+describe_result(arms)
+```
+
+A method returns the lines of text that the model reads.
+It need not bound its text or catch its own errors.
+R cuts the text at `assistant_summary_max_chars`, and turns an error into a message for the model.
+A package registers the method with the roxygen tag `@exportS3Method blockr.assistant::describe_result`.
+R then registers the method once blockr.assistant loads, so the package needs blockr.assistant only in its `Suggests`.

@@ -21,7 +21,7 @@ builds, by id, each a list in the shape that the schema gives.}
 \value{
 The constructor \code{new_assistant_plugin()} returns a \code{plugin} object,
 as \code{\link[blockr.core:new_plugin]{blockr.core::new_plugin()}} returns it.
-The method of \code{plugin_requests()} returns the five requests, a list of
+The method of \code{plugin_requests()} returns the six requests, a list of
 functions by name.
 }
 \description{

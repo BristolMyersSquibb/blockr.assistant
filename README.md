@@ -10,11 +10,18 @@
 [![coverage](https://codecov.io/gh/BristolMyersSquibb/blockr.assistant/graph/badge.svg?token=TxIZnzIqo2)](https://app.codecov.io/gh/BristolMyersSquibb/blockr.assistant)
 <!-- badges: end -->
 
-An [`ellmer`](https://ellmer.tidyverse.org/)-powered chat panel for
-[`blockr.dock`](https://github.com/BristolMyersSquibb/blockr.dock)
-boards. The assistant ships as a `dock_extension` that slots into the
-board layout like any other panel; the chat UI is built on
-[`shinychat`](https://github.com/posit-dev/shinychat).
+The assistant is a plugin for
+[blockr](https://github.com/BristolMyersSquibb/blockr) boards. Its model
+reads the board and edits it beside the user. Each edit runs commands
+that blockr.core and the app’s packages register, as the user’s own
+edits do. So the user’s undo takes back an edit of the assistant’s as it
+takes back any other. The assistant runs its agent loop in the browser.
+It calls its model from the browser too, never through R.
+
+A deployment chooses where the calls go, how they are authenticated and
+which models the assistant offers, through blockr options. It can also
+give the model skills and a template of its own. A package can teach the
+model about what it offers, such as its block classes and its results.
 
 ## Installation
 
@@ -28,31 +35,50 @@ pak::pak("BristolMyersSquibb/blockr.assistant")
 
 ## Example
 
-Mount the assistant on a small board. The chat is wired to whichever
-`ellmer` model the board’s `llm_model` option resolves to (by default
-`ellmer::chat_openai()`); set the `blockr.chat_function` option to swap
-providers.
+An app script puts the assistant’s plugin on its board with
+`new_assistant_plugin()`:
 
 ``` r
-# A small pipeline wired up before the assistant mounts, so it has
-# something to navigate to (not just from). Try:
-#
-# - "What is on the board?" -- the answer should come from the prompt's
-#   Board section, no tool call required.
-# - "What is the unique value of `Species` in the data block?" -- the
-#   model should call `inspect_results(code = "unique(data$Species)")`.
-# - "Add a scatter plot of Sepal.Length vs Petal.Length grouped by
-#   Species" -- the model stages add_block (and add_link) calls, then
-#   calls commit to apply them and read back the result.
-# - "Rename `head` to `top_rows`" -- the model declines the in-place
-#   rename and offers remove + add, triggered by the id-immutability
-#   paragraph in the default prompt's intro (no tool call needed).
-
 library(blockr.core)
-library(blockr.dock)
 library(blockr.assistant)
 
-board <- new_dock_board(
+# A small pipeline on the board before the assistant opens, so that it has
+# something to read and to build on.
+# The app runs under the frontend that its packages give: the dock where
+# blockr.dock is installed, and core's basic frontend otherwise.
+# Try:
+#
+# - "What is on the board?"
+#   The answer comes from the board that each call sends the model, with no
+#   tool call.
+# - "What are the unique values of Species in the data block?"
+#   The model calls inspect_results, with code such as unique(data$Species).
+# - "Add a scatter plot of Sepal.Length against Petal.Length."
+#   The model adds the block and links it in one edit, and reads the edit's
+#   review.
+# - "Change the id of the block head to top_rows."
+#   Ids never change, so the model explains that it would remove the block
+#   and add it again, and asks before it does.
+#
+# The assistant calls its model from the browser.
+# A deployment says where the calls go through the assistant's blockr options.
+# It sets them as environment variables, so that this script stays as it is.
+# A demo on OpenAI's models sets two of them:
+#
+#   BLOCKR_ASSISTANT_API_KEY, the deployment's key
+#   BLOCKR_ASSISTANT_MODELS, the models that it offers, such as gpt-5.4
+#
+# Where the deployment sets no key, the chat asks each visitor for their own.
+# A deployment that sends its calls to another base URL names it in
+# BLOCKR_ASSISTANT_BASE_URL.
+# It names the API that the base URL speaks in BLOCKR_ASSISTANT_API, unless
+# that is OpenAI's Responses API.
+# An app whose visitors log in with OpenRouter sets these two:
+#
+#   BLOCKR_ASSISTANT_BASE_URL, OpenRouter's https://openrouter.ai/api/v1
+#   BLOCKR_ASSISTANT_API, openai-completions
+
+board <- new_board(
   blocks = c(
     data = new_dataset_block("iris"),
     filt = new_subset_block(subset = "Sepal.Length > 5"),
@@ -65,10 +91,10 @@ board <- new_dock_board(
     new_link("filt", "plot", "data")
   ),
   stacks = c(
-    prep    = new_stack(c("data", "filt"), name = "Prep"),
+    prep = new_stack(c("data", "filt"), name = "Prep"),
     display = new_stack(c("head", "plot"), name = "Display")
   ),
-  extensions = list(assistant = new_assistant_extension())
+  plugins = list(assistant = new_assistant_plugin())
 )
 
 serve(board)
@@ -76,20 +102,15 @@ serve(board)
 
 <figure>
 <img src="man/figures/screenshot.png"
-alt="Assistant panel mounted next to a small blockr.dock board." />
-<figcaption aria-hidden="true">Assistant panel mounted next to a small
-<code>blockr.dock</code> board.</figcaption>
+alt="The assistant’s panel on the left rail of the dock, beside the blocks of a small board." />
+<figcaption aria-hidden="true">The assistant’s panel on the left rail of
+the dock, beside the blocks of a small board.</figcaption>
 </figure>
 
-## Status
-
-The assistant is feature-complete for the initial roadmap: read tools
-(`list_blocks`, `describe_block`, `inspect_results`, …), mutation tools
-(`add_block`, `modify_block`, …) flushed atomically per turn, and a
-system prompt refreshed on every materialized board change so the model
-always sees the current shape of the board.
-
-See the
-[roadmap](https://bristolmyerssquibb.github.io/blockr.assistant/articles/design/0-roadmap.html)
-for the staged plan and the per-phase design notes for what was shipped
-in each phase.
+The guide, [Get
+started](https://bristolmyerssquibb.github.io/blockr.assistant/articles/get-started.html),
+says how an app offers the assistant and how a package teaches its
+model. An app script written for blockr.assistant 0.1 changes as the
+[migration
+notes](https://bristolmyerssquibb.github.io/blockr.assistant/articles/migration-notes.html)
+say.
