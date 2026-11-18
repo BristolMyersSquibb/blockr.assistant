@@ -15,10 +15,13 @@
 // 4. Before each call, compaction puts a summary in place where the
 //    conversation nears the model's context window, and the call waits for
 //    it (../compaction).
+//    Then, where others changed the board's blocks, links or stacks since the
+//    conversation's previous call, the turn adds the note of what they
+//    changed to the conversation, which keeps it (../notes).
 //    Each call sends the system prompt of the open board, and after the
 //    conversation's last message the message of the app's, as it is when the
 //    call goes out, with the board and what the user has on screen
-//    (../prompt).
+//    (../prompt). So the note comes before the board.
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
@@ -108,6 +111,7 @@ import type { Conversations, KeptFile } from "../conversations/index.ts";
 import type { Compaction } from "../compaction/index.ts";
 import type { Answered, Call, CarriedFile, Handlers, Streamed } from "../loop/index.ts";
 import type { Models } from "../models/index.ts";
+import type { Notes } from "../notes/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
 import type { Prompt } from "../prompt/index.ts";
@@ -133,6 +137,9 @@ export interface TurnsOptions extends CallOptions {
   // The compaction, which puts a summary in place before a call that needs
   // one, and after a call that outgrew the window.
   readonly compaction: Pick<Compaction, "beforeCall" | "compact">;
+  // The notes of what others changed in the board, which give the note that
+  // a call's conversation takes before the call goes out.
+  readonly notes: Pick<Notes, "take">;
   // The tab's Web Locks, the page's by default.
   readonly locks?: Locks | undefined;
 }
@@ -180,6 +187,9 @@ interface State {
   overflowed: readonly CarriedFile[];
   // Whether the turn tried a call once more already.
   retried: boolean;
+  // Whether the turn still writes to its conversation, which it does until
+  // the conversation takes no more messages.
+  writes: boolean;
   readonly controller: AbortController;
 }
 
@@ -306,22 +316,31 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     }
   }
 
+  // Changes the turn's conversation, while the turn still writes to it: not
+  // once its board closed, nor once its conversation took no message, which
+  // stops the turn.
+  async function write(turn: State, change: () => Promise<void>): Promise<void> {
+    if (!turn.writes || closed()) return;
+    try {
+      await change();
+    } catch (error) {
+      turn.writes = false;
+      turn.controller.abort(GONE);
+      core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf(error)}`);
+    }
+  }
+
+  // Adds the note of what others changed in the board since the
+  // conversation's previous call to the conversation, where there is one, as
+  // the call that goes out sees the board.
+  async function addNote(turn: State): Promise<void> {
+    if (stopped(turn)) return;
+    const note = await options.notes.take(turn.conversation);
+    if (note !== undefined) await write(turn, () => conversations.addMessage(turn.conversation, note));
+  }
+
   // What the turn does with what the loop reports.
   function handlers(turn: State): Handlers {
-    // Whether the turn still writes to its conversation: not once its board
-    // closed, nor once its conversation took no message.
-    let writes = true;
-    const write = async (change: () => Promise<void>): Promise<void> => {
-      if (!writes || closed()) return;
-      try {
-        await change();
-      } catch (error) {
-        writes = false;
-        turn.controller.abort(GONE);
-        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf(error)}`);
-      }
-    };
-
     return {
       streaming(reply) {
         turn.reply = reply;
@@ -331,18 +350,18 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         turn.reply = undefined;
         if (call.reply !== undefined) {
           const { message, kept } = call.reply;
-          await write(() => conversations.addMessage(turn.conversation, message, kept));
+          await write(turn, () => conversations.addMessage(turn.conversation, message, kept));
         }
         const { input, output, total } = call.usage;
         if (input > 0 || output > 0 || total > 0) {
-          await write(() => conversations.addUsage(turn.conversation, input, output, total));
+          await write(turn, () => conversations.addUsage(turn.conversation, input, output, total));
         }
         const { failure } = call;
         if (failure !== undefined) {
           if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
             turn.overflow = failure;
             turn.overflowed = call.files;
-          } else if (writes && !closed()) {
+          } else if (turn.writes && !closed()) {
             if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, failure);
             else await failed(turn, { ...call, failure });
           }
@@ -356,7 +375,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         changed();
       },
       async results(message, kept) {
-        await write(() => conversations.addMessage(turn.conversation, message, kept));
+        await write(turn, () => conversations.addMessage(turn.conversation, message, kept));
         turn.results = {};
         changed();
       },
@@ -399,7 +418,10 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         kept: (message) => conversations.kept(turn.conversation, message),
         systemPrompt,
         appMessage: () => options.prompt.appMessage(),
-        beforeCall: (stop) => options.compaction.beforeCall(turn.conversation, call, stop),
+        beforeCall: async (stop) => {
+          await options.compaction.beforeCall(turn.conversation, call, stop);
+          await addNote(turn);
+        },
         signal: turn.controller.signal,
         on: handlers(turn),
       });
@@ -422,7 +444,18 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
       if (running !== undefined) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn: State = { conversation, reply: undefined, results: {}, stopping: false, carried: undefined, overflow: undefined, overflowed: [], retried: false, controller: new AbortController() };
+      const turn: State = {
+        conversation,
+        reply: undefined,
+        results: {},
+        stopping: false,
+        carried: undefined,
+        overflow: undefined,
+        overflowed: [],
+        retried: false,
+        writes: true,
+        controller: new AbortController(),
+      };
       const close = (): void => {
         turn.controller.abort(CLOSED);
       };

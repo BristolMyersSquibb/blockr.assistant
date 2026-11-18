@@ -71,7 +71,8 @@
 //
 // Before each call, the loop awaits what the caller does then, as compaction
 // puts a summary in place where the conversation nears the model's context
-// window (../compaction). It reads the conversation only after that.
+// window (../compaction), and as the turn adds the note of what others
+// changed in the board (../notes). It reads the conversation only after that.
 //
 // It reports to its caller as the turn runs, and pi waits for each report
 // before it goes on, so that a reply is in the conversation before the next

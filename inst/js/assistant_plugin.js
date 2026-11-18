@@ -851,7 +851,7 @@ function createModels(core, signal, options) {
 var NO_KEY = "The assistant has no key for its calls, since the visitor has given none, and the app sets none in the blockr option assistant_api_key.";
 var NO_MODEL = "The assistant has no model to talk to, since the app offers none.";
 var STOPPED = { kind: "stopped" };
-async function prepareCall(options, picked, stopped, carried = () => void 0) {
+async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   let deployment;
   try {
     deployment = await options.deployment;
@@ -861,7 +861,7 @@ async function prepareCall(options, picked, stopped, carried = () => void 0) {
   if (deployment.credential.kind === "visitor" && keyOf(options.key.current()) === void 0) return failed(NO_KEY);
   const offered = await options.models.offered();
   if (stopped()) return STOPPED;
-  const model2 = resolveModel(offered, picked());
+  const model2 = resolveModel(offered, picked2());
   if (model2 === void 0) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
   let loop;
   try {
@@ -1004,18 +1004,22 @@ function createTurns(core, signal, options) {
       }
     }
   }
+  async function write(turn, change2) {
+    if (!turn.writes || closed2()) return;
+    try {
+      await change2();
+    } catch (error) {
+      turn.writes = false;
+      turn.controller.abort(GONE);
+      core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf2(error)}`);
+    }
+  }
+  async function addNote(turn) {
+    if (stopped(turn)) return;
+    const note2 = await options.notes.take(turn.conversation);
+    if (note2 !== void 0) await write(turn, () => conversations.addMessage(turn.conversation, note2));
+  }
   function handlers(turn) {
-    let writes = true;
-    const write = async (change2) => {
-      if (!writes || closed2()) return;
-      try {
-        await change2();
-      } catch (error) {
-        writes = false;
-        turn.controller.abort(GONE);
-        core.log("blockr.assistant").warn(`The assistant stopped its turn, since its conversation took no more messages: ${messageOf2(error)}`);
-      }
-    };
     return {
       streaming(reply) {
         turn.reply = reply;
@@ -1025,18 +1029,18 @@ function createTurns(core, signal, options) {
         turn.reply = void 0;
         if (call.reply !== void 0) {
           const { message: message2, kept } = call.reply;
-          await write(() => conversations.addMessage(turn.conversation, message2, kept));
+          await write(turn, () => conversations.addMessage(turn.conversation, message2, kept));
         }
         const { input, output, total } = call.usage;
         if (input > 0 || output > 0 || total > 0) {
-          await write(() => conversations.addUsage(turn.conversation, input, output, total));
+          await write(turn, () => conversations.addUsage(turn.conversation, input, output, total));
         }
         const { failure } = call;
         if (failure !== void 0) {
           if (call.overflow === true && !turn.retried && !turn.controller.signal.aborted) {
             turn.overflow = failure;
             turn.overflowed = call.files;
-          } else if (writes && !closed2()) {
+          } else if (turn.writes && !closed2()) {
             if (call.refused && call.files.length > 0) refuse(turn.conversation, call.files, failure);
             else await failed2(turn, { ...call, failure });
           }
@@ -1050,7 +1054,7 @@ function createTurns(core, signal, options) {
         changed();
       },
       async results(message2, kept) {
-        await write(() => conversations.addMessage(turn.conversation, message2, kept));
+        await write(turn, () => conversations.addMessage(turn.conversation, message2, kept));
         turn.results = {};
         changed();
       }
@@ -1088,7 +1092,10 @@ function createTurns(core, signal, options) {
       kept: (message2) => conversations.kept(turn.conversation, message2),
       systemPrompt: systemPrompt2,
       appMessage: () => options.prompt.appMessage(),
-      beforeCall: (stop) => options.compaction.beforeCall(turn.conversation, call, stop),
+      beforeCall: async (stop) => {
+        await options.compaction.beforeCall(turn.conversation, call, stop);
+        await addNote(turn);
+      },
       signal: turn.controller.signal,
       on: handlers(turn)
     });
@@ -1109,7 +1116,18 @@ function createTurns(core, signal, options) {
       if (running !== void 0) {
         throw new Error(`A turn of the assistant runs already on the board, in the conversation "${running.conversation}".`);
       }
-      const turn = { conversation: conversation2, reply: void 0, results: {}, stopping: false, carried: void 0, overflow: void 0, overflowed: [], retried: false, controller: new AbortController() };
+      const turn = {
+        conversation: conversation2,
+        reply: void 0,
+        results: {},
+        stopping: false,
+        carried: void 0,
+        overflow: void 0,
+        overflowed: [],
+        retried: false,
+        writes: true,
+        controller: new AbortController()
+      };
       const close = () => {
         turn.controller.abort(CLOSED);
       };
@@ -1790,13 +1808,13 @@ function credentialOf(sent3) {
 function modelsOf(sent3) {
   if (sent3 === void 0) return void 0;
   const ids = typeof sent3 === "string" ? sent3.split(",") : Array.isArray(sent3) && sent3.every((id) => typeof id === "string") ? sent3 : [];
-  const named = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
-  if (named.length === 0) {
+  const named2 = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
+  if (named2.length === 0) {
     throw new TypeError(
       `The blockr option assistant_models is ${JSON.stringify(sent3)}, where it takes the ids of the models offered, the first being the default, as an array of strings or as one string that separates them by commas, such as "gpt-5.4,gpt-5.4-nano".`
     );
   }
-  return named;
+  return named2;
 }
 function isWebUrl(text3) {
   try {
@@ -1954,8 +1972,8 @@ function systemMessage(prompt, tools) {
   const declared = tools.map((tool2) => ({ name: tool2.name, description: tool2.description, parameters: tool2.parameters }));
   return { role: "system", content: prompt, ...declared.length > 0 ? { toolsAdded: declared } : {}, timestamp: Date.now() };
 }
-function appMessage(written) {
-  return { role: "app", content: [text(written)], timestamp: Date.now() };
+function appMessage(written, at2 = Date.now()) {
+  return { role: "app", content: [text(written)], timestamp: at2 };
 }
 function llmMessages(messages) {
   return messages.map((message2) => message2.role === "app" ? appAsUser(message2) : message2);
@@ -1969,7 +1987,9 @@ function piMessages(messages, kept, model2, files) {
     const message2 = messages[i];
     if (message2 === void 0) continue;
     const at2 = Date.parse(message2.created);
-    if (message2.role === "user") {
+    if (isNote(message2)) {
+      out.push(appMessage(message2.parts.flatMap((part) => part.type === "changes" ? [part.text] : []).join("\n\n"), at2));
+    } else if (message2.role === "user") {
       const content = userContent(message2, kept(message2.id)?.files ?? [], model2, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at2 });
     } else if (message2.role === "summary") {
@@ -2226,17 +2246,17 @@ function callAttributes() {
   const input = /* @__PURE__ */ new Map();
   return (attributes) => {
     const given2 = defined(attributes);
-    const named = {};
+    const named2 = {};
     for (const [name, value] of Object.entries(given2)) {
       if (name === "provider") continue;
-      if (name === "api" && typeof value === "string") named["gen_ai.provider.name"] = providerName(value);
+      if (name === "api" && typeof value === "string") named2["gen_ai.provider.name"] = providerName(value);
       if (isInput(name) && typeof value === "number") input.set(name, value);
-      named[RENAMED.get(name) ?? name] = value;
+      named2[RENAMED.get(name) ?? name] = value;
     }
     if (INPUT.some((name) => Object.hasOwn(given2, name))) {
-      named["gen_ai.usage.input_tokens"] = [...input.values()].reduce((sum, tokens3) => sum + tokens3, 0);
+      named2["gen_ai.usage.input_tokens"] = [...input.values()].reduce((sum, tokens3) => sum + tokens3, 0);
     }
-    return named;
+    return named2;
   };
 }
 function isInput(name) {
@@ -2669,164 +2689,6 @@ function shown2(value) {
   return JSON.stringify(one(value) ?? value);
 }
 
-// srcts/openrouter/channel.ts
-var CHANNEL = "blockr.assistant-openrouter";
-function isCallback(data) {
-  if (typeof data !== "object" || data === null) return false;
-  const { code, state } = data;
-  return typeof code === "string" && code !== "" && typeof state === "string" && state !== "";
-}
-
-// srcts/openrouter/login.ts
-var OPENROUTER = {
-  baseUrl: "https://openrouter.ai/api/v1",
-  authUrl: "https://openrouter.ai/auth",
-  keysUrl: "https://openrouter.ai/api/v1/auth/keys"
-};
-var LABEL = "blockr";
-var EXPIRATION = "1-day";
-var IDLE = { kind: "idle" };
-var EXCHANGING = { kind: "exchanging" };
-var BLOCKED = { kind: "blocked" };
-function createOpenRouterLogin(options) {
-  const urls = options.urls ?? OPENROUTER;
-  const callbackUrl = options.callbackUrl ?? new URL("openrouter.html", import.meta.url).href;
-  const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-  const open2 = options.open ?? ((url, target, features) => window.open(url, target, features));
-  const secure = options.secure ?? globalThis.isSecureContext;
-  const listeners = /* @__PURE__ */ new Set();
-  const pending = /* @__PURE__ */ new Map();
-  let state = IDLE;
-  let channel;
-  function set(next) {
-    if (next === state) return;
-    state = next;
-    for (const listener of [...listeners]) listener();
-  }
-  function forget(loginState) {
-    if (loginState === void 0) pending.clear();
-    else pending.delete(loginState);
-    if (pending.size > 0) return;
-    channel?.close();
-    channel = void 0;
-  }
-  async function received(callback) {
-    const verifier = pending.get(callback.state);
-    if (verifier === void 0) return;
-    forget(callback.state);
-    set(EXCHANGING);
-    const exchanged = await exchange(urls, fetch, callback.code, verifier);
-    if (exchanged.kind === "failed") {
-      set({ kind: "failed", reason: exchanged.reason });
-      return;
-    }
-    forget();
-    options.key.give(exchanged.key);
-    set(IDLE);
-  }
-  return {
-    offers(baseUrl) {
-      return secure && baseUrl === urls.baseUrl;
-    },
-    current() {
-      return state;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    start() {
-      const login = open2("", "_blank", windowFeatures());
-      if (login === null) {
-        set(BLOCKED);
-        return;
-      }
-      login.opener = null;
-      const verifier = randomToken(32);
-      const loginState = randomToken(16);
-      pending.set(loginState, verifier);
-      if (channel === void 0) {
-        channel = new BroadcastChannel(CHANNEL);
-        channel.addEventListener("message", (event) => {
-          if (isCallback(event.data)) void received(event.data);
-        });
-      }
-      set(IDLE);
-      void challengeOf(verifier).then((challenge) => {
-        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState));
-      });
-    }
-  };
-}
-var logins = /* @__PURE__ */ new WeakMap();
-function openRouterLoginOf(key) {
-  const kept = logins.get(key);
-  if (kept !== void 0) return kept;
-  const login = createOpenRouterLogin({ key });
-  logins.set(key, login);
-  return login;
-}
-function authUrlOf(urls, callbackUrl, challenge, state) {
-  const url = new URL(urls.authUrl);
-  url.search = new URLSearchParams({
-    callback_url: callbackUrl,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    state,
-    key_label: LABEL,
-    expiration: EXPIRATION
-  }).toString();
-  return url.href;
-}
-async function challengeOf(verifier) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return base64url(new Uint8Array(digest));
-}
-async function exchange(urls, fetch, code, verifier) {
-  let response;
-  try {
-    response = await fetch(urls.keysUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, code_verifier: verifier, code_challenge_method: "S256" })
-    });
-  } catch {
-    return { kind: "failed", reason: `The page could not reach ${new URL(urls.keysUrl).host}.` };
-  }
-  const body = await response.json().catch(() => void 0);
-  if (!response.ok) {
-    return { kind: "failed", reason: `OpenRouter refused the login: ${messageOf3(body) ?? `HTTP ${String(response.status)}.`}` };
-  }
-  const key = typeof body === "object" && body !== null && "key" in body && typeof body.key === "string" ? body.key.trim() : "";
-  if (key === "") return { kind: "failed", reason: "OpenRouter sent no key." };
-  return { kind: "key", key };
-}
-function messageOf3(body) {
-  if (typeof body !== "object" || body === null || !("error" in body)) return void 0;
-  const { error } = body;
-  if (typeof error !== "object" || error === null || !("message" in error) || typeof error.message !== "string") return void 0;
-  const message2 = error.message.trim();
-  if (message2 === "") return void 0;
-  return /[.!?]$/.test(message2) ? message2 : `${message2}.`;
-}
-function windowFeatures() {
-  const width = 520;
-  const height = 720;
-  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-  const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-  return `popup,width=${String(width)},height=${String(height)},left=${String(left)},top=${String(top)}`;
-}
-function randomToken(bytes) {
-  return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
-}
-function base64url(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 // srcts/tools/caps.ts
 var DEFAULTS = {
   // What describe_block and describe_stack give, and what describe_result()
@@ -2902,6 +2764,15 @@ function skillBlurb(name, description, max) {
   return cutText(description.replace(/\s+/g, " ").trim(), max, `call read_skill("${name}") for the rest`);
 }
 
+// srcts/tools/context.ts
+function own(record2, key) {
+  return Object.hasOwn(record2, key) ? record2[key] : void 0;
+}
+async function skillsNaming(context6, kind, id) {
+  const [listed3, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
+  return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
+}
+
 // srcts/tools/edit.ts
 import { context as context4 } from "@opentelemetry/api";
 
@@ -2953,16 +2824,16 @@ function tokens2(description) {
   return { type: "integer", minimum: 0, description };
 }
 function definitionsFor(value) {
-  const picked = /* @__PURE__ */ new Map();
+  const picked2 = /* @__PURE__ */ new Map();
   const queue = referenced(value);
   for (let name = queue.pop(); name !== void 0; name = queue.pop()) {
-    if (picked.has(name)) continue;
+    if (picked2.has(name)) continue;
     const definition = DEFINITIONS[name];
     if (definition === void 0) throw new Error(`The schema of the assistant's state defines no "${name}".`);
-    picked.set(name, definition);
+    picked2.set(name, definition);
     queue.push(...referenced(definition));
   }
-  return Object.fromEntries([...picked].sort(([a], [b]) => a < b ? -1 : 1));
+  return Object.fromEntries([...picked2].sort(([a], [b]) => a < b ? -1 : 1));
 }
 function referenced(value) {
   return [...JSON.stringify(value).matchAll(/"#\/\$defs\/([^"]+)"/g)].flatMap((match) => match.slice(1, 2));
@@ -3111,15 +2982,6 @@ var assistantCommands = [
     })
   })
 ];
-
-// srcts/tools/context.ts
-function own(record, key) {
-  return Object.hasOwn(record, key) ? record[key] : void 0;
-}
-async function skillsNaming(context6, kind, id) {
-  const [listed3, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
-  return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
-}
 
 // srcts/tools/changes.ts
 var ORIGIN2 = "assistant";
@@ -3329,8 +3191,8 @@ async function reviewed(core, step, signals, active) {
   const groups = reviewGroups(core.store.board(), changedBlocks(step.heard));
   const all = [...groups.changed, ...groups.feeding, ...groups.downstream];
   if (all.length === 0) return done();
-  const picked = all.slice(0, step.caps.blocks);
-  const described = await describeResults(core, all, picked, signals, active, step.what);
+  const picked2 = all.slice(0, step.caps.blocks);
+  const described = await describeResults(core, all, picked2, signals, active, step.what);
   if (described.closed) {
     notes.push(closed(step.what));
     return done();
@@ -3342,7 +3204,7 @@ ${raised}`);
   const changed = new Set(groups.changed);
   const fresh = new Set(changes.added.blocks ?? []);
   result.blocks = Object.fromEntries(
-    picked.map((id) => [
+    picked2.map((id) => [
       id,
       blockEntry(core, id, {
         before: step.before,
@@ -3354,9 +3216,9 @@ ${raised}`);
       })
     ])
   );
-  if (picked.length < all.length) {
+  if (picked2.length < all.length) {
     notes.push(
-      `The review shows ${String(picked.length)} of the ${String(all.length)} blocks that ${step.what} changed, that feed them or that are downstream of them. Call get_block_result or inspect_results for the rest.`
+      `The review shows ${String(picked2.length)} of the ${String(all.length)} blocks that ${step.what} changed, that feed them or that are downstream of them. Call get_block_result or inspect_results for the rest.`
     );
   }
   return done();
@@ -3378,7 +3240,7 @@ function reviewGroups(board, changed) {
   const inOrder = (ids, except = /* @__PURE__ */ new Set()) => order.filter((id) => ids.has(id) && !except.has(id));
   return { changed: inOrder(changing), feeding: inOrder(feeding), downstream: inOrder(downstream, feeding) };
 }
-async function describeResults(core, all, picked, signals, active, what) {
+async function describeResults(core, all, picked2, signals, active, what) {
   for (let attempt = 1; ; attempt++) {
     let statuses;
     try {
@@ -3386,7 +3248,7 @@ async function describeResults(core, all, picked, signals, active, what) {
     } catch (error) {
       return halted(core, error, signals, all, { what, waited: "the evaluation of the blocks" });
     }
-    const ready = picked.filter((id) => own(statuses, id)?.status === "ready");
+    const ready = picked2.filter((id) => own(statuses, id)?.status === "ready");
     try {
       return { ...await requested(core, ready, signals.turn, active), summaries: false };
     } catch (error) {
@@ -3420,8 +3282,8 @@ async function requested(core, reads, signal, active) {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
-    const named = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
-    const rest = reads.filter((id) => !named.has(id) && core.scheduler.status(id) !== void 0);
+    const named2 = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
+    const rest = reads.filter((id) => !named2.has(id) && core.scheduler.status(id) !== void 0);
     return rest.length === 0 ? { texts: {}, conditions: [] } : await sent(core, rest, signal, active);
   }
 }
@@ -3857,7 +3719,7 @@ function optionTools({ core }) {
 // srcts/tools/plugins.ts
 function pluginTools(context6) {
   const { core } = context6;
-  const named = (id) => {
+  const named2 = (id) => {
     const plugin = id === ASSISTANT ? void 0 : own(core.plugins.appPlugins(), id);
     if (plugin === void 0) throw new Error(noPlugin(id));
     return plugin.name;
@@ -3887,9 +3749,9 @@ function pluginTools(context6) {
       description: "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills of this deployment that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how this deployment uses the plugin; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
       run: async ({ id }) => {
-        named(id);
+        named2(id);
         const [skills, max] = await Promise.all([skillsNaming(context6, "plugins", id), readToolCap(core, "assistant_state_max_chars")]);
-        const name = named(id);
+        const name = named2(id);
         const described = {
           id,
           name,
@@ -4133,11 +3995,11 @@ function focusSection(core) {
     else if (held.length > 0 && seen.length === held.length) lines.push("Every block on the board is on screen.");
     else if (seen.length > 0) lines.push("These blocks are on screen:", ...seen.map((id) => `- ${id}`));
     const plugins2 = core.plugins.appPlugins();
-    const named = [...new Set(shown3.plugins)].flatMap((id) => {
+    const named2 = [...new Set(shown3.plugins)].flatMap((id) => {
       const plugin = id === ASSISTANT || !Object.hasOwn(plugins2, id) ? void 0 : plugins2[id];
       return plugin === void 0 ? [] : [`- ${plugin.name} (id: ${id})`];
     });
-    if (named.length > 0) lines.push("These plugins are on screen:", ...named);
+    if (named2.length > 0) lines.push("These plugins are on screen:", ...named2);
   }
   const focused = core.focus.get();
   if (focused !== null && Object.hasOwn(blocks, focused)) lines.push(`Block ${focused} has focus.`);
@@ -4145,7 +4007,7 @@ function focusSection(core) {
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a missing data input or a block upstream that has no result.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded.\nA result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n\nSo never guess at what a summary leaves out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that a summary does not show, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a missing data input or a block upstream that has no result.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded.\nA result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n\nSo never guess at what a summary leaves out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that a summary does not show, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance authored for this deployment, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
@@ -4234,13 +4096,431 @@ async function readTemplate(core, signal) {
   }
 }
 function unknownSections(ids) {
-  const named = listed(ids.map((id) => `<<${id}>>`));
+  const named2 = listed(ids.map((id) => `<<${id}>>`));
   const which = ids.length === 1 ? "an id that is no section" : "ids that are no sections";
   const written = ids.some((id) => WRITTEN.has(id)) ? " The plugin adds the skills, the board and the focus itself, whatever the template holds." : "";
-  return `The template that the blockr option assistant_template names puts in ${named}, ${which} of blockr.assistant's template, whose sections are ${listed([...SECTIONS.keys()])}.${written}`;
+  return `The template that the blockr option assistant_template names puts in ${named2}, ${which} of blockr.assistant's template, whose sections are ${listed([...SECTIONS.keys()])}.${written}`;
 }
 function listed(words) {
   return words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
+}
+
+// srcts/notes/preamble.md
+var preamble_default = "This message comes from the app, not from the user.\nIt says what others changed in the board's blocks, links and stacks since your previous call, and who changed them: the user, the assistant in another conversation, or a plugin.\nThe app's message after the conversation's last message shows the board as it is now.\n";
+
+// srcts/notes/notes.ts
+var USER = "the user";
+var ANOTHER_CONVERSATION = "the assistant in another conversation";
+var HINT2 = "the Board section shows the board as it is now";
+var KINDS = ["blocks", "links", "stacks"];
+function createNotes(core, signal, options) {
+  const followed = /* @__PURE__ */ new Map();
+  let asUser = 0;
+  function makerOf(origin) {
+    if (asUser > 0 || origin === "user") return { who: USER };
+    if (origin === "assistant") return { who: ANOTHER_CONVERSATION, conversation: options.running() };
+    return { who: `the plugin ${own(core.plugins.appPlugins(), origin)?.name ?? origin}` };
+  }
+  const stop = core.store.subscribe((change, board) => {
+    if (!("delta" in change)) {
+      followed.clear();
+      return;
+    }
+    if (followed.size === 0) return;
+    const touches = touchesOf(change.delta);
+    if (touches.length === 0) return;
+    const maker = makerOf(change.origin);
+    for (const [conversation2, held] of followed) {
+      if (maker.conversation === conversation2) held.copy = folded(held.copy, touches, board);
+      else record(held.touched, touches, maker.who);
+    }
+  });
+  signal.addEventListener(
+    "abort",
+    () => {
+      stop();
+      followed.clear();
+    },
+    { once: true }
+  );
+  return {
+    async take(conversation2) {
+      const max = await readToolCap(core, "assistant_board_section_max_chars");
+      const board = core.store.board();
+      const held = followed.get(conversation2);
+      followed.set(conversation2, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched() });
+      if (held === void 0 || signal.aborted) return void 0;
+      const lines = noteLines(held, board);
+      if (lines.length === 0) return void 0;
+      const text3 = [preamble_default.trim(), cutText(["## Changes", ...lines].join("\n"), max, HINT2)].join("\n\n");
+      return { id: newId(), role: "user", parts: [{ type: "changes", text: text3 }], created: (/* @__PURE__ */ new Date()).toISOString() };
+    },
+    asUser(fn) {
+      asUser += 1;
+      try {
+        return fn();
+      } finally {
+        asUser -= 1;
+      }
+    }
+  };
+}
+function untouched() {
+  return { blocks: /* @__PURE__ */ new Map(), links: /* @__PURE__ */ new Map(), stacks: /* @__PURE__ */ new Map() };
+}
+function touchesOf(delta) {
+  const touches = [];
+  const whole = (kind, ids) => {
+    for (const id of ids) touches.push({ kind, id, whole: true, properties: [], args: [] });
+  };
+  const changed = (kind, id, properties, args = []) => {
+    if (properties.length > 0 || args.length > 0) touches.push({ kind, id, whole: false, properties, args });
+  };
+  const { blocks, links, stacks } = delta;
+  whole("blocks", blocks?.rm ?? []);
+  whole("blocks", Object.keys(blocks?.add ?? {}));
+  for (const [id, mod] of Object.entries(blocks?.mod ?? {})) {
+    const properties = [...mod.name === void 0 ? [] : ["name"], ...mod.locked === void 0 ? [] : ["locked"]];
+    changed("blocks", id, properties, [...Object.keys(mod.state ?? {}), ...mod.unset ?? []]);
+  }
+  whole("links", links?.rm ?? []);
+  whole("links", Object.keys(links?.add ?? {}));
+  for (const [id, mod] of Object.entries(links?.mod ?? {})) {
+    changed("links", id, LINK.properties.map(({ key }) => key).filter((key) => mod[key] !== void 0));
+  }
+  whole("stacks", stacks?.rm ?? []);
+  whole("stacks", Object.keys(stacks?.add ?? {}));
+  for (const [id, mod] of Object.entries(stacks?.mod ?? {})) {
+    changed("stacks", id, STACK.properties.map(({ key }) => key).filter((key) => mod[key] !== void 0));
+  }
+  return touches;
+}
+function record(touched, touches, who) {
+  for (const touch of touches) {
+    const held = touched[touch.kind].get(touch.id) ?? { whole: void 0, properties: /* @__PURE__ */ new Map(), args: /* @__PURE__ */ new Map(), last: who };
+    if (touch.whole) held.whole = who;
+    for (const property of touch.properties) held.properties.set(property, who);
+    for (const arg of touch.args) held.args.set(arg, who);
+    held.last = who;
+    touched[touch.kind].set(touch.id, held);
+  }
+}
+function folded(copy, touches, board) {
+  let { blocks, links, stacks } = copy;
+  for (const touch of touches) {
+    switch (touch.kind) {
+      case "blocks":
+        blocks = foldedEntry(blocks, board.blocks, touch, (held, now) => foldedBlock(held, now, touch));
+        break;
+      case "links":
+        links = foldedEntry(links, board.links, touch, (held, now) => ({ ...held, ...picked(LINK, now, touch) }));
+        break;
+      case "stacks":
+        stacks = foldedEntry(stacks, board.stacks, touch, (held, now) => ({ ...held, ...picked(STACK, now, touch) }));
+        break;
+    }
+  }
+  return { blocks, links, stacks };
+}
+function foldedEntry(held, now, touch, fold) {
+  const after = own(now, touch.id);
+  if (touch.whole) return after === void 0 ? without(held, touch.id) : { ...held, [touch.id]: after };
+  const before = own(held, touch.id);
+  return before === void 0 || after === void 0 ? held : { ...held, [touch.id]: fold(before, after) };
+}
+function foldedBlock(held, now, touch) {
+  const state = Object.fromEntries(Object.entries(held.state).filter(([arg]) => !touch.args.includes(arg)));
+  for (const arg of touch.args) {
+    const value = own(now.state, arg);
+    if (value !== void 0) state[arg] = value;
+  }
+  return {
+    ...held,
+    state,
+    ...touch.properties.includes("name") ? { name: now.name } : {},
+    ...touch.properties.includes("locked") ? { locked: now.locked } : {}
+  };
+}
+function picked(shape, now, touch) {
+  return Object.fromEntries(shape.properties.filter(({ key }) => touch.properties.includes(key)).map(({ key, read }) => [key, read(now)]));
+}
+var BLOCK = {
+  label: "Block",
+  properties: [
+    { key: "registry_id", word: "class", read: (block) => block.registry_id },
+    { key: "name", word: "name", read: (block) => block.name },
+    { key: "locked", word: "lock", read: (block) => block.locked }
+  ],
+  args: (block) => block.state
+};
+var LINK = {
+  label: "Link",
+  properties: [
+    { key: "from", word: "from", read: (link) => link.from },
+    { key: "to", word: "to", read: (link) => link.to },
+    { key: "input", word: "input", read: (link) => link.input }
+  ],
+  ends: (link) => [link.from, link.to]
+};
+var STACK = {
+  label: "Stack",
+  properties: [
+    { key: "name", word: "name", read: (stack) => stack.name },
+    { key: "blocks", word: "blocks", read: (stack) => stack.blocks },
+    { key: "color", word: "color", read: (stack) => stack.color }
+  ]
+};
+function noteLines(held, board) {
+  const lines = [];
+  const groups = /* @__PURE__ */ new Map();
+  const keyOf2 = (label, action, who) => JSON.stringify([label, action, who]);
+  for (const difference of KINDS.flatMap((kind) => differencesOf(kind, held, board))) {
+    if (difference.action === "changed") {
+      lines.push(difference.line);
+      continue;
+    }
+    const { action, label, id, who, ends } = difference;
+    const blocks = groups.get(keyOf2(BLOCK.label, action, who));
+    if (blocks !== void 0 && ends.some((end2) => blocks.ids.includes(end2))) {
+      blocks.links.push(id);
+      continue;
+    }
+    const key = keyOf2(label, action, who);
+    const group = groups.get(key);
+    if (group !== void 0) {
+      group.ids.push(id);
+      continue;
+    }
+    const added = { action, label, who, ids: [id], links: [] };
+    groups.set(key, added);
+    lines.push(added);
+  }
+  return lines.map((line) => typeof line === "string" ? line : groupLine(line));
+}
+function groupLine({ action, label, who, ids, links }) {
+  const one3 = ids.length === 1;
+  const head = one3 ? label : `${label}s`;
+  const tail = links.length === 0 ? "" : `, with ${one3 ? "its" : "their"} ${links.length === 1 ? "link" : "links"} ${listed(links)}`;
+  return `- ${head} ${listed(ids)}${tail}: ${action} by ${who}.`;
+}
+function differencesOf(kind, held, board) {
+  switch (kind) {
+    case "blocks":
+      return differences(BLOCK, held.touched.blocks, held.copy.blocks, board.blocks);
+    case "links":
+      return differences(LINK, held.touched.links, held.copy.links, board.links);
+    case "stacks":
+      return differences(STACK, held.touched.stacks, held.copy.stacks, board.stacks);
+  }
+}
+function differences(shape, touched, copy, now) {
+  return [...touched].flatMap(([id, held]) => {
+    const difference = differenceOf(shape, id, held, own(copy, id), own(now, id));
+    return difference === void 0 ? [] : [difference];
+  });
+}
+function differenceOf(shape, id, touched, before, after) {
+  if (before === void 0 || after === void 0) {
+    const entry = before ?? after;
+    if (entry === void 0) return void 0;
+    return { action: before === void 0 ? "added" : "removed", label: shape.label, id, who: touched.whole ?? touched.last, ends: shape.ends?.(entry) ?? [] };
+  }
+  const changed = /* @__PURE__ */ new Map();
+  const differs = (who, part, word) => {
+    const by = who ?? touched.whole ?? touched.last;
+    const held = changed.get(by) ?? { properties: [], args: [] };
+    held[part].push(word);
+    changed.set(by, held);
+  };
+  for (const { key, word, read } of shape.properties) {
+    if ((touched.whole !== void 0 || touched.properties.has(key)) && !sameJson(read(before), read(after))) differs(touched.properties.get(key), "properties", word);
+  }
+  if (shape.args !== void 0) {
+    const was = shape.args(before);
+    const is = shape.args(after);
+    const args = touched.whole === void 0 ? [...touched.args.keys()] : [.../* @__PURE__ */ new Set([...Object.keys(was), ...Object.keys(is)])];
+    for (const arg of args) {
+      if (!sameJson(own(was, arg), own(is, arg))) differs(touched.args.get(arg), "args", arg);
+    }
+  }
+  if (changed.size === 0) return void 0;
+  return { action: "changed", line: `- ${shape.label} ${id}: ${[...changed].map(([who, { properties, args }]) => `${named(properties, args)} changed by ${who}`).join("; ")}.` };
+}
+function named(properties, args) {
+  return listed([...properties, ...args.length === 0 ? [] : [`${args.length === 1 ? "arg" : "args"} ${args.join(", ")}`]]);
+}
+function without(record2, key) {
+  return Object.hasOwn(record2, key) ? Object.fromEntries(Object.entries(record2).filter(([id]) => id !== key)) : record2;
+}
+function sameJson(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null || a === void 0 || b === void 0 || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    const other2 = b;
+    return a.every((item, index) => sameJson(item, other2[index]));
+  }
+  const keys2 = Object.keys(a);
+  const other = b;
+  return keys2.length === Object.keys(other).length && keys2.every((key) => Object.hasOwn(other, key) && sameJson(a[key], other[key]));
+}
+
+// srcts/openrouter/channel.ts
+var CHANNEL = "blockr.assistant-openrouter";
+function isCallback(data) {
+  if (typeof data !== "object" || data === null) return false;
+  const { code, state } = data;
+  return typeof code === "string" && code !== "" && typeof state === "string" && state !== "";
+}
+
+// srcts/openrouter/login.ts
+var OPENROUTER = {
+  baseUrl: "https://openrouter.ai/api/v1",
+  authUrl: "https://openrouter.ai/auth",
+  keysUrl: "https://openrouter.ai/api/v1/auth/keys"
+};
+var LABEL = "blockr";
+var EXPIRATION = "1-day";
+var IDLE = { kind: "idle" };
+var EXCHANGING = { kind: "exchanging" };
+var BLOCKED = { kind: "blocked" };
+function createOpenRouterLogin(options) {
+  const urls = options.urls ?? OPENROUTER;
+  const callbackUrl = options.callbackUrl ?? new URL("openrouter.html", import.meta.url).href;
+  const fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const open2 = options.open ?? ((url, target, features) => window.open(url, target, features));
+  const secure = options.secure ?? globalThis.isSecureContext;
+  const listeners = /* @__PURE__ */ new Set();
+  const pending = /* @__PURE__ */ new Map();
+  let state = IDLE;
+  let channel;
+  function set(next) {
+    if (next === state) return;
+    state = next;
+    for (const listener of [...listeners]) listener();
+  }
+  function forget(loginState) {
+    if (loginState === void 0) pending.clear();
+    else pending.delete(loginState);
+    if (pending.size > 0) return;
+    channel?.close();
+    channel = void 0;
+  }
+  async function received(callback) {
+    const verifier = pending.get(callback.state);
+    if (verifier === void 0) return;
+    forget(callback.state);
+    set(EXCHANGING);
+    const exchanged = await exchange(urls, fetch, callback.code, verifier);
+    if (exchanged.kind === "failed") {
+      set({ kind: "failed", reason: exchanged.reason });
+      return;
+    }
+    forget();
+    options.key.give(exchanged.key);
+    set(IDLE);
+  }
+  return {
+    offers(baseUrl) {
+      return secure && baseUrl === urls.baseUrl;
+    },
+    current() {
+      return state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    start() {
+      const login = open2("", "_blank", windowFeatures());
+      if (login === null) {
+        set(BLOCKED);
+        return;
+      }
+      login.opener = null;
+      const verifier = randomToken(32);
+      const loginState = randomToken(16);
+      pending.set(loginState, verifier);
+      if (channel === void 0) {
+        channel = new BroadcastChannel(CHANNEL);
+        channel.addEventListener("message", (event) => {
+          if (isCallback(event.data)) void received(event.data);
+        });
+      }
+      set(IDLE);
+      void challengeOf(verifier).then((challenge) => {
+        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState));
+      });
+    }
+  };
+}
+var logins = /* @__PURE__ */ new WeakMap();
+function openRouterLoginOf(key) {
+  const kept = logins.get(key);
+  if (kept !== void 0) return kept;
+  const login = createOpenRouterLogin({ key });
+  logins.set(key, login);
+  return login;
+}
+function authUrlOf(urls, callbackUrl, challenge, state) {
+  const url = new URL(urls.authUrl);
+  url.search = new URLSearchParams({
+    callback_url: callbackUrl,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+    key_label: LABEL,
+    expiration: EXPIRATION
+  }).toString();
+  return url.href;
+}
+async function challengeOf(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64url(new Uint8Array(digest));
+}
+async function exchange(urls, fetch, code, verifier) {
+  let response;
+  try {
+    response = await fetch(urls.keysUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: verifier, code_challenge_method: "S256" })
+    });
+  } catch {
+    return { kind: "failed", reason: `The page could not reach ${new URL(urls.keysUrl).host}.` };
+  }
+  const body = await response.json().catch(() => void 0);
+  if (!response.ok) {
+    return { kind: "failed", reason: `OpenRouter refused the login: ${messageOf3(body) ?? `HTTP ${String(response.status)}.`}` };
+  }
+  const key = typeof body === "object" && body !== null && "key" in body && typeof body.key === "string" ? body.key.trim() : "";
+  if (key === "") return { kind: "failed", reason: "OpenRouter sent no key." };
+  return { kind: "key", key };
+}
+function messageOf3(body) {
+  if (typeof body !== "object" || body === null || !("error" in body)) return void 0;
+  const { error } = body;
+  if (typeof error !== "object" || error === null || !("message" in error) || typeof error.message !== "string") return void 0;
+  const message2 = error.message.trim();
+  if (message2 === "") return void 0;
+  return /[.!?]$/.test(message2) ? message2 : `${message2}.`;
+}
+function windowFeatures() {
+  const width = 520;
+  const height = 720;
+  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+  const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+  return `popup,width=${String(width)},height=${String(height)},left=${String(left)},top=${String(top)}`;
+}
+function randomToken(bytes) {
+  return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+function base64url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 // srcts/skills/skills.ts
@@ -4372,6 +4652,7 @@ function openAssistant(core, signal, options = {}) {
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
   const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
+  const notes = createNotes(core, signal, { running: () => turns.current()?.conversation });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -4382,11 +4663,12 @@ function openAssistant(core, signal, options = {}) {
     key,
     prompt,
     compaction,
+    notes,
     load,
     ..."locks" in options ? { locks: options.locks } : {}
   });
   titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
-  const assistant = { conversations, skills, models, turns, compaction, deployment, key, openRouterLogin, signal };
+  const assistant = { conversations, skills, models, turns, compaction, notes, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

@@ -17,6 +17,12 @@
 // turns prepare theirs, on the same deployment, models, model settings,
 // visitor's key and loop (../compaction).
 //
+// After the compaction, the turns take the note of what others changed in the
+// board since the conversation's previous call, from the notes, which follow
+// the store and read which conversation's turn runs (../notes). The notes'
+// asUser() is for the undo that /undo asks for (blockr.assistant#233), which
+// the notes count as the user's.
+//
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
 // write the system prompt from both, and the message of the app's for each
@@ -50,6 +56,8 @@ import type { Loop } from "../loop/index.ts";
 import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
+import { createNotes } from "../notes/index.ts";
+import type { Notes } from "../notes/index.ts";
 import { heldError } from "../notifications/index.ts";
 import { openRouterLoginOf } from "../openrouter/index.ts";
 import type { OpenRouterLogin } from "../openrouter/index.ts";
@@ -69,6 +77,8 @@ export interface Assistant {
   readonly models: Models;
   readonly turns: Turns;
   readonly compaction: Compaction;
+  // The notes of what others changed in the board.
+  readonly notes: Notes;
   // What the deployment chose, which the chat reads to tell whether it asks
   // the visitor for a key. It rejects where an option holds a value that it
   // does not take.
@@ -124,6 +134,9 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
   const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
+  // The notes read which conversation's turn runs only as the store announces
+  // a change, once the turns are made.
+  const notes = createNotes(core, signal, { running: () => turns.current()?.conversation });
   const turns = createTurns(core, signal, {
     conversations,
     tools: [...readTools(core, skills), ...editTools(core, signal)],
@@ -134,12 +147,13 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     key,
     prompt,
     compaction,
+    notes,
     load,
     ...("locks" in options ? { locks: options.locks } : {}),
   });
   titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
 
-  const assistant = { conversations, skills, models, turns, compaction, deployment, key, openRouterLogin, signal };
+  const assistant = { conversations, skills, models, turns, compaction, notes, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);

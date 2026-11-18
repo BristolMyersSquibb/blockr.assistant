@@ -54,6 +54,14 @@ describe("the mark of Anthropic's cache", () => {
     expect(moved.tools).toEqual(request().tools);
   });
 
+  test("moves to a note of what others changed in the board, which ends the conversation before the message of the app's", () => {
+    const note = { role: "user", content: [{ type: "text", text: "This message comes from the app, not from the user.\n\n## Changes\n- Block b: removed by the user." }] };
+
+    const moved = markBeforeAppMessage(request(asked, called, results, note, board), BOARD, "anthropic-messages") as ReturnType<typeof request>;
+
+    expect(moved.messages).toEqual([asked, called, results, { role: "user", content: [{ ...note.content[0], cache_control: MARK }] }, { role: "user", content: [{ type: "text", text: BOARD }] }]);
+  });
+
   test("moves past the message of the role system that pi adds behind the message of the app's for the effort of the reply", () => {
     const effort = { role: "system", content: [], output_config: { effort: "medium" } };
 

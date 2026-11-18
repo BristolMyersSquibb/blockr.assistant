@@ -335,6 +335,9 @@ It reads only \code{true} and \code{false} as booleans, as YAML 1.2 does.
 Each call to the model sends the system prompt, then the conversation,
 then a message of the app's with the board and what the user has on
 screen.
+Where others changed the board's blocks, links or stacks since the
+conversation's previous call, the conversation ends on a note of the app's,
+which says what changed and who changed it.
 The parts below make them up, in the order in which the model reads them.
 A deployment's template is the Markdown file that the blockr option
 \code{assistant_template} names, which a deployment sets as the R option
@@ -355,7 +358,8 @@ rather than ask \cr
 Style \tab \code{style} \tab To answer concisely \cr
 What the app sends you \tab none \tab
 That a message of the app's follows the conversation, with the board
-and what the user has on screen \cr
+and what the user has on screen, that a note says what others changed,
+and that what the user changed is what the user wants \cr
 Statuses \tab none \tab
 What each status marker in the Board section means \cr
 Look, don't guess \tab none \tab
@@ -366,6 +370,10 @@ That ids never change, and that changing one needs the user's yes \cr
 Skills \tab none \tab
 Each skill that names no block class or plugin class, and when to read
 one \cr
+Changes \tab none \tab
+What others changed in the board's blocks, links and stacks since the
+conversation's previous call, and who changed it, in a note of the
+app's that the conversation keeps \cr
 Board \tab none \tab
 The board as it is when the call goes out, in the app's message \cr
 Focus \tab none \tab

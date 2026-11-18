@@ -47,7 +47,7 @@ function texts(content: UserMessage["content"] | ToolResultMessage["content"]): 
 }
 
 describe("a conversation as pi's messages", () => {
-  test("gives a message that the user sent, a note, a skill and an attachment as text of the role user", () => {
+  test("gives a message that the user sent as text of the role user, with each of its parts: a skill, an attachment, and a part of the type changes beside them", () => {
     const [user] = piMessages(
       [
         message(
@@ -70,6 +70,19 @@ describe("a conversation as pi's messages", () => {
       "How to filter.",
       'The user attached the file "plot.png", of the type image/png, whose content is no longer available.',
     ]);
+  });
+
+  test("gives a note of what others changed in the board as a message of the app's, which goes to the model as a message of the role user", () => {
+    const written = "This message comes from the app, not from the user.\n\n## Changes\n- Block b: removed by the user.";
+    const messages = piMessages(
+      [message("u1", "user", text("Filter the data.")), message("a1", "assistant", text("Done.")), message("n1", "user", { type: "changes", text: written })],
+      nothingKept,
+      model,
+    );
+
+    expect(roles(messages)).toEqual(["user", "assistant", "app"]);
+    expect(messages[2]).toEqual({ role: "app", content: [{ type: "text", text: written }], timestamp: Date.parse(CREATED) });
+    expect(llmMessages(messages)[2]).toEqual({ role: "user", content: [{ type: "text", text: written }], timestamp: Date.parse(CREATED) });
   });
 
   test("gives a reply that the memory keeps as pi wrote it, with its reasoning", () => {

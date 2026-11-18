@@ -13,6 +13,10 @@
 // params.
 // The next call of the turn then repeats that start and reads it from the
 // cache.
+// Where the turn added a note of what others changed in the board before the
+// call, the note ends the conversation, so the mark goes on the note, which
+// the conversation keeps, and the next call reads the note from the cache
+// too.
 // The mark goes to the nearest message before the message of the app's, on
 // the last of its blocks that the API lets a call mark.
 // On Chat Completions, those are its texts alone, since pi marks only a text

@@ -7,9 +7,13 @@
 // back.
 //
 // On the way into pi's messages:
-// - A message that the user sent, a note of what others changed and the
-//   text of a skill that the user called become text in a message of pi's
-//   role user.
+// - A message that the user sent and the text of a skill that the user called
+//   become text in a message of pi's role user.
+// - A note of what others changed in the board, which the conversation keeps
+//   as a message of the role user, goes as a message of the app's, as the
+//   board does (below), so that pi's messages tell it from the user's
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#the-state).
+//   Its text opens with the preamble that says that the app writes it.
 // - A file that the user attached goes with its message, from the memory
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
 //   The memory keeps a copy of each file's bytes, which the loop encodes as a
@@ -52,7 +56,8 @@
 //   declares among the messages of pi's agent, so that pi's messages tell it
 //   from the user's. Before the call, pi's convertToLlm turns it into text in
 //   a message of the role user, which the model takes, and whose text opens
-//   with the preamble that says that the app writes it.
+//   with the preamble that says that the app writes it. A note goes the same
+//   way.
 //
 // On the way back, a reply holds its text and its tool calls, in the order
 // that it gave them, while the memory keeps its reasoning, as text, and the
@@ -74,7 +79,7 @@ import type {
 import { encodedFile, kindOf } from "../attachments/index.ts";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptFile, KeptImage } from "../conversations/index.ts";
-import { newId } from "../state/index.ts";
+import { isNote, newId } from "../state/index.ts";
 import type { AttachmentPart, Message, MessageId, Part, ToolCallPart, ToolResultPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 
@@ -136,9 +141,9 @@ export interface CallFiles {
   readonly carried?: Carried;
 }
 
-// The messages of pi for a call: the system prompt with the tools, which pi
-// declares to the model, then the conversation, with the files given. A file
-// whose content is not given reads as no longer available.
+// The messages of pi's agent for a call: the system prompt with the tools,
+// which pi declares to the model, then the conversation, with the files
+// given. A file whose content is not given reads as no longer available.
 export function callMessages(
   messages: readonly Message[],
   kept: (message: MessageId) => Kept | undefined,
@@ -146,7 +151,7 @@ export function callMessages(
   tools: readonly Tool[],
   systemPrompt: string,
   files?: CallFiles,
-): PiMessage[] {
+): AgentMessage[] {
   return [systemMessage(systemPrompt, tools), ...piMessages(messages, kept, model, files)];
 }
 
@@ -199,9 +204,10 @@ declare module "@earendil-works/pi-agent-core" {
   }
 }
 
-// The message of the app's that the text given makes.
-export function appMessage(written: string): AppMessage {
-  return { role: "app", content: [text(written)], timestamp: Date.now() };
+// The message of the app's that the text given makes, made now unless the
+// time is given.
+export function appMessage(written: string, at = Date.now()): AppMessage {
+  return { role: "app", content: [text(written)], timestamp: at };
 }
 
 // The messages of pi's agent as the model takes them: a message of the app's
@@ -214,15 +220,17 @@ function appAsUser(message: AppMessage): UserMessage {
   return { role: "user", content: message.content, timestamp: message.timestamp };
 }
 
-// The conversation as pi's messages, for a call to the model given, with the
-// files given.
-export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>, files?: CallFiles): PiMessage[] {
-  const out: PiMessage[] = [];
+// The conversation as the messages of pi's agent, for a call to the model
+// given, with the files given.
+export function piMessages(messages: readonly Message[], kept: (message: MessageId) => Kept | undefined, model: Model<Api>, files?: CallFiles): AgentMessage[] {
+  const out: AgentMessage[] = [];
   for (let i = 0; i < messages.length; i += 1) {
     const message = messages[i];
     if (message === undefined) continue;
     const at = Date.parse(message.created);
-    if (message.role === "user") {
+    if (isNote(message)) {
+      out.push(appMessage(message.parts.flatMap((part) => (part.type === "changes" ? [part.text] : [])).join("\n\n"), at));
+    } else if (message.role === "user") {
       const content = userContent(message, kept(message.id)?.files ?? [], model, files);
       if (content.length > 0) out.push({ role: "user", content, timestamp: at });
     } else if (message.role === "summary") {

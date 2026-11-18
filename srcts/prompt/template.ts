@@ -112,6 +112,6 @@ function unknownSections(ids: readonly string[]): string {
 }
 
 // The words given as a list in a sentence, as "a, b and c".
-function listed(words: readonly string[]): string {
+export function listed(words: readonly string[]): string {
   return words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
 }
