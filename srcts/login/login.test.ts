@@ -103,7 +103,7 @@ async function until(condition: () => boolean, what: string): Promise<void> {
 }
 
 describe("the login", () => {
-  test("opens a window at once, with no link back to the page, and sends it to the service's login with the callback, a challenge of S256, a state and an expiry of a day", async () => {
+  test("opens a window at once, with no link back to the page, and sends it to the service's login with the callback, a challenge of S256, a state, a label and an expiry of a day", async () => {
     const { login, windows } = started();
 
     login.start();
@@ -115,11 +115,12 @@ describe("the login", () => {
     expect(windows[0]?.opened.window.opener).toBeNull();
     const url = await sentTo(windows);
     expect(`${url.origin}${url.pathname}`).toBe(OPENROUTER.authUrl);
-    expect([...url.searchParams.keys()]).toEqual(["callback_url", "code_challenge", "code_challenge_method", "state", "expiration"]);
+    expect([...url.searchParams.keys()]).toEqual(["callback_url", "code_challenge", "code_challenge_method", "state", "key_label", "expiration"]);
     expect(url.searchParams.get("callback_url")).toBe(CALLBACK);
     expect(url.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(url.searchParams.get("key_label")).toBe("blockr");
     expect(url.searchParams.get("expiration")).toBe("1-day");
   });
 

@@ -349,8 +349,8 @@
   code to the app's page.
   The plugin exchanges the code for the key, and keeps the key in the page's
   memory, as it keeps a typed key.
-  The key expires after a day, unless the visitor changes the expiry as they
-  authorize the app.
+  OpenRouter's page labels the key `blockr`, and has it expire after a day.
+  The visitor can change both as they authorize the app.
 
 * The chat's footer holds the button that opens the drawer of conversations,
   the pick of the model and the meter (#230).

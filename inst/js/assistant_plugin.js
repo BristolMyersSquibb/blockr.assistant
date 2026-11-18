@@ -1829,6 +1829,7 @@ var OPENROUTER = {
   authUrl: "https://openrouter.ai/auth",
   keysUrl: "https://openrouter.ai/api/v1/auth/keys"
 };
+var LABEL = "blockr";
 var EXPIRATION = "1-day";
 var IDLE = { kind: "idle" };
 var EXCHANGING = { kind: "exchanging" };
@@ -1921,6 +1922,7 @@ function authUrlOf(service, callbackUrl, challenge, state) {
     code_challenge: challenge,
     code_challenge_method: "S256",
     state,
+    key_label: LABEL,
     expiration: EXPIRATION
   }).toString();
   return url.href;

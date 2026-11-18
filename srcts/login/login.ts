@@ -15,8 +15,8 @@
 //    in its memory until the key comes.
 // 4. The login sends the window to the service's page for the login. The URL
 //    carries the URL of the page that the login calls back, the code
-//    challenge that the login made from the verifier, the state, and an
-//    expiry of a day for the new key.
+//    challenge that the login made from the verifier, the state, and a label
+//    and an expiry of a day for the new key.
 // 5. The visitor logs in and authorizes the app.
 // 6. The service sends the window to the page that the login calls back, with
 //    a code and the state in its query.
@@ -48,9 +48,10 @@
 // click, or of the last. Once a key comes, the login forgets the others, and
 // closes the channel.
 //
-// The key that a login gives expires after a day, unless the visitor changes
-// the expiry as they authorize. A reload drops the key, and a login after it
-// makes a new key. So the keys of earlier logins do not pile up on the
+// The key that a login gives is labelled blockr, so that the visitor can tell
+// it apart in their list of keys. It expires after a day. The visitor can
+// change both as they authorize. A reload drops the key, and a login after
+// it makes a new key. So the keys of earlier logins do not pile up on the
 // visitor's account. A key that expires while the page is open fails the
 // next call, and the chat then asks for a key again (../turns).
 //
@@ -138,8 +139,9 @@ export interface LoginOptions {
   readonly secure?: boolean;
 }
 
-// The expiry of the key that a login makes, which the service's page for the
-// login fills in, and which the visitor can change there.
+// The label and the expiry of the key that a login makes, which the service's
+// page for the login fills in, and which the visitor can change there.
+const LABEL = "blockr";
 const EXPIRATION = "1-day";
 
 const IDLE: LoginState = { kind: "idle" };
@@ -252,6 +254,7 @@ export function authUrlOf(service: LoginService, callbackUrl: string, challenge:
     code_challenge: challenge,
     code_challenge_method: "S256",
     state,
+    key_label: LABEL,
     expiration: EXPIRATION,
   }).toString();
   return url.href;

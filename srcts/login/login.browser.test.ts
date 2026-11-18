@@ -73,6 +73,7 @@ test("gives the key that the service makes, through a window of its own whose pa
     code_challenge: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) as unknown,
     code_challenge_method: "S256",
     state: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/) as unknown,
+    key_label: "blockr",
     expiration: "1-day",
   });
   const [exchange] = await reached("/openrouter/api/v1/auth/keys");

@@ -153,8 +153,8 @@ page \code{js/login.html}, which the package ships beside the plugin's module.
 That page hands the login's code to the app's page, and closes the window.
 The plugin then exchanges the code for the key, and keeps the key as it
 keeps a typed key.
-The key expires after a day, unless the visitor changes the expiry as they
-authorize the app.
+OpenRouter's page labels the key \code{blockr}, and has it expire after a day.
+The visitor can change both as they authorize the app.
 The chat offers the login only on a page that the browser deems secure,
 such as one served over HTTPS or from localhost.
 }
