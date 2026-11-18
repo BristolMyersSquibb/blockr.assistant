@@ -30,10 +30,15 @@
 // Before each call of a conversation, take() gives the conversation's note:
 // 1. Where the conversation has no copy, as at its first call, there is none.
 // 2. Otherwise, the note compares the copy's entry of each id that another
-//    origin touched with the board's. It has a line for each that differs:
-//    added, removed, or changed, with what another origin changed of it, such
-//    as a block's name or the names of its args rather than their values, and
-//    who changed it. So an arg set and set back leaves no line.
+//    origin touched with the board's, and says who changed each that differs:
+//    - The blocks that one origin added share a line, as do those that it
+//      removed, and so do its links and its stacks, while a link that came or
+//      went with such blocks goes on their line, as in "Blocks d and e, with
+//      their links ad, de and be: removed by the user."
+//    - Each that another origin changed has a line of its own, with what
+//      another origin changed of it, such as a block's name or the names of
+//      its args rather than their values. So an arg set and set back leaves
+//      no line.
 // 3. The board as it is then becomes the conversation's copy.
 // The note's list is cut at assistant_board_section_max_chars, as each part
 // of the Board section is.
@@ -50,6 +55,7 @@
 // changed before the edit, of the same block, still reads as theirs.
 
 import type { Block, Board, CoreApi, Delta, Json, Link, Origin, Stack } from "@blockr/core";
+import { listed } from "../prompt/index.ts";
 import { newId } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
 import { cutText, own, readToolCap } from "../tools/index.ts";
@@ -170,7 +176,7 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
       const held = followed.get(conversation);
       followed.set(conversation, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched() });
       if (held === undefined || signal.aborted) return undefined;
-      const lines = KINDS.flatMap((kind) => linesOf(kind, held, board));
+      const lines = noteLines(held, board);
       if (lines.length === 0) return undefined;
       const text = [preamble.trim(), cutText(["## Changes", ...lines].join("\n"), max, HINT)].join("\n\n");
       return { id: newId(), role: "user", parts: [{ type: "changes", text }], created: new Date().toISOString() };
@@ -296,11 +302,13 @@ function picked<T>(shape: Shape<T>, now: T, touch: Touch): Partial<T> {
 
 // How a note writes the entries of a kind: by its label, with the properties
 // that it compares, each by its key in a delta, by the word that names it in
-// a note and by how to read it, and a block's state args.
+// a note and by how to read it, a block's state args, and the blocks at a
+// link's ends, whose line takes a link that came or went with them.
 interface Shape<T> {
   readonly label: string;
   readonly properties: readonly { readonly key: string; readonly word: string; readonly read: (entry: T) => Json }[];
   readonly args?: (entry: T) => Readonly<Record<string, Json>>;
+  readonly ends?: (entry: T) => readonly string[];
 }
 
 const BLOCK: Shape<Block> = {
@@ -320,6 +328,7 @@ const LINK: Shape<Link> = {
     { key: "to", word: "to", read: (link) => link.to },
     { key: "input", word: "input", read: (link) => link.input },
   ],
+  ends: (link) => [link.from, link.to],
 };
 
 const STACK: Shape<Stack> = {
@@ -331,32 +340,95 @@ const STACK: Shape<Stack> = {
   ],
 };
 
-// The lines of the note for the entries of a kind that another origin
-// touched, in the order in which they were first touched.
-function linesOf(kind: Kind, held: Followed, board: Board): string[] {
+// What differs of an entry that another origin touched: that one origin
+// added or removed it, with the blocks at its ends where it is a link, or the
+// line that says what others changed of it.
+type Difference =
+  | { readonly action: "added" | "removed"; readonly label: string; readonly id: string; readonly who: string; readonly ends: readonly string[] }
+  | { readonly action: "changed"; readonly line: string };
+
+// The entries of a kind that one origin added, or removed, which share a
+// line of the note, with the links that came or went with them where they are
+// blocks.
+interface Group {
+  readonly action: "added" | "removed";
+  readonly label: string;
+  readonly who: string;
+  readonly ids: string[];
+  readonly links: string[];
+}
+
+// The lines of the note, in the order in which another origin first touched
+// what they name, the blocks first, then the links and the stacks:
+// - One for the entries of a kind that one origin added, and one for those
+//   that it removed, while a link goes on the line of the blocks that it came
+//   or went with.
+// - One for each entry that another origin changed.
+function noteLines(held: Followed, board: Board): string[] {
+  const lines: (Group | string)[] = [];
+  const groups = new Map<string, Group>();
+  const keyOf = (label: string, action: Group["action"], who: string): string => JSON.stringify([label, action, who]);
+  for (const difference of KINDS.flatMap((kind) => differencesOf(kind, held, board))) {
+    if (difference.action === "changed") {
+      lines.push(difference.line);
+      continue;
+    }
+    const { action, label, id, who, ends } = difference;
+    const blocks = groups.get(keyOf(BLOCK.label, action, who));
+    if (blocks !== undefined && ends.some((end) => blocks.ids.includes(end))) {
+      blocks.links.push(id);
+      continue;
+    }
+    const key = keyOf(label, action, who);
+    const group = groups.get(key);
+    if (group !== undefined) {
+      group.ids.push(id);
+      continue;
+    }
+    const added: Group = { action, label, who, ids: [id], links: [] };
+    groups.set(key, added);
+    lines.push(added);
+  }
+  return lines.map((line) => (typeof line === "string" ? line : groupLine(line)));
+}
+
+// The line of the entries that one origin added, or removed, as in "Blocks d
+// and e, with their links ad, de and be: removed by the user."
+function groupLine({ action, label, who, ids, links }: Group): string {
+  const one = ids.length === 1;
+  const head = one ? label : `${label}s`;
+  const tail = links.length === 0 ? "" : `, with ${one ? "its" : "their"} ${links.length === 1 ? "link" : "links"} ${listed(links)}`;
+  return `- ${head} ${listed(ids)}${tail}: ${action} by ${who}.`;
+}
+
+// What differs of the entries of a kind that another origin touched, in the
+// order in which they were first touched.
+function differencesOf(kind: Kind, held: Followed, board: Board): Difference[] {
   switch (kind) {
     case "blocks":
-      return lines(BLOCK, held.touched.blocks, held.copy.blocks, board.blocks);
+      return differences(BLOCK, held.touched.blocks, held.copy.blocks, board.blocks);
     case "links":
-      return lines(LINK, held.touched.links, held.copy.links, board.links);
+      return differences(LINK, held.touched.links, held.copy.links, board.links);
     case "stacks":
-      return lines(STACK, held.touched.stacks, held.copy.stacks, board.stacks);
+      return differences(STACK, held.touched.stacks, held.copy.stacks, board.stacks);
   }
 }
 
-function lines<T>(shape: Shape<T>, touched: ReadonlyMap<string, Touched>, copy: Readonly<Record<string, T>>, now: Readonly<Record<string, T>>): string[] {
+function differences<T>(shape: Shape<T>, touched: ReadonlyMap<string, Touched>, copy: Readonly<Record<string, T>>, now: Readonly<Record<string, T>>): Difference[] {
   return [...touched].flatMap(([id, held]) => {
-    const line = lineOf(shape, id, held, own(copy, id), own(now, id));
-    return line === undefined ? [] : [line];
+    const difference = differenceOf(shape, id, held, own(copy, id), own(now, id));
+    return difference === undefined ? [] : [difference];
   });
 }
 
-// The line of an entry that another origin touched, or undefined where the
-// copy's entry and the board's do not differ.
-function lineOf<T>(shape: Shape<T>, id: string, touched: Touched, before: T | undefined, after: T | undefined): string | undefined {
-  const head = `- ${shape.label} ${id}:`;
-  if (before === undefined) return after === undefined ? undefined : `${head} added by ${touched.whole ?? touched.last}.`;
-  if (after === undefined) return `${head} removed by ${touched.whole ?? touched.last}.`;
+// What differs of an entry that another origin touched, or undefined where
+// the copy's entry and the board's do not differ.
+function differenceOf<T>(shape: Shape<T>, id: string, touched: Touched, before: T | undefined, after: T | undefined): Difference | undefined {
+  if (before === undefined || after === undefined) {
+    const entry = before ?? after;
+    if (entry === undefined) return undefined;
+    return { action: before === undefined ? "added" : "removed", label: shape.label, id, who: touched.whole ?? touched.last, ends: shape.ends?.(entry) ?? [] };
+  }
 
   // What differs, by whom the note names for it: where another origin added
   // or removed the entry, every property and arg, and otherwise those that
@@ -380,15 +452,13 @@ function lineOf<T>(shape: Shape<T>, id: string, touched: Touched, before: T | un
     }
   }
   if (changed.size === 0) return undefined;
-  return `${head} ${[...changed].map(([who, { properties, args }]) => `${listed(properties, args)} changed by ${who}`).join("; ")}.`;
+  return { action: "changed", line: `- ${shape.label} ${id}: ${[...changed].map(([who, { properties, args }]) => `${named(properties, args)} changed by ${who}`).join("; ")}.` };
 }
 
 // The properties and the args given, as a note names them, as in "name and
 // args n, cols".
-function listed(properties: readonly string[], args: readonly string[]): string {
-  const items = [...properties, ...(args.length === 0 ? [] : [`${args.length === 1 ? "arg" : "args"} ${args.join(", ")}`])];
-  const last = items.at(-1) ?? "";
-  return items.length <= 1 ? last : `${items.slice(0, -1).join(", ")} and ${last}`;
+function named(properties: readonly string[], args: readonly string[]): string {
+  return listed([...properties, ...(args.length === 0 ? [] : [`${args.length === 1 ? "arg" : "args"} ${args.join(", ")}`])]);
 }
 
 // The record without the entry under the key, or the record itself where it

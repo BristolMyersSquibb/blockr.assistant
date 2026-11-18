@@ -407,9 +407,12 @@
   previous call (#228).
   Others are the user, whose undo and redo count as theirs, the assistant in
   another conversation, and other plugins.
-  The note has a line for each block, link and stack that differs: added,
-  removed or changed, with what changed of it, such as a block's name or the
-  names of its args rather than their values, and who changed it.
+  The blocks that one of them added share a line of the note, as do those
+  that it removed, with the links that came or went with them, and so do its
+  other links and its stacks.
+  Each block, link and stack that changed has a line of its own, with what
+  changed of it, such as a block's name or the names of its args rather than
+  their values, and who changed it.
   The conversation keeps the note, as a message of the role `user` that holds
   one part of the type `changes`, which the chat leaves out.
   The note comes after the conversation's last message and before the message

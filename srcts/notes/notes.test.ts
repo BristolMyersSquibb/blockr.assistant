@@ -1,8 +1,9 @@
 // The notes (./notes.ts) on core's CoreApi for tests, on the board of core's
 // reply to hello: what a note says of the blocks, links and stacks that others
-// added, removed or changed since a conversation's previous call, whom it
-// names for each change, what it leaves out, the conversation's own edits,
-// the undo that /undo asks for, the cap, and the message that holds the note.
+// added, removed or changed since a conversation's previous call, how it
+// groups what one origin added or removed, whom it names for each change, what
+// it leaves out, the conversation's own edits, the undo that /undo asks for,
+// the cap, and the message that holds the note.
 
 import type { CoreApi, Json } from "@blockr/core";
 import { stubCore } from "@blockr/core/stubs";
@@ -69,14 +70,36 @@ describe("the note of what others changed in the board", () => {
     await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
-      "- Block d: removed by the user.",
+      "- Block d, with its links ad and de: removed by the user.",
       "- Block g: added by the user.",
       "- Block b: name and arg n changed by the user.",
-      "- Link ad: removed by the user.",
-      "- Link de: removed by the user.",
       "- Stack s1: name changed by the user.",
     ]);
     expect(await notes.take("c1")).toBeUndefined();
+  });
+
+  test("gives what one origin added, and what it removed, a line for each kind, with the links that came or went with its blocks on their line", async () => {
+    const { core, notes } = await opened();
+    await notes.take("c1");
+
+    await edit(core, "blockr.core-remove_block", { id: "d" });
+    await edit(core, "blockr.core-remove_block", { id: "e" });
+    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "g" });
+    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "h" });
+    await edit(core, "blockr.core-add_link", { from: "a", to: "g", id: "ag" });
+    await edit(core, "blockr.core-remove_link", { id: "ab" });
+    await edit(core, "blockr.core-remove_link", { id: "ac" });
+    await edit(core, "blockr.core-remove_link", { id: "bc" }, "assistant");
+    await edit(core, "blockr.core-add_stack", { id: "s2", name: "Outputs" });
+    await edit(core, "blockr.core-add_stack", { id: "s3", name: "Checks" });
+
+    expect(linesOf(await notes.take("c1"))).toEqual([
+      "- Blocks d and e, with their links ad, de and be: removed by the user.",
+      "- Blocks g and h, with their link ag: added by the user.",
+      "- Links ab and ac: removed by the user.",
+      "- Link bc: removed by the assistant in another conversation.",
+      "- Stacks s2 and s3: added by the user.",
+    ]);
   });
 
   test("names the args that changed rather than their values, and leaves out what was set and set back", async () => {
@@ -109,15 +132,13 @@ describe("the note of what others changed in the board", () => {
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block a: name changed by the assistant in another conversation.",
-      "- Block f: removed by the plugin blockr.session.",
+      "- Block f, with its link keen_finch: removed by the plugin blockr.session.",
       "- Block b: arg n changed by the user.",
-      "- Link keen_finch: removed by the plugin blockr.session.",
       "- Stack s1: name changed by the plugin Edit board.",
     ]);
     expect(linesOf(await notes.take("c2"))).toEqual([
-      "- Block f: removed by the plugin blockr.session.",
+      "- Block f, with its link keen_finch: removed by the plugin blockr.session.",
       "- Block b: arg n changed by the user.",
-      "- Link keen_finch: removed by the plugin blockr.session.",
       "- Stack s1: name changed by the plugin Edit board.",
     ]);
   });
@@ -175,14 +196,14 @@ describe("the note of what others changed in the board", () => {
   });
 
   test("cuts its list at assistant_board_section_max_chars, and says where the board is", async () => {
-    const { core, notes } = await opened({ assistant_board_section_max_chars: 160 });
+    const { core, notes } = await opened({ assistant_board_section_max_chars: 120 });
     await notes.take("c1");
 
     for (const id of ["a", "b", "c", "d", "e", "f"]) await edit(core, "blockr.core-remove_block", { id });
 
     const text = textOf(await notes.take("c1")) ?? "";
     const list = text.slice(text.indexOf("## Changes"));
-    expect(Array.from(list).length).toBeLessThanOrEqual(160);
+    expect(Array.from(list).length).toBeLessThanOrEqual(120);
     expect(list).toMatch(/truncated -- the Board section shows the board as it is now\]$/);
   });
 
@@ -216,6 +237,7 @@ describe("the note of what others changed in the board", () => {
     await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "adults" }, "assistant");
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "adults" });
+    await edit(core, "blockr.core-remove_block", { id: "d" });
     await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
     await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" }, "assistant");
 
