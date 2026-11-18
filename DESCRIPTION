@@ -27,7 +27,11 @@ Imports:
     yaml
 Suggests:
     blockr.dock (>= 0.2.1),
+    chromote,
+    jsonlite,
+    shinytest2,
     testthat (>= 3.0.0),
+    webfakes,
     withr
 Remotes:
     BristolMyersSquibb/blockr.core@js-state,
