@@ -367,6 +367,16 @@
   The command `blockr.assistant-add_usage` takes no `total` for such a call,
   and leaves the conversation's `last` as it was.
 
+* The vignette "Migration notes for app scripts and skills" lists each change
+  that an app script, its deployment and a deployment's skills need, written
+  so that an AI can apply them (#240).
+  It says what takes the place of `new_assistant_extension()`, of its
+  argument `system_prompt` and of `default_system_prompt()`, of the blockr
+  options `chat_function` and `assistant_tools`, and of the board options
+  `llm_model`, `chat_compact_tokens` and `chat_compact_keep`.
+  It also says how a skill names block classes and plugin classes, and where
+  each tool that it names goes.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
