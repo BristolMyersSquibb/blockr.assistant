@@ -59,11 +59,10 @@ function helloWith(state: AssistantState): typeof HELLO {
       ...HELLO.board,
       board: {
         ...HELLO.board.board,
-        versions: { ...HELLO.board.board.versions, [ASSISTANT]: 1 },
         blocks: {},
         links: {},
         stacks: {},
-        plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: state },
+        plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
       },
     },
   };
