@@ -14,9 +14,10 @@
 // 4. It sends one request, describe_result, for those of them that read
 //    ready, with the turn's signal.
 // 5. It gives, for each block that it covers, its status, why it is invalid or
-//    waiting where it is, the conditions that appeared since the step began,
-//    what describe_result() wrote, and the state of each block that the step
-//    added, within the caps of today's review of a commit
+//    waiting where it is, why the transport could not send its latest
+//    evaluation where it could not, the conditions that appeared since the
+//    step began, what describe_result() wrote, and the state of each block
+//    that the step added, within the caps of today's review of a commit
 //    (R/stage-review.R at fcbdb27). It marks as unverified a changed block
 //    that has no result but has not failed, says how many blocks it left out,
 //    and names the blocks, links and stacks that the step added or removed.
@@ -330,6 +331,7 @@ function blockEntry(core: CoreApi, id: BlockId, options: EntryOptions): Json {
   return {
     status: kind,
     ...((kind === "invalid" || kind === "waiting") && status.reason !== null ? { reason: status.reason } : {}),
+    ...(status.unsent === null ? {} : { unsent: status.unsent }),
     conditions: conditionList(conditions),
     ...(options.text === undefined ? {} : { result: options.text }),
     ...(options.text === undefined && options.summary && kind === "ready" && status.summary !== null ? { summary: status.summary } : {}),
