@@ -2,6 +2,10 @@
 // section: what the user has on screen as the call goes out, under today's
 // preamble on the block last clicked (R/system-prompt.R at fcbdb27)
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#the-sections).
+// The preamble reads the block that has focus in place of the block last
+// clicked, and the blocks and plugins on screen in place of the blocks in the
+// current view
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#today).
 // - Where the dock is the frontend, the active view (./dock.ts).
 // - The blocks and the plugins on screen, from CoreApi.onScreen, where the
 //   frontend sets it, but for the assistant's own plugin, which the Board

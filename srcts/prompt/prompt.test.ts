@@ -191,7 +191,7 @@ describe("the system prompt", () => {
     expect(written.slice(written.indexOf("## Skills"))).toBe(
       [
         "## Skills",
-        "Guidance authored for this deployment, loaded on demand.",
+        "Guidance that this app's packages or its deployment wrote, loaded on demand.",
         "Each entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.",
         "A skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.",
         "",
@@ -328,9 +328,9 @@ describe("the Focus section", () => {
     expect(focusSection(standIn(POPULATED))).toBe(
       [
         "## Focus",
-        "What the user is looking at on the board.",
-        'A request that names no block -- "this plot", "add a filter here" -- is most likely about the block they last clicked, and otherwise about a block in the current view.',
-        "A click can be old, so where the request fits that block poorly, or plainly names another, go with the request.",
+        "What the user is looking at: the block that has focus, and the blocks and plugins on screen.",
+        'A request that names no block -- "this plot", "add a filter here" -- is most likely about the block that has focus, and otherwise about a block on screen.',
+        "Focus can be old, so where the request fits that block poorly, or plainly names another, go with the request.",
         "",
         "The active view is Analysis (id: v1).",
         "These blocks are on screen:",
