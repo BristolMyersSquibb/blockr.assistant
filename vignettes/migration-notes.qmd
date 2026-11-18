@@ -1,0 +1,671 @@
+---
+title: "Migration notes for app scripts and skills"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Migration notes for app scripts and skills}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  render = function(x, ...) {
+    if (inherits(x, "shiny.appobj")) invisible() else knitr::knit_print(x, ...)
+  }
+)
+```
+
+```{r setup, message = FALSE}
+library(blockr.core)
+library(blockr.dock)
+library(blockr.assistant)
+```
+
+An app script of blockr.assistant 0.1 puts the assistant on a dock board, as an extension that `new_assistant_extension()` makes.
+That assistant runs in the session's R process.
+It calls its model through ellmer, and its tools change the board in R.
+In version 0.2, the browser holds the board, as the migration notes of blockr.core describe (`vignette("migration-notes", package = "blockr.core")`).
+The assistant is a plugin there, whose agent loop runs in the browser.
+It calls its model from the browser too, and the board holds its conversations, as the state of its plugin.
+
+These notes list each change that an app script needs to run the assistant of blockr.assistant 0.2.
+They also list what changes for the deployment that serves the script, in its blockr options and its environment variables.
+The last part lists what changes for the skills that a deployment gives the assistant.
+The notes are written so that an AI can apply them.
+Each section names what a script, a deployment or a skill uses in version 0.1, says what takes its place, and shows both versions.
+A function of version 0.1 that is gone has no alias, so a script that still calls it stops with R's error that the function cannot be found.
+An argument that is gone stops the call as an unused argument.
+A blockr option that is gone is read by nothing, so a deployment that still sets it gets no error, and the value changes nothing.
+A script follows the migration notes of blockr.core and blockr.dock too, and those of each other blockr package that it calls.
+
+## The assistant's plugin
+
+In version 0.1, a script puts the assistant on a dock board with `new_assistant_extension()`, in the `extensions` of `new_dock_board()`.
+In version 0.2, the assistant is a plugin of the class `blockr.assistant-assistant_plugin`, which `new_assistant_plugin()` makes.
+The function `serve()` runs a plugin of each class that `available_plugins()` lists.
+That list holds the assistant's class wherever blockr.assistant is available.
+So a script that only puts the assistant on its board drops it:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+serve(
+  new_dock_board(
+    blocks = c(a = new_dataset_block("iris")),
+    extensions = list(assistant = new_assistant_extension())
+  )
+)
+```
+
+```{r}
+# blockr.assistant 0.2
+serve(new_board(blocks = c(a = new_dataset_block("iris"))))
+```
+
+The dock adds a view to a board that has none, as the notes of blockr.dock say.
+That view shows the assistant's panel on its left rail, beside the panels of the app's other plugins.
+
+A script that places the assistant's panel in a grid gives the plugin a name in the `plugins` of `new_board()`.
+The grid then names the panel with `plg()`, by that name, as the notes of blockr.dock say of every extension:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+board <- new_dock_board(
+  blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+  links = new_link("a", "b"),
+  extensions = list(assistant = new_assistant_extension()),
+  views = list(main = list(blk("a"), blk("b"), ext("assistant"))),
+  grids = list(
+    main = dock_grid(
+      panels("a", "b"),
+      rail(ext("assistant"), position = "right")
+    )
+  )
+)
+```
+
+```{r}
+# blockr.assistant 0.2
+board <- new_board(
+  blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
+  links = new_link("a", "b"),
+  plugins = list(
+    new_dock_plugin(
+      views = list(
+        main = dock_view(
+          dock_grid(
+            panels("a", "b"),
+            rail(plg("assistant"), position = "right")
+          )
+        )
+      )
+    ),
+    assistant = new_assistant_plugin()
+  )
+)
+```
+
+In version 0.1, an assistant without a name in `extensions` has the name `assistant`.
+So a script that places the panel of such an assistant gives its plugin that name, as `assistant = new_assistant_plugin()` above.
+A grid may also name the panel by the id of the plugin's class, as `plg("blockr.assistant-assistant_plugin")`, which needs no plugin in `plugins`.
+Core's `new_board()` refuses a `plg()` whose id is neither a name in `plugins` nor the id of a plugin class.
+
+The function `new_assistant_plugin(conversations = list())` takes the conversations of a board that a script builds.
+Its `conversations` take the place of the `threads` of `new_assistant_extension()`.
+Each conversation is a list under its id, with a `title`, the time it was `updated`, its `messages`, the tokens that it spent in `usage`, and its pick of the `model`, or `NULL` for the default (`?new_assistant_plugin`).
+The records that version 0.1 took in `threads` do not carry over.
+A script that gave some writes them again in this shape:
+
+```{r}
+# blockr.assistant 0.2
+new_assistant_plugin(
+  conversations = list(
+    c1 = list(
+      title = "Sales by region",
+      updated = "2026-11-16T08:00:00Z",
+      messages = list(
+        list(
+          id = "m1",
+          role = "user",
+          parts = list(list(type = "text", text = "Sum the sales by region.")),
+          created = "2026-11-16T08:00:00Z"
+        )
+      ),
+      usage = list(input = 0, output = 0, last = 0),
+      model = NULL
+    )
+  )
+)
+```
+
+The other arguments of `new_assistant_extension()` go too.
+Its `system_prompt` gives way to a skill or a template ([The system prompt](#the-system-prompt)).
+Its `...`, which it passed on to the `new_dock_extension()` of blockr.dock, has no counterpart, since `new_assistant_plugin()` takes the plugin's state alone.
+
+In version 0.1, an app runs the assistant only where its script puts the assistant on the board.
+In version 0.2, an app runs it wherever blockr.assistant is available.
+So a script whose app should run no assistant leaves the assistant's row out of the plugins that `serve()` takes:
+
+```{r}
+# blockr.assistant 0.2
+serve(
+  new_board(),
+  plugins = subset(available_plugins(), package != "blockr.assistant")
+)
+```
+
+## The system prompt
+
+In version 0.1, the `system_prompt` of `new_assistant_extension()` gives the system prompt.
+It takes a function, `default_system_prompt()` by default, which R calls each time the board changes.
+It also takes a string, which takes the place of the whole prompt.
+In version 0.2, the plugin builds the system prompt in the browser, before each call to the model.
+A function in R cannot shape that prompt, so `system_prompt` goes, and so does `default_system_prompt()`.
+
+A script moves its own instructions to one of two places:
+
+- A skill, in the directory that the blockr option `assistant_skills` names ([A deployment's skills](#a-deployments-skills)).
+  The system prompt lists each skill that names no class, with its description, and the model reads a skill when the description says that it bears on the task.
+  A skill suits instructions for one kind of task, such as building a clinical table.
+- A template, a Markdown file that the blockr option `assistant_template` names.
+  A template suits instructions for every call, such as who the assistant is and how it answers.
+  It also suits instructions that change those of blockr.assistant, since a skill that contradicts them leaves the model two instructions to choose between.
+
+A template takes the place of three sections of blockr.assistant's prompt, each with an id:
+
+| Id | What the section tells the model |
+|---|---|
+| `role` | That it is an assistant next to a blockr data analysis board |
+| `build` | To build what the user wants analysed, with defaults from the data, rather than ask first |
+| `style` | To answer concisely |
+
+The file names each section that it keeps as `<<id>>` on a line of its own, in the order in which the model reads them.
+It may add text of its own around them, and it leaves out a section by not naming it.
+So a script whose function of version 0.1 added text to the default prompt adds that text to a template:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+german <- function(board, client, ...) {
+  paste(
+    default_system_prompt(board, client, ...),
+    "Answer in German.",
+    sep = "\n\n"
+  )
+}
+
+serve(
+  new_dock_board(
+    extensions = list(assistant = new_assistant_extension(system_prompt = german))
+  )
+)
+```
+
+In version 0.2, the template is a file beside the script, here `german.md`:
+
+```markdown
+<<role>>
+
+<<build>>
+
+<<style>>
+
+Answer in German.
+```
+
+```{r, eval = FALSE}
+# blockr.assistant 0.2
+options(blockr.assistant_template = "german.md")
+
+serve(new_board())
+```
+
+The plugin writes the rest of the prompt, whatever the template holds.
+After the template, the system prompt holds blockr.assistant's rules and the catalogue of skills.
+After the conversation's last message, a message of the app's holds the board and what the user has on screen.
+So a string that took the place of the whole prompt in version 0.1 has no counterpart.
+Its text goes into a template or a skill, beside what the plugin writes.
+A function that wrote the board into its prompt has no counterpart either, since the plugin tells the model the board before each call.
+The section Template of `?new_assistant_plugin` lists every part of the prompt, in the order in which the model reads them.
+
+As a board opens, the plugin has R read the template.
+Where R cannot read the file, or where the file names an id that is none of the three, the plugin raises the error `assistant_template_failed`.
+The calls then go on with blockr.assistant's own template until the next board opens.
+
+## Where the calls go
+
+In version 0.1, the assistant calls its model from the session's R process, through an ellmer chat.
+The blockr option `chat_function` gives one of ellmer's chat functions, which fixes the model, or a named list of them.
+From a list, the user picks one through the board option `llm_model` of blockr.core.
+Where `chat_function` is unset, the chat is `ellmer::chat_openai()`, which reads its key from the environment variable `OPENAI_API_KEY`.
+
+In version 0.2, the assistant calls its model from the browser, never through R.
+Four blockr options say where the calls go, how they are authenticated and which models the assistant offers.
+A deployment sets each as an R option, such as `blockr.assistant_models`, or as an environment variable, such as `BLOCKR_ASSISTANT_MODELS`:
+
+| Blockr option | What it holds | Where it is unset |
+|---|---|---|
+| `assistant_base_url` | The base URL that every call goes to | OpenAI's API, `https://api.openai.com/v1` |
+| `assistant_api` | The API that the base URL speaks: `"openai-responses"` for OpenAI's Responses API, `"openai-completions"` for its Chat Completions API, or `"anthropic-messages"` for Anthropic's Messages API | `"openai-responses"` |
+| `assistant_api_key` | The key that every call carries, or `"none"` for a base URL that needs no key | The chat asks each visitor for a key of their own |
+| `assistant_models` | The ids of the models offered, the first being the default, as a character vector or as one string that separates them by commas | The models of the base URL's list that take tools, the first being the default |
+
+The blockr option `chat_function` goes.
+So does the board option `llm_model`, with its constructor `new_llm_model_option()`, which blockr.core no longer has.
+A deployment moves to the four blockr options in these steps:
+
+1. A deployment that gives the key in `OPENAI_API_KEY` sets it in `BLOCKR_ASSISTANT_API_KEY` too.
+   The assistant reads no variable of a provider's own clients.
+   Without `BLOCKR_ASSISTANT_API_KEY`, the chat asks each visitor for a key of their own.
+2. A script that sets `chat_function` drops it.
+   It names the models of the list's entries in `assistant_models`, in the same order, so that the first stays the default.
+3. A deployment that leaves `chat_function` unset names the model that it chats with in `assistant_models`.
+   Otherwise, the assistant offers each model of OpenAI's list that takes tools.
+   That list follows no documented order, so the default could be any of them.
+4. A chat function of another provider becomes that provider's base URL in `assistant_base_url`.
+   The deployment sets `assistant_api` too, where the base URL does not speak OpenAI's Responses API.
+   The provider's key goes in `BLOCKR_ASSISTANT_API_KEY`, as in step 1.
+
+A deployment of OpenAI's models thus keeps its key, and names its models:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+chat_with <- function(model) {
+  force(model)
+  function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = model,
+      system_prompt = system_prompt,
+      params = params
+    )
+  }
+}
+
+models <- c("gpt-5.4", "gpt-5.4-nano")
+
+options(
+  blockr.chat_function = stats::setNames(lapply(models, chat_with), models)
+)
+```
+
+```{r, eval = FALSE}
+# blockr.assistant 0.2
+options(blockr.assistant_models = c("gpt-5.4", "gpt-5.4-nano"))
+```
+
+Its environment then holds `BLOCKR_ASSISTANT_API_KEY`, with the key that `OPENAI_API_KEY` holds.
+A deployment that sets its blockr options in its environment alone, as on Posit Connect, sets `BLOCKR_ASSISTANT_MODELS=gpt-5.4,gpt-5.4-nano` in place of the R option.
+
+A deployment of Anthropic's models names Anthropic's base URL and API:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+options(
+  blockr.chat_function = function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_anthropic(
+      model = "claude-sonnet-5-5",
+      system_prompt = system_prompt,
+      params = params
+    )
+  }
+)
+```
+
+```{r, eval = FALSE}
+# blockr.assistant 0.2
+options(
+  blockr.assistant_base_url = "https://api.anthropic.com",
+  blockr.assistant_api = "anthropic-messages",
+  blockr.assistant_models = "claude-sonnet-5-5"
+)
+```
+
+The key that `ANTHROPIC_API_KEY` holds goes in `BLOCKR_ASSISTANT_API_KEY`.
+Anthropic's base URL has no `/v1`, since the assistant appends `/v1/messages` to it.
+
+Each argument of an ellmer chat function goes as follows:
+
+| Version 0.1 | Version 0.2 |
+|---|---|
+| `model` | An id in the blockr option `assistant_models` |
+| `base_url` | The blockr option `assistant_base_url`, with `assistant_api` |
+| `api_key`, or `credentials` that give a key | The blockr option `assistant_api_key` |
+| `params` | The model's settings ([The model's settings](#the-models-settings)) |
+| `system_prompt` | A skill or a template ([The system prompt](#the-system-prompt)) |
+| `echo` | Nothing, since no chat runs in R |
+
+### A model that the browser cannot reach
+
+A deployment sends every call to one base URL.
+Some of the providers that ellmer reaches are out of a browser's reach:
+
+- A provider whose API the assistant does not speak, such as AWS Bedrock, which `ellmer::chat_aws_bedrock()` calls.
+- A provider that refuses calls from a page of another origin, such as Ollama's cloud.
+- A model on a network that the server reaches and the visitor's browser does not.
+
+A deployment reaches such a model through a gateway, such as OpenRouter, at `https://openrouter.ai/api/v1`, or through a company's own proxy.
+The base URL of the gateway or the proxy goes in `assistant_base_url`.
+A proxy that needs no key from the page takes `"none"` in `assistant_api_key`.
+A gateway also takes the place of a `chat_function` list that mixes providers, since it reaches the models of many providers through one base URL and one key.
+
+### The key in the page
+
+In version 0.1, the deployment's key stays in R.
+In version 0.2, it reaches the page, where any visitor who can use the assistant can read it.
+A visitor who can run R could read the key in version 0.1 too, through a block that takes code, such as the subset block of blockr.core.
+So where a visitor can run R, a key in the page only makes visible what the visitor could already read.
+No visitor runs R where the blockr options `locked` and `lock_load` are both on, and no block is left open with `locked = FALSE`.
+The notes of blockr.core describe these locks.
+There, the key in the page is exposed as the key in R was not.
+A deployment that must keep its key from such visitors holds the key in a proxy of its own.
+The page then calls the proxy with no key, through `"none"` in `assistant_api_key`, and the proxy decides who may call.
+
+### The pick of the model
+
+In version 0.1, the board option `llm_model` holds the pick of the model, which the user makes in the dock's options sidebar.
+In version 0.2, each conversation keeps its own pick, in the state of the assistant's plugin.
+The user picks a model in the chat's footer, where the deployment offers more than one model or names none.
+A conversation that nobody picked a model for talks to the default, which is the first model of `assistant_models`.
+So a script that gave `llm_model` a value, as `new_llm_model_option("gpt-5.4-nano")` did, names that model first in `assistant_models`.
+It drops the board option from the board's `options`.
+
+## The model's settings
+
+In version 0.1, a chat function sets the model's settings through the `params()` of ellmer, such as `params(reasoning_effort = "high")`.
+In version 0.2, a YAML file gives the settings of each model, under the model's id.
+The blockr option `assistant_model_settings` names the file:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+options(
+  blockr.chat_function = function(system_prompt = NULL, params = NULL) {
+    ellmer::chat_openai(
+      model = "gpt-5.4",
+      system_prompt = system_prompt,
+      params = ellmer::params(reasoning_effort = "high", max_tokens = 32000)
+    )
+  }
+)
+```
+
+In version 0.2, the file is `models.yml`, beside the script:
+
+```yaml
+gpt-5.4:
+  thinking_level: high
+  max_tokens: 32000
+```
+
+```{r, eval = FALSE}
+# blockr.assistant 0.2
+options(
+  blockr.assistant_models = "gpt-5.4",
+  blockr.assistant_model_settings = "models.yml"
+)
+```
+
+The file takes these settings, which the section Model settings of `?new_assistant_plugin` describes in full:
+
+- The setting `thinking_level` gives the level at which the model reasons: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`.
+  It takes the place of the `reasoning_effort` of `params()`, at the level of the same name, and `off` takes the place of `none`.
+  A model that reasons and has no level in the file reasons at `medium`, but for one case on OpenAI's Chat Completions API, which the help page gives.
+- The setting `max_tokens` gives the most tokens that each call asks for the reply, as the `max_tokens` of `params()` does.
+- The setting `context_window` gives the tokens that the model's context window holds, which sets when compaction runs ([Compaction](#compaction)).
+- The settings `reasoning` and `images` say whether the model reasons and whether it takes images.
+- The setting `like` names a model of the catalogs of pi, the library that runs the assistant's turns.
+  The model then takes the settings of that model wherever the file gives none.
+  This suits a model that a proxy serves under a name of its own.
+
+The other settings of `params()`, such as `temperature` and `seed`, have no counterpart.
+
+## Compaction
+
+In version 0.1, the assistant compacts a conversation once the tokens of its last exchange pass the board option `chat_compact_tokens`.
+That board option is `Inf` by default, which leaves compaction off.
+A compaction keeps the last `chat_compact_keep` turns, 8 by default, and puts a summary in place of the older ones.
+The blockr options of the same names give the defaults of the two board options.
+
+In version 0.2, both board options go, with their blockr options.
+The assistant compacts a conversation before each call to the model, as the CLI of pi does.
+Where the tokens that the call would send pass the model's context window less 16,384 tokens, a call of the assistant's own first writes a summary of the older messages.
+The newest messages stay, up to a quarter of the window.
+So compaction is always on, and a deployment sets when it runs through a model's `context_window` ([The model's settings](#the-models-settings)):
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+options(blockr.chat_compact_tokens = 100000)
+```
+
+In version 0.2, the model's settings give it a window of 116,384 tokens, so that a call that would send more than 100,000 tokens is compacted first:
+
+```yaml
+gpt-5.4:
+  context_window: 116384
+```
+
+Where the file gives no `context_window`, the window comes from the catalogs of pi or from the base URL's list of models, and is 128,000 tokens where neither gives one.
+
+## The messages that a board keeps
+
+The blockr option `chat_save_turns` carries over, with its default of 50.
+In version 0.1, it caps the turns of each conversation that a saved board writes.
+In version 0.2, it caps the messages of each conversation that the board holds, and a saved board writes what the board holds.
+A message counts as one of the turns of version 0.1 did, so a value keeps its meaning.
+The board keeps whole exchanges, each from a message that the user sent.
+The plugin keeps the older messages in the browser's memory while the board stays open.
+
+The option takes `-1` for every message, where version 0.1 took `Inf`, since R cannot send `Inf` to the browser:
+
+```{r, eval = FALSE}
+# blockr.assistant 0.1
+options(blockr.chat_save_turns = Inf)
+```
+
+```{r, eval = FALSE}
+# blockr.assistant 0.2
+options(blockr.chat_save_turns = -1)
+```
+
+The environment variable `BLOCKR_CHAT_SAVE_TURNS` takes `-1` too.
+A value other than `-1` or a whole number of 0 or more, `Inf` among them, fails every change of a conversation, and the plugin logs the error as a board opens.
+Under `0`, the board holds no conversation, as a file of version 0.1 held none.
+The plugin then keeps each conversation in the browser's memory alone, so a reload loses it.
+
+## The other blockr options
+
+The blockr option `assistant_tools` goes.
+In version 0.1, it adds tools of the deployment's own, as `ellmer::tool()` definitions in R.
+The loop in the browser cannot call an R function.
+So a package that needs a tool of its own gives a plugin class that registers a command.
+The model runs that command through the assistant's edit tool, as it runs the commands of blockr.core.
+
+The blockr option `assistant_commit_timeout_secs` goes, since the assistant commits nothing.
+The assistant's edit tool returns once the blocks that the edit changed are current, or once the user stops the turn.
+The blockr option `assistant_block_tool_pool` goes with the tools for each block class that it capped ([A deployment's skills](#a-deployments-skills)).
+
+The caps on what the assistant's tools give the model carry over, with their defaults:
+
+| Blockr option | Default |
+|---|---|
+| `assistant_summary_max_chars` | 2000 |
+| `assistant_state_max_chars` | 20000 |
+| `assistant_state_value_max_chars` | 128 |
+| `assistant_description_max_chars` | 1000 |
+| `assistant_skill_description_max_chars` | 1024 |
+| `assistant_skill_catalogue_max_chars` | 4000 |
+| `assistant_board_section_max_chars` | 1500 |
+| `assistant_eval_max_chars` | 16000 |
+| `assistant_review_max_blocks` | 50 |
+| `assistant_plot_render_px` | 768 |
+| `assistant_plot_render_range` | 200 to 2000 |
+| `assistant_plot_render_max` | 4 |
+
+Each blockr option of version 0.1 goes as follows:
+
+| Version 0.1 | Version 0.2 |
+|---|---|
+| `chat_function` | The blockr options `assistant_base_url`, `assistant_api`, `assistant_api_key` and `assistant_models` ([Where the calls go](#where-the-calls-go)) |
+| `chat_compact_tokens` and `chat_compact_keep` | The `context_window` of a model's settings ([Compaction](#compaction)) |
+| `chat_save_turns` | The same blockr option, with `-1` in place of `Inf` ([The messages that a board keeps](#the-messages-that-a-board-keeps)) |
+| `assistant_skills` | The same blockr option ([A deployment's skills](#a-deployments-skills)) |
+| `assistant_tools` | A command that a package registers |
+| `assistant_commit_timeout_secs` and `assistant_block_tool_pool` | Nothing |
+| The caps above | The same blockr options |
+
+The blockr options `assistant_base_url`, `assistant_api`, `assistant_api_key`, `assistant_models`, `assistant_model_settings` and `assistant_template` are new.
+
+## The generics that write the board
+
+In version 0.1, the generics `describe_block()`, `describe_board()` and `describe_stack()` write the board for the model, in R.
+In version 0.2, the plugin writes the board in the browser, from the board that the browser holds, so the three generics go.
+A package that gives a method of one of them drops the method.
+The model reads a block class through what the class registers instead: its description, its guidance, its arg specs and the JSON Schema of its state.
+
+The generic `describe_result()` stays, with the methods that packages give it.
+R answers the assistant's request for the summary of a block's result through it.
+The tool `get_block_result` and the review of an edit send that request.
+A package registers a method as in version 0.1, such as with the roxygen tag `@exportS3Method blockr.assistant::describe_result`.
+
+## Boards that version 0.1 saved
+
+A board that an app of version 0.1 saved opens in version 0.2 once blockr.convert has turned its file into a JSON board, as the notes of blockr.core and blockr.dock say.
+The conversion makes the assistant's plugin with `new_assistant_plugin()`, in place of the extension.
+The panel of the assistant's extension becomes the panel of the assistant's plugin.
+The plugin starts with none of the conversations that the file holds.
+The conversion also leaves out a `system_prompt` that the file holds, and the values of the board options `llm_model`, `chat_compact_tokens` and `chat_compact_keep`, which are gone.
+
+## A deployment's skills
+
+A skill is a directory that holds a `SKILL.md`, whose YAML frontmatter gives the skill's `name` and `description`, as in version 0.1.
+The blockr option `assistant_skills` still names the directory of the deployment's skills.
+The keys `requires`, `user-invocable` and `disable-model-invocation` carry over, and so does the tool `read_skill`, with its `name` and its `file`.
+Three things change: the classes that a skill names, the tools that its text names, and the skill `layout`.
+
+### The classes that a skill names
+
+In version 0.1, a skill names block classes in `blocks:` by the ids under which their packages register them, such as `filter_block`.
+It names extensions in `extensions:` by their classes, such as `dag_extension`.
+In version 0.2, `blocks:` names each block class by its registry id in full: the name of its package, a hyphen and its id, such as `blockr.dplyr-filter_block`.
+The key `plugins:` takes the place of `extensions:`, and names each plugin class by its id in full, such as `blockr.dag-dag_plugin`:
+
+```yaml
+---
+# blockr.assistant 0.1
+name: filtering
+description: How to filter the rows of a study's tables.
+blocks: [filter_block]
+extensions: [dag_extension]
+---
+```
+
+```yaml
+---
+# blockr.assistant 0.2
+name: filtering
+description: How to filter the rows of a study's tables.
+blocks: [blockr.dplyr-filter_block]
+plugins: [blockr.dag-dag_plugin]
+---
+```
+
+The functions `available_blocks()` and `available_plugins()` of blockr.core list the classes of the available packages.
+Each row gives a class's package and its id, which make up the class's id in full:
+
+```{r}
+# blockr.assistant 0.2
+blocks <- subset(available_blocks(), package == "blockr.core")
+paste(blocks$package, blocks$id, sep = "-")
+```
+
+A block class that a script defines has its id alone as its registry id, as the notes of blockr.core say, so `blocks:` names it by that id.
+
+A skill that keeps a key of version 0.1 raises no error, but the model no longer finds the skill where it should:
+
+- A skill whose `blocks:` names `filter_block` names no class that the app offers, so no tool lists the skill.
+  The catalogue of the system prompt leaves it out as well, since it names a class.
+- Nothing reads the key `extensions:`, so a skill that names classes only there names none.
+  The catalogue then lists it as a skill for every task.
+
+### The tools that a skill names
+
+In version 0.1, the tools that change the board stage each change, and the tool `commit` applies what is staged.
+In version 0.2, the tool `edit` applies a list of commands at once, as one step that the user's undo can take back.
+Each command is one that the app registers, by its id, such as `blockr.core-add_block`, with its args.
+The tool `list_commands` lists the commands, and `describe_command` gives the args of one.
+Once the blocks that the step changed are current, `edit` returns its review of them, of those that feed them and of those downstream.
+So nothing is staged.
+A skill that says to stage changes and commit them says to pass them to one call of `edit` instead, as a list of commands.
+
+In version 0.1, a skill may say this:
+
+> Stage `add_block` and `add_link`, then call `commit` and read its report.
+
+In version 0.2, the skill says this instead:
+
+> Call `edit` with the commands `blockr.core-add_block` and `blockr.core-add_link`, and read its review.
+
+Each tool of version 0.1 goes as follows:
+
+| Version 0.1 | Version 0.2 |
+|---|---|
+| `list_blocks`, `describe_block`, `get_block_state`, `get_block_conditions`, `list_links`, `list_stacks`, `describe_stack` and `list_block_types` | The tools of the same names |
+| `describe_block_type` | The tool of the same name, without the worked examples that a class registered, each a complete state of its block. It still gives the example of each arg and the class's guidance in full |
+| `get_block_result` | The tool of the same name |
+| `inspect_results` | The tool of the same name, which binds the results of only the blocks that its `blocks` names, by their ids, where version 0.1 bound the result of every block. The result of a block that draws a plot is a `captured_plot` or a ggplot, which draws as it is printed, so the code `chart` draws the block `chart`, in place of `evaluate::replay(chart)` |
+| `read_skill` | The tool of the same name |
+| `add_block` | The command `blockr.core-add_block`, or `blockr.core-append_block`, `blockr.core-prepend_block` or `blockr.core-insert_block`, which add a block with a link to it or from it |
+| `remove_block` | The command `blockr.core-remove_block` |
+| `modify_block` | The command `blockr.core-set_block` for the block's state, and `blockr.core-rename_block` for its name |
+| `add_link`, `remove_link` and `modify_link` | The commands `blockr.core-add_link`, `blockr.core-remove_link` and `blockr.core-change_link` |
+| `add_stack` and `remove_stack` | The commands `blockr.core-add_stack` and `blockr.core-remove_stack` |
+| `modify_stack` | The command `blockr.core-change_stack` for the stack's blocks, and `blockr.core-rename_stack` for its name |
+| The tools `add_<type>` and `modify_<type>` for each block class | The commands `blockr.core-add_block` and `blockr.core-set_block`, whose `state` follows the JSON Schema that `describe_block_type` gives for the class |
+| `commit` and `discard` | Nothing, since `edit` applies its commands at once, and nothing is staged |
+| `list_board_options` | The tool of the same name, which gives the value of each board option that the board holds, and no `default` |
+| `set_board_option` | The command `blockr.core-set_option` |
+| `list_extensions` | The tool `list_plugins` |
+| `describe_extension` | The tool `get_plugin_state` |
+| `modify_extension` | The command `blockr.core-set_plugin_state`, or a command of the plugin's class |
+| `list_views` | The tool `get_plugin_state`, for the plugin `blockr.dock-dock_plugin` |
+| `validate_layout` | Nothing, since each command checks its args |
+| `add_view` | The command `blockr.dock-add_view`, which takes the view's `grid` in place of its `layout`, and makes the new view active. Where the active view should stay, `blockr.dock-activate_view` follows it, for the view that was active |
+| `remove_view`, `rename_view` and `set_active_view` | The commands `blockr.dock-remove_view`, `blockr.dock-rename_view` and `blockr.dock-activate_view` |
+| `add_panel_to_view` | The command `blockr.dock-add_panel`, which takes no `size` |
+| `remove_panel_from_view`, `move_panel` and `resize_panel` | The commands `blockr.dock-remove_panel`, `blockr.dock-move_panel` and `blockr.dock-resize_panel` |
+| `focus_panel` | The command `blockr.dock-activate_panel`, after `blockr.dock-activate_view` where the panel's view is not the active one |
+
+The tools `list_commands`, `describe_command`, `list_plugins`, `get_plugin_state`, `edit` and `undo_edit` are new.
+The tool `undo_edit` takes back the assistant's last edit.
+
+A skill that shows a call of `inspect_results` gives it the blocks that the code reads, by their ids:
+
+> Call `inspect_results` with the code `unique(data$Species)` and the blocks `["data"]`.
+
+The commands of blockr.dock name a panel as `{ "block": id }` for a block's card, or as `{ "plugin": id }` for the UI of a plugin, by the id of the plugin's class.
+In version 0.1, the view tools named a block's panel by the block's id, and an extension's panel by the extension's name, such as `slides`.
+
+The Board section of the system prompt changes with the tools.
+A block whose state is not valid yet reads `invalid`, where it read `unset` in version 0.1, so a skill that names the status `unset` names `invalid`.
+No arg carries the mark `*` of version 0.1, which marked the args that `modify_block` could change.
+A skill drops what it says of that mark.
+
+### The skill `layout`
+
+In version 0.1, blockr.assistant gives the skill `layout`, which teaches the view tools.
+In version 0.2, blockr.dock gives a skill of that name, which teaches the dock's commands, in every app that runs the dock.
+So a skill that sends the model to `read_skill("layout")` for the views keeps doing so.
+It may drop what it repeats of the view tools, since the skill of blockr.dock teaches the commands that replace them.
+
+## The functions that go
+
+The table gives each function of version 0.1 that is gone, with what takes its place.
+
+| Version 0.1 | Version 0.2 |
+|---|---|
+| `new_assistant_extension()` | `new_assistant_plugin()`, which a script calls only to place the assistant's panel or to give its conversations |
+| `default_system_prompt()` | A template that the blockr option `assistant_template` names, or a skill |
+| `describe_block()`, `describe_board()` and `describe_stack()` | Nothing, since the plugin writes the board in the browser |
+| The `new_llm_model_option()` of blockr.core | The blockr option `assistant_models` |
+
+The generic `describe_result()` stays, with its methods.
+The function `new_assistant_plugin()` is new.

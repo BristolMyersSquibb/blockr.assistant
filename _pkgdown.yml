@@ -5,7 +5,7 @@ template:
 navbar:
   structure:
     left: []
-    right: [search, reference, news, github]
+    right: [search, reference, articles, news, github]
   components:
     home: ~
 
