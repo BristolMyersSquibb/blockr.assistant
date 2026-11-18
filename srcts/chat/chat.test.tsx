@@ -91,9 +91,8 @@ async function chat(options: Options = {}) {
           ...HELLO.board,
           board: {
             ...board,
-            versions: { ...board.versions, [ASSISTANT]: 1 },
             ...(options.blocks === true ? {} : { blocks: {}, links: {}, stacks: {} }),
-            plugins: { ...board.plugins, [ASSISTANT]: options.state ?? { conversations: {} } },
+            plugins: { ...board.plugins, [ASSISTANT]: { state: options.state ?? { conversations: {} }, version: 1 } },
           },
         },
       },

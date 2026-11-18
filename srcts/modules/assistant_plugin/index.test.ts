@@ -45,8 +45,7 @@ function withState(state: AssistantState): typeof hello {
       ...empty.board,
       board: {
         ...empty.board.board,
-        versions: { ...empty.board.board.versions, [ASSISTANT]: 1 },
-        plugins: { ...empty.board.board.plugins, [ASSISTANT]: state },
+        plugins: { ...empty.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
       },
     },
   };

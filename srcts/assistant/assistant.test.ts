@@ -47,7 +47,7 @@ async function openedWith(question: string, replies: FauxResponseStep[]) {
   const stubbed = await stubCore({
     hello: {
       ...HELLO_ASSISTANT,
-      board: { ...HELLO_ASSISTANT.board, board: { ...board, versions: { ...board.versions, [ASSISTANT]: 1 }, plugins: { ...board.plugins, [ASSISTANT]: state } } },
+      board: { ...HELLO_ASSISTANT.board, board: { ...board, plugins: { ...board.plugins, [ASSISTANT]: { state, version: 1 } } } },
     },
     modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
     answer: (request) => {
