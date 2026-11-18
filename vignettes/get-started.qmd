@@ -19,7 +19,6 @@ knitr::opts_chunk$set(
 
 ```{r setup, message = FALSE}
 library(blockr.core)
-library(blockr.dock)
 library(blockr.assistant)
 ```
 
@@ -68,7 +67,9 @@ The dock of blockr.dock places the chat in a panel.
 On a board that has no views, the dock adds a view, which shows that panel on its left rail.
 A script that arranges a grid of its own places the panel with `plg()`, by the plugin's name in `plugins`:
 
-```{r}
+```{r, eval = FALSE}
+library(blockr.dock)
+
 board <- new_board(
   blocks = c(
     data = new_dataset_block("iris"),
