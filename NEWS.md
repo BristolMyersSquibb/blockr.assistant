@@ -392,6 +392,16 @@
   It also says how a skill names block classes and plugin classes, and where
   each tool that it names goes.
 
+* The examples in `inst/examples` are back for the new stack (#239).
+  Each builds its board with `new_board()`, with the plugin that
+  `new_assistant_plugin()` makes, and serves it with `serve()`.
+  A comment in each names the blockr options that a deployment sets for the
+  assistant's calls.
+  The examples `empty-board` and `populated-board` run under the frontend that
+  the app's packages give.
+  The example `layout-control` runs under the dock, whose view Workbench
+  places the assistant's panel with `plg()`.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

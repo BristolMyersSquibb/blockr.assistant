@@ -44,9 +44,7 @@ A script follows the migration notes of blockr.core and blockr.dock too, and tho
 
 In version 0.1, a script puts the assistant on a dock board with `new_assistant_extension()`, in the `extensions` of `new_dock_board()`.
 In version 0.2, the assistant is a plugin of the class `blockr.assistant-assistant_plugin`, which `new_assistant_plugin()` makes.
-The function `serve()` runs a plugin of each class that `available_plugins()` lists.
-That list holds the assistant's class wherever blockr.assistant is available.
-So a script that only puts the assistant on its board drops it:
+A script puts that plugin in the `plugins` of `new_board()`, under the name that the extension had:
 
 ```{r, eval = FALSE}
 # blockr.assistant 0.1
@@ -60,14 +58,25 @@ serve(
 
 ```{r}
 # blockr.assistant 0.2
-serve(new_board(blocks = c(a = new_dataset_block("iris"))))
+serve(
+  new_board(
+    blocks = c(a = new_dataset_block("iris")),
+    plugins = list(assistant = new_assistant_plugin())
+  )
+)
 ```
+
+The function `serve()` runs the assistant even where the board holds no plugin of its class.
+Its `plugins` default to every plugin class that `available_plugins()` lists.
+That list holds the assistant's class wherever blockr.assistant is available.
+The default is a convenience for interactive use.
+A script does not rely on it, and puts the assistant's plugin on its board.
+Where the app's plugins then lack the assistant's class, `serve()` stops and names the class, rather than serve the board without the assistant.
 
 The dock adds a view to a board that has none, as the notes of blockr.dock say.
 That view shows the assistant's panel on its left rail, beside the panels of the app's other plugins.
 
-A script that places the assistant's panel in a grid gives the plugin a name in the `plugins` of `new_board()`.
-The grid then names the panel with `plg()`, by that name, as the notes of blockr.dock say of every extension:
+A script that places the assistant's panel in a grid names the panel with `plg()`, by the plugin's name in `plugins`, as the notes of blockr.dock say of every extension:
 
 ```{r, eval = FALSE}
 # blockr.assistant 0.1
@@ -107,8 +116,9 @@ board <- new_board(
 ```
 
 In version 0.1, an assistant without a name in `extensions` has the name `assistant`.
-So a script that places the panel of such an assistant gives its plugin that name, as `assistant = new_assistant_plugin()` above.
-A grid may also name the panel by the id of the plugin's class, as `plg("blockr.assistant-assistant_plugin")`, which needs no plugin in `plugins`.
+So a script gives the plugin of such an assistant that name too, as `assistant = new_assistant_plugin()` above.
+A grid that placed its panel with `ext("assistant")` then places it with `plg("assistant")`.
+A grid may also name the panel by the id of the plugin's class, as `plg("blockr.assistant-assistant_plugin")`.
 Core's `new_board()` refuses a `plg()` whose id is neither a name in `plugins` nor the id of a plugin class.
 
 The function `new_assistant_plugin(conversations = list())` takes the conversations of a board that a script builds.
@@ -144,7 +154,7 @@ Its `system_prompt` gives way to a skill or a template ([The system prompt](#the
 Its `...`, which it passed on to the `new_dock_extension()` of blockr.dock, has no counterpart, since `new_assistant_plugin()` takes the plugin's state alone.
 
 In version 0.1, an app runs the assistant only where its script puts the assistant on the board.
-In version 0.2, an app runs it wherever blockr.assistant is available.
+In version 0.2, `serve()` runs it by default wherever blockr.assistant is available, as above.
 So a script whose app should run no assistant leaves the assistant's row out of the plugins that `serve()` takes:
 
 ```{r}
