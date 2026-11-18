@@ -120,6 +120,7 @@ async function opened(replies: FauxResponseStep[]) {
     key,
     prompt: { system: () => Promise.resolve("You answer questions about a board."), appMessage: () => Promise.resolve("The board holds no block.") },
     compaction: { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
+    notes: { take: () => Promise.resolve(undefined) },
     load,
     locks: undefined,
   });

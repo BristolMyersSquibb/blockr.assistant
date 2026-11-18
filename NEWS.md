@@ -367,6 +367,22 @@
   The command `blockr.assistant-add_usage` takes no `total` for such a call,
   and leaves the conversation's `last` as it was.
 
+* Before each call to the model, the assistant tells the model what others
+  changed in the board's blocks, links and stacks since the conversation's
+  previous call (#228).
+  Others are the user, whose undo and redo count as theirs, the assistant in
+  another conversation, and other plugins.
+  The note has a line for each block, link and stack that differs: added,
+  removed or changed, with what changed of it, such as a block's name or the
+  names of its args rather than their values, and who changed it.
+  The conversation keeps the note, as a message of the role `user` that holds
+  one part of the type `changes`, which the chat leaves out.
+  The note comes after the conversation's last message and before the message
+  of the app's, and stays within `assistant_board_section_max_chars`.
+  A conversation's first call carries no note, and neither does the first call
+  after the board opens again.
+  The rules tell the model that what the user changed is what the user wants.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
