@@ -204,8 +204,10 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     return read;
   });
 
-  function run(id: string, args: Json): Promise<void> {
-    return core.commands.run(id, args, ORIGIN);
+  // Runs the command, as the assistant's. Core resolves with whether the step
+  // took an undo step, which none of the assistant's commands takes.
+  async function run(id: string, args: Json): Promise<void> {
+    await core.commands.run(id, args, ORIGIN);
   }
 
   async function open(read: number): Promise<void> {

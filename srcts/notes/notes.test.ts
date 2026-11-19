@@ -36,8 +36,8 @@ async function opened(blockrOptions?: Readonly<Record<string, Json>>) {
 
 // Runs a command of core's on the board, as the user's unless the origin is
 // given.
-function edit(core: CoreApi, id: string, args: Json, origin = "user"): Promise<void> {
-  return core.commands.run(id, args, origin);
+async function edit(core: CoreApi, id: string, args: Json, origin = "user"): Promise<void> {
+  await core.commands.run(id, args, origin);
 }
 
 // The text of the note, or undefined for none.

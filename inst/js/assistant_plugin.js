@@ -1622,8 +1622,8 @@ function createConversations(core, signal) {
     await open2(read);
     return read;
   });
-  function run(id, args) {
-    return core.commands.run(id, args, ORIGIN);
+  async function run(id, args) {
+    await core.commands.run(id, args, ORIGIN);
   }
   async function open2(read) {
     const conversations = assistantState(core.store.board())?.conversations ?? {};
