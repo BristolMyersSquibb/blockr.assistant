@@ -99,6 +99,17 @@ describe("describe_block", () => {
     });
   });
 
+  test("gives why the transport could not send the block's latest evaluation", async () => {
+    const { core, tools } = await started({ refuse: ["evaluate"] });
+    await core.scheduler.evaluate(["a"]);
+
+    expect(parsed(await callTool(tools, "describe_block", { id: "a" }))).toMatchObject({
+      status: "failed",
+      unsent: "The evaluation could not be sent to R: The transport is closed.",
+      conditions: [],
+    });
+  });
+
   test("leaves out a value of the state too long to show, and marks it with get_block_state", async () => {
     const { tools } = await started({ blockrOptions: { assistant_state_value_max_chars: 20 } });
 
@@ -207,6 +218,32 @@ describe("get_block_conditions", () => {
       status: "stale",
       note: expect.stringContaining("out of date") as unknown,
       conditions: { error: [{ phase: "expr", message: "object 'Sepal.Width' not found" }] },
+    });
+  });
+
+  test("gives why the transport could not send the block's latest evaluation, which raised nothing", async () => {
+    const { core, tools } = await started({ refuse: ["evaluate"] });
+    await core.scheduler.evaluate(["a"]);
+
+    expect(parsed(await callTool(tools, "get_block_conditions", { id: "a" }))).toEqual({
+      id: "a",
+      status: "failed",
+      unsent: "The evaluation could not be sent to R: The transport is closed.",
+      conditions: {},
+    });
+  });
+
+  test("gives why the transport could not send the evaluation of a stale block before its latest change", async () => {
+    const { core, tools } = await started({ refuse: ["evaluate"] });
+    await core.scheduler.evaluate(["a"]);
+    core.scheduler.invalidate("a");
+
+    expect(parsed(await callTool(tools, "get_block_conditions", { id: "a" }))).toEqual({
+      id: "a",
+      status: "stale",
+      unsent: "The evaluation could not be sent to R: The transport is closed.",
+      note: expect.stringContaining("out of date") as unknown,
+      conditions: {},
     });
   });
 });

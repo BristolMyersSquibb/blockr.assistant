@@ -3061,7 +3061,7 @@ function notReady(blocks) {
   return [
     "The request did not go to R, since a block that it reads is not ready:",
     ...blocks.map(({ block, status }) => {
-      const why = [status.reason, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
+      const why = [status.reason, status.unsent, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
       const said = why.filter((text3) => text3 !== null && text3 !== "");
       return `- Block "${block}" reads ${status.status}${said.length > 0 ? `: ${said.join(" ")}` : "."}`;
     })
@@ -3313,6 +3313,7 @@ function blockEntry(core, id, options) {
   return {
     status: kind,
     ...(kind === "invalid" || kind === "waiting") && status.reason !== null ? { reason: status.reason } : {},
+    ...status.unsent === null ? {} : { unsent: status.unsent },
     conditions: conditionList(conditions),
     ...options.text === void 0 ? {} : { result: options.text },
     ...options.text === void 0 && options.summary && kind === "ready" && status.summary !== null ? { summary: status.summary } : {},
@@ -3589,7 +3590,7 @@ function blockTools(context6) {
     }),
     tool({
       name: "describe_block",
-      description: "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, the one-line summary of its result, its conditions, the skills of this deployment that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
+      description: "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, why its latest evaluation could not be sent to R where it could not, the one-line summary of its result, its conditions, the skills of this deployment that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
       parameters: object({ id: ID }, ["id"]),
       run: async ({ id }) => {
         const [skills, valueMax, summaryMax] = await Promise.all([
@@ -3601,6 +3602,7 @@ function blockTools(context6) {
         const block = found(id);
         const status = core.scheduler.status(id);
         const reason = status?.reason ?? null;
+        const unsent = status?.unsent ?? null;
         const summary2 = status?.summary ?? null;
         const note2 = statusNote(status);
         const described = {
@@ -3609,6 +3611,7 @@ function blockTools(context6) {
           registry_id: block.registry_id,
           status: status?.status ?? null,
           ...reason === null ? {} : { reason },
+          ...unsent === null ? {} : { unsent },
           ...note2 === void 0 ? {} : { note: note2 },
           ...summary2 === null ? {} : { summary: summary2 },
           conditions: conditionList(status?.conditions ?? []),
@@ -3632,15 +3635,17 @@ function blockTools(context6) {
     }),
     tool({
       name: "get_block_conditions",
-      description: "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
+      description: "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here, or else `unsent` says why its evaluation could not be sent to R. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
       parameters: object({ id: ID }, ["id"]),
       run: ({ id }) => {
         found(id);
         const status = core.scheduler.status(id);
+        const unsent = status?.unsent ?? null;
         const note2 = statusNote(status);
         const given2 = {
           id,
           status: status?.status ?? null,
+          ...unsent === null ? {} : { unsent },
           ...note2 === void 0 ? {} : { note: note2 },
           conditions: conditionsBySeverity(status?.conditions ?? [])
         };

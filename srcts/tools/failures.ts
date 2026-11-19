@@ -23,13 +23,14 @@ export function failureText(error: unknown): string {
 }
 
 // That the request did not go to R, with each block that is not ready, its
-// status, and why it is not: the error of a failed block, and the reason of
-// one that is invalid or waiting.
+// status, and why it is not: the error of a failed block, or why the
+// transport could not send its evaluation, and the reason of one that is
+// invalid or waiting.
 function notReady(blocks: readonly { readonly block: string; readonly status: BlockStatus }[]): string {
   return [
     "The request did not go to R, since a block that it reads is not ready:",
     ...blocks.map(({ block, status }) => {
-      const why = [status.reason, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
+      const why = [status.reason, status.unsent, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
       const said = why.filter((text): text is string => text !== null && text !== "");
       return `- Block "${block}" reads ${status.status}${said.length > 0 ? `: ${said.join(" ")}` : "."}`;
     }),
