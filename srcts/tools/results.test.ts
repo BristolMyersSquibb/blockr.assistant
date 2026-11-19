@@ -143,15 +143,26 @@ describe("inspect_results", () => {
     });
   });
 
+  test("gives a warning that the code raised on each run of a loop once", async () => {
+    const { tools } = await started({
+      answers: { inspect_results: () => ({ output: ["[1] NA\n[1] NA\n[1] NA"], plots: [] }) },
+      conditions: { inspect_results: [COERCED, COERCED, COERCED] },
+    });
+
+    await expect(callTool(tools, "inspect_results", { code: 'for (x in c("a", "b", "c")) print(as.numeric(x))', blocks: [] })).resolves.toMatchObject({
+      text: "[1] NA\n[1] NA\n[1] NA\n\nWarning: NAs introduced by coercion",
+    });
+  });
+
   test("cuts the warnings and messages at assistant_eval_max_chars", async () => {
     const { tools } = await started({
       blockrOptions: { assistant_eval_max_chars: 80 },
       answers: { inspect_results: () => ({ output: ["[1] NA"], plots: [] }) },
-      conditions: { inspect_results: Array.from({ length: 100 }, () => COERCED) },
+      conditions: { inspect_results: Array.from({ length: 100 }, (_, i) => ({ ...COERCED, message: `No rows in group ${String(i + 1)}` })) },
     });
 
-    await expect(callTool(tools, "inspect_results", { code: 'sapply(rep("a", 100), as.numeric)', blocks: [] })).resolves.toMatchObject({
-      text: "[1] NA\n\nWarning: NAs introduced by coercion\nWarning: NAs int\n... [+3547 chars truncated]",
+    await expect(callTool(tools, "inspect_results", { code: 'for (i in 1:100) warning("No rows in group ", i)', blocks: [] })).resolves.toMatchObject({
+      text: "[1] NA\n\nWarning: No rows in group 1\nWarning: No rows in grou\n... [+2839 chars truncated]",
     });
   });
 

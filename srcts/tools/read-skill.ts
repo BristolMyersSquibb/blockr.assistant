@@ -50,8 +50,8 @@ export function skillTools({ core, skills }: ToolContext): Tool[] {
         const skill = (await skills.list()).find((listed) => listed.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given = { name, packages: appPackages(core), ...(file === undefined ? {} : { path: file }) };
-        const { answer, conditions } = await context.with(active, () => toolRequest(core, "read_skill", given, { signal }));
-        return withConditions(core, answeredText(answer, "read_skill"), conditions);
+        const { answer, notifications } = await context.with(active, () => toolRequest(core, "read_skill", given, { signal }));
+        return withConditions(core, answeredText(answer, "read_skill"), notifications);
       },
     }),
   ];

@@ -30,8 +30,9 @@
 //    when the plugin asks R again, so it withdraws nothing itself
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 //    It raises nothing where the next board opened first.
-// 5. It drops the conditions of R's reply, ok or error, since R logs each.
-//    So core raises no notification for them, and R's error reaches the user
+// 5. It drops the notifications of R's reply, ok or error, which the
+//    request's notifier takes (../requests/requests.ts), since R logs each
+//    condition. So core raises none of them, and R's error reaches the user
 //    only in assistant_template_failed.
 
 import type { CoreApi } from "@blockr/core";
