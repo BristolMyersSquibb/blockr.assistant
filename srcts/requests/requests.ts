@@ -11,40 +11,46 @@
 //   not ready, or where R replies error, and with a SessionEndedError where
 //   R's session ends before R replies. Core exports neither class to plugins,
 //   so the plugin tells them by their names.
-// - The plugin takes the conditions of R's reply to each of its requests
-//   itself, ok or error, so that core raises no notification for them. The
-//   tools hand them to the model, and the skills drop them, since R logs each
-//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model).
+// - The plugin takes the notifications of R's reply to each of its requests
+//   through the request's notifier, ok or error, so that core raises none of
+//   them. Core makes a notification for each condition of the reply, and a
+//   single one for conditions that share their severity, class and message.
+//   The tools hand them to the model, and the skills, the template and the
+//   model settings drop them, since R logs each condition
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model,
+//   https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.14#taking-a-calls-notifications).
+// - A reply of error still rejects with its conditions, from which the
+//   plugin reads R's error.
 
-import type { Condition, CoreApi, Json, RequestError, RequestOpts } from "@blockr/core";
+import type { CoreApi, Json, Notification, RequestError, RequestOpts } from "@blockr/core";
 import { ASSISTANT } from "../state/index.ts";
 
-// R's answer to one of the assistant's requests, and the conditions of R's
-// reply: the messages and warnings that R raised as it answered, in the order
-// that R raised them.
+// R's answer to one of the assistant's requests, and the notifications of R's
+// reply, which core handed the request's notifier: the messages and warnings
+// that R raised as it answered, in the order that R first raised each.
 export interface Reply {
   readonly answer: Json | Blob;
-  readonly conditions: readonly Condition[];
+  readonly notifications: readonly Notification[];
 }
 
 // Sends the assistant's request `name`, and resolves with R's answer and the
-// conditions of R's reply, which the caller hands on itself. It rejects as
+// notifications of R's reply, which the caller hands on itself. It rejects as
 // CoreApi.request() does, so that a reply of error rejects with its
 // conditions.
 export async function sendRequest(
   core: { readonly request: CoreApi["request"] },
   name: string,
   args: Readonly<Record<string, Json>>,
-  opts: Omit<RequestOpts, "conditions"> = {},
+  opts: Omit<RequestOpts, "notifier"> = {},
 ): Promise<Reply> {
-  let conditions: readonly Condition[] = [];
+  let notifications: readonly Notification[] = [];
   const answer = await core.request(ASSISTANT, name, args, {
     ...opts,
-    conditions: (given) => {
-      conditions = given;
+    notifier: (given) => {
+      notifications = given;
     },
   });
-  return { answer, conditions };
+  return { answer, notifications };
 }
 
 // Sends the assistant's request `name` as sendRequest() does, and sends it
@@ -55,7 +61,7 @@ export async function sendUntilReplied(
   core: { readonly request: CoreApi["request"] },
   name: string,
   args: Readonly<Record<string, Json>>,
-  opts: Omit<RequestOpts, "conditions"> = {},
+  opts: Omit<RequestOpts, "notifier"> = {},
 ): Promise<Reply> {
   for (;;) {
     try {

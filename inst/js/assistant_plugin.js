@@ -2522,14 +2522,14 @@ function convertToolResult(result, isError) {
 
 // srcts/requests/requests.ts
 async function sendRequest(core, name, args, opts = {}) {
-  let conditions = [];
+  let notifications = [];
   const answer = await core.request(ASSISTANT, name, args, {
     ...opts,
-    conditions: (given2) => {
-      conditions = given2;
+    notifier: (given2) => {
+      notifications = given2;
     }
   });
-  return { answer, conditions };
+  return { answer, notifications };
 }
 async function sendUntilReplied(core, name, args, opts = {}) {
   for (; ; ) {
@@ -3198,7 +3198,7 @@ async function reviewed(core, step, signals, active) {
     return done();
   }
   if (described.note !== void 0) notes.push(described.note);
-  const raised = await withConditions(core, "", described.conditions);
+  const raised = await withConditions(core, "", described.notifications);
   if (raised !== "") notes.push(`R raised these as it described the results:
 ${raised}`);
   const changed = new Set(groups.changed);
@@ -3258,37 +3258,37 @@ async function describeResults(core, all, picked2, signals, active, what) {
   }
 }
 function halted(core, error, signals, all, { what, waited }) {
-  if (signals.board.aborted) return { texts: {}, conditions: [], summaries: false, closed: true };
+  if (signals.board.aborted) return { texts: {}, notifications: [], summaries: false, closed: true };
   if (signals.turn.aborted) {
     return {
       texts: {},
-      conditions: [],
+      notifications: [],
       summaries: true,
       note: `The user stopped the turn while the tool waited for its review, after ${what} applied. So the review gives each block's status as it was then, with no description of its result.`
     };
   }
-  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, conditions: [], summaries: false };
+  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, notifications: [], summaries: false };
   const why = isSessionEnded(error) ? "R's session ended twice before R answered." : failureMessage(error);
   return {
     texts: {},
-    conditions: [],
+    notifications: [],
     summaries: true,
     note: `The review could not finish ${waited}. ${/[.!?]$/.test(why) ? why : `${why}.`} So it gives each block's status as it is now, and the one-line summary of each ready block's result in place of a description. Call get_block_result for a block's result.`
   };
 }
 async function requested(core, reads, signal, active) {
-  if (reads.length === 0) return { texts: {}, conditions: [] };
+  if (reads.length === 0) return { texts: {}, notifications: [] };
   try {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
     const named2 = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named2.has(id) && core.scheduler.status(id) !== void 0);
-    return rest.length === 0 ? { texts: {}, conditions: [] } : await sent(core, rest, signal, active);
+    return rest.length === 0 ? { texts: {}, notifications: [] } : await sent(core, rest, signal, active);
   }
 }
 async function sent(core, reads, signal, active) {
-  const { answer, conditions } = await context3.with(
+  const { answer, notifications } = await context3.with(
     active,
     () => toolRequest(core, "describe_result", {}, { reads: [...reads], signal })
   );
@@ -3299,7 +3299,7 @@ async function sent(core, reads, signal, active) {
       return text3 === void 0 ? [] : [[id, answeredText(text3, "describe_result")]];
     })
   );
-  return { texts, conditions };
+  return { texts, notifications };
 }
 function blockEntry(core, id, options) {
   const status = core.scheduler.status(id);
@@ -3385,7 +3385,8 @@ function editTools(core, board) {
             active,
             () => core.commands.run(
               commands.map(({ command: command2, args }) => args === void 0 ? { id: command2 } : { id: command2, args }),
-              ORIGIN2
+              ORIGIN2,
+              { notifier: dropNotifications }
             )
           );
         } catch (error) {
@@ -3415,7 +3416,7 @@ function editTools(core, board) {
         const hearing = hear(core);
         try {
           context4.with(active, () => {
-            core.store.undo(ORIGIN2);
+            core.store.undo(ORIGIN2, { notifier: dropNotifications });
           });
         } catch (error) {
           return refusedResult({ applied: false, failures: failuresOf(error) });
@@ -3465,6 +3466,8 @@ function failuresOf(error) {
     if (Array.isArray(failures) && failures.every((failure) => typeof failure === "string")) return [...failures];
   }
   return [failureMessage(error)];
+}
+function dropNotifications() {
 }
 function isCommandError(error) {
   return error instanceof Error && error.name === "CommandError" && Array.isArray(error.failures);
@@ -3795,8 +3798,8 @@ function skillTools({ core, skills }) {
         const skill = (await skills.list()).find((listed3) => listed3.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given2 = { name, packages: appPackages(core), ...file === void 0 ? {} : { path: file } };
-        const { answer, conditions } = await context5.with(active, () => toolRequest(core, "read_skill", given2, { signal }));
-        return withConditions(core, answeredText(answer, "read_skill"), conditions);
+        const { answer, notifications } = await context5.with(active, () => toolRequest(core, "read_skill", given2, { signal }));
+        return withConditions(core, answeredText(answer, "read_skill"), notifications);
       }
     })
   ];
@@ -3812,9 +3815,9 @@ function resultTools({ core }) {
       parameters: object({ id: { type: "string", description: "The block's id, as list_blocks gives it." } }, ["id"]),
       run: async ({ id }, signal) => {
         if (own(core.store.board().blocks, id) === void 0) throw new Error(noBlock(id));
-        const { answer, conditions } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
+        const { answer, notifications } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
         const described = answeredObject(answer, "describe_result");
-        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), conditions);
+        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), notifications);
       }
     }),
     tool({
@@ -3848,10 +3851,10 @@ function resultTools({ core }) {
         const absent = blocks.filter((block) => own(board.blocks, block) === void 0);
         if (absent.length > 0) throw new Error(noBlocks(absent));
         const given2 = { code, ...width === void 0 ? {} : { width }, ...height === void 0 ? {} : { height } };
-        const { answer, conditions } = await toolRequest(core, "inspect_results", given2, { reads: [...blocks], signal });
+        const { answer, notifications } = await toolRequest(core, "inspect_results", given2, { reads: [...blocks], signal });
         const inspection = answeredObject(answer, "inspect_results");
         return {
-          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), conditions),
+          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), notifications),
           isError: false,
           images: answeredTexts(inspection.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" }))
         };

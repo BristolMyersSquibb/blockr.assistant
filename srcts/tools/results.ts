@@ -44,9 +44,9 @@ export function resultTools({ core }: ToolContext): Tool[] {
       parameters: object({ id: { type: "string", description: "The block's id, as list_blocks gives it." } }, ["id"]),
       run: async ({ id }, signal) => {
         if (own(core.store.board().blocks, id) === undefined) throw new Error(noBlock(id));
-        const { answer, conditions } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
+        const { answer, notifications } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
         const described = answeredObject(answer, "describe_result");
-        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), conditions);
+        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), notifications);
       },
     }),
 
@@ -84,10 +84,10 @@ export function resultTools({ core }: ToolContext): Tool[] {
         const absent = blocks.filter((block) => own(board.blocks, block) === undefined);
         if (absent.length > 0) throw new Error(noBlocks(absent));
         const given = { code, ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }) };
-        const { answer, conditions } = await toolRequest(core, "inspect_results", given, { reads: [...blocks], signal });
+        const { answer, notifications } = await toolRequest(core, "inspect_results", given, { reads: [...blocks], signal });
         const inspection = answeredObject(answer, "inspect_results");
         return {
-          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), conditions),
+          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), notifications),
           isError: false,
           images: answeredTexts(inspection.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" })),
         };
