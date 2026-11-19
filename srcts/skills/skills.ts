@@ -13,8 +13,9 @@
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#what-fails).
 //    That is also when they ask R again, so they withdraw nothing themselves.
 //    They raise nothing where the next board opened first.
-// 5. They drop the conditions of R's reply, ok or error, since R logs each.
-//    So core raises no notification for them, and R's error reaches the user
+// 5. They drop the notifications of R's reply, ok or error, which the
+//    request's notifier takes (../requests/requests.ts), since R logs each
+//    condition. So core raises none of them, and R's error reaches the user
 //    only in assistant_skills_failed.
 
 import type { CoreApi, Json } from "@blockr/core";

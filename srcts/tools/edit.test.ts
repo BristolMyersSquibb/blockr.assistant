@@ -36,6 +36,12 @@ async function started(options: StartOptions = {}, board: AbortSignal = new Abor
   return { ...stub, tools: editTools(stub.core, board) };
 }
 
+// The messages of the notifications that core raised for edits that it
+// refused, which it raises unless the call's notifier takes them.
+function refusedEdits(core: Pick<CoreApi, "notifications">): string[] {
+  return core.notifications.get().flatMap(({ source, message }) => (source.kind === "core" && source.code === "board_edit_failed" ? [message] : []));
+}
+
 // The blocks that each describe_result request read, in order.
 function described(requests: ReturnType<Awaited<ReturnType<typeof started>>["requests"]>): string[][] {
   return requests.map(({ reads }) => reads.map(({ block }) => block));
@@ -228,7 +234,7 @@ describe("edit", () => {
     expect(core.store.canUndo("assistant")).toBe(false);
   });
 
-  test("returns the index, the id and the failures of a command that fails its preflight, with a hint, and applies none of the list", async () => {
+  test("returns the index, the id and the failures of a command that fails its preflight, with a hint, applies none of the list, and core raises no notification for it", async () => {
     const { core, tools, sent, settled } = await started();
     const board = core.store.board();
     const before = sent.length;
@@ -249,6 +255,7 @@ describe("edit", () => {
       hint: HINT,
     });
     expect(core.store.board()).toBe(board);
+    expect(refusedEdits(core)).toEqual([]);
     await settled();
     expect(sent.slice(before).filter(({ kind }) => kind === "evaluate" || kind === "request")).toEqual([]);
   });
@@ -353,7 +360,7 @@ describe("undo_edit", () => {
     expect(core.store.board()).toBe(board);
   });
 
-  test("returns why the store refuses the undo, and leaves the board as it was", async () => {
+  test("returns why the store refuses the undo, leaves the board as it was, and core raises no notification for it", async () => {
     const { core, tools } = await started();
     await callTool(tools, "edit", { commands: [{ command: "blockr.core-remove_link", args: { id: "ab" } }] });
     await core.commands.run("blockr.core-add_link", { from: "d", to: "b", input: "data" });
@@ -364,6 +371,7 @@ describe("undo_edit", () => {
     expect(result.isError).toBe(true);
     expect(parsed(result)).toMatchObject({ applied: false, failures: [expect.any(String)] });
     expect(core.store.board()).toBe(board);
+    expect(refusedEdits(core)).toEqual([]);
   });
 });
 
