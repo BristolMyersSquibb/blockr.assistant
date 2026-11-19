@@ -1128,6 +1128,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     expect(listed(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
     expect(el.querySelector(".blockr-assistant-command-description")?.textContent).toBe("Summarize the conversation so far, keeping the newest messages as they are.");
     expect(field(el).getAttribute("aria-controls")).toBe(el.querySelector(".blockr-assistant-commands")?.id);
+    expect(field(el).getAttribute("aria-autocomplete")).toBe("list");
 
     type(el, "/C");
     expect(listed(el)).toEqual(["/compact", "/clear"]);

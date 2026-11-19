@@ -28,9 +28,10 @@
 //      commands whose names start with what follows the /, or a line that
 //      says that none does. The list stays open until the text holds a space
 //      or a line break.
-//   2. Up and Down move in the list, which takes them from the field. Tab or
-//      a click puts the highlighted command in the field, followed by a
-//      space, and Escape closes the list until the text changes.
+//   2. Up and Down move in the list, which takes them from the field, and the
+//      list scrolls to the highlighted command. Tab or a click puts the
+//      highlighted command in the field, followed by a space, and Escape
+//      closes the list until the text changes.
 //   3. Enter puts the highlighted command in the field, as today's list does,
 //      but runs it where the field holds its name already, so that /undo
 //      takes one Enter rather than two.
@@ -80,6 +81,7 @@ export function Composer(): ReactElement {
   const text = useAuiState(({ composer }) => composer.text);
   const field = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const [recalled, setRecalled] = useState<Recalled>(undefined);
   const listId = useId();
   // The command that the user highlighted in the list, by its index, with the
@@ -107,6 +109,18 @@ export function Composer(): ReactElement {
     el.style.height = "auto";
     el.style.height = `${String(el.scrollHeight)}px`;
   }, [text]);
+
+  // The list scrolls to the highlighted command as Up and Down move past the
+  // rows that show, as today's list does, while nothing around it scrolls.
+  useLayoutEffect(() => {
+    const shown = list.current;
+    const option = shown?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (shown == null || option == null) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    if (top < shown.scrollTop) shown.scrollTop = top;
+    else if (bottom > shown.scrollTop + shown.clientHeight) shown.scrollTop = bottom - shown.clientHeight;
+  }, [picked]);
 
   // Puts the command in the field, followed by a space, which closes the list.
   const complete = (chosen: Listed): void => {
@@ -212,6 +226,7 @@ export function Composer(): ReactElement {
       {waitsFor === undefined ? null : <p className="blockr-assistant-composer-note">A turn runs in “{waitsFor}”.</p>}
       {listed === undefined ? null : (
         <ul
+          ref={list}
           id={listId}
           className="blockr-assistant-commands"
           role="listbox"
@@ -282,7 +297,7 @@ export function Composer(): ReactElement {
             placeholder={PLACEHOLDER}
             aria-label="Message"
             aria-haspopup="listbox"
-            aria-expanded={listed !== undefined}
+            aria-autocomplete="list"
             aria-controls={listed === undefined ? undefined : listId}
             aria-activedescendant={picked === undefined ? undefined : optionId(picked.name)}
             onChange={() => {

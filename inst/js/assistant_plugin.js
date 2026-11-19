@@ -5020,6 +5020,7 @@ function Composer() {
   const text3 = useAuiState(({ composer }) => composer.text);
   const field = useRef2(null);
   const picker = useRef2(null);
+  const list = useRef2(null);
   const [recalled, setRecalled] = useState2(void 0);
   const listId = useId();
   const [highlighted, setHighlighted] = useState2(FIRST);
@@ -5038,6 +5039,15 @@ function Composer() {
     el.style.height = "auto";
     el.style.height = `${String(el.scrollHeight)}px`;
   }, [text3]);
+  useLayoutEffect(() => {
+    const shown3 = list.current;
+    const option = shown3?.querySelector('[aria-selected="true"]');
+    if (shown3 == null || option == null) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    if (top < shown3.scrollTop) shown3.scrollTop = top;
+    else if (bottom > shown3.scrollTop + shown3.clientHeight) shown3.scrollTop = bottom - shown3.clientHeight;
+  }, [picked2]);
   const complete = (chosen) => {
     aui.composer.setText(`/${chosen.name} `);
     field.current?.focus();
@@ -5128,6 +5138,7 @@ function Composer() {
     listed3 === void 0 ? null : /* @__PURE__ */ jsx2(
       "ul",
       {
+        ref: list,
         id: listId,
         className: "blockr-assistant-commands",
         role: "listbox",
@@ -5200,7 +5211,7 @@ function Composer() {
             placeholder: PLACEHOLDER,
             "aria-label": "Message",
             "aria-haspopup": "listbox",
-            "aria-expanded": listed3 !== void 0,
+            "aria-autocomplete": "list",
             "aria-controls": listed3 === void 0 ? void 0 : listId,
             "aria-activedescendant": picked2 === void 0 ? void 0 : optionId(picked2.name),
             onChange: () => {
