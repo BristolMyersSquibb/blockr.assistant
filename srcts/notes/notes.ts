@@ -23,7 +23,7 @@
 // - Any other origin is a plugin, by the name of the app's plugin whose class
 //   has that id, or else by the origin.
 // - A change that the store announces while asUser() runs is the user's.
-//   That is for the undo that /undo asks for (blockr.assistant#233), which
+//   That is for the undo that the chat's /undo asks for (../chat), which
 //   takes back the assistant's step with the origin "assistant"
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 //

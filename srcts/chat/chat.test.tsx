@@ -4,6 +4,7 @@
 
 import type { Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
+import type { Answer } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { act } from "react";
@@ -73,6 +74,9 @@ interface Options {
   // OpenRouter's login, which gives the visitor's key, the key's own unless
   // given.
   readonly openRouterLogin?: OpenRouterLogin;
+  // How R answers the requests that core sends, as the assistant's requests,
+  // which go unanswered unless given.
+  readonly answer?: Answer;
 }
 
 // Core on a board that holds the assistant's state given, with the assistant
@@ -98,6 +102,7 @@ async function chat(options: Options = {}) {
       },
       modules: { [ASSISTANT]: { api: 1, default: { ...assistantModule.default, start: undefined } } },
       ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
+      ...(options.answer === undefined ? {} : { answer: options.answer }),
     }),
   );
   const controller = new AbortController();
@@ -1050,6 +1055,374 @@ describe("the chat's message field", () => {
   });
 });
 
+// Each test may take as long as until() waits, since several run two turns or
+// two chats, which a busy machine may take longer than the default of 5
+// seconds for.
+describe("the chat's slash commands", { timeout: 20_000 }, () => {
+  // A skill as R lists it, with every vector as an array, which the model may
+  // read.
+  const listedSkill = (name: string, userInvocable: boolean): Json => ({
+    name: [name],
+    description: [`What ${name} covers.`],
+    blocks: [],
+    plugins: [],
+    "user-invocable": [userInvocable],
+    "disable-model-invocation": [false],
+  });
+
+  // R's answers to the assistant's requests list_skills and read_skill: R
+  // lists a skill filters, which the user may call, and a skill layout, which
+  // the user may not, and reads a skill as `read` gives it.
+  function skillAnswers(read: (name: string) => string = () => "How to filter."): Answer {
+    return (request) => {
+      if (request.kind !== "request" || request.type !== "plugin" || request.plugin !== ASSISTANT) return undefined;
+      if (request.name === "list_skills") return [listedSkill("filters", true), listedSkill("layout", false)];
+      if (request.name === "read_skill") return [read(typeof request.args.name === "string" ? request.args.name : "")];
+      return undefined;
+    };
+  }
+
+  // The chat, once the skills that R lists have reached it.
+  async function withSkills(options: Options = {}) {
+    const opened = await chat({ answer: skillAnswers(), ...options });
+    await act(() => opened.assistant.skills.list());
+    await settle();
+    return opened;
+  }
+
+  // The names of the commands that the list shows, as it writes them, or
+  // undefined where the list is closed.
+  function listed(el: HTMLElement): string[] | undefined {
+    const list = el.querySelector(".blockr-assistant-commands");
+    return list === null ? undefined : [...list.querySelectorAll(".blockr-assistant-command-name")].map((name) => name.textContent);
+  }
+
+  // The command that the list highlights.
+  function highlighted(el: HTMLElement): string | undefined {
+    return el.querySelector('.blockr-assistant-command[aria-selected="true"] .blockr-assistant-command-name')?.textContent;
+  }
+
+  // What the chat says under the field of the slash command that ran last.
+  function commandNote(el: HTMLElement): string | undefined {
+    return el.querySelector(".blockr-assistant-command-note")?.textContent;
+  }
+
+  // The args of each request of the assistant's of the name given that core
+  // sent R.
+  function asked(sent: readonly Parameters<Answer>[0][], name: string): Json[] {
+    return sent.flatMap((request) => (request.kind === "request" && request.type === "plugin" && request.name === name ? [request.args] : []));
+  }
+
+  // The lines of the note of what others changed that the conversation takes
+  // now, which name who changed what.
+  async function noteLines(assistant: Assistant, conversation: string): Promise<string[]> {
+    const note = await act(() => assistant.notes.take(conversation));
+    const written = note?.parts.map((part) => (part.type === "changes" ? part.text : "")).join("") ?? "";
+    return written.split("\n").filter((line) => line.startsWith("- "));
+  }
+
+  test("are listed as the user types / at the start of the field: the built-in commands, then the skills that the user may call", async () => {
+    const { el } = await withSkills();
+
+    type(el, "/");
+    expect(listed(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
+    expect(el.querySelector(".blockr-assistant-command-description")?.textContent).toBe("Summarize the conversation so far, keeping the newest messages as they are.");
+    expect(field(el).getAttribute("aria-controls")).toBe(el.querySelector(".blockr-assistant-commands")?.id);
+    expect(field(el).getAttribute("aria-autocomplete")).toBe("list");
+
+    type(el, "/C");
+    expect(listed(el)).toEqual(["/compact", "/clear"]);
+
+    type(el, "/x");
+    expect(listed(el)).toEqual([]);
+    expect(el.querySelector(".blockr-assistant-commands-none")?.textContent).toBe("No matching commands");
+
+    for (const text of ["/clear ", "/filters keep the adults", "Undo /undo", ""]) {
+      type(el, text);
+      expect(listed(el)).toBeUndefined();
+    }
+  });
+
+  test("move in the list with Up and Down, and go into the field with Tab, Enter or a click, while Escape closes the list until the text changes", async () => {
+    const { el } = await withSkills();
+
+    type(el, "/c");
+    expect(highlighted(el)).toBe("/compact");
+    await key(el, "ArrowDown");
+    expect(highlighted(el)).toBe("/clear");
+    expect(field(el).getAttribute("aria-activedescendant")).toBe(el.querySelector('.blockr-assistant-command[aria-selected="true"]')?.id);
+    await key(el, "ArrowDown");
+    expect(highlighted(el)).toBe("/compact");
+    await key(el, "ArrowUp");
+    expect(highlighted(el)).toBe("/clear");
+    await key(el, "Tab");
+    expect(field(el).value).toBe("/clear ");
+    expect(listed(el)).toBeUndefined();
+
+    type(el, "/un");
+    await key(el, "Enter");
+    expect(field(el).value).toBe("/undo ");
+
+    type(el, "/f");
+    click(el.querySelector(".blockr-assistant-command"));
+    expect(field(el).value).toBe("/filters ");
+
+    type(el, "/r");
+    await key(el, "Escape");
+    expect(listed(el)).toBeUndefined();
+    type(el, "/re");
+    expect(listed(el)).toEqual(["/redo"]);
+  });
+
+  test("run /compact on Enter where the field holds its name, which has the compaction write a summary that alone enters the transcript", async () => {
+    localStorage.setItem(KEY, "c1");
+    const summary = heldReply("We built a sales chart.");
+    // A summary under the default window of 128,000 tokens keeps about 32,000,
+    // so it keeps u3 and a3, and covers the two exchanges before them.
+    const long = "x".repeat(64_000);
+    const { el, assistant } = await withSkills({
+      state: {
+        conversations: {
+          c1: conversation("Sales", message("u1", "user"), message("a1", "assistant"), message("u2", "user"), message("a2", "assistant"), message("u3", "user", text(long)), message("a3", "assistant", text(long))),
+        },
+      },
+      replies: [summary.reply],
+    });
+
+    type(el, "/compact");
+    await key(el, "Enter");
+    expect(field(el).value).toBe("");
+    await until(() => el.querySelector(".blockr-assistant-compacting") !== null, "the line that says that the model writes a summary");
+
+    summary.release();
+    await until(() => !assistant.compaction.writing("c1"), "the summary");
+
+    expect(inState(assistant).c1?.messages.map((m) => m.role)).toEqual(["summary", "user", "assistant"]);
+    expect(el.querySelector(".blockr-assistant-summary summary")?.textContent).toBe("Summary of the earlier messages");
+    expect(el.querySelectorAll(".blockr-assistant-user-text")).toHaveLength(1);
+    expect(el.textContent).not.toContain("/compact");
+    expect(assistant.turns.current()).toBeUndefined();
+  });
+
+  test("open the greeting on /clear, even while a turn runs, and start the next conversation on the pick of the one that was open", async () => {
+    localStorage.setItem(KEY, "c1");
+    const held = heldReply("Two blocks.");
+    const state: AssistantState = { conversations: { c1: { ...conversation("Sales", message("u1", "user")), model: "faux-2" } } };
+    const { el, assistant } = await withSkills({ state, models: ["faux-1", "faux-2"], replies: [held.reply, fauxAssistantMessage("Hello.")] });
+    let ended = false;
+    act(() => {
+      void assistant.turns.run("c1").then(() => {
+        ended = true;
+      });
+    });
+    await until(() => assistant.turns.current()?.conversation === "c1", "the turn in c1");
+
+    type(el, "/clear");
+    await key(el, "Enter");
+
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+    expect(field(el).value).toBe("");
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(assistant.turns.current()?.conversation).toBe("c1");
+    expect(el.querySelector(".blockr-assistant-composer-note")?.textContent).toBe("A turn runs in “Sales”.");
+    expect(el.querySelector<HTMLSelectElement>(".blockr-assistant-model-select")?.value).toBe("faux-2");
+
+    held.release();
+    await until(() => ended, "the turn to end");
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => Object.keys(inState(assistant)).length === 2, "the new conversation");
+    expect(Object.entries(inState(assistant)).find(([id]) => id !== "c1")?.[1]).toMatchObject({ title: "New conversation", model: "faux-2" });
+  });
+
+  test("hold back every command but /clear while a turn runs, as a message, and keep its line in the field", async () => {
+    localStorage.setItem(KEY, "c1");
+    const held = heldReply("Two blocks.");
+    const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } };
+    const { el, assistant, core, sent } = await withSkills({ state, blocks: true, replies: [held.reply] });
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
+    let ended = false;
+    act(() => {
+      void assistant.turns.run("c2").then(() => {
+        ended = true;
+      });
+    });
+    await until(() => assistant.turns.current()?.conversation === "c2", "the turn in c2");
+
+    for (const line of ["/undo", "/redo", "/compact", "/filters keep the adults"]) {
+      type(el, line);
+      const send = el.querySelector(".blockr-assistant-send");
+      expect(send?.getAttribute("aria-label")).toBe("Sends once the turn in “Costs” ends");
+      expect(send?.hasAttribute("disabled")).toBe(true);
+      await key(el, "Enter");
+      expect(field(el).value).toBe(line);
+    }
+    expect(core.store.board().blocks.a?.name).toBe("Data");
+    expect(asked(sent, "read_skill")).toEqual([]);
+    expect(assistant.conversations.get("c1")?.messages).toHaveLength(1);
+    expect(commandNote(el)).toBeUndefined();
+
+    held.release();
+    await until(() => ended, "the turn to end");
+  });
+
+  test("close the list on Escape without stopping the turn, which the next Escape stops", async () => {
+    const held = heldReply("Two blocks.");
+    const { el, assistant } = await withSkills({ replies: [held.reply] });
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
+
+    type(el, "/u");
+    await key(el, "Escape");
+    expect(listed(el)).toBeUndefined();
+    expect(assistant.turns.current()?.stopping).toBe(false);
+
+    await key(el, "Escape");
+    await until(() => assistant.turns.current() === undefined, "the turn to end");
+  });
+
+  test("take back the assistant's last edit on /undo, which the note of what others changed counts as the user's, and apply it again on /redo", async () => {
+    const { el, assistant, core } = await withSkills({ blocks: true });
+    const name = (): string | undefined => core.store.board().blocks.a?.name;
+    const before = name();
+    await noteLines(assistant, "c1");
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
+    expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the assistant in another conversation."]);
+
+    type(el, "/undo");
+    await key(el, "Enter");
+
+    expect(name()).toBe(before);
+    expect(field(el).value).toBe("");
+    expect(commandNote(el)).toBeUndefined();
+    expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the user."]);
+
+    type(el, "/redo");
+    await key(el, "Enter");
+
+    expect(name()).toBe("Data");
+    expect(field(el).value).toBe("");
+    expect(inState(assistant)).toEqual({});
+    expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
+  });
+
+  test("take back the assistant's last edit on /undo past the user's edits after it", async () => {
+    const { el, core } = await withSkills({ blocks: true });
+    const names = () => [core.store.board().blocks.a?.name, core.store.board().blocks.b?.name];
+    const before = names();
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+
+    type(el, "/undo");
+    await key(el, "Enter");
+
+    expect(names()).toEqual([before[0], "Top"]);
+  });
+
+  test("apply again on /redo what the frontend's Undo took back, whoever made the edit", async () => {
+    const { el, core } = await withSkills({ blocks: true });
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+    act(() => {
+      core.store.undo();
+    });
+    expect(core.store.board().blocks.b?.name).not.toBe("Top");
+
+    type(el, "/redo");
+    await key(el, "Enter");
+
+    expect(core.store.board().blocks.b?.name).toBe("Top");
+  });
+
+  test("say under the field where /undo or /redo finds no step, or the store refuses the step, until the user runs a command or sends a message", async () => {
+    const { el, core } = await withSkills({ blocks: true });
+    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+
+    type(el, "/undo");
+    await key(el, "Enter");
+    expect(commandNote(el)).toBe("The assistant has no edit left to take back.");
+    expect(field(el).value).toBe("");
+    expect(core.store.board().blocks.b?.name).toBe("Top");
+
+    type(el, "/redo");
+    await key(el, "Enter");
+    expect(commandNote(el)).toBe("No undo has taken back an edit to apply again.");
+
+    vi.spyOn(core.store, "canUndo").mockReturnValue(true);
+    vi.spyOn(core.store, "undo").mockImplementation(() => {
+      throw Object.assign(new Error("The store refused to undo the step\n- The board is locked."), { name: "StoreError", failures: ["The board is locked."] });
+    });
+    type(el, "/undo");
+    await key(el, "Enter");
+    expect(commandNote(el)).toBe("The board refused to take back the assistant's last edit: The board is locked.");
+
+    type(el, "/clear");
+    await key(el, "Enter");
+    expect(commandNote(el)).toBeUndefined();
+
+    type(el, "/redo");
+    await key(el, "Enter");
+    expect(commandNote(el)).toBe("No undo has taken back an edit to apply again.");
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await settle();
+    expect(commandNote(el)).toBeUndefined();
+  });
+
+  test("send a skill that the user calls with /name, with the line that the transcript shows, and give the model the skill's text as today's prompt words it", async () => {
+    const seen: string[][] = [];
+    const { el, assistant, sent } = await withSkills({
+      replies: [
+        (context) => {
+          const user = context.messages.find((m) => m.role === "user");
+          seen.push(Array.isArray(user?.content) ? user.content.flatMap((block) => (block.type === "text" ? [block.text] : [])) : []);
+          return fauxAssistantMessage("Filtered.");
+        },
+      ],
+    });
+
+    type(el, "/filters keep the adults");
+    await key(el, "Enter");
+    await until(() => el.querySelector(".blockr-assistant-reply")?.textContent === "Filtered." && assistant.turns.current() === undefined, "the reply");
+
+    expect(asked(sent, "read_skill")).toEqual([{ name: "filters", packages: [...Object.keys(HELLO.packages), "blockr.assistant"] }]);
+    expect(Object.values(inState(assistant))[0]?.messages[0]?.parts).toEqual([text("/filters keep the adults"), { type: "skill", name: "filters", text: "How to filter." }]);
+    expect([...el.querySelectorAll(".blockr-assistant-user-text")].map((node) => node.textContent)).toEqual(["/filters keep the adults"]);
+    expect(el.textContent).not.toContain("How to filter.");
+    expect(seen).toEqual([["The user invoked the `filters` skill. Its instructions:\n\nHow to filter.\n\nThe user's request: keep the adults"]]);
+    expect(field(el).value).toBe("");
+  });
+
+  test("send nothing for a /name whose skill R cannot read, keep the line in the field, and raise assistant_skills_failed", async () => {
+    const { el, assistant, core } = await withSkills({
+      answer: skillAnswers(() => {
+        throw new Error("The file /srv/skills/filters/SKILL.md is gone.");
+      }),
+    });
+
+    type(el, "/filters keep the adults");
+    await key(el, "Enter");
+    await until(() => core.notifications.get().some(({ source }) => source.kind === "module" && "code" in source && source.code === "assistant_skills_failed"), "the error");
+
+    expect(field(el).value).toBe("/filters keep the adults");
+    expect(inState(assistant)).toEqual({});
+    expect(assistant.turns.current()).toBeUndefined();
+  });
+
+  test("send a line whose word after the / names no command as typed, to the model", async () => {
+    for (const line of ["/layout", "/srv/data/sales.csv holds the sales"]) {
+      const { el, assistant } = await withSkills();
+
+      type(el, line);
+      expect(listed(el)).toEqual(line === "/layout" ? [] : undefined);
+      await key(el, "Enter");
+      await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
+
+      expect(Object.values(inState(assistant))[0]?.messages[0]?.parts).toEqual([text(line)]);
+    }
+  });
+});
+
 describe("the chat's text", () => {
   test("draws tables, and code blocks with a button that copies them", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(() => Promise.resolve());
@@ -1260,6 +1633,21 @@ describe("the chat's attachments", () => {
     expect(field(el).value).toBe("Read this.");
     expect(staged(el)).toEqual(["sales.csv"]);
     expect(Object.keys(inState(assistant))).toEqual([]);
+  });
+
+  test("stay in the field as a slash command runs, for the message that the user sends next", async () => {
+    const { el, assistant } = await chat();
+
+    pick(el, png());
+    await until(() => staged(el).length === 1, "the staged file");
+    type(el, "/undo");
+    press(field(el), "Enter");
+    await settle();
+
+    expect(field(el).value).toBe("");
+    expect(el.querySelector(".blockr-assistant-command-note")?.textContent).toBe("The assistant has no edit left to take back.");
+    expect(staged(el)).toEqual(["plot.png"]);
+    expect(inState(assistant)).toEqual({});
   });
 });
 

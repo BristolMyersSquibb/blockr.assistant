@@ -30,6 +30,8 @@
 // - The footer, under the message field, opens the drawer of conversations,
 //   shows the meter and offers the pick of the model (./footer.tsx,
 //   ./drawer.tsx).
+// - The message field takes the slash commands, which typing / lists
+//   (./slash.ts, ./composer.tsx), and the chat runs each, below.
 // What assistant-ui draws comes from ./messages.ts, ./transcript.tsx and
 // ./composer.tsx.
 //
@@ -54,14 +56,41 @@
 // 2. It waits until the turn ends, so that the turn writes what it finished
 //    to the conversation, as after any stop.
 // 3. It removes the conversation.
+//
+// The chat runs the slash commands in these ways
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands):
+// - The command /compact has the compaction write a summary of the open
+//   conversation, whatever the rule says, where there is anything to
+//   summarize (../compaction). While the model writes it, the transcript
+//   says so at its end.
+// - The command /clear opens none, as the drawer's New does.
+// - The command /undo takes back the assistant's last undo step through
+//   core.store.undo("assistant"), as the tool undo_edit does, with no call to
+//   the model. The store gives that undo the origin assistant, so the chat
+//   runs it inside the notes' asUser(), and the note of what others changed
+//   counts it as the user's (../notes).
+// - The command /redo applies again what the last undo took back through
+//   core.store.redo(), as the frontend's Redo does, whoever took the step
+//   back. The store gives a redo the origin user.
+// - The command /name has R read the skill's text through the skills, and
+//   then sends it with the line that the user typed, as a message that starts
+//   a turn (./send.ts). Where R cannot read the skill, the skills raise
+//   assistant_skills_failed, the chat sends nothing, and the message field
+//   keeps the line.
+// None of the built-in commands enters the transcript, since the board or the
+// conversation shows what it did. Where /undo or /redo finds no step, or the
+// store refuses the step, as a lock refuses it, the chat says so under the
+// message field.
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, ReactElement } from "react";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { CoreApi } from "@blockr/core";
 import type { Assistant } from "../assistant/index.ts";
+import type { Notes } from "../notes/index.ts";
 import { isNote, joinText } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
+import { failuresOf, ORIGIN } from "../tools/index.ts";
 import type { Turns } from "../turns/index.ts";
 import { keyOf } from "../visitor-key/index.ts";
 import { addFiles, attachedOf, attachmentAdapter } from "./attach.ts";
@@ -72,7 +101,7 @@ import { Drawer } from "./drawer.tsx";
 import { FileDialog } from "./files.tsx";
 import type { OpenedFile } from "./files.tsx";
 import { Footer } from "./footer.tsx";
-import { useCompacting, useConversations, useDeployment, useOffered, useOpenRouterLogin, useRunning, useVisitorKey } from "./hooks.ts";
+import { useCompacting, useConversations, useOffered, useOpenRouterLogin, useResolved, useRunning, useSkills, useVisitorKey } from "./hooks.ts";
 import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
@@ -80,6 +109,8 @@ import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
 import { storeConversation, storedConversation } from "./open.ts";
 import { sendMessage } from "./send.ts";
 import type { Attached } from "./send.ts";
+import { waits } from "./slash.ts";
+import type { SlashCommand } from "./slash.ts";
 import { Transcript } from "./transcript.tsx";
 
 export function Chat({ core, assistant }: { readonly core: CoreApi; readonly assistant: Assistant }): ReactElement {
@@ -88,7 +119,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const offered = useOffered(models);
-  const deployment = useDeployment(assistant.deployment);
+  const deployment = useResolved(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
   const openRouterLogin = useOpenRouterLogin(assistant.openRouterLogin);
   const [chosen, setChosen] = useState(storedConversation);
@@ -98,6 +129,8 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const [link, setLink] = useState<string | undefined>(undefined);
   const [file, setFile] = useState<OpenedFile | undefined>(undefined);
   const [filesNote, setFilesNote] = useState<string | undefined>(undefined);
+  const [commandNote, setCommandNote] = useState<string | undefined>(undefined);
+  const skills = useSkills(assistant.skills);
   const [dragging, setDragging] = useState(false);
   const attachments = useMemo(() => attachmentAdapter(), []);
   // The files that the user adds go to the message field one batch after
@@ -157,13 +190,64 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     else conversations.setModel(open, model).catch(logError);
   };
 
-  // The drawer's New opens the greeting, and takes the pick of the conversation
-  // that was open for the next one.
-  const startNew = (): void => {
-    if (conversation !== undefined) setNextPick(conversation.model);
+  // The drawer's New and /clear open the greeting, and take the pick of the
+  // conversation that was open for the next one. The pick is read as the user
+  // asks, so that the chat's actions change only as another conversation
+  // opens, rather than with each message.
+  const clear = useCallback((): void => {
+    const held = open === undefined ? undefined : conversations.get(open);
+    if (held !== undefined) setNextPick(held.model);
     openConversation(undefined);
+  }, [conversations, open, openConversation, setNextPick]);
+
+  const startNew = (): void => {
+    clear();
     setDrawer(false);
   };
+
+  // Runs the slash command that the line names, unless it waits for the turn
+  // that runs or for the visitor's key.
+  const runCommand = useCallback(
+    async (command: SlashCommand, line: string): Promise<boolean> => {
+      if (waits(command, { running: turns.current() !== undefined, noKey })) return false;
+      setCommandNote(undefined);
+      if (command.kind === "skill") {
+        const { name } = command.skill;
+        let text: string;
+        try {
+          text = await assistant.skills.read(name);
+        } catch {
+          return false;
+        }
+        // A turn may have started while R read the skill, as from a
+        // suggestion of the greeting, after which the message would go
+        // unanswered.
+        if (turns.current() !== undefined || assistant.signal.aborted) return false;
+        try {
+          await sendMessage(assistant, open, line, [], nextPick, openConversation, { name, text });
+        } catch (error) {
+          logError(error);
+          return false;
+        }
+        return true;
+      }
+      switch (command.name) {
+        case "compact":
+          if (open !== undefined) compaction.compact(open).catch(logError);
+          return true;
+        case "clear":
+          clear();
+          return true;
+        case "undo":
+          setCommandNote(undoAssistant(core, assistant.notes));
+          return true;
+        case "redo":
+          setCommandNote(redo(core));
+          return true;
+      }
+    },
+    [assistant, clear, compaction, core, logError, nextPick, noKey, open, openConversation, turns],
+  );
 
   const remove = async (id: ConversationId): Promise<void> => {
     const removed = all[id];
@@ -190,6 +274,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     adapters: { attachments },
     onNew: async (message: AppendMessage) => {
       setFilesNote(undefined);
+      setCommandNote(undefined);
       try {
         await send(textOf(message), attachedOf(message.attachments ?? []));
       } catch (error) {
@@ -213,6 +298,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
           core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
         });
       },
+      runCommand,
       stop: () => {
         turns.stop();
       },
@@ -234,7 +320,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
         assistant.openRouterLogin.start();
       },
     }),
-    [assistant, core, runtime, send, turns],
+    [assistant, core, runCommand, runtime, send, turns],
   );
 
   const history = useMemo(() => messages.filter((message) => message.role === "user" && !isNote(message)).map(joinText).filter((text) => text !== ""), [messages]);
@@ -248,10 +334,12 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
       history,
       titleOf: (id) => (Object.hasOwn(all, id) ? all[id]?.title : undefined),
       filesNote,
+      skills,
+      commandNote,
       keyField,
       noKey,
     }),
-    [all, compacting, filesNote, history, keyField, noKey, running, runsHere, waiting],
+    [all, commandNote, compacting, filesNote, history, keyField, noKey, running, runsHere, skills, waiting],
   );
 
   const closeFile = useCallback(() => {
@@ -347,6 +435,32 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
 }
 
 const NO_MESSAGES: readonly Message[] = [];
+
+// Takes back the assistant's last undo step, as /undo asks, and gives what the
+// chat says of it, if anything.
+function undoAssistant(core: CoreApi, notes: Pick<Notes, "asUser">): string | undefined {
+  if (!core.store.canUndo(ORIGIN)) return "The assistant has no edit left to take back.";
+  try {
+    notes.asUser(() => {
+      core.store.undo(ORIGIN);
+    });
+    return undefined;
+  } catch (error) {
+    return `The board refused to take back the assistant's last edit: ${failuresOf(error).join(" ")}`;
+  }
+}
+
+// Applies again what the last undo took back, as /redo asks, and gives what
+// the chat says of it, if anything.
+function redo(core: CoreApi): string | undefined {
+  if (!core.store.canRedo()) return "No undo has taken back an edit to apply again.";
+  try {
+    core.store.redo();
+    return undefined;
+  } catch (error) {
+    return `The board refused to apply the edit again: ${failuresOf(error).join(" ")}`;
+  }
+}
 
 // The pick of the model for the next conversation that the chat adds while no
 // conversation is open, by the assistant of each board, so that a mount of

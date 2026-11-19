@@ -179,9 +179,13 @@ export function requestNotifications(core: Pick<CoreApi, "notifications">): { se
     .map(({ severity, message }) => ({ severity, message }));
 }
 
-// The skills of the open board as R lists them, here those given.
+// The skills of the open board as R lists them, here those given, which R
+// reads as the text that it gives each.
 export function skillsHolding(...skills: readonly Skill[]): Skills {
-  return { list: () => Promise.resolve(skills) };
+  return {
+    list: () => Promise.resolve(skills),
+    read: (name) => (skills.some((given) => given.name === name) ? Promise.resolve(`The text of ${name}.`) : Promise.reject(new Error(`No skill named ${name}.`))),
+  };
 }
 
 // A skill as R lists it, which the model may read and the user may not call,

@@ -245,8 +245,9 @@ function tookUndoStep(core: CoreApi, commands: readonly Listed[], heard: readonl
 }
 
 // The failures with which the command registry or the store refused, each in
-// a sentence, or the error's message.
-function failuresOf(error: unknown): string[] {
+// a sentence, or the error's message. The chat reads a refused /undo and
+// /redo through it too.
+export function failuresOf(error: unknown): string[] {
   if (error instanceof Error && (error.name === "CommandError" || error.name === "StoreError")) {
     const { failures } = error as Error & { readonly failures?: unknown };
     if (Array.isArray(failures) && failures.every((failure) => typeof failure === "string")) return [...failures];
