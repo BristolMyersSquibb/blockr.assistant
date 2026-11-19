@@ -62,7 +62,7 @@ export function blockTools(context: ToolContext): Tool[] {
     tool<{ readonly id: string }>({
       name: "describe_block",
       description:
-        "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, the one-line summary of its result, its conditions, the skills that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
+        "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, why its latest evaluation could not be sent to R where it could not, the one-line summary of its result, its conditions, the skills that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
       parameters: object({ id: ID }, ["id"]),
       run: async ({ id }) => {
         const [skills, valueMax, summaryMax] = await Promise.all([
@@ -75,6 +75,7 @@ export function blockTools(context: ToolContext): Tool[] {
         const block = found(id);
         const status = core.scheduler.status(id);
         const reason = status?.reason ?? null;
+        const unsent = status?.unsent ?? null;
         const summary = status?.summary ?? null;
         const note = statusNote(status);
         const described = {
@@ -83,6 +84,7 @@ export function blockTools(context: ToolContext): Tool[] {
           registry_id: block.registry_id,
           status: status?.status ?? null,
           ...(reason === null ? {} : { reason }),
+          ...(unsent === null ? {} : { unsent }),
           ...(note === undefined ? {} : { note }),
           ...(summary === null ? {} : { summary }),
           conditions: conditionList(status?.conditions ?? []),
@@ -113,15 +115,17 @@ export function blockTools(context: ToolContext): Tool[] {
     tool<{ readonly id: string }>({
       name: "get_block_conditions",
       description:
-        "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
+        "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here, or else `unsent` says why its evaluation could not be sent to R. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
       parameters: object({ id: ID }, ["id"]),
       run: ({ id }) => {
         found(id);
         const status = core.scheduler.status(id);
+        const unsent = status?.unsent ?? null;
         const note = statusNote(status);
         const given: Record<string, Json> = {
           id,
           status: status?.status ?? null,
+          ...(unsent === null ? {} : { unsent }),
           ...(note === undefined ? {} : { note }),
           conditions: conditionsBySeverity(status?.conditions ?? []),
         };

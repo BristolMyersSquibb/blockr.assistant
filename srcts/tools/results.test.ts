@@ -67,6 +67,17 @@ describe("get_block_result", () => {
     expect(requests("describe_result")).toEqual([]);
   });
 
+  test("gives why the transport could not send the evaluation of a block that it reads, and sends R nothing", async () => {
+    const { tools, requests } = await started({ refuse: ["evaluate"], answers: { describe_result: () => ({}) } });
+
+    await expect(callTool(tools, "get_block_result", { id: "a" })).resolves.toEqual({
+      text: 'The request did not go to R, since a block that it reads is not ready:\n- Block "a" reads failed: The evaluation could not be sent to R: The transport is closed.',
+      isError: true,
+      images: [],
+    });
+    expect(requests("describe_result")).toEqual([]);
+  });
+
   test("says that R lost the request where R's session ended before it answered", async () => {
     const { core } = await started();
     const lost: CoreApi = { ...core, request: () => Promise.reject(sessionEnded()) };
