@@ -19,7 +19,8 @@
 //   messages that the cap cuts from the state move into the memory, and a
 //   conversation shows them before those that the state holds.
 // - Under a cap of 0, it changes the memory alone, which holds every
-//   conversation whole, with its title, its usage and its pick of the model,
+//   conversation whole, with its title, its usage and its picks of the model
+//   and of the thinking level,
 //   and refuses what the command would refuse. So the plugin then runs none of
 //   the commands that write a conversation.
 // Each waits for the opening, and fails where the opening fails, as where
@@ -57,8 +58,9 @@ import {
   holdsMessage,
   messagesToDrop,
   newConversation,
+  withThinkingLevel,
 } from "../state/index.ts";
-import type { AssistantState, Conversation, ConversationId, Message, MessageId } from "../state/index.ts";
+import type { AssistantState, Conversation, ConversationId, Message, MessageId, ThinkingLevel } from "../state/index.ts";
 import { readCap } from "./cap.ts";
 
 // The origin of the steps that the conversations take through the commands.
@@ -93,6 +95,13 @@ export interface KeptImage {
 // the provider refused keeps no content.
 export type KeptFile = { readonly blob: Blob; readonly taken?: true } | { readonly refused: true };
 
+// The picks of a new conversation: of the model, null for the default, and of
+// the thinking level, which it lacks where that is undefined.
+export interface Picks {
+  readonly model: string | null;
+  readonly thinkingLevel?: ThinkingLevel | undefined;
+}
+
 export interface Conversations {
   // Resolves once the conversations have opened, and rejects where the
   // opening fails.
@@ -112,13 +121,14 @@ export interface Conversations {
   // A message that addMessage() adds takes with it what the memory keeps of
   // it, where it is given. A call that gives addUsage() no total leaves the
   // conversation's last as it was.
-  addConversation(id: ConversationId, title: string, model?: string | null): Promise<void>;
+  addConversation(id: ConversationId, title: string, picks?: Picks): Promise<void>;
   renameConversation(conversation: ConversationId, title: string): Promise<void>;
   removeConversation(conversation: ConversationId): Promise<void>;
   addMessage(conversation: ConversationId, message: Message, kept?: Kept): Promise<void>;
   compactConversation(conversation: ConversationId, summary: Message, from: MessageId): Promise<void>;
   addUsage(conversation: ConversationId, input: number, output: number, total?: number): Promise<void>;
   setModel(conversation: ConversationId, model: string | null): Promise<void>;
+  setThinkingLevel(conversation: ConversationId, level: ThinkingLevel | null): Promise<void>;
   // Calls the listener whenever what all() or kept() gives may have changed,
   // until the function that it returns is called.
   subscribe(listener: () => void): () => void;
@@ -305,13 +315,13 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
       keep(conversation, message, kept);
     },
 
-    async addConversation(id, title, model = null) {
+    async addConversation(id, title, { model, thinkingLevel } = { model: null }) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-add_conversation", { id, title, model });
+        await run("blockr.assistant-add_conversation", { id, title, model, ...(thinkingLevel === undefined ? {} : { thinking_level: thinkingLevel }) });
         return;
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
-      memory.set(id, newConversation(title, model));
+      memory.set(id, newConversation(title, model, thinkingLevel));
       changed();
     },
 
@@ -395,6 +405,14 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
         return;
       }
       change(conversation, (held) => ({ ...held, model }));
+    },
+
+    async setThinkingLevel(conversation, level) {
+      if ((await capped) !== 0) {
+        await run("blockr.assistant-set_thinking_level", { conversation, thinking_level: level });
+        return;
+      }
+      change(conversation, (held) => withThinkingLevel(held, level));
     },
 
     subscribe(listener) {

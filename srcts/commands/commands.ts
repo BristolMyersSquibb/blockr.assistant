@@ -4,7 +4,7 @@
 // - Each reads the assistant's state on the board and returns one delta of
 //   patches inside it, which the store checks against the state's schema.
 // - None takes an undo step, so that no undo takes back a message or a
-//   conversation's pick of the model (./command.ts).
+//   conversation's pick of the model or of the thinking level (./command.ts).
 // - Each passes its preflight on a locked board, since it changes the
 //   assistant's own state alone, so that a reader of a locked board still
 //   chats.
@@ -21,7 +21,7 @@
 
 import type { Board, Command, Json, Patch } from "@blockr/core";
 import { addedUsage, assistantState, at, canCompact, findConversation, holdsMessage, messagesToDrop, newConversation } from "../state/index.ts";
-import type { ConversationId, Message, MessageId } from "../state/index.ts";
+import type { ConversationId, Message, MessageId, ThinkingLevel } from "../state/index.ts";
 import { command } from "./command.ts";
 import * as schemas from "./schemas.ts";
 
@@ -29,6 +29,7 @@ interface AddConversation {
   readonly id: ConversationId;
   readonly title: string;
   readonly model?: string | null;
+  readonly thinking_level?: ThinkingLevel | null;
 }
 
 interface AddMessage {
@@ -65,12 +66,13 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     id: "blockr.assistant-add_conversation",
     label: "Add conversation",
     description:
-      "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It fails its preflight for an id that a conversation has already.",
+      "Adds a conversation that holds no message, under the id given, with its title, its pick of the model, or null for the default where that is left out, and its pick of the thinking level, which it lacks where that is null or left out. It fails its preflight for an id that a conversation has already.",
     args: schemas.object(
       {
         id: { type: "string", minLength: 1, description: "The id of the new conversation." },
         title: schemas.title,
         model: schemas.model,
+        thinking_level: schemas.thinkingLevel,
       },
       ["id", "title"],
     ),
@@ -78,8 +80,8 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
       const state = assistantState(board);
       return state !== undefined && !Object.hasOwn(state.conversations, id);
     },
-    run: (_board, { id, title, model }) => ({
-      patches: [{ op: "add", path: at("conversations", id), value: newConversation(title, model ?? null) }],
+    run: (_board, { id, title, model, thinking_level: level }) => ({
+      patches: [{ op: "add", path: at("conversations", id), value: newConversation(title, model ?? null, level) }],
     }),
   }),
 
@@ -207,5 +209,19 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
     run: (_board, { conversation, model }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation, "model"), value: model }],
     }),
+  }),
+
+  command<{ readonly conversation: ConversationId; readonly thinking_level: ThinkingLevel | null }>({
+    id: "blockr.assistant-set_thinking_level",
+    label: "Set thinking level",
+    description:
+      "Sets a conversation's pick of the thinking level, or removes it with null, after which the conversation's calls reason at the level that the deployment's model settings give the model, or else at the assistant's default.",
+    args: schemas.object({ conversation: schemas.conversation, thinking_level: schemas.thinkingLevel }, ["conversation", "thinking_level"]),
+    preflight: (board, { conversation }) => holds(board, conversation),
+    run: (board, { conversation, thinking_level: level }) => {
+      const path = at("conversations", conversation, "thinking_level");
+      if (level !== null) return { patches: [{ op: "add", path, value: level }] };
+      return { patches: findConversation(board, conversation)?.thinking_level === undefined ? [] : [{ op: "remove", path }] };
+    },
   }),
 ];

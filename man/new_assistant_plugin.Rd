@@ -36,10 +36,12 @@ them with the rest of the board.
 Each conversation, under its id, has a \code{title}, the time it was \code{updated},
 its \code{messages}, the tokens that its calls to the model spent, in \code{usage},
 and its pick of the \code{model}, or \code{NULL} for the default.
+Where somebody picked a thinking level for it, it also has its pick of the
+level, in \code{thinking_level}.
 The JSON Schema of that state ships beside the class's module, as
 \code{js/assistant_plugin.schema.json}, and R writes the state by it.
 Only the assistant's own commands change the state, and none of them takes
-an undo step, so that no undo takes back a message.
+an undo step, so that no undo takes back a message or a pick.
 
 The blockr option \code{chat_save_turns} caps how many messages of each
 conversation the board keeps: 50 by default, \code{0} for none and \code{-1} for
@@ -54,7 +56,8 @@ Under \code{0}, it keeps every conversation in the browser's memory alone.
 
 The plugin prints a line for each conversation, the last updated first.
 Each line gives the conversation's id and title, how many messages it
-holds, its pick of the model and when it was updated.
+holds, its picks of the model and of the thinking level, and when it was
+updated.
 A board that holds the plugin prints it the same way.
 
 The package lists the class in the \code{._BLOCKR_MODULES_} that it exports,
@@ -67,8 +70,8 @@ The class's \code{ui} draws the assistant's chat wherever the frontend places
 the plugin: the transcript of the open conversation, the message field and
 the stop button.
 Under the message field, a footer holds the button that opens the drawer of
-conversations, the pick of the model and the meter of the tokens that the
-open conversation spent.
+conversations, the picks of the model and of the thinking level, and the
+meter of the tokens that the open conversation spent.
 The browser's local storage keeps which conversation is open.
 A conversation takes its title from a call to the model, once its first
 exchange that the model answered ends.
@@ -173,6 +176,9 @@ such as through the environment variable
 \code{BLOCKR_ASSISTANT_MODEL_SETTINGS}.
 \item The catalogs of OpenAI's and Anthropic's models of pi, the library that
 runs the assistant's turns.
+Where the base URL is OpenRouter's or that of Vercel's AI Gateway, they
+include pi's catalog of the gateway's models too, under the gateway's
+ids, such as \code{openai/gpt-5.4}.
 The assistant takes the catalogs' model that the file names in \code{like},
 or else their model of the same id.
 \item The base URL's list of models, where the assistant offers the models of
@@ -195,9 +201,9 @@ corp-gpt:
   max_tokens: 32000
 }\if{html}{\out{</div>}}
 \itemize{
-\item The setting \code{like} names a model of pi's catalogs, such as
-\code{claude-sonnet-5-5}, whose settings the model takes where the file gives
-none.
+\item The setting \code{like} names a model of pi's catalogs of OpenAI's and
+Anthropic's models, such as \code{claude-sonnet-5-5}, whose settings the model
+takes where the file gives none.
 So a model that a company's own proxy serves under a name of its own
 takes the settings of the model behind the name.
 Where the proxy speaks the API of the model behind the name, those
@@ -213,10 +219,18 @@ But on OpenAI's Chat Completions API, a model whose \code{like} or id names a
 model of pi's catalog of OpenAI's models takes the level \code{off}.
 That API refuses function tools with any reasoning effort but \code{none} for
 OpenAI's GPT-5.4 models.
+A level that the model does not take, such as \code{off} for \code{gpt-5}, counts
+as none, so that the model takes the default.
 For the level \code{off}, pi sends the effort \code{none} to a model that takes it,
 such as \code{gpt-5.4}, and no effort to the others, such as \code{o3}.
-A level that the model does not take, pi moves to the next level up that
-it takes, or else to the next one down.
+A conversation's pick of the level, in the chat's footer, replaces the
+file's level and the default, but on Chat Completions for a model of
+pi's catalog of OpenAI's models.
+The footer offers the levels that pi gives for the model, where they are
+two or more.
+A picked level that the model does not take, as after a pick of another
+model, the assistant moves to the next level up that the model takes, or
+else to the next one down.
 A model that does not reason gets no effort, whatever its level.
 \item The setting \code{images} says whether the model takes images.
 For a model that takes none, the assistant sends a note in place of each
@@ -236,7 +250,8 @@ setting does not take, the assistant raises the error
 \code{assistant_model_settings_failed}.
 It then goes on without the file until the next board opens.
 The assistant finds a \code{like} that names no model of pi's catalogs only once
-it loads the catalogs, as it first calls a model on the board.
+it loads the catalogs, as the chat first shows, or as the assistant first
+calls a model on the board.
 }
 
 \section{Compaction}{

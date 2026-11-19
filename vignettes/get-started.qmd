@@ -93,7 +93,7 @@ board <- new_board(
 ```
 
 The panel shows the open conversation, the message field and the stop button.
-Under the message field, a footer holds the button that opens the drawer of conversations, the pick of the model, and a meter of the tokens that the open conversation spent.
+Under the message field, a footer holds the button that opens the drawer of conversations, the picks of the model and of the thinking level, and a meter of the tokens that the open conversation spent.
 
 ## Where the calls go
 
@@ -182,6 +182,7 @@ The footer then names both models.
 
 A model's settings say whether it reasons and at which thinking level, whether it takes images, how many tokens its context window holds, and how many tokens each call asks for the reply.
 The assistant knows the settings of OpenAI's and Anthropic's models from the catalogs of pi, the library that runs its turns.
+Where the base URL is OpenRouter's or that of Vercel's AI Gateway, it also knows the settings of the gateway's models, such as `openai/gpt-5.4`, from pi's catalog of them.
 Where the assistant offers the models of the base URL's list, it also takes some of their settings from the list.
 OpenRouter's, Vercel's and Anthropic's lists give each model's context window, its cap for a reply and whether it takes images.
 
@@ -200,9 +201,15 @@ corp-gpt:
   context_window: 200000
 ```
 
-The setting `like` names a model of pi's catalogs.
+The setting `like` names a model of pi's catalogs of OpenAI's and Anthropic's models.
 The model then takes the settings of that model wherever the file gives none.
 The section Model settings of `?new_assistant_plugin` describes each setting.
+
+Each conversation keeps its own pick of the thinking level as well, which the user makes in the chat's footer.
+The footer offers the levels that the conversation's model takes, where it takes two or more.
+The pick replaces the level that the file gives the model, for that conversation alone.
+A new conversation starts on the level of the conversation that was open.
+On OpenAI's Chat Completions API, a model of pi's catalog of OpenAI's models keeps the level `off`, or the level that the file gives it, so the footer offers no pick for it.
 
 The context window also sets when the assistant compacts a conversation.
 Before each call, the assistant estimates the tokens that the call would send.

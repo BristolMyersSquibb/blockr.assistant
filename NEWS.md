@@ -98,8 +98,8 @@
   plugin withdraws once a later call succeeds.
 
 * The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
-  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the first
-  turn starts (#225).
+  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the chat
+  first mounts (#225, #271).
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
@@ -176,6 +176,26 @@
   in `thinking_level`, in place of these defaults.
   R reads only `true` and `false` in that file as booleans, as YAML 1.2 does,
   so that an unquoted `off` stays the level `off`.
+
+* Each conversation keeps its own pick of the thinking level, which the chat's
+  footer offers beside the pick of the model (#271).
+  The footer lists the levels that pi gives for the model of the next turn,
+  where the model takes two or more.
+  A pick replaces the level of the model settings file and the default for
+  every call of the conversation, but on OpenAI's Chat Completions API for a
+  model of pi's catalog of OpenAI's models.
+  The command `blockr.assistant-set_thinking_level` sets the pick, and
+  `blockr.assistant-add_conversation` takes one in `thinking_level`.
+  A level that the file gives a model that does not take it, such as `off`
+  for `gpt-5`, counts as none, so that the model takes the default.
+  The footer draws both picks with the select of blockr.core, whose list no
+  panel clips.
+
+* Where the base URL is OpenRouter's or that of Vercel's AI Gateway, a model
+  of the gateway, such as `openai/gpt-5.4`, takes its settings from pi's
+  catalog of the gateway's models (#271).
+  So such a model reasons, at the level `medium` unless its conversation
+  picks another, where it reasoned at its provider's default before.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).

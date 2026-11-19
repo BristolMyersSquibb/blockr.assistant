@@ -11,7 +11,7 @@
 
 import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
@@ -27,7 +27,7 @@ import type { Prompt } from "../prompt/index.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { FAUX_API, fauxLoop } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
@@ -167,6 +167,7 @@ async function opened(options: OpenOptions = {}) {
     prompt: options.prompt ?? { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage: () => Promise.resolve(APP_MESSAGE) },
     compaction: options.compaction ?? { beforeCall: () => Promise.resolve(), compact: () => Promise.resolve(false) },
     notes,
+    catalogs: testCatalogs,
     load: options.load ?? (() => Promise.resolve(loop)),
     locks: locks.locks,
   });
@@ -275,7 +276,23 @@ describe("a turn of the assistant", () => {
     expect(models[0]).toMatchObject({ id: "faux-1", reasoning: true, input: ["text"], contextWindow: 400_000, maxTokens: 32_000 });
   });
 
-  test("has the model settings check each like against pi's catalogs, which the loop holds, once the loop has loaded", async () => {
+  test("hands the loop the conversation's pick of the thinking level, which applies from the next turn", async () => {
+    const levels: SimpleStreamOptions["reasoning"][] = [];
+    const reasoned: FauxResponseStep = (_context, options) => {
+      levels.push(options?.reasoning);
+      return fauxAssistantMessage("Hello.");
+    };
+    const { conversations, turns } = await opened({ offered: { models: ["gpt-5.4"], named: true }, replies: [reasoned, reasoned] });
+
+    await turns.run("c1");
+    await conversations.setThinkingLevel("c1", "high");
+    await conversations.addMessage("c1", asked("u3"));
+    await turns.run("c1");
+
+    expect(levels).toEqual(["medium", "high"]);
+  });
+
+  test("has the model settings check each like against pi's catalogs, once the catalogs have loaded", async () => {
     const asked: boolean[] = [];
     const { turns } = await opened({
       settings: {
@@ -714,8 +731,6 @@ describe("a turn that fails", () => {
 // key. It writes no summary.
 function failing(failure: string, answer?: Call["answer"]): Loop {
   return {
-    inCatalog: () => false,
-    contextWindow: () => 128_000,
     callModel: () => Promise.reject(new Error("The test makes no model call of the plugin's own.")),
     async run(turn) {
       await turn.connection.apiKey();

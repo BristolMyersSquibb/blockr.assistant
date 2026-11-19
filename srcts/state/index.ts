@@ -16,6 +16,8 @@ export {
   newConversation,
   newId,
   opensExchange,
+  THINKING_LEVELS,
+  withThinkingLevel,
 } from "./state.ts";
 export type {
   AssistantState,
@@ -29,6 +31,7 @@ export type {
   Role,
   SkillPart,
   TextPart,
+  ThinkingLevel,
   ToolCallPart,
   ToolResultPart,
   Usage,

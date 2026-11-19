@@ -17,15 +17,18 @@ import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earend
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { createFauxCore, fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
+import { OPENROUTER_MODELS } from "@earendil-works/pi-ai/providers/openrouter.models";
+import { VERCEL_AI_GATEWAY_MODELS } from "@earendil-works/pi-ai/providers/vercel-ai-gateway.models";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { ModelSettings } from "../model-settings/index.ts";
-import type { Message } from "../state/index.ts";
-import { FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
+import type { Message, ThinkingLevel } from "../state/index.ts";
+import { CATALOG_PARTS, FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
-import { createLoop, PROVIDER } from "./loop.ts";
+import { PROVIDER } from "./catalogs.ts";
+import { createLoop } from "./loop.ts";
 import type { Call, Streamed, Turn } from "./loop.ts";
 import { STOPPED } from "./messages.ts";
 import type { Answered } from "./messages.ts";
@@ -176,9 +179,12 @@ describe("a turn on the loop", () => {
     expect(second[3]).toMatchObject({ role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "Drew a plot." }, { type: "image" }] });
   });
 
-  test("asks for the credential before each call, and sends the thinking level medium and no attribution", async () => {
+  test("asks for the credential before each call, and sends the thinking level medium to a model that reasons, and no attribution", async () => {
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
-    const { run, keys } = turnWith([seen(calls, fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" })), seen(calls, fauxAssistantMessage("Two."))]);
+    const { run, keys } = turnWith(
+      [seen(calls, fauxAssistantMessage([fauxToolCall("list_blocks", {}, { id: "c1" })], { stopReason: "toolUse" })), seen(calls, fauxAssistantMessage("Two."))],
+      { settings: { reasoning: true } },
+    );
 
     await run();
 
@@ -189,10 +195,23 @@ describe("a turn on the loop", () => {
   });
 
   // The level off is no level at all, as pi takes it.
-  test.each<{ readonly what: string; readonly api: string; readonly model: string; readonly settings?: ModelSettings; readonly level: SimpleStreamOptions["reasoning"] }>([
+  test.each<{
+    readonly what: string;
+    readonly api: string;
+    readonly model: string;
+    readonly settings?: ModelSettings;
+    readonly thinkingLevel?: ThinkingLevel;
+    readonly level: SimpleStreamOptions["reasoning"];
+  }>([
     { what: "the level off on Chat Completions for a model of pi's catalog of OpenAI's models", api: "openai-completions", model: "gpt-5.4", level: undefined },
     { what: "the level off on Chat Completions for a model whose like names one", api: "openai-completions", model: "company-gpt", settings: { like: "gpt-5.4-nano" }, level: undefined },
-    { what: "the level medium on Chat Completions for a model outside that catalog", api: "openai-completions", model: "openai/gpt-5.4", level: "medium" },
+    {
+      what: "the level medium on Chat Completions for a model outside that catalog that reasons",
+      api: "openai-completions",
+      model: "openai/gpt-5.4",
+      settings: { reasoning: true },
+      level: "medium",
+    },
     { what: "the level medium on Chat Completions for a model of pi's catalog of Anthropic's models", api: "openai-completions", model: "claude-sonnet-5-5", level: "medium" },
     { what: "the level medium on the Responses API for a model of pi's catalog of OpenAI's models", api: "openai-responses", model: "gpt-5.4", level: "medium" },
     { what: "the level medium on Anthropic's API", api: "anthropic-messages", model: "claude-sonnet-5-5", level: "medium" },
@@ -204,15 +223,65 @@ describe("a turn on the loop", () => {
       level: "high",
     },
     { what: "the level off that the deployment's model settings give, before the level medium", api: "openai-responses", model: "gpt-5.4", settings: { thinkingLevel: "off" }, level: undefined },
-  ])("gives pi $what, for a turn's calls and for a model call of the plugin's own", async ({ api, model, settings, level }) => {
+    { what: "the conversation's pick of the level", api: "openai-responses", model: "gpt-5.4", thinkingLevel: "high", level: "high" },
+    {
+      what: "the conversation's pick, before the level that the deployment's model settings give",
+      api: "anthropic-messages",
+      model: "claude-sonnet-5-5",
+      settings: { thinkingLevel: "low" },
+      thinkingLevel: "xhigh",
+      level: "xhigh",
+    },
+    { what: "the pick off as no level", api: "openai-responses", model: "gpt-5.4", thinkingLevel: "off", level: undefined },
+    { what: "the next level up that the model takes, for a pick that it does not take", api: "openai-responses", model: "gpt-5.4", thinkingLevel: "minimal", level: "low" },
+    { what: "the next level down where the model takes none up", api: "anthropic-messages", model: "claude-sonnet-4-5", thinkingLevel: "max", level: "high" },
+    { what: "the next level up for the pick off, where the model reasons always", api: "anthropic-messages", model: "claude-opus-5-5", thinkingLevel: "off", level: "low" },
+    {
+      what: "the level medium, clamped to the levels that the model takes, without a pick",
+      api: "openai-responses",
+      model: "gpt-5-pro",
+      level: "high",
+    },
+    {
+      what: "the level off on Chat Completions for a model of pi's catalog of OpenAI's models, whatever the pick",
+      api: "openai-completions",
+      model: "gpt-5.4",
+      thinkingLevel: "high",
+      level: undefined,
+    },
+    {
+      what: "the level that the deployment's model settings give on Chat Completions for such a model, whatever the pick",
+      api: "openai-completions",
+      model: "gpt-5.4",
+      settings: { thinkingLevel: "medium" },
+      thinkingLevel: "high",
+      level: "medium",
+    },
+    { what: "no level to a model that does not reason, whatever the pick", api: "openai-responses", model: "company-gpt", thinkingLevel: "high", level: undefined },
+    {
+      what: "the level medium for a level of the model settings that the model does not take",
+      api: "openai-responses",
+      model: "gpt-5",
+      settings: { thinkingLevel: "off" },
+      level: "medium",
+    },
+    {
+      what: "the level off on Chat Completions for such a level of a model of pi's catalog of OpenAI's models",
+      api: "openai-completions",
+      model: "gpt-5.4",
+      settings: { thinkingLevel: "minimal" },
+      level: undefined,
+    },
+  ])("gives pi $what, for a turn's calls and for a model call of the plugin's own", async ({ api, model, settings, thinkingLevel, level }) => {
     const faux = createFauxCore({ api, provider: PROVIDER });
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];
     faux.setResponses([seen(calls, fauxAssistantMessage("Two.")), seen(calls, fauxAssistantMessage("The user asked how many blocks."))]);
-    const loop = createLoop(pi, { [api]: faux });
+    const loop = createLoop(pi, CATALOG_PARTS, { [api]: faux });
     const called = {
       connection: { baseUrl: "https://proxy.invalid/v1", api, apiKey: () => Promise.resolve("test-key") },
       model,
       ...(settings === undefined ? {} : { settings }),
+      ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     };
 
     await loop.run({
@@ -324,7 +393,7 @@ describe("a turn on the loop", () => {
     const faux = createFauxCore({ api: "anthropic-messages", provider: PROVIDER });
     const models: Model<Api>[] = [];
     faux.setResponses([modelOfCall(models)]);
-    const loop = createLoop(pi, { "anthropic-messages": faux });
+    const loop = createLoop(pi, CATALOG_PARTS, { "anthropic-messages": faux });
 
     await loop.run({
       connection: { baseUrl: "https://proxy.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
@@ -373,7 +442,7 @@ describe("a turn on the loop", () => {
     const runOn = async (baseUrl: string, model: string) => {
       const faux = createFauxCore({ api: "openai-completions", provider: PROVIDER });
       faux.setResponses([modelOfCall(models)]);
-      await createLoop(pi, { "openai-completions": faux }).run({
+      await createLoop(pi, CATALOG_PARTS, { "openai-completions": faux }).run({
         connection: { baseUrl, api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
         model,
         tools: [],
@@ -388,7 +457,43 @@ describe("a turn on the loop", () => {
     await runOn("https://gateway.invalid/v1", "anthropic/claude-haiku-5.5");
     await runOn("https://openrouter.ai/api/v1", "openai/gpt-5.4");
 
-    expect(models.map((model) => model.compat)).toEqual([{ cacheControlFormat: "anthropic" }, undefined, undefined]);
+    // The model of pi's catalog of OpenRouter's models speaks Chat Completions,
+    // so it takes the catalog's compat for that API.
+    expect(models.map((model) => model.compat)).toEqual([{ cacheControlFormat: "anthropic" }, undefined, OPENROUTER_MODELS["openai/gpt-5.4"].compat]);
+  });
+
+  test.each([
+    { gateway: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", model: "openai/gpt-5.4", known: OPENROUTER_MODELS["openai/gpt-5.4"] },
+    {
+      gateway: "Vercel's AI Gateway",
+      baseUrl: "https://ai-gateway.vercel.sh",
+      api: "anthropic-messages",
+      model: "anthropic/claude-sonnet-4.5",
+      known: VERCEL_AI_GATEWAY_MODELS["anthropic/claude-sonnet-4.5"],
+    },
+  ])("gives a model of pi's catalog of the models of $gateway the catalog's settings, where the base URL is the gateway's alone", async ({ baseUrl, api, model, known }) => {
+    const models: Model<Api>[] = [];
+    const runOn = async (at: string) => {
+      const faux = createFauxCore({ api, provider: PROVIDER });
+      faux.setResponses([modelOfCall(models)]);
+      await createLoop(pi, CATALOG_PARTS, { [api]: faux }).run({
+        connection: { baseUrl: at, api, apiKey: () => Promise.resolve("test-key") },
+        model,
+        tools: [],
+        messages: () => [asked],
+        kept: () => undefined,
+        signal: new AbortController().signal,
+        on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+      });
+    };
+
+    await runOn(baseUrl);
+    await runOn("https://proxy.invalid/v1");
+
+    const { reasoning, thinkingLevelMap, contextWindow, maxTokens } = known;
+    expect(models[0]).toMatchObject({ id: model, baseUrl, provider: PROVIDER, reasoning, contextWindow, maxTokens });
+    expect(models[0]?.thinkingLevelMap).toEqual(thinkingLevelMap);
+    expect(models[1]).toMatchObject({ id: model, reasoning: false, contextWindow: 128_000, maxTokens: 16_384 });
   });
 
   test("hands each call the conversation as the caller's transformContext gives it, which the conversation does not keep", async () => {
@@ -450,7 +555,7 @@ describe("a turn on the loop", () => {
     const given: unknown[] = [];
     const messages: Message[] = [asked];
     const mark = { type: "ephemeral" };
-    await createLoop(pi, { "anthropic-messages": faux }).run({
+    await createLoop(pi, CATALOG_PARTS, { "anthropic-messages": faux }).run({
       connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
       model: "faux-1",
       tools: [],
@@ -488,7 +593,7 @@ describe("a turn on the loop", () => {
       { id: "a1", role: "assistant", parts: [{ type: "tool_call", id: "c1", tool: "list_blocks", args: {} }], created: CREATED },
       { id: "t1", role: "tool", parts: [{ type: "tool_result", id: "c1", text: '["a","b"]' }], created: CREATED },
     ];
-    await createLoop(pi).run({
+    await createLoop(pi, CATALOG_PARTS).run({
       connection: { baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
       model: "anthropic/claude-haiku-5.5",
       tools: [listed],
@@ -504,12 +609,15 @@ describe("a turn on the loop", () => {
       on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
     });
 
+    // Pi's catalog of OpenRouter's models has the model reason, so pi sends the
+    // system prompt in the role developer, which OpenRouter takes for
+    // Anthropic's models.
     const mark = { type: "ephemeral" };
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
       model: "anthropic/claude-haiku-5.5",
       messages: [
-        { role: "system", content: [{ type: "text", text: "You are an assistant.", cache_control: mark }] },
+        { role: "developer", content: [{ type: "text", text: "You are an assistant.", cache_control: mark }] },
         { role: "user", content: [{ type: "text", text: "How many blocks?" }] },
         { role: "assistant", tool_calls: [{ id: "c1" }] },
         { role: "tool", tool_call_id: "c1", content: [{ type: "text", text: '["a","b"]', cache_control: mark }] },
@@ -628,7 +736,7 @@ describe("the files that a call carries", () => {
     // The memory gives the same copy of a file at each look, as the loop
     // expects of it.
     const files = [{ blob: report() }, { blob: plot() }];
-    await createLoop(pi, { "anthropic-messages": faux }).run({
+    await createLoop(pi, CATALOG_PARTS, { "anthropic-messages": faux }).run({
       connection: { baseUrl: "https://faux.invalid", api: "anthropic-messages", apiKey: () => Promise.resolve("test-key") },
       model: "faux-1",
       tools: [],
@@ -668,23 +776,6 @@ describe("the files that a call carries", () => {
   });
 });
 
-describe("the catalogs of the loop", () => {
-  test("hold the models of pi's catalogs of OpenAI's and Anthropic's models, by their ids", () => {
-    const { loop } = fauxLoop();
-
-    expect(["gpt-5.4", "claude-sonnet-5-5", "company-gpt", "openai/gpt-5.4"].map((id) => loop.inCatalog(id))).toEqual([true, true, false, false]);
-  });
-
-  test("give the context window of a model as pi takes it, from the model settings, the catalog, the list or the default", () => {
-    const { loop, connection } = fauxLoop();
-
-    expect(loop.contextWindow({ connection, model: "gpt-5.4" })).toBe(OPENAI_MODELS["gpt-5.4"].contextWindow);
-    expect(loop.contextWindow({ connection, model: "gpt-5.4", settings: { contextWindow: 100_000 } })).toBe(100_000);
-    expect(loop.contextWindow({ connection, model: "deepseek/deepseek-v3.2", listed: { contextWindow: 163_840 } })).toBe(163_840);
-    expect(loop.contextWindow({ connection, model: "company-gpt" })).toBe(128_000);
-  });
-});
-
 describe("a model call of the plugin's own", () => {
   const call = { model: "faux-1", systemPrompt: "Summarize.", prompt: "<conversation>[User]: Hi.</conversation>", signal: new AbortController().signal };
 
@@ -693,7 +784,7 @@ describe("a model call of the plugin's own", () => {
     const { faux, loop, connection } = fauxLoop();
     faux.setResponses([seen(calls, fauxAssistantMessage([fauxThinking("Short."), fauxText("The user said hi.")]))]);
 
-    const reply = await loop.callModel({ ...call, connection });
+    const reply = await loop.callModel({ ...call, connection, settings: { reasoning: true } });
 
     expect(reply.text).toBe("The user said hi.");
     expect(reply.failure).toBeUndefined();
@@ -970,7 +1061,7 @@ describe("a failed call's request", () => {
       vi.unstubAllGlobals();
     });
     const calls: Call[] = [];
-    await createLoop(pi).run({
+    await createLoop(pi, CATALOG_PARTS).run({
       connection: { baseUrl: "https://api.invalid/v1", api: "openai-responses", apiKey: () => Promise.resolve("sk-test") },
       model: "gpt-5.4",
       tools: [],

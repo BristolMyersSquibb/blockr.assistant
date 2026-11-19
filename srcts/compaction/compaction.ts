@@ -144,11 +144,11 @@ export function createCompaction(core: CoreApi, signal: AbortSignal, options: Co
 
   // Writes the summary and puts it in place, for the call given, with the
   // signal given. It resolves with whether the summary went in.
-  async function summarize(conversation: ConversationId, { loop, model }: PreparedCall, stop: AbortSignal): Promise<boolean> {
+  async function summarize(conversation: ConversationId, { loop, catalogs, model }: PreparedCall, stop: AbortSignal): Promise<boolean> {
     const stopped = (): boolean => closed() || stop.aborted || conversations.get(conversation) === undefined;
     const held = conversations.get(conversation);
     if (held === undefined || stopped()) return false;
-    const cut = cutOf(held.messages, keptTokens(loop.contextWindow(model)));
+    const cut = cutOf(held.messages, keptTokens(catalogs.contextWindow(model)));
     const kept = cut === undefined ? undefined : held.messages[cut.first];
     if (cut === undefined || kept === undefined) return false;
     const earlier = cut.start === 1 ? textOf(held.messages[0]) : undefined;
@@ -197,7 +197,7 @@ export function createCompaction(core: CoreApi, signal: AbortSignal, options: Co
         return;
       }
       const held = conversations.get(conversation);
-      if (held === undefined || !needsSummary(held, call.loop.contextWindow(call.model))) return;
+      if (held === undefined || !needsSummary(held, call.catalogs.contextWindow(call.model))) return;
       await run(conversation, () => summarize(conversation, call, stop));
     },
 
@@ -206,7 +206,7 @@ export function createCompaction(core: CoreApi, signal: AbortSignal, options: Co
         if (call !== undefined) return summarize(conversation, call, stop);
         await conversations.opened;
         if (conversations.get(conversation) === undefined || closed()) return false;
-        const prepared = await prepareCall(options, () => conversations.get(conversation)?.model ?? null, closed);
+        const prepared = await prepareCall(options, () => conversations.get(conversation), closed);
         if (prepared.kind === "stopped") return false;
         if (prepared.kind === "failed") {
           if (prepared.raise) warn(conversation, prepared.why);

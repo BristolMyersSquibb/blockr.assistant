@@ -46,6 +46,10 @@ var assistant_plugin_schema_default = {
             "null"
           ],
           description: `The conversation's pick of the model, such as "gpt-5.4", or null for the default.`
+        },
+        thinking_level: {
+          $ref: "#/definitions/ThinkingLevel",
+          description: "The conversation's pick of the thinking level, which a conversation that nobody picked a level for lacks."
         }
       },
       required: [
@@ -331,6 +335,19 @@ var assistant_plugin_schema_default = {
       ],
       additionalProperties: false,
       description: "The tokens that a conversation's calls to the model spent."
+    },
+    ThinkingLevel: {
+      type: "string",
+      enum: [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      description: "A thinking level, at which a model reasons, from none to the most."
     }
   }
 };
@@ -352,8 +369,14 @@ var NEW_CONVERSATION = "New conversation";
 function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-function newConversation(title2, model2) {
-  return { title: title2, updated: (/* @__PURE__ */ new Date()).toISOString(), messages: [], usage: { input: 0, output: 0, last: 0 }, model: model2 };
+var THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+function newConversation(title2, model2, thinkingLevel2) {
+  const conversation2 = { title: title2, updated: (/* @__PURE__ */ new Date()).toISOString(), messages: [], usage: { input: 0, output: 0, last: 0 }, model: model2 };
+  return withThinkingLevel(conversation2, thinkingLevel2 ?? null);
+}
+function withThinkingLevel(conversation2, thinkingLevel2) {
+  const { title: title2, updated, messages, usage, model: model2 } = conversation2;
+  return { title: title2, updated, messages, usage, model: model2, ...thinkingLevel2 === null ? {} : { thinking_level: thinkingLevel2 } };
 }
 function addedUsage(usage, input, output, total) {
   return { input: usage.input + input, output: usage.output + output, last: total ?? usage.last };
@@ -861,21 +884,30 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   if (deployment.credential.kind === "visitor" && keyOf(options.key.current()) === void 0) return failed(NO_KEY);
   const offered = await options.models.offered();
   if (stopped()) return STOPPED;
-  const model2 = resolveModel(offered, picked2());
+  const picks = picked2();
+  const model2 = resolveModel(offered, picks?.model ?? null);
   if (model2 === void 0) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
+  let catalogs;
   let loop;
   try {
-    loop = await options.load();
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
   }
   if (stopped()) return STOPPED;
-  const settings = await options.settings.checked((id) => loop.inCatalog(id));
+  const settings = await options.settings.checked((id) => catalogs.inCatalog(id));
   if (stopped()) return STOPPED;
   return {
     kind: "prepared",
     loop,
-    model: { connection: connectionOf(deployment, options.key, carried), model: model2, settings: settings.get(model2), listed: offered.settings?.get(model2) }
+    catalogs,
+    model: {
+      connection: connectionOf(deployment, options.key, carried),
+      model: model2,
+      settings: settings.get(model2),
+      listed: offered.settings?.get(model2),
+      thinkingLevel: picks?.thinking_level
+    }
   };
 }
 function failed(why) {
@@ -1064,7 +1096,7 @@ function createTurns(core, signal, options) {
     if (conversations.get(turn.conversation) === void 0) return;
     const prepared = await prepareCall(
       options,
-      () => conversations.get(turn.conversation)?.model ?? null,
+      () => conversations.get(turn.conversation),
       () => stopped(turn),
       (carried) => {
         turn.carried = carried;
@@ -1084,7 +1116,7 @@ function createTurns(core, signal, options) {
       return;
     }
     if (stopped(turn)) return;
-    const call = { loop: prepared.loop, model: prepared.model };
+    const call = { loop: prepared.loop, catalogs: prepared.catalogs, model: prepared.model };
     const loop = () => prepared.loop.run({
       ...prepared.model,
       tools: options.tools,
@@ -1428,11 +1460,11 @@ function createCompaction(core, signal, options) {
     runs.set(conversation2, done);
     return done;
   }
-  async function summarize(conversation2, { loop, model: model2 }, stop) {
+  async function summarize(conversation2, { loop, catalogs, model: model2 }, stop) {
     const stopped = () => closed2() || stop.aborted || conversations.get(conversation2) === void 0;
     const held = conversations.get(conversation2);
     if (held === void 0 || stopped()) return false;
-    const cut2 = cutOf(held.messages, keptTokens(loop.contextWindow(model2)));
+    const cut2 = cutOf(held.messages, keptTokens(catalogs.contextWindow(model2)));
     const kept = cut2 === void 0 ? void 0 : held.messages[cut2.first];
     if (cut2 === void 0 || kept === void 0) return false;
     const earlier = cut2.start === 1 ? textOf(held.messages[0]) : void 0;
@@ -1479,7 +1511,7 @@ function createCompaction(core, signal, options) {
         return;
       }
       const held = conversations.get(conversation2);
-      if (held === void 0 || !needsSummary(held, call.loop.contextWindow(call.model))) return;
+      if (held === void 0 || !needsSummary(held, call.catalogs.contextWindow(call.model))) return;
       await run(conversation2, () => summarize(conversation2, call, stop));
     },
     compact(conversation2, call, stop = signal) {
@@ -1487,7 +1519,7 @@ function createCompaction(core, signal, options) {
         if (call !== void 0) return summarize(conversation2, call, stop);
         await conversations.opened;
         if (conversations.get(conversation2) === void 0 || closed2()) return false;
-        const prepared = await prepareCall(options, () => conversations.get(conversation2)?.model ?? null, closed2);
+        const prepared = await prepareCall(options, () => conversations.get(conversation2), closed2);
         if (prepared.kind === "stopped") return false;
         if (prepared.kind === "failed") {
           if (prepared.raise) warn(conversation2, prepared.why);
@@ -1671,13 +1703,13 @@ function createConversations(core, signal) {
       }
       keep2(conversation2, message2, kept);
     },
-    async addConversation(id, title2, model2 = null) {
+    async addConversation(id, title2, { model: model2, thinkingLevel: thinkingLevel2 } = { model: null }) {
       if (await capped !== 0) {
-        await run("blockr.assistant-add_conversation", { id, title: title2, model: model2 });
+        await run("blockr.assistant-add_conversation", { id, title: title2, model: model2, ...thinkingLevel2 === void 0 ? {} : { thinking_level: thinkingLevel2 } });
         return;
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
-      memory.set(id, newConversation(title2, model2));
+      memory.set(id, newConversation(title2, model2, thinkingLevel2));
       changed();
     },
     async renameConversation(conversation2, title2) {
@@ -1747,6 +1779,13 @@ function createConversations(core, signal) {
         return;
       }
       change(conversation2, (held) => ({ ...held, model: model2 }));
+    },
+    async setThinkingLevel(conversation2, level2) {
+      if (await capped !== 0) {
+        await run("blockr.assistant-set_thinking_level", { conversation: conversation2, thinking_level: level2 });
+        return;
+      }
+      change(conversation2, (held) => withThinkingLevel(held, level2));
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -1830,6 +1869,102 @@ function kindOf2(sent3) {
   if (typeof sent3 === "boolean") return "true or false";
   if (typeof sent3 === "number") return "a number";
   return Array.isArray(sent3) ? "an array" : "an object";
+}
+
+// srcts/loop/catalogs.ts
+var PROVIDER = "blockr.assistant";
+var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+var GATEWAYS = /* @__PURE__ */ new Map([
+  ["openrouter.ai", async () => (await import("./catalog-openrouter-57b077cd.js")).OPENROUTER_MODELS],
+  ["ai-gateway.vercel.sh", async () => (await import("./catalog-vercel-fee56db0.js")).VERCEL_AI_GATEWAY_MODELS]
+]);
+var loading = /* @__PURE__ */ new Map();
+function preloadCatalogs() {
+  void import("./pi-b163b862.js").catch(() => void 0);
+}
+async function loadCatalogs(baseUrl) {
+  return createCatalogs(await loadCatalogParts(baseUrl));
+}
+function loadCatalogParts(baseUrl) {
+  const host = gatewayOf(baseUrl) ?? "";
+  const loaded2 = loading.get(host);
+  if (loaded2 !== void 0) return loaded2;
+  const gateway = GATEWAYS.get(host);
+  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
+    ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
+  );
+  loading.set(host, parts);
+  parts.catch(() => {
+    if (loading.get(host) === parts) loading.delete(host);
+  });
+  return parts;
+}
+function createCatalogs(parts) {
+  return {
+    inCatalog: (id) => knownModel(parts.pi, id) !== void 0,
+    contextWindow: (called) => buildModel(parts, called).contextWindow,
+    thinkingLevels: (called) => levelApplies(parts, called) ? parts.pi.getSupportedThinkingLevels(buildModel(parts, called)) : [],
+    thinkingLevel: (called) => levelOf(parts, called, buildModel(parts, called))
+  };
+}
+function buildModel(parts, called) {
+  const { connection, model: id } = called;
+  const given2 = called.settings ?? {};
+  const listed3 = called.listed ?? {};
+  const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
+  const known = given2.like === void 0 ? knownModel(parts.pi, id) ?? gatewayModel(parts, connection.baseUrl, id) : knownModel(parts.pi, given2.like);
+  const base = known === void 0 ? {
+    ...at2,
+    name: id,
+    reasoning: false,
+    input: includeImages(["text", "image"], listed3.images),
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: listed3.contextWindow ?? 128e3,
+    maxTokens: listed3.maxTokens ?? 16384
+  } : { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
+  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
+  return {
+    ...base,
+    reasoning: given2.reasoning ?? base.reasoning,
+    input: includeImages(base.input, given2.images),
+    contextWindow: given2.contextWindow ?? base.contextWindow,
+    maxTokens: given2.maxTokens ?? base.maxTokens,
+    ...anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" } } : {}
+  };
+}
+function levelOf(parts, called, model2) {
+  const given2 = called.settings?.thinkingLevel;
+  const fromSettings = given2 !== void 0 && parts.pi.getSupportedThinkingLevels(model2).includes(given2) ? given2 : void 0;
+  if (!levelApplies(parts, called)) return fromSettings ?? "off";
+  return parts.pi.clampThinkingLevel(model2, called.thinkingLevel ?? fromSettings ?? "medium");
+}
+function levelApplies(parts, called) {
+  return called.connection.api !== "openai-completions" || !Object.hasOwn(parts.pi.OPENAI_MODELS, called.settings?.like ?? called.model);
+}
+function includeImages(input, images) {
+  if (images === void 0) return input;
+  const others = input.filter((kind) => kind !== "image");
+  return images ? [...others, "image"] : others;
+}
+function knownModel(pi, id) {
+  for (const catalog of [pi.ANTHROPIC_MODELS, pi.OPENAI_MODELS]) {
+    if (Object.hasOwn(catalog, id)) return catalog[id];
+  }
+  return void 0;
+}
+function gatewayModel(parts, baseUrl, id) {
+  const host = gatewayOf(baseUrl);
+  const catalog = host === void 0 ? void 0 : parts.gateways.get(host);
+  return catalog !== void 0 && Object.hasOwn(catalog, id) ? catalog[id] : void 0;
+}
+function gatewayOf(baseUrl) {
+  let host;
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
+  return GATEWAYS.has(host) ? host : void 0;
 }
 
 // srcts/loop/loop.ts
@@ -2277,10 +2412,8 @@ function isInput(name) {
 }
 
 // srcts/loop/loop.ts
-var PROVIDER = "blockr.assistant";
 var NO_KEY2 = "blockr-assistant-no-key";
-var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-function createLoop(pi, apis = {}) {
+function createLoop(pi, catalogs, apis = {}) {
   const streams = {
     "anthropic-messages": pi.anthropicMessages,
     "openai-completions": pi.openaiCompletions,
@@ -2288,17 +2421,16 @@ function createLoop(pi, apis = {}) {
     ...apis
   };
   return {
-    run: (turn) => runTurn(pi, streams, turn),
-    callModel: (call) => callModel(pi, streams, call),
-    contextWindow: (called) => buildModel(pi, called.model, called.connection, called.settings, called.listed).contextWindow,
-    inCatalog: (id) => catalogModel(pi, id) !== void 0
+    run: (turn) => runTurn(pi, catalogs, streams, turn),
+    callModel: (call) => callModel(pi, catalogs, streams, call)
   };
 }
-async function loadLoop() {
-  return createLoop(await import("./pi-62fb936b.js"));
+async function loadLoop(baseUrl) {
+  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
+  return createLoop(pi, catalogs);
 }
-function runTurn(pi, streams, turn) {
-  return startAgentSpan(turn, (span) => runAgent(pi, streams, turn, span));
+function runTurn(pi, catalogs, streams, turn) {
+  return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
 }
 function startAgentSpan(call, callback) {
   const attributes = {
@@ -2308,9 +2440,9 @@ function startAgentSpan(call, callback) {
   };
   return telemetryUnder(context2.active()).startSpan({ name: "invoke_agent", attributes }, callback);
 }
-async function runAgent(pi, streams, turn, span) {
+async function runAgent(pi, catalogs, streams, turn, span) {
   const turnContext = context2.active();
-  const model2 = buildModel(pi, turn.model, turn.connection, turn.settings, turn.listed);
+  const model2 = buildModel(catalogs, turn);
   const models = modelsAt(pi, streams, turn.connection, model2);
   const given2 = /* @__PURE__ */ new Map();
   const answered = /* @__PURE__ */ new Map();
@@ -2318,7 +2450,7 @@ async function runAgent(pi, streams, turn, span) {
   const tools = turn.tools.map((tool2) => agentTool(tool2, given2, span));
   const prompt = turn.systemPrompt ?? "";
   const kept = (message2) => turn.kept(message2);
-  const level2 = thinkingLevel(pi, turn);
+  const level2 = piLevel(levelOf(catalogs, turn, model2));
   const encodings = /* @__PURE__ */ new Map();
   let carried = { files: [], pdfs: [] };
   let status;
@@ -2414,12 +2546,12 @@ function modelsAt(pi, streams, connection, model2) {
   );
   return models;
 }
-function callModel(pi, streams, call) {
+function callModel(pi, catalogs, streams, call) {
   return startAgentSpan(call, async (span) => {
-    const model2 = buildModel(pi, call.model, call.connection, call.settings, call.listed);
+    const model2 = buildModel(catalogs, call);
     const models = modelsAt(pi, streams, call.connection, model2);
     const apiKey = await call.connection.apiKey() ?? NO_KEY2;
-    const level2 = thinkingLevel(pi, call);
+    const level2 = piLevel(levelOf(catalogs, call, model2));
     const reply = await models.completeSimple(
       model2,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
@@ -2443,44 +2575,8 @@ function findFailure(reply, text3) {
       return text3 === "" ? "The model wrote no text." : void 0;
   }
 }
-function buildModel(pi, id, connection, given2 = {}, listed3 = {}) {
-  const at2 = { id, api: connection.api, provider: PROVIDER, baseUrl: connection.baseUrl };
-  const known = catalogModel(pi, given2.like ?? id);
-  const base = known === void 0 ? {
-    ...at2,
-    name: id,
-    reasoning: false,
-    input: includeImages(["text", "image"], listed3.images),
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: listed3.contextWindow ?? 128e3,
-    maxTokens: listed3.maxTokens ?? 16384
-  } : { ...known, ...at2, headers: void 0, compat: known.api === connection.api ? known.compat : void 0 };
-  const anthropicOnOpenRouter = connection.api === "openai-completions" && connection.baseUrl === OPENROUTER_BASE_URL && id.startsWith("anthropic/");
-  return {
-    ...base,
-    reasoning: given2.reasoning ?? base.reasoning,
-    input: includeImages(base.input, given2.images),
-    contextWindow: given2.contextWindow ?? base.contextWindow,
-    maxTokens: given2.maxTokens ?? base.maxTokens,
-    ...anthropicOnOpenRouter ? { compat: { ...base.compat, cacheControlFormat: "anthropic" } } : {}
-  };
-}
-function includeImages(input, images) {
-  if (images === void 0) return input;
-  const others = input.filter((kind) => kind !== "image");
-  return images ? [...others, "image"] : others;
-}
-function catalogModel(pi, id) {
-  for (const catalog of [pi.ANTHROPIC_MODELS, pi.OPENAI_MODELS]) {
-    if (Object.hasOwn(catalog, id)) return catalog[id];
-  }
-  return void 0;
-}
-function thinkingLevel(pi, call) {
-  const given2 = call.settings?.thinkingLevel;
-  if (given2 !== void 0) return given2 === "off" ? void 0 : given2;
-  const openai = Object.hasOwn(pi.OPENAI_MODELS, call.settings?.like ?? call.model);
-  return call.connection.api === "openai-completions" && openai ? void 0 : "medium";
+function piLevel(level2) {
+  return level2 === "off" ? void 0 : level2;
 }
 function keyless(input, init) {
   const headers = new Headers(init?.headers);
@@ -2589,7 +2685,6 @@ function shown(answer) {
 }
 
 // srcts/model-settings/model-settings.ts
-var LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 var NONE2 = /* @__PURE__ */ new Map();
 var WITHOUT = "The assistant goes on without the deployment's model settings";
 var FILE = "the file that the blockr option assistant_model_settings names";
@@ -2677,7 +2772,7 @@ function text2(id, name, value) {
 }
 function level(id, name, value) {
   const given2 = one(value);
-  const found = LEVELS.find((known) => known === given2);
+  const found = THINKING_LEVELS.find((known) => known === given2);
   if (found !== void 0) return found;
   throw refused(id, name, value, "off, minimal, low, medium, high, xhigh or max");
 }
@@ -2888,6 +2983,10 @@ var model = {
   type: ["string", "null"],
   description: `The conversation's pick of the model, such as "gpt-5.4", or null for the default.`
 };
+var thinkingLevel = {
+  anyOf: [{ $ref: "#/$defs/ThinkingLevel" }, { type: "null" }],
+  description: `The conversation's pick of the thinking level, such as "high", or null for none.`
+};
 var message = {
   $ref: "#/$defs/Message",
   description: "The message, which no message of the conversation has the id of."
@@ -2929,12 +3028,13 @@ var assistantCommands = [
   command({
     id: "blockr.assistant-add_conversation",
     label: "Add conversation",
-    description: "Adds a conversation that holds no message, under the id given, with its title and its pick of the model, or null for the default where that is left out. It fails its preflight for an id that a conversation has already.",
+    description: "Adds a conversation that holds no message, under the id given, with its title, its pick of the model, or null for the default where that is left out, and its pick of the thinking level, which it lacks where that is null or left out. It fails its preflight for an id that a conversation has already.",
     args: object(
       {
         id: { type: "string", minLength: 1, description: "The id of the new conversation." },
         title,
-        model
+        model,
+        thinking_level: thinkingLevel
       },
       ["id", "title"]
     ),
@@ -2942,8 +3042,8 @@ var assistantCommands = [
       const state = assistantState(board);
       return state !== void 0 && !Object.hasOwn(state.conversations, id);
     },
-    run: (_board, { id, title: title2, model: model2 }) => ({
-      patches: [{ op: "add", path: at("conversations", id), value: newConversation(title2, model2 ?? null) }]
+    run: (_board, { id, title: title2, model: model2, thinking_level: level2 }) => ({
+      patches: [{ op: "add", path: at("conversations", id), value: newConversation(title2, model2 ?? null, level2) }]
     })
   }),
   command({
@@ -3059,6 +3159,18 @@ var assistantCommands = [
     run: (_board, { conversation: conversation2, model: model2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "model"), value: model2 }]
     })
+  }),
+  command({
+    id: "blockr.assistant-set_thinking_level",
+    label: "Set thinking level",
+    description: "Sets a conversation's pick of the thinking level, or removes it with null, after which the conversation's calls reason at the level that the deployment's model settings give the model, or else at the assistant's default.",
+    args: object({ conversation, thinking_level: thinkingLevel }, ["conversation", "thinking_level"]),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    run: (board, { conversation: conversation2, thinking_level: level2 }) => {
+      const path = at("conversations", conversation2, "thinking_level");
+      if (level2 !== null) return { patches: [{ op: "add", path, value: level2 }] };
+      return { patches: findConversation(board, conversation2)?.thinking_level === void 0 ? [] : [{ op: "remove", path }] };
+    }
   })
 ];
 
@@ -4607,6 +4719,46 @@ function flag2(fields, name) {
   throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(value ?? null)}, where it gives true or false.`);
 }
 
+// srcts/thinking-levels/thinking-levels.ts
+function createThinkingLevels(signal, options) {
+  const listeners = /* @__PURE__ */ new Set();
+  let current;
+  let loading3;
+  async function load() {
+    let deployment;
+    let catalogs;
+    try {
+      deployment = await options.deployment;
+      catalogs = await options.catalogs(deployment.baseUrl);
+    } catch {
+      loading3 = void 0;
+      return;
+    }
+    void options.settings.checked((id) => catalogs.inCatalog(id)).then((settings) => {
+      if (signal.aborted) return;
+      const connection = { baseUrl: deployment.baseUrl, api: deployment.api };
+      current = (model2, picked2, listed3) => {
+        const called = { connection, model: model2, settings: settings.get(model2), listed: listed3, thinkingLevel: picked2 };
+        return { levels: catalogs.thinkingLevels(called), level: catalogs.thinkingLevel(called) };
+      };
+      for (const listener of listeners) listener();
+    });
+  }
+  return {
+    load() {
+      loading3 ??= load();
+      return loading3;
+    },
+    current: () => current,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+}
+
 // srcts/titles/titles.ts
 var TITLE_PROMPT = "You title chat conversations. Reply with ONLY a title for the conversation excerpt the user provides: at most 6 words, no quotes, no trailing punctuation.";
 var EXCERPT = 500;
@@ -4637,7 +4789,7 @@ function titleConversations(core, signal, options) {
     });
   }
   async function title2(conversation2, excerpt) {
-    const prepared = await prepareCall(options, () => conversations.get(conversation2)?.model ?? null, closed2);
+    const prepared = await prepareCall(options, () => conversations.get(conversation2), closed2);
     if (prepared.kind === "stopped") return;
     if (prepared.kind === "failed") throw new Error(prepared.why);
     const reply = await prepared.loop.callModel({ ...prepared.model, systemPrompt: TITLE_PROMPT, prompt: excerpt, signal });
@@ -4686,7 +4838,8 @@ function openAssistant(core, signal, options = {}) {
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
   const load = options.load ?? loadLoop;
-  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, load });
+  const catalogs = options.catalogs ?? loadCatalogs;
+  const compaction = createCompaction(core, signal, { conversations, deployment, models, settings, key, catalogs, load });
   const notes = createNotes(core, signal, { running: () => turns.current()?.conversation });
   const turns = createTurns(core, signal, {
     conversations,
@@ -4699,11 +4852,13 @@ function openAssistant(core, signal, options = {}) {
     prompt,
     compaction,
     notes,
+    catalogs,
     load,
     ..."locks" in options ? { locks: options.locks } : {}
   });
-  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, load });
-  const assistant = { conversations, skills, models, turns, compaction, notes, deployment, key, openRouterLogin, signal };
+  titleConversations(core, signal, { conversations, turns, deployment, models, settings, key, catalogs, load });
+  const thinkingLevels = createThinkingLevels(signal, { deployment, settings, catalogs });
+  const assistant = { conversations, skills, models, turns, compaction, notes, thinkingLevels, deployment, key, openRouterLogin, signal };
   opened.set(core, assistant);
   const waiters = waiting.get(core);
   waiting.delete(core);
@@ -4818,20 +4973,20 @@ function useChat() {
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 // srcts/chat/libraries.ts
-var loading;
+var loading2;
 var loaded;
 function loadLibraries() {
-  loading ??= import("./chat-c160128d.js").then(
+  loading2 ??= import("./chat-c160128d.js").then(
     (libraries2) => {
       loaded = libraries2;
       return libraries2;
     },
     (error) => {
-      loading = void 0;
+      loading2 = void 0;
       throw error;
     }
   );
-  return loading;
+  return loading2;
 }
 function librariesLoaded() {
   return loaded !== void 0;
@@ -5492,42 +5647,68 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
 }
 
 // srcts/chat/footer.tsx
+import { ComboBox, ComboBoxItem } from "@blockr/core/react";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
-function Footer({ usage, pick, offered, onPick, opener, onDrawer }) {
+function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
+  const next = offered === void 0 ? void 0 : resolveModel(offered, picks.model);
   return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-footer", children: [
     /* @__PURE__ */ jsx4("button", { ref: opener, type: "button", className: "blockr-assistant-footer-button", title: "Conversations", "aria-label": "Conversations", onClick: onDrawer, children: /* @__PURE__ */ jsxs4("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
       /* @__PURE__ */ jsx4("path", { d: "M2.5 3v3h3" }),
       /* @__PURE__ */ jsx4("path", { d: "M2.75 6A5.5 5.5 0 1 1 3 9.6" }),
       /* @__PURE__ */ jsx4("path", { d: "M8 5v3.2l2.2 1.3" })
     ] }) }),
-    offered === void 0 ? null : /* @__PURE__ */ jsx4(Model, { pick, offered, onPick }),
+    offered === void 0 || next === void 0 ? null : /* @__PURE__ */ jsx4(Model, { pick: picks.model, next, offered, onPick }),
+    next === void 0 || levelsOf === void 0 ? null : /* @__PURE__ */ jsx4(Level, { levels: levelsOf(next, picks.thinkingLevel, offered?.settings?.get(next)), onPick: onPickLevel }),
     /* @__PURE__ */ jsx4(Meter, { usage })
   ] });
 }
-function Model({ pick, offered, onPick }) {
-  const next = resolveModel(offered, pick);
+function Model({
+  pick,
+  next,
+  offered,
+  onPick
+}) {
   const unoffered = pick !== null && pick !== next ? pick : void 0;
   const choosable = !offered.named || offered.models.length > 1;
-  if (next === void 0 || !choosable && unoffered === void 0) return null;
+  if (!choosable && unoffered === void 0) return null;
   return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-model", children: [
     unoffered === void 0 ? null : /* @__PURE__ */ jsxs4("span", { className: "blockr-assistant-model-unoffered", title: `The app does not offer ${unoffered}, so the calls go to ${next}.`, children: [
       /* @__PURE__ */ jsx4("s", { children: unoffered }),
       /* @__PURE__ */ jsx4("span", { className: "blockr-assistant-hidden", children: ", which the app does not offer, so the calls go to" })
     ] }),
     choosable ? /* @__PURE__ */ jsx4(
-      "select",
+      ComboBox,
       {
-        className: "blockr-assistant-model-select",
         "aria-label": "Model",
-        title: "The model that the next turn talks to",
+        isRequired: true,
+        className: "blockr-assistant-pick blockr-assistant-pick-model",
         value: next,
-        onChange: (event) => {
-          onPick(event.currentTarget.value);
+        onChange: (key) => {
+          if (key !== null) onPick(String(key));
         },
-        children: offered.models.map((model2) => /* @__PURE__ */ jsx4("option", { value: model2, children: model2 }, model2))
+        defaultItems: offered.models.map((id) => ({ id })),
+        children: (option) => /* @__PURE__ */ jsx4(ComboBoxItem, { id: option.id, children: option.id })
       }
     ) : /* @__PURE__ */ jsx4("span", { className: "blockr-assistant-model-name", children: next })
   ] });
+}
+function Level({ levels, onPick }) {
+  if (levels.levels.length < 2) return null;
+  return /* @__PURE__ */ jsx4(
+    ComboBox,
+    {
+      "aria-label": "Thinking level",
+      isRequired: true,
+      className: "blockr-assistant-pick blockr-assistant-pick-level",
+      value: levels.level,
+      onChange: (key) => {
+        const level2 = levels.levels.find((taken2) => taken2 === key);
+        if (level2 !== void 0) onPick(level2);
+      },
+      defaultItems: levels.levels.map((id) => ({ id })),
+      children: (option) => /* @__PURE__ */ jsx4(ComboBoxItem, { id: option.id, children: option.id })
+    }
+  );
 }
 function Meter({ usage }) {
   const input = (usage?.input ?? 0).toLocaleString();
@@ -5571,6 +5752,11 @@ function useRunning(turns) {
 function useOffered(models) {
   const subscribe = useCallback((changed) => models.subscribe(changed), [models]);
   const current = useCallback(() => models.current(), [models]);
+  return useSyncExternalStore(subscribe, current);
+}
+function useThinkingLevels(levels) {
+  const subscribe = useCallback((changed) => levels.subscribe(changed), [levels]);
+  const current = useCallback(() => levels.current(), [levels]);
   return useSyncExternalStore(subscribe, current);
 }
 function useVisitorKey(key) {
@@ -5903,12 +6089,12 @@ function storeConversation(id) {
 }
 
 // srcts/chat/send.ts
-async function sendMessage(assistant, open2, text3, files, pick, opened2, skill) {
+async function sendMessage(assistant, open2, text3, files, picks, opened2, skill) {
   const { conversations, turns } = assistant;
   let conversation2 = open2;
   if (conversation2 === void 0) {
     conversation2 = newId();
-    await conversations.addConversation(conversation2, NEW_CONVERSATION, pick);
+    await conversations.addConversation(conversation2, NEW_CONVERSATION, picks);
     opened2(conversation2);
   }
   const parts = [
@@ -6331,11 +6517,12 @@ function Chat({ core, assistant }) {
   const all = useConversations(conversations);
   const running = useRunning(turns);
   const offered = useOffered(models);
+  const levelsOf = useThinkingLevels(assistant.thinkingLevels);
   const deployment = useResolved(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
   const openRouterLogin = useOpenRouterLogin(assistant.openRouterLogin);
   const [chosen, setChosen] = useState6(storedConversation);
-  const [nextPick, setNextPick] = useNextPick(assistant);
+  const [nextPicks, setNextPicks] = useNextPicks(assistant);
   const [drawer, setDrawer] = useState6(false);
   const opener = useRef5(null);
   const [link, setLink] = useState6(void 0);
@@ -6366,9 +6553,9 @@ function Chat({ core, assistant }) {
   const send = useCallback2(
     (text3, files = []) => {
       if (text3.trim() === "" && files.length === 0 || turns.current() !== void 0 || noKey) return Promise.resolve();
-      return sendMessage(assistant, open2, text3, files, nextPick, openConversation);
+      return sendMessage(assistant, open2, text3, files, nextPicks, openConversation);
     },
-    [assistant, nextPick, noKey, open2, openConversation, turns]
+    [assistant, nextPicks, noKey, open2, openConversation, turns]
   );
   const logError = useCallback2(
     (error) => {
@@ -6377,14 +6564,18 @@ function Chat({ core, assistant }) {
     [core]
   );
   const pick = (model2) => {
-    if (open2 === void 0) setNextPick(model2);
+    if (open2 === void 0) setNextPicks({ ...nextPicks, model: model2 });
     else conversations.setModel(open2, model2).catch(logError);
+  };
+  const pickLevel = (level2) => {
+    if (open2 === void 0) setNextPicks({ ...nextPicks, thinkingLevel: level2 });
+    else conversations.setThinkingLevel(open2, level2).catch(logError);
   };
   const clear = useCallback2(() => {
     const held = open2 === void 0 ? void 0 : conversations.get(open2);
-    if (held !== void 0) setNextPick(held.model);
+    if (held !== void 0) setNextPicks(picksOf(held));
     openConversation(void 0);
-  }, [conversations, open2, openConversation, setNextPick]);
+  }, [conversations, open2, openConversation, setNextPicks]);
   const startNew = () => {
     clear();
     setDrawer(false);
@@ -6403,7 +6594,7 @@ function Chat({ core, assistant }) {
         }
         if (turns.current() !== void 0 || assistant.signal.aborted) return false;
         try {
-          await sendMessage(assistant, open2, line, [], nextPick, openConversation, { name, text: text3 });
+          await sendMessage(assistant, open2, line, [], nextPicks, openConversation, { name, text: text3 });
         } catch (error) {
           logError(error);
           return false;
@@ -6425,7 +6616,7 @@ function Chat({ core, assistant }) {
           return true;
       }
     },
-    [assistant, clear, compaction, core, logError, nextPick, noKey, open2, openConversation, turns]
+    [assistant, clear, compaction, core, logError, nextPicks, noKey, open2, openConversation, turns]
   );
   const remove = async (id) => {
     const removed = all[id];
@@ -6441,7 +6632,7 @@ function Chat({ core, assistant }) {
       logError(error);
       throw error;
     }
-    if (wasOpen) setNextPick(removed?.model ?? null);
+    if (wasOpen) setNextPicks(removed === void 0 ? NO_PICKS : picksOf(removed));
   };
   const runtime = useExternalStoreRuntime({
     messages: shown3,
@@ -6519,7 +6710,7 @@ function Chat({ core, assistant }) {
   }, []);
   const escape = (event) => {
     if (event.key !== "Escape" || event.defaultPrevented || running === void 0) return;
-    if (event.target instanceof Element && event.target.closest("dialog, select") !== null) return;
+    if (event.target instanceof Element && event.target.closest("dialog") !== null) return;
     event.preventDefault();
     turns.stop();
   };
@@ -6556,9 +6747,11 @@ function Chat({ core, assistant }) {
             Footer,
             {
               usage: conversation2?.usage,
-              pick: conversation2 === void 0 ? nextPick : conversation2.model,
+              picks: conversation2 === void 0 ? nextPicks : picksOf(conversation2),
               offered,
+              levelsOf,
               onPick: pick,
+              onPickLevel: pickLevel,
               opener,
               onDrawer: () => {
                 setDrawer(true);
@@ -6622,17 +6815,21 @@ function redo(core) {
     return `The board refused to apply the edit again: ${failuresOf(error).join(" ")}`;
   }
 }
-var nextPicks = /* @__PURE__ */ new WeakMap();
-function useNextPick(assistant) {
-  const [nextPick, setPick] = useState6(() => nextPicks.get(assistant) ?? null);
-  const setNextPick = useCallback2(
-    (pick) => {
-      nextPicks.set(assistant, pick);
-      setPick(pick);
+var heldPicks = /* @__PURE__ */ new WeakMap();
+var NO_PICKS = { model: null };
+function useNextPicks(assistant) {
+  const [nextPicks, setPicks] = useState6(() => heldPicks.get(assistant) ?? NO_PICKS);
+  const setNextPicks = useCallback2(
+    (picks) => {
+      heldPicks.set(assistant, picks);
+      setPicks(picks);
     },
     [assistant]
   );
-  return [nextPick, setNextPick];
+  return [nextPicks, setNextPicks];
+}
+function picksOf(conversation2) {
+  return { model: conversation2.model, thinkingLevel: conversation2.thinking_level };
 }
 function turnEnds(turns, conversation2) {
   return new Promise((resolve) => {
@@ -6654,6 +6851,7 @@ function textOf3(message2) {
 // srcts/chat/panel.tsx
 import { jsx as jsx11 } from "react/jsx-runtime";
 function renderChat({ el, core }) {
+  preloadCatalogs();
   const root = createRoot(el);
   flushSync(() => {
     root.render(/* @__PURE__ */ jsx11(Panel, { core }));
@@ -6665,7 +6863,8 @@ function renderChat({ el, core }) {
 function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
-  return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
+  const levels = useThinkingLevels2(assistant);
+  return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
   const [assistant, setAssistant] = useState7(() => open(assistantOf(core)));
@@ -6709,6 +6908,23 @@ function useLibraries(core) {
   }, [core, loaded2]);
   return loaded2;
 }
+function useThinkingLevels2(assistant) {
+  const [, setLoaded] = useState7(void 0);
+  const done = assistant !== void 0 && levelsLoaded.has(assistant);
+  useEffect6(() => {
+    if (assistant === void 0 || done) return;
+    let live = true;
+    void assistant.thinkingLevels.load().then(() => {
+      levelsLoaded.add(assistant);
+      if (live) setLoaded(assistant);
+    });
+    return () => {
+      live = false;
+    };
+  }, [assistant, done]);
+  return done;
+}
+var levelsLoaded = /* @__PURE__ */ new WeakSet();
 function open(assistant) {
   return assistant?.signal.aborted === false ? assistant : void 0;
 }

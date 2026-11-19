@@ -93,7 +93,7 @@ export function titleConversations(core: Pick<CoreApi, "log">, signal: AbortSign
   }
 
   async function title(conversation: ConversationId, excerpt: string): Promise<void> {
-    const prepared = await prepareCall(options, () => conversations.get(conversation)?.model ?? null, closed);
+    const prepared = await prepareCall(options, () => conversations.get(conversation), closed);
     if (prepared.kind === "stopped") return;
     if (prepared.kind === "failed") throw new Error(prepared.why);
 

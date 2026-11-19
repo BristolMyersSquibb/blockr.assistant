@@ -387,7 +387,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
 
     const prepared = await prepareCall(
       options,
-      () => conversations.get(turn.conversation)?.model ?? null,
+      () => conversations.get(turn.conversation),
       () => stopped(turn),
       (carried) => {
         turn.carried = carried;
@@ -409,7 +409,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
     }
     if (stopped(turn)) return;
 
-    const call = { loop: prepared.loop, model: prepared.model };
+    const call = { loop: prepared.loop, catalogs: prepared.catalogs, model: prepared.model };
     const loop = (): Promise<void> =>
       prepared.loop.run({
         ...prepared.model,

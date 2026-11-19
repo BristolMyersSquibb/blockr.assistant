@@ -1,6 +1,6 @@
 // The hooks through which the chat follows the board, the conversations, the
-// turn that runs, the models offered, the visitor's key and OpenRouter's
-// login, as React's useSyncExternalStore() follows a store. Each source gives
+// turn that runs, the models offered, the thinking levels, the visitor's key
+// and OpenRouter's login, as React's useSyncExternalStore() follows a store. Each source gives
 // the same object until it changes, so the chat draws again only then. The
 // chat also reads what the deployment chose and the skills that R listed,
 // once the assistant has them.
@@ -13,6 +13,7 @@ import type { Models, Offered } from "../models/index.ts";
 import type { OpenRouterLogin, OpenRouterLoginState } from "../openrouter/index.ts";
 import type { Skill, Skills } from "../skills/index.ts";
 import type { Conversation, ConversationId } from "../state/index.ts";
+import type { LevelsOf, ThinkingLevels } from "../thinking-levels/index.ts";
 import type { Running, Turns } from "../turns/index.ts";
 import type { KeyState, VisitorKey } from "../visitor-key/index.ts";
 
@@ -47,6 +48,14 @@ export function useRunning(turns: Turns): Running | undefined {
 export function useOffered(models: Models): Offered | undefined {
   const subscribe = useCallback((changed: () => void) => models.subscribe(changed), [models]);
   const current = useCallback(() => models.current(), [models]);
+  return useSyncExternalStore(subscribe, current);
+}
+
+// The levels of each model, or undefined until the catalogs and the model
+// settings are in.
+export function useThinkingLevels(levels: ThinkingLevels): LevelsOf | undefined {
+  const subscribe = useCallback((changed: () => void) => levels.subscribe(changed), [levels]);
+  const current = useCallback(() => levels.current(), [levels]);
   return useSyncExternalStore(subscribe, current);
 }
 
