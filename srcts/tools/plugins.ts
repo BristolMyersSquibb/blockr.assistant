@@ -63,7 +63,7 @@ export function pluginTools(context: ToolContext): Tool[] {
     tool<{ readonly id: string }>({
       name: "get_plugin_state",
       description:
-        "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills of this deployment that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how this deployment uses the plugin; load one with read_skill.",
+        "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
       run: async ({ id }) => {
         named(id);

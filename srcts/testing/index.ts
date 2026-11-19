@@ -65,6 +65,9 @@ export interface StartOptions {
   readonly conditions?: Readonly<Record<string, readonly Condition[]>>;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
   readonly evaluate?: StubCoreOptions["evaluate"];
+  // The kinds of request that the transport refuses to send, as a closed
+  // transport does.
+  readonly refuse?: StubCoreOptions["refuse"];
   // Whether the app sets the board lock.
   readonly locked?: boolean;
   // Plugin classes that the app runs beside the assistant and core's own, by
@@ -127,6 +130,7 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
     conditions,
     ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
     ...(options.evaluate === undefined ? {} : { evaluate: options.evaluate }),
+    ...(options.refuse === undefined ? {} : { refuse: options.refuse }),
   });
   onTestFinished(() => {
     stubbed.stop();

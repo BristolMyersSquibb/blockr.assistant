@@ -47,7 +47,7 @@ export function blockTypeTools(context: ToolContext): Tool[] {
     tool<{ readonly id: string }>({
       name: "describe_block_type",
       description:
-        "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills of this deployment that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
+        "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
       run: async ({ id }) => {
         if (own(core.blockRegistry(), id) === undefined) throw new Error(noBlockType(id));

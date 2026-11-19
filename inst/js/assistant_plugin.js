@@ -3074,7 +3074,7 @@ function notReady(blocks) {
   return [
     "The request did not go to R, since a block that it reads is not ready:",
     ...blocks.map(({ block, status }) => {
-      const why = [status.reason, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
+      const why = [status.reason, status.unsent, ...status.conditions.filter((c) => c.severity === "error").map((c) => c.message)];
       const said = why.filter((text3) => text3 !== null && text3 !== "");
       return `- Block "${block}" reads ${status.status}${said.length > 0 ? `: ${said.join(" ")}` : "."}`;
     })
@@ -3326,6 +3326,7 @@ function blockEntry(core, id, options) {
   return {
     status: kind,
     ...(kind === "invalid" || kind === "waiting") && status.reason !== null ? { reason: status.reason } : {},
+    ...status.unsent === null ? {} : { unsent: status.unsent },
     conditions: conditionList(conditions),
     ...options.text === void 0 ? {} : { result: options.text },
     ...options.text === void 0 && options.summary && kind === "ready" && status.summary !== null ? { summary: status.summary } : {},
@@ -3355,8 +3356,8 @@ var STOPPED_PREPARING = "The user stopped the turn while a command of the list p
 var NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo.";
 var UNDID_NOTHING = "The undo changed nothing, since what the edit changed is no longer on the board.";
 var CHANGED_NOTHING = "The commands changed nothing on the board, so there is nothing to review. The board may hold what they set already.";
-var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
-var UNDO_DESCRIPTION = "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. That edit may come from another of the assistant's conversations. The tool returns a review of what the undo changed, as edit does. Where the assistant has no edit left to take back, it changes nothing and says so.";
+var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Make each edit one change that the user would take back as one, since the user's Undo takes back a whole edit, as undo_edit does. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Then change the args or the commands, rather than sending the same list again. On a locked board, where the lock refuses a command, tell the user what the lock refuses, rather than trying to make the change another way. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. Check the review against what the user asked. Where the edit left a block `failed`, `invalid` or `waiting`, correct it with another edit, rather than reporting the change as done. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Where it left blocks out, say that you have not checked them, rather than reporting the change as verified. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
+var UNDO_DESCRIPTION = "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. The tool returns a review of what the undo changed, as edit does. The edit that it takes back may come from another of the assistant's conversations, so tell the user what the undo took back, as the review shows it, rather than taking for granted that it was your own last edit. Where the assistant has no edit left to take back, the tool changes nothing and says so. On a locked board, where the lock refuses the undo, tell the user what the lock refuses, rather than trying to take the edit back another way.";
 function editTools(core, board) {
   return [
     tool({
@@ -3548,7 +3549,7 @@ function blockTypeTools(context6) {
     }),
     tool({
       name: "describe_block_type",
-      description: "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills of this deployment that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
+      description: "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
       run: async ({ id }) => {
         if (own(core.blockRegistry(), id) === void 0) throw new Error(noBlockType(id));
@@ -3602,7 +3603,7 @@ function blockTools(context6) {
     }),
     tool({
       name: "describe_block",
-      description: "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, the one-line summary of its result, its conditions, the skills of this deployment that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
+      description: "Describe one block on the board: its name, the registry id of its block class, its status, why it is `invalid` or `waiting` where it is, why its latest evaluation could not be sent to R where it could not, the one-line summary of its result, its conditions, the skills that name its class, its data inputs, the links into them, and its state. The state is a summary: a value too long to show is left out and marked, so read the block's state with get_block_state before you change a value that you have not seen whole. A skill named here is more specific than the class's guidance and wins where the two differ; load one with read_skill. The tool evaluates nothing. For a `stale` or `unevaluated` block, a note says what that means.",
       parameters: object({ id: ID }, ["id"]),
       run: async ({ id }) => {
         const [skills, valueMax, summaryMax] = await Promise.all([
@@ -3614,6 +3615,7 @@ function blockTools(context6) {
         const block = found(id);
         const status = core.scheduler.status(id);
         const reason = status?.reason ?? null;
+        const unsent = status?.unsent ?? null;
         const summary2 = status?.summary ?? null;
         const note2 = statusNote(status);
         const described = {
@@ -3622,6 +3624,7 @@ function blockTools(context6) {
           registry_id: block.registry_id,
           status: status?.status ?? null,
           ...reason === null ? {} : { reason },
+          ...unsent === null ? {} : { unsent },
           ...note2 === void 0 ? {} : { note: note2 },
           ...summary2 === null ? {} : { summary: summary2 },
           conditions: conditionList(status?.conditions ?? []),
@@ -3645,15 +3648,17 @@ function blockTools(context6) {
     }),
     tool({
       name: "get_block_conditions",
-      description: "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
+      description: "Give the conditions of one block's latest evaluation, the errors, warnings and messages that it raised, by severity, each with the phase that raised it. A block that failed holds no result, so its error shows here, or else `unsent` says why its evaluation could not be sent to R. The tool evaluates nothing. An `unevaluated` block has raised nothing yet, and the conditions of a `stale` block come from an evaluation before its latest change, so for either an empty list means unknown rather than healthy.",
       parameters: object({ id: ID }, ["id"]),
       run: ({ id }) => {
         found(id);
         const status = core.scheduler.status(id);
+        const unsent = status?.unsent ?? null;
         const note2 = statusNote(status);
         const given2 = {
           id,
           status: status?.status ?? null,
+          ...unsent === null ? {} : { unsent },
           ...note2 === void 0 ? {} : { note: note2 },
           conditions: conditionsBySeverity(status?.conditions ?? [])
         };
@@ -3759,7 +3764,7 @@ function pluginTools(context6) {
     }),
     tool({
       name: "get_plugin_state",
-      description: "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills of this deployment that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how this deployment uses the plugin; load one with read_skill.",
+      description: "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
       parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
       run: async ({ id }) => {
         named2(id);
@@ -3827,7 +3832,7 @@ function resultTools({ core }) {
     }),
     tool({
       name: "inspect_results",
-      description: "Evaluate R code on the results of the blocks that you name in `blocks`, each bound by its block id, so that `utils::head(data)` reads the result of the block `data`. Core evaluates those blocks first. The tool gives what the code prints, and the value of the last expression where it is visible, as R's console prints it, so an assignment or an `invisible()` result prints nothing. The output is cut at a budget of characters, so print only what you need. A data frame prints every row and column, so check its size and columns with `dim()` and `names()` first, then print the rows and columns that you need. A tibble prints only its first rows, rounds numbers and may shorten text, so read exact values from a column itself, as `x$col`. Only base R is attached, so call each function of another package with its namespace, as `graphics::hist()`, `stats::median()` or `ggplot2::ggplot()`. The code runs with a graphics device open, and up to four of the plots that it draws come back as images beside the text. The result of a block that draws a plot, a `captured_plot` or a ggplot, draws again when it is printed, so the code `chart` draws the result of the block `chart`. Use this for what no other tool gives, such as unique values, group counts, filters and joins across blocks, and what you need to see drawn. It changes nothing on the board, and on a locked board it runs no code.",
+      description: "Evaluate R code on the results of the blocks that you name in `blocks`, each bound by its block id, so that `utils::head(data)` reads the result of the block `data`. Core evaluates those blocks first. The tool gives what the code prints, and the value of the last expression where it is visible, as R's console prints it, so an assignment or an `invisible()` result prints nothing. The output is cut at a budget of characters, so print only what you need. A data frame prints every row and column, so check its size and columns with `dim()` and `names()` first, then print the rows and columns that you need. A tibble prints only its first rows, rounds numbers and may shorten text, so read exact values from a column itself, as `x$col`. Only base R is attached, so call each function of another package with its namespace, as `graphics::hist()`, `stats::median()` or `ggplot2::ggplot()`. The code runs with a graphics device open, and up to four of the plots that it draws come back as images beside the text. The result of a block that draws a plot, a `captured_plot` or a ggplot, draws again when it is printed, so the code `chart` draws the result of the block `chart`. Use this for what no other tool gives, such as unique values, group counts, filters and joins across blocks, and what you need to see drawn. It changes nothing on the board. On a locked board it runs no code, so tell the user that the lock refuses your R code, rather than running the code another way.",
       parameters: object(
         {
           code: {
@@ -3992,7 +3997,7 @@ function viewLines(core) {
 }
 
 // srcts/prompt/focus-preamble.md
-var focus_preamble_default = 'What the user is looking at on the board.\nA request that names no block -- "this plot", "add a filter here" -- is most likely about the block they last clicked, and otherwise about a block in the current view.\nA click can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n';
+var focus_preamble_default = 'What the user is looking at: the block that has focus, and the blocks and plugins on screen.\nA request that names no block -- "this plot", "add a filter here" -- is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n';
 
 // srcts/prompt/focus.ts
 function focusSection(core) {
@@ -4020,10 +4025,10 @@ function focusSection(core) {
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a missing data input or a block upstream that has no result.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded.\nA result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n\nSo never guess at what a summary leaves out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that a summary does not show, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
-var skills_preamble_default = "Guidance authored for this deployment, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
+var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
 
 // srcts/prompt/skills.ts
 function skillsSection(skills, max) {
