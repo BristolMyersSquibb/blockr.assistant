@@ -32,7 +32,7 @@ const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
 const KEY = "blockr.assistant-open_conversation";
 
-// The file imports the chat's libraries and pi's catalogs once, before its
+// The file imports the chat's libraries and pi's bundle once, before its
 // tests: the first import of libraries that large can take longer than a
 // test's time on a busy machine.
 beforeAll(() => Promise.all([loadLibraries(), loadCatalogs("https://faux.invalid/v1")]), 60_000);

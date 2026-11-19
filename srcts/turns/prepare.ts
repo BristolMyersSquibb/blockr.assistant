@@ -13,12 +13,12 @@
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
 //    Where the deployment names no models, the models ask for the base URL's
 //    list again, where the last list offered none (../models).
-// 3. The loop and its provider code load with a dynamic import, which the
-//    browser does once, as the page prepares its first call: as the board's
-//    first turn starts, or as the user asks for a summary (../compaction). So
-//    a page where nobody asks the assistant anything never loads them. Pi's
-//    catalogs for the base URL load beside them, unless the chat loaded them
-//    already (../loop).
+// 3. The loop and its provider code load with a dynamic import of pi's
+//    bundle, which the browser does once, as the chat first mounts, since the
+//    bundle holds pi's catalogs, which the footer reads as it first draws
+//    (../thinking-levels). So a page that never shows the chat never loads
+//    them, and a call takes them, with the catalogs for the base URL, from
+//    there (../loop).
 // 4. The model takes the settings that the deployment's model settings give
 //    it, and those that the base URL's list gives it, where either gives any
 //    (../model-settings). Once the catalogs have loaded, the model settings
@@ -60,7 +60,6 @@ export interface CallOptions {
   // bundle.
   readonly load: (baseUrl: string) => Promise<Loop>;
 }
-
 
 // A key that a call carried, and whether it is the visitor's.
 export interface Carried {

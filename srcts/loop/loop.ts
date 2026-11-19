@@ -25,11 +25,11 @@
 //   call, since it retries none.
 // - It gives pi an identity without attribution, so that pi names no app to
 //   OpenRouter.
-// - It builds the model of each call from pi's catalogs, which load apart from
-//   the rest of pi, and gives pi the thinking level that they give the call:
-//   the conversation's pick of the level, where it applies to the model, or
-//   else the level that the deployment's model settings give the model, where
-//   the model takes it, or else the loop's default (./catalogs.ts).
+// - It builds the model of each call from pi's catalogs, and gives pi the
+//   thinking level that they give the call: the conversation's pick of the
+//   level, where it applies to the model, or else the level that the
+//   deployment's model settings give the model, where the model takes it, or
+//   else the loop's default (./catalogs.ts).
 // - It hands pi the tools as they are, with each tool's executionMode, and
 //   takes from its caller the system prompt, a transformContext, the message
 //   of the app's and an onPayload.
@@ -286,8 +286,7 @@ export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record
 
 // The loop for the calls to the base URL, once the page has imported pi's
 // bundle and the catalogs for the base URL (./catalogs.ts).
-// The browser imports the bundle once, as the page prepares its first call
-// (../turns/prepare.ts).
+// The browser imports the bundle once, as the chat first mounts (./vendor.ts).
 export async function loadLoop(baseUrl: string): Promise<Loop> {
   const [pi, catalogs] = await Promise.all([import("./vendor.ts"), loadCatalogParts(baseUrl)]);
   return createLoop(pi, catalogs);

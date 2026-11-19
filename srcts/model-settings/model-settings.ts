@@ -9,8 +9,8 @@
 //    file.
 // 2. They check the settings that R's reply gives each model.
 // 3. They check that each model's like names a model of pi's catalogs, once
-//    the page's first call has loaded the loop, which holds the catalogs
-//    (../turns/prepare.ts).
+//    the catalogs have loaded, as the chat first mounts (../thinking-levels),
+//    or as the page prepares a call (../turns/prepare.ts).
 // 4. Where R's session ends before R replies, they ask again, since reading
 //    the file changes nothing, as core asks again for a blockr option.
 // 5. Where R cannot read the file, or where the file gives a value that a

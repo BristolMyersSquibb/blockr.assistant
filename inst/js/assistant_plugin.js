@@ -1887,7 +1887,7 @@ function loadCatalogParts(baseUrl) {
   const loaded2 = loading.get(host);
   if (loaded2 !== void 0) return loaded2;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./catalogs-c041f872.js"), gateway?.()]).then(
+  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
     ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
   );
   loading.set(host, parts);
@@ -2423,7 +2423,7 @@ function createLoop(pi, catalogs, apis = {}) {
   };
 }
 async function loadLoop(baseUrl) {
-  const [pi, catalogs] = await Promise.all([import("./pi-d182481f.js"), loadCatalogParts(baseUrl)]);
+  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
   return createLoop(pi, catalogs);
 }
 function runTurn(pi, catalogs, streams, turn) {

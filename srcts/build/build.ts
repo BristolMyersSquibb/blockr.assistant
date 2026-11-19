@@ -13,28 +13,26 @@
 // - The build of the module takes the vendor check that blockr.core ships
 //   beside the preset. It fails the build where the module's bundle would
 //   hold code from node_modules, as where a file of the assistant imports pi
-//   other than through srcts/loop/vendor.ts or the files of pi's catalogs
-//   beside it.
+//   other than through srcts/loop/vendor.ts or the files of the gateways'
+//   catalogs beside it.
 // - The packages that the assistant bundles from other projects are those
 //   that package.json lists in `dependencies`, pi's two, as blockr.dock's
 //   build takes the dock's. Of them, srcts/loop/vendor.ts names the parts
 //   that the loop uses, since pi's root entry point breaks a bundle. The
 //   build fails where vendor.ts imports any other package.
 // - Those parts are bundled, minified, into a file of their own,
-//   pi-<hash>.js, which the loop loads as the page prepares its first call,
-//   as core bundles the parts of OpenTelemetry's SDK that it loads on demand
+//   pi-<hash>.js, which the page loads as the chat first mounts, as core
+//   bundles the parts of OpenTelemetry's SDK that it loads on demand
 //   into opentelemetry-<hash>.js. The name holds a hash of the content, so
 //   that no browser runs an old copy from its cache. The bundle takes the
 //   build preset too, so that an import of React or of OpenTelemetry's API
 //   that pi makes stays an import of the one copy on the page. The loop's
 //   dynamic import of srcts/loop/vendor.ts becomes an import of that file,
 //   beside the module, where R serves it too.
-// - Pi's catalogs of models are vendored the same way, apart from the rest of
-//   pi, since the chat reads them as it first mounts: those of OpenAI's and of
-//   Anthropic's models, with pi's two functions of thinking levels, from
-//   srcts/loop/vendor-catalogs.ts into catalogs-<hash>.js, and those of
-//   OpenRouter's models and of the models of Vercel's AI Gateway, from
-//   srcts/loop/vendor-openrouter.ts and srcts/loop/vendor-vercel.ts into
+// - Pi's catalogs of the gateways' models are vendored the same way, apart
+//   from the rest of pi, since a page needs that of one gateway at most:
+//   those of OpenRouter's models and of the models of Vercel's AI Gateway,
+//   from srcts/loop/vendor-openrouter.ts and srcts/loop/vendor-vercel.ts into
 //   catalog-openrouter-<hash>.js and catalog-vercel-<hash>.js, which the page
 //   loads only where the base URL is the gateway's.
 // - The chat's libraries, assistant-ui, its Markdown and remark-gfm, are
@@ -195,10 +193,10 @@ async function openRouterPage(root: string, out: string): Promise<string[]> {
 
 // The files that name the parts of other projects that the client uses, each
 // with the start of the name of the file that bundles them: pi's parts, which
-// the loop uses, pi's catalogs, and the libraries that the chat draws with.
+// the loop uses, pi's catalogs of the gateways' models, and the libraries that
+// the chat draws with.
 const VENDORED: ReadonlyMap<string, string> = new Map([
   ["pi", join("srcts", "loop", "vendor.ts")],
-  ["catalogs", join("srcts", "loop", "vendor-catalogs.ts")],
   ["catalog-openrouter", join("srcts", "loop", "vendor-openrouter.ts")],
   ["catalog-vercel", join("srcts", "loop", "vendor-vercel.ts")],
   ["chat", join("srcts", "chat", "vendor.ts")],

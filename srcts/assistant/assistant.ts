@@ -47,8 +47,8 @@
 //
 // The chat's footer offers the thinking levels that the model of a
 // conversation's next turn takes, which the assistant reads from pi's
-// catalogs once the chat first mounts (../thinking-levels). The catalogs load
-// apart from the rest of pi, and the calls read the same (../loop).
+// catalogs once the chat first mounts (../thinking-levels). The catalogs come
+// in pi's bundle, which the calls take from there (../loop).
 
 import type { CoreApi } from "@blockr/core";
 import { createCompaction } from "../compaction/index.ts";

@@ -98,8 +98,8 @@
   plugin withdraws once a later call succeeds.
 
 * The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
-  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the first
-  turn starts (#225).
+  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the chat
+  first mounts (#225, #271).
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.

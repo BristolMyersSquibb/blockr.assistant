@@ -1,8 +1,8 @@
 // The loop, the one module through which the plugin reaches pi, which runs a
 // turn with the tools and the hooks, so that a move to the AI SDK rewrites
 // this module alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
-// Its catalogs, which load apart from the rest of pi, give the model of each
-// call and the thinking levels that the model takes.
+// Its catalogs give the model of each call and the thinking levels that the
+// model takes.
 
 export { createCatalogs, loadCatalogs, PROVIDER } from "./catalogs.ts";
 export type { CallModel, CatalogParts, Catalogs, ModelAt } from "./catalogs.ts";

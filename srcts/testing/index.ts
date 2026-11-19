@@ -27,12 +27,10 @@ import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
 import { onTestFinished } from "vitest";
 import { createCatalogs, createLoop, PROVIDER } from "../loop/index.ts";
 import type { CatalogParts, Catalogs, Connection, Loop } from "../loop/index.ts";
-// The parts of pi, as the page's bundle of pi holds them, and pi's catalogs,
-// as the page's files of them hold them.
+// The parts of pi, as the page's bundle of pi holds them, and the catalogs of
+// the gateways' models, as the page's files of them hold them.
 // eslint-disable-next-line no-restricted-imports
 import * as pi from "../loop/vendor.ts";
-// eslint-disable-next-line no-restricted-imports
-import * as catalogs from "../loop/vendor-catalogs.ts";
 // eslint-disable-next-line no-restricted-imports
 import { OPENROUTER_MODELS } from "../loop/vendor-openrouter.ts";
 // eslint-disable-next-line no-restricted-imports
@@ -51,7 +49,7 @@ export { recordSpans } from "./spans.ts";
 // Vercel's AI Gateway under the hosts of the gateways' base URLs, as the page
 // holds them once it loaded each.
 export const CATALOG_PARTS: CatalogParts = {
-  pi: catalogs,
+  pi,
   gateways: new Map<string, Readonly<Record<string, Model<Api>>>>([
     ["openrouter.ai", OPENROUTER_MODELS],
     ["ai-gateway.vercel.sh", VERCEL_AI_GATEWAY_MODELS],

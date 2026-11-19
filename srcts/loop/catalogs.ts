@@ -1,20 +1,19 @@
 // The catalogs: pi's catalogs of models, by which the loop builds the model
 // that a call talks to, and which give the thinking levels that the model
-// takes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings).
-// They load apart from the rest of pi, in files of their own, which are far
-// smaller than pi's bundle (./vendor-catalogs.ts, ./vendor-openrouter.ts,
-// ./vendor-vercel.ts):
-// - The catalogs of OpenAI's and of Anthropic's models load wherever the
-//   calls go, with pi's two functions of the levels that a model takes.
+// takes (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-models-settings):
+// - The catalogs of OpenAI's and of Anthropic's models come in pi's bundle,
+//   with pi's two functions of the levels that a model takes (./vendor.ts),
+//   wherever the calls go.
 // - Pi's catalog of OpenRouter's models loads where the base URL is
 //   OpenRouter's, and that of the models of Vercel's AI Gateway where the base
-//   URL is the gateway's, as the host of the base URL tells. A model of such a
+//   URL is the gateway's, as the host of the base URL tells, each in a file of
+//   its own (./vendor-openrouter.ts, ./vendor-vercel.ts). A model of such a
 //   gateway has an id of the gateway's, such as openai/gpt-5.4, which the
 //   catalogs of OpenAI's and of Anthropic's models lack.
 // The chat loads them as it first mounts, so that the footer knows the levels
-// of each model as it first draws (../thinking-levels), and the page loads
-// them as it prepares its first call (../turns/prepare.ts). Each file loads
-// once for the page, and again where it failed.
+// of each model as it first draws (../thinking-levels), and the calls take
+// them from there (../turns/prepare.ts). Each file loads once for the page,
+// and again where it failed.
 //
 // The thinking level of a call, a turn's or a model call of the plugin's own
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model):
@@ -48,7 +47,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ListedSettings, ModelSettings } from "../model-settings/index.ts";
 import type { ThinkingLevel } from "../state/index.ts";
 import type { Connection } from "./loop.ts";
-import type * as vendor from "./vendor-catalogs.ts";
+import type * as vendor from "./vendor.ts";
 
 // The id of the provider through which every call goes. It names no service,
 // since the base URL of a deployment may belong to any.
@@ -100,7 +99,7 @@ type Catalog = Readonly<Record<string, Model<Api>>>;
 // Anthropic's models, with its two functions of the levels, and the catalogs
 // of the gateways that loaded, by the host of each gateway's base URL.
 export interface CatalogParts {
-  readonly pi: typeof vendor;
+  readonly pi: Pick<typeof vendor, "ANTHROPIC_MODELS" | "OPENAI_MODELS" | "clampThinkingLevel" | "getSupportedThinkingLevels">;
   readonly gateways: ReadonlyMap<string, Catalog>;
 }
 
@@ -127,7 +126,7 @@ export function loadCatalogParts(baseUrl: string): Promise<CatalogParts> {
   const loaded = loading.get(host);
   if (loaded !== undefined) return loaded;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./vendor-catalogs.ts"), gateway?.()]).then(
+  const parts = Promise.all([import("./vendor.ts"), gateway?.()]).then(
     ([pi, models]): CatalogParts => ({ pi, gateways: new Map(models === undefined ? [] : [[host, models]]) }),
   );
   loading.set(host, parts);
