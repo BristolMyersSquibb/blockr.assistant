@@ -2535,14 +2535,14 @@ function convertToolResult(result, isError) {
 
 // srcts/requests/requests.ts
 async function sendRequest(core, name, args, opts = {}) {
-  let conditions = [];
+  let notifications = [];
   const answer = await core.request(ASSISTANT, name, args, {
     ...opts,
-    conditions: (given2) => {
-      conditions = given2;
+    notifier: (given2) => {
+      notifications = given2;
     }
   });
-  return { answer, conditions };
+  return { answer, notifications };
 }
 async function sendUntilReplied(core, name, args, opts = {}) {
   for (; ; ) {
@@ -3211,7 +3211,7 @@ async function reviewed(core, step, signals, active) {
     return done();
   }
   if (described.note !== void 0) notes.push(described.note);
-  const raised = await withConditions(core, "", described.conditions);
+  const raised = await withConditions(core, "", described.notifications);
   if (raised !== "") notes.push(`R raised these as it described the results:
 ${raised}`);
   const changed = new Set(groups.changed);
@@ -3271,37 +3271,37 @@ async function describeResults(core, all, picked2, signals, active, what) {
   }
 }
 function halted(core, error, signals, all, { what, waited }) {
-  if (signals.board.aborted) return { texts: {}, conditions: [], summaries: false, closed: true };
+  if (signals.board.aborted) return { texts: {}, notifications: [], summaries: false, closed: true };
   if (signals.turn.aborted) {
     return {
       texts: {},
-      conditions: [],
+      notifications: [],
       summaries: true,
       note: `The user stopped the turn while the tool waited for its review, after ${what} applied. So the review gives each block's status as it was then, with no description of its result.`
     };
   }
-  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, conditions: [], summaries: false };
+  if (all.every((id) => core.scheduler.status(id) === void 0)) return { texts: {}, notifications: [], summaries: false };
   const why = isSessionEnded(error) ? "R's session ended twice before R answered." : failureMessage(error);
   return {
     texts: {},
-    conditions: [],
+    notifications: [],
     summaries: true,
     note: `The review could not finish ${waited}. ${/[.!?]$/.test(why) ? why : `${why}.`} So it gives each block's status as it is now, and the one-line summary of each ready block's result in place of a description. Call get_block_result for a block's result.`
   };
 }
 async function requested(core, reads, signal, active) {
-  if (reads.length === 0) return { texts: {}, conditions: [] };
+  if (reads.length === 0) return { texts: {}, notifications: [] };
   try {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
     const named2 = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named2.has(id) && core.scheduler.status(id) !== void 0);
-    return rest.length === 0 ? { texts: {}, conditions: [] } : await sent(core, rest, signal, active);
+    return rest.length === 0 ? { texts: {}, notifications: [] } : await sent(core, rest, signal, active);
   }
 }
 async function sent(core, reads, signal, active) {
-  const { answer, conditions } = await context3.with(
+  const { answer, notifications } = await context3.with(
     active,
     () => toolRequest(core, "describe_result", {}, { reads: [...reads], signal })
   );
@@ -3312,7 +3312,7 @@ async function sent(core, reads, signal, active) {
       return text3 === void 0 ? [] : [[id, answeredText(text3, "describe_result")]];
     })
   );
-  return { texts, conditions };
+  return { texts, notifications };
 }
 function blockEntry(core, id, options) {
   const status = core.scheduler.status(id);
@@ -3398,7 +3398,8 @@ function editTools(core, board) {
             active,
             () => core.commands.run(
               commands.map(({ command: command2, args }) => args === void 0 ? { id: command2 } : { id: command2, args }),
-              ORIGIN2
+              ORIGIN2,
+              { notifier: dropNotifications }
             )
           );
         } catch (error) {
@@ -3428,7 +3429,7 @@ function editTools(core, board) {
         const hearing = hear(core);
         try {
           context4.with(active, () => {
-            core.store.undo(ORIGIN2);
+            core.store.undo(ORIGIN2, { notifier: dropNotifications });
           });
         } catch (error) {
           return refusedResult({ applied: false, failures: failuresOf(error) });
@@ -3478,6 +3479,8 @@ function failuresOf(error) {
     if (Array.isArray(failures) && failures.every((failure) => typeof failure === "string")) return [...failures];
   }
   return [failureMessage(error)];
+}
+function dropNotifications() {
 }
 function isCommandError(error) {
   return error instanceof Error && error.name === "CommandError" && Array.isArray(error.failures);
@@ -3808,8 +3811,8 @@ function skillTools({ core, skills }) {
         const skill = (await skills.list()).find((listed3) => listed3.name === name);
         if (skill?.modelInvocable !== true) throw new Error(noSkill(name));
         const given2 = { name, packages: appPackages(core), ...file === void 0 ? {} : { path: file } };
-        const { answer, conditions } = await context5.with(active, () => toolRequest(core, "read_skill", given2, { signal }));
-        return withConditions(core, answeredText(answer, "read_skill"), conditions);
+        const { answer, notifications } = await context5.with(active, () => toolRequest(core, "read_skill", given2, { signal }));
+        return withConditions(core, answeredText(answer, "read_skill"), notifications);
       }
     })
   ];
@@ -3825,9 +3828,9 @@ function resultTools({ core }) {
       parameters: object({ id: { type: "string", description: "The block's id, as list_blocks gives it." } }, ["id"]),
       run: async ({ id }, signal) => {
         if (own(core.store.board().blocks, id) === void 0) throw new Error(noBlock(id));
-        const { answer, conditions } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
+        const { answer, notifications } = await toolRequest(core, "describe_result", {}, { reads: [id], signal });
         const described = answeredObject(answer, "describe_result");
-        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), conditions);
+        return withConditions(core, answeredText(own(described, id) ?? null, "describe_result"), notifications);
       }
     }),
     tool({
@@ -3861,10 +3864,10 @@ function resultTools({ core }) {
         const absent = blocks.filter((block) => own(board.blocks, block) === void 0);
         if (absent.length > 0) throw new Error(noBlocks(absent));
         const given2 = { code, ...width === void 0 ? {} : { width }, ...height === void 0 ? {} : { height } };
-        const { answer, conditions } = await toolRequest(core, "inspect_results", given2, { reads: [...blocks], signal });
+        const { answer, notifications } = await toolRequest(core, "inspect_results", given2, { reads: [...blocks], signal });
         const inspection = answeredObject(answer, "inspect_results");
         return {
-          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), conditions),
+          text: await withConditions(core, answeredText(inspection.output ?? null, "inspect_results"), notifications),
           isError: false,
           images: answeredTexts(inspection.plots, "inspect_results").map((data) => ({ data, mimeType: "image/png" }))
         };
@@ -4025,7 +4028,7 @@ function focusSection(core) {
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";

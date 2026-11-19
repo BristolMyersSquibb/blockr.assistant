@@ -27,6 +27,12 @@
 //   changes nothing and says so, which is no error, since nothing failed.
 //   Where the store refuses the undo, as a lock refuses it, the tool returns
 //   why.
+// - Both pass a notifier to core.commands.run() and core.store.undo(). Where
+//   the command registry or the store refuses the edit or the undo, core
+//   hands the notifier its notification of the code board_edit_failed in
+//   place of raising it, and the notifier drops it. The tool hands the
+//   refusal to the model, which tells the user
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model).
 // - An edit that applied is never marked as an error, even where its review
 //   holds a failed block or the user stopped the turn. A stop while a command
 //   of the list waits in its prepare() does not stop core.commands.run(),
@@ -139,6 +145,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
             core.commands.run(
               commands.map(({ command, args }) => (args === undefined ? { id: command } : { id: command, args })),
               ORIGIN,
+              { notifier: dropNotifications },
             ),
           );
         } catch (error) {
@@ -171,7 +178,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
         const hearing = hear(core);
         try {
           context.with(active, () => {
-            core.store.undo(ORIGIN);
+            core.store.undo(ORIGIN, { notifier: dropNotifications });
           });
         } catch (error) {
           return refusedResult({ applied: false, failures: failuresOf(error) });
@@ -246,6 +253,13 @@ export function failuresOf(error: unknown): string[] {
     if (Array.isArray(failures) && failures.every((failure) => typeof failure === "string")) return [...failures];
   }
   return [failureMessage(error)];
+}
+
+// The notifier of both tools' edits, which takes the notification of a
+// refusal in place of core, and drops it.
+function dropNotifications(): void {
+  // The call rejects or throws with the refusal, which the tool hands to the
+  // model.
 }
 
 // Whether the error is a CommandError, which core exports to plugins as a type
