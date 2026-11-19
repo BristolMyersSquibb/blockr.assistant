@@ -15,7 +15,7 @@ A block in the Board section carries a status marker whenever it holds no curren
 
 - It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.
 - It reads `invalid` where its state is not valid yet, such as a required argument that is not set.
-- It reads `failed` where its evaluation raised an error.
+- It reads `failed` where its evaluation raised an error, or could not be sent to R.
 - It reads `unevaluated` before its first evaluation.
 - It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.
 
