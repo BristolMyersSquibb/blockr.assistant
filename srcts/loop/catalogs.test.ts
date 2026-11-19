@@ -72,6 +72,9 @@ describe("the thinking levels of a model", () => {
     { what: "off on Chat Completions for a model of pi's catalog of OpenAI's models, whatever the pick", connection: COMPLETIONS, model: "gpt-5.4", thinkingLevel: "high", level: "off" },
     { what: "off for a model that does not reason, whatever the pick", connection: COMPLETIONS, model: "company-gpt", thinkingLevel: "high", level: "off" },
     { what: "medium at OpenRouter's base URL, for a model of its catalog", connection: OPENROUTER, model: "openai/gpt-5.4", level: "medium" },
+    { what: "medium for a level of the model settings that the model does not take", connection: RESPONSES, model: "gpt-5", settings: { thinkingLevel: "off" }, level: "medium" },
+    { what: "medium, moved to a level that the model takes, for such a level", connection: RESPONSES, model: "gpt-5-pro", settings: { thinkingLevel: "low" }, level: "high" },
+    { what: "off on Chat Completions for such a level of a model of pi's catalog of OpenAI's models", connection: COMPLETIONS, model: "gpt-5.4", settings: { thinkingLevel: "minimal" }, level: "off" },
   ])("is $what", ({ connection, model, settings, thinkingLevel, level }) => {
     expect(
       catalogs.thinkingLevel({ connection, model, ...(settings === undefined ? {} : { settings }), ...(thinkingLevel === undefined ? {} : { thinkingLevel }) }),

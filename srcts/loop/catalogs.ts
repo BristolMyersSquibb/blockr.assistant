@@ -26,12 +26,14 @@
 //   (blockr.assistant#260). The catalogs find the model in the catalog by the
 //   like that the deployment's model settings give it, or else by its id.
 // - Without a pick, or where the pick does not apply, a call takes the level
-//   that the deployment's model settings give the model. Otherwise it takes
-//   the level off on Chat Completions for a model of pi's catalog of OpenAI's
-//   models, and the level medium everywhere else.
-// - Where the pick applies, pi's clampThinkingLevel() moves the level, picked
-//   or not, to the next level up that the model takes, or else to the next
-//   one down. A model that does not reason takes the level off alone.
+//   that the deployment's model settings give the model, where the model
+//   takes that level. A level that the model does not take counts as none.
+// - Otherwise a call takes the default: the level off on Chat Completions for
+//   a model of pi's catalog of OpenAI's models, and the level medium
+//   everywhere else.
+// - Where the pick applies, pi's clampThinkingLevel() moves a picked level, or
+//   the default, to the next level up that the model takes, or else to the
+//   next one down. A model that does not reason takes the level off alone.
 // - A conversation may pick from the levels that pi's
 //   getSupportedThinkingLevels() gives the model, where the pick applies to
 //   it. Pi leaves out each level that the model's thinkingLevelMap maps to
@@ -211,8 +213,11 @@ export function buildModel(parts: CatalogParts, called: ModelAt): Model<Api> {
 // The thinking level at which the model's calls reason, given the
 // conversation's pick, for the model that buildModel() gave.
 export function levelOf(parts: CatalogParts, called: ModelAt, model: Model<Api>): ThinkingLevel {
-  if (!levelApplies(parts, called)) return called.settings?.thinkingLevel ?? "off";
-  return parts.pi.clampThinkingLevel(model, called.thinkingLevel ?? called.settings?.thinkingLevel ?? "medium");
+  // The level that the model settings give the model, where the model takes it.
+  const given = called.settings?.thinkingLevel;
+  const fromSettings = given !== undefined && parts.pi.getSupportedThinkingLevels(model).includes(given) ? given : undefined;
+  if (!levelApplies(parts, called)) return fromSettings ?? "off";
+  return parts.pi.clampThinkingLevel(model, called.thinkingLevel ?? fromSettings ?? "medium");
 }
 
 // Whether the conversation's pick of the level applies to the model: anywhere

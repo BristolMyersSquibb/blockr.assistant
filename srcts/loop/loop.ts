@@ -28,8 +28,8 @@
 // - It builds the model of each call from pi's catalogs, which load apart from
 //   the rest of pi, and gives pi the thinking level that they give the call:
 //   the conversation's pick of the level, where it applies to the model, or
-//   else the level that the deployment's model settings give the model, or
-//   else the loop's default (./catalogs.ts).
+//   else the level that the deployment's model settings give the model, where
+//   the model takes it, or else the loop's default (./catalogs.ts).
 // - It hands pi the tools as they are, with each tool's executionMode, and
 //   takes from its caller the system prompt, a transformContext, the message
 //   of the app's and an onPayload.

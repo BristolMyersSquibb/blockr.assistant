@@ -1930,8 +1930,10 @@ function buildModel(parts, called) {
   };
 }
 function levelOf(parts, called, model2) {
-  if (!levelApplies(parts, called)) return called.settings?.thinkingLevel ?? "off";
-  return parts.pi.clampThinkingLevel(model2, called.thinkingLevel ?? called.settings?.thinkingLevel ?? "medium");
+  const given2 = called.settings?.thinkingLevel;
+  const fromSettings = given2 !== void 0 && parts.pi.getSupportedThinkingLevels(model2).includes(given2) ? given2 : void 0;
+  if (!levelApplies(parts, called)) return fromSettings ?? "off";
+  return parts.pi.clampThinkingLevel(model2, called.thinkingLevel ?? fromSettings ?? "medium");
 }
 function levelApplies(parts, called) {
   return called.connection.api !== "openai-completions" || !Object.hasOwn(parts.pi.OPENAI_MODELS, called.settings?.like ?? called.model);

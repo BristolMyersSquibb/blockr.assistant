@@ -186,6 +186,8 @@
   model of pi's catalog of OpenAI's models.
   The command `blockr.assistant-set_thinking_level` sets the pick, and
   `blockr.assistant-add_conversation` takes one in `thinking_level`.
+  A level that the file gives a model that does not take it, such as `off`
+  for `gpt-5`, counts as none, so that the model takes the default.
   The footer draws both picks with the select of blockr.core, whose list no
   panel clips.
 

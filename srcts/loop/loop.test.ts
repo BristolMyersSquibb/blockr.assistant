@@ -258,6 +258,20 @@ describe("a turn on the loop", () => {
       level: "medium",
     },
     { what: "no level to a model that does not reason, whatever the pick", api: "openai-responses", model: "company-gpt", thinkingLevel: "high", level: undefined },
+    {
+      what: "the level medium for a level of the model settings that the model does not take",
+      api: "openai-responses",
+      model: "gpt-5",
+      settings: { thinkingLevel: "off" },
+      level: "medium",
+    },
+    {
+      what: "the level off on Chat Completions for such a level of a model of pi's catalog of OpenAI's models",
+      api: "openai-completions",
+      model: "gpt-5.4",
+      settings: { thinkingLevel: "minimal" },
+      level: undefined,
+    },
   ])("gives pi $what, for a turn's calls and for a model call of the plugin's own", async ({ api, model, settings, thinkingLevel, level }) => {
     const faux = createFauxCore({ api, provider: PROVIDER });
     const calls: { context?: TranscriptContext; options?: SimpleStreamOptions }[] = [];

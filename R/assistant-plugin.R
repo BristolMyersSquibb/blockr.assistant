@@ -189,6 +189,8 @@
 #'   model of pi's catalog of OpenAI's models takes the level `off`.
 #'   That API refuses function tools with any reasoning effort but `none` for
 #'   OpenAI's GPT-5.4 models.
+#'   A level that the model does not take, such as `off` for `gpt-5`, counts
+#'   as none, so that the model takes the default.
 #'   For the level `off`, pi sends the effort `none` to a model that takes it,
 #'   such as `gpt-5.4`, and no effort to the others, such as `o3`.
 #'   A conversation's pick of the level, in the chat's footer, replaces the
@@ -196,8 +198,9 @@
 #'   pi's catalog of OpenAI's models.
 #'   The footer offers the levels that pi gives for the model, where they are
 #'   two or more.
-#'   A level that the model does not take, the assistant moves to the next
-#'   level up that it takes, or else to the next one down.
+#'   A picked level that the model does not take, as after a pick of another
+#'   model, the assistant moves to the next level up that the model takes, or
+#'   else to the next one down.
 #'   A model that does not reason gets no effort, whatever its level.
 #' * The setting `images` says whether the model takes images.
 #'   For a model that takes none, the assistant sends a note in place of each
