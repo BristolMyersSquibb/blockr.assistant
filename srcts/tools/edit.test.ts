@@ -108,6 +108,27 @@ describe("edit", () => {
     expect(blocks.e).not.toHaveProperty("unverified");
   });
 
+  test("gives why the transport could not send the evaluation of a block that the edit changed", async () => {
+    const { tools, requests } = await started({ refuse: ["evaluate"] });
+
+    const called = await callTool(tools, "edit", {
+      commands: [{ command: "blockr.core-set_block", args: { id: "a", state: { dataset: "mtcars", package: "datasets" } } }],
+    });
+    const result = parsed(called);
+
+    expect(called.isError).toBe(false);
+    expect(result).toMatchObject({
+      blocks: {
+        a: { status: "failed", unsent: "The evaluation could not be sent to R: The transport is closed.", conditions: [] },
+        b: { status: "waiting", conditions: [] },
+      },
+    });
+    const { blocks } = result as { blocks: Record<string, Record<string, Json>> };
+    expect(blocks.a).not.toHaveProperty("unverified");
+    expect(blocks.b).not.toHaveProperty("unsent");
+    expect(requests("describe_result")).toEqual([]);
+  });
+
   test("marks a changed block that holds no result as unverified, and names the link that the edit removed", async () => {
     const { tools } = await started();
 
