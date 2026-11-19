@@ -10,10 +10,12 @@
 //   its own (./vendor-openrouter.ts, ./vendor-vercel.ts). A model of such a
 //   gateway has an id of the gateway's, such as openai/gpt-5.4, which the
 //   catalogs of OpenAI's and of Anthropic's models lack.
-// The chat loads them as it first mounts, so that the footer knows the levels
-// of each model as it first draws (../thinking-levels), and the calls take
-// them from there (../turns/prepare.ts). Each file loads once for the page,
-// and again where it failed.
+// The chat has pi's bundle start to download as it first mounts, beside the
+// chat's libraries, and loads the catalogs once the deployment's base URL is
+// known, so that the footer knows the levels of each model as it first draws
+// (../chat/panel.tsx, ../thinking-levels). The calls take them from there
+// (../turns/prepare.ts). Each file loads once for the page, and again where it
+// failed.
 //
 // The thinking level of a call, a turn's or a model call of the plugin's own
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model):
@@ -113,6 +115,14 @@ const GATEWAYS: ReadonlyMap<string, () => Promise<Catalog>> = new Map<string, ()
 // The parts that load, or loaded, for the calls to each gateway, by its host,
 // and for those to any other base URL, under "".
 const loading = new Map<string, Promise<CatalogParts>>();
+
+// Has the browser start to import pi's bundle, which holds the catalogs of
+// OpenAI's and of Anthropic's models, before the base URL is known, since the
+// bundle is the same for every base URL. The catalogs then take the import
+// that it started. Where it fails, the catalogs fail as they load.
+export function preloadCatalogs(): void {
+  void import("./vendor.ts").catch(() => undefined);
+}
 
 // The catalogs for the calls to the base URL, which load once for the page.
 export async function loadCatalogs(baseUrl: string): Promise<Catalogs> {

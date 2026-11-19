@@ -1879,6 +1879,9 @@ var GATEWAYS = /* @__PURE__ */ new Map([
   ["ai-gateway.vercel.sh", async () => (await import("./catalog-vercel-fee56db0.js")).VERCEL_AI_GATEWAY_MODELS]
 ]);
 var loading = /* @__PURE__ */ new Map();
+function preloadCatalogs() {
+  void import("./pi-b163b862.js").catch(() => void 0);
+}
 async function loadCatalogs(baseUrl) {
   return createCatalogs(await loadCatalogParts(baseUrl));
 }
@@ -6848,6 +6851,7 @@ function textOf3(message2) {
 // srcts/chat/panel.tsx
 import { jsx as jsx11 } from "react/jsx-runtime";
 function renderChat({ el, core }) {
+  preloadCatalogs();
   const root = createRoot(el);
   flushSync(() => {
     root.render(/* @__PURE__ */ jsx11(Panel, { core }));

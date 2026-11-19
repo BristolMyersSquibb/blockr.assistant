@@ -7,9 +7,12 @@
 // 2. It waits for the assistant of the open board, which the class's start
 //    opens, and for the chat's libraries, which the page imports as the chat
 //    first mounts (./libraries.ts).
-// 3. It has the assistant load pi's catalogs, beside the libraries, and waits
-//    until they have loaded, or failed to, so that the footer knows the
-//    thinking levels of each model as it first draws (../thinking-levels).
+// 3. It has the page start to import pi's bundle as it draws its root, beside
+//    the libraries, since the bundle holds pi's catalogs (../loop). Once the
+//    assistant has read the deployment's base URL, it has the assistant load
+//    the catalogs, and waits until they have loaded, or failed to, so that the
+//    footer knows the thinking levels of each model as it first draws
+//    (../thinking-levels).
 // 4. Then it draws the chat. As the next board opens, it draws the chat again
 //    for that board's assistant.
 // Where the libraries fail to load, the panel says so and logs why.
@@ -21,11 +24,13 @@ import { createRoot } from "react-dom/client";
 import type { CoreApi } from "@blockr/core";
 import { assistantOf, nextAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
+import { preloadCatalogs } from "../loop/index.ts";
 import { Chat } from "./chat.tsx";
 import { librariesLoaded, loadLibraries } from "./libraries.ts";
 
 // Draws the chat in the element, and gives the function that removes it.
 export function renderChat({ el, core }: { readonly el: HTMLElement; readonly core: CoreApi }): () => void {
+  preloadCatalogs();
   const root = createRoot(el);
   flushSync(() => {
     root.render(<Panel core={core} />);

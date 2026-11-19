@@ -4,7 +4,7 @@
 // Its catalogs give the model of each call and the thinking levels that the
 // model takes.
 
-export { createCatalogs, loadCatalogs, PROVIDER } from "./catalogs.ts";
+export { createCatalogs, loadCatalogs, preloadCatalogs, PROVIDER } from "./catalogs.ts";
 export type { CallModel, CatalogParts, Catalogs, ModelAt } from "./catalogs.ts";
 export { createLoop, loadLoop } from "./loop.ts";
 export type { Call, CallAnswer, Connection, Handlers, Loop, ModelCall, ModelReply, Pi, Streamed, Turn } from "./loop.ts";
