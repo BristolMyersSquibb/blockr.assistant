@@ -4,8 +4,11 @@
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#the-sections).
 // It lists each skill that the model may read and that names no block class
 // or plugin class, by its name and its description, in the order of R's list,
-// under today's preamble (R/skills-render.R at fcbdb27). Each description is
-// cut at assistant_skill_description_max_chars, while the list is not cut.
+// under today's preamble (R/skills-render.R at fcbdb27). The preamble says
+// that the app's packages wrote the skills as well as the deployment
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#today).
+// Each description is cut at assistant_skill_description_max_chars, while the
+// list is not cut.
 // Where no skill qualifies, the system prompt has no Skills section, as
 // today's has none.
 
