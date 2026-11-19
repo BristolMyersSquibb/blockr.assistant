@@ -20,13 +20,14 @@
 // After the compaction, the turns take the note of what others changed in the
 // board since the conversation's previous call, from the notes, which follow
 // the store and read which conversation's turn runs (../notes). The notes'
-// asUser() is for the undo that /undo asks for (blockr.assistant#233), which
-// the notes count as the user's.
+// asUser() is for the undo that the chat's /undo asks for, which the notes
+// count as the user's (../chat).
 //
 // As the board opens, the assistant has R list the skills and read the
 // deployment's template, each once (../skills, ../prompt). The turns then
 // write the system prompt from both, and the message of the app's for each
-// call (../prompt).
+// call (../prompt). The chat has R read a skill's text through the skills,
+// for a /name that the user types (../chat).
 //
 // As the board opens, the assistant reads the deployment's blockr options,
 // which say where the calls go, how they are authenticated and which models

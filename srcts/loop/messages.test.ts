@@ -47,7 +47,7 @@ function texts(content: UserMessage["content"] | ToolResultMessage["content"]): 
 }
 
 describe("a conversation as pi's messages", () => {
-  test("gives a message that the user sent as text of the role user, with each of its parts: a skill, an attachment, and a part of the type changes beside them", () => {
+  test("gives a message that the user sent as text of the role user, with each of its parts: an attachment, and a part of the type changes beside them", () => {
     const [user] = piMessages(
       [
         message(
@@ -55,7 +55,6 @@ describe("a conversation as pi's messages", () => {
           "user",
           text("Filter the data."),
           { type: "changes", text: "The user removed the block b." },
-          { type: "skill", name: "filters", text: "How to filter." },
           { type: "attachment", name: "plot.png", media_type: "image/png" },
         ),
       ],
@@ -67,9 +66,23 @@ describe("a conversation as pi's messages", () => {
     expect(texts((user as UserMessage).content)).toEqual([
       "Filter the data.",
       "The user removed the block b.",
-      "How to filter.",
       'The user attached the file "plot.png", of the type image/png, whose content is no longer available.',
     ]);
+  });
+
+  test("gives the message of a skill that the user called with /name as today's prompt words it, without the line, and with the rest of the line as the user's request", () => {
+    const skill: Part = { type: "skill", name: "filters", text: "How to filter." };
+    const messages = piMessages(
+      [message("u1", "user", text("/filters keep the adults"), skill), message("a1", "assistant", text("Done.")), message("u2", "user", text("/filters"), skill)],
+      nothingKept,
+      model,
+    );
+
+    expect(roles(messages)).toEqual(["user", "assistant", "user"]);
+    expect(texts((messages[0] as UserMessage).content)).toEqual([
+      "The user invoked the `filters` skill. Its instructions:\n\nHow to filter.\n\nThe user's request: keep the adults",
+    ]);
+    expect(texts((messages[2] as UserMessage).content)).toEqual(["The user invoked the `filters` skill. Its instructions:\n\nHow to filter."]);
   });
 
   test("gives a note of what others changed in the board as a message of the app's, which goes to the model as a message of the role user", () => {

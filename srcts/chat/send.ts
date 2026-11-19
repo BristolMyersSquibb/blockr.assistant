@@ -13,6 +13,11 @@
 //    the user attached, which names the file and its media type. The files'
 //    content goes into the plugin's memory with the message
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
+//    The message of a skill that the user called with /name holds the line
+//    that the user typed and then a part of the type skill, with the skill's
+//    name and its text, which the loop sends to the model and the transcript
+//    leaves out
+//    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 // 3. The chat asks the turns for a turn in the conversation, which runs from
 //    the class's start, so that it goes on once the panel closes.
 // Steps 1 and 2 go through the plugin's conversations, so where
@@ -33,9 +38,17 @@ export interface Attached {
   readonly kept: KeptFile;
 }
 
+// A skill that the user called with /name: its name and its text, as R read
+// it.
+export interface Called {
+  readonly name: string;
+  readonly text: string;
+}
+
 // Sends the text and the files as the user's message in the open
 // conversation, or in one that it adds where none is open, with the picks
-// given, which it hands opened() before it adds the message. It resolves once
+// given, which it hands opened() before it adds the message. The message
+// carries the skill given after the text, if any. It resolves once
 // the turn has started, and rejects where the message does not enter the
 // conversation.
 export async function sendMessage(
@@ -45,6 +58,7 @@ export async function sendMessage(
   files: readonly Attached[],
   picks: Picks,
   opened: (conversation: ConversationId) => void,
+  skill?: Called,
 ): Promise<void> {
   const { conversations, turns } = assistant;
   let conversation = open;
@@ -55,6 +69,7 @@ export async function sendMessage(
   }
   const parts: Part[] = [
     ...(text.trim() === "" ? [] : [{ type: "text" as const, text }]),
+    ...(skill === undefined ? [] : [{ type: "skill" as const, name: skill.name, text: skill.text }]),
     ...files.map((file) => ({ type: "attachment" as const, name: file.name, media_type: file.mediaType })),
   ];
   const message = { id: newId(), role: "user" as const, parts, created: new Date().toISOString() };

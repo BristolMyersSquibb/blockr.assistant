@@ -630,6 +630,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   animation: blockr-assistant-pulse 1.6s ease-in-out infinite;
 }
 .blockr-assistant-composer {
+  position: relative;
   flex: 0 0 auto;
   padding: 8px 12px 6px;
 }
@@ -669,9 +670,58 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   outline: 2px dashed var(--blockr-assistant-border-accent);
   outline-offset: 1px;
 }
-.blockr-assistant-files-note {
+.blockr-assistant-files-note,
+.blockr-assistant-command-note {
   margin: 4px 0 0;
   font-size: 12px;
+  color: var(--blockr-assistant-text-muted);
+}
+.blockr-assistant-commands {
+  position: absolute;
+  right: 12px;
+  bottom: 100%;
+  left: 12px;
+  z-index: 1;
+  max-height: 188px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--blockr-assistant-border);
+  border-radius: var(--blockr-assistant-radius);
+  background: var(--blockr-assistant-bg-raised);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  list-style: none;
+}
+.blockr-assistant-command,
+.blockr-assistant-commands-none {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: var(--blockr-assistant-radius-sm);
+  font-size: 13px;
+  line-height: 18px;
+}
+.blockr-assistant-command {
+  cursor: pointer;
+}
+.blockr-assistant-command[aria-selected=true] {
+  background: var(--blockr-assistant-bg-subtle);
+}
+.blockr-assistant-command-name {
+  flex-shrink: 0;
+  font-family: var(--bc-font-mono, ui-monospace, monospace);
+  color: var(--blockr-assistant-text);
+}
+.blockr-assistant-command-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--blockr-assistant-text-muted);
+}
+.blockr-assistant-commands-none {
   color: var(--blockr-assistant-text-muted);
 }
 .blockr-assistant-field textarea {

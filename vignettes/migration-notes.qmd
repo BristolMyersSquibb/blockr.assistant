@@ -623,7 +623,7 @@ Each tool of version 0.1 goes as follows:
 | `get_block_result` | The tool of the same name |
 | `inspect_results` | The tool of the same name, which binds the results of only the blocks that its `blocks` names, by their ids, where version 0.1 bound the result of every block. The result of a block that draws a plot is a `captured_plot` or a ggplot, which draws as it is printed, so the code `chart` draws the block `chart`, in place of `evaluate::replay(chart)` |
 | `read_skill` | The tool of the same name |
-| `add_block` | The command `blockr.core-add_block`, or `blockr.core-append_block`, `blockr.core-prepend_block` or `blockr.core-insert_block`, which add a block with a link to it or from it |
+| `add_block` | The command `blockr.core-add_block`. Where the new block has a link to it or from it, the command `blockr.core-add_link` adds the link, after `blockr.core-add_block` in the same call of `edit` |
 | `remove_block` | The command `blockr.core-remove_block` |
 | `modify_block` | The command `blockr.core-set_block` for the block's state, and `blockr.core-rename_block` for its name |
 | `add_link`, `remove_link` and `modify_link` | The commands `blockr.core-add_link`, `blockr.core-remove_link` and `blockr.core-change_link` |

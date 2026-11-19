@@ -441,6 +441,25 @@
   after the board opens again.
   The rules tell the model that what the user changed is what the user wants.
 
+* The chat's message field takes the slash commands `/compact`, `/clear`,
+  `/undo` and `/redo`, and `/name` for each skill that the user may call
+  (#233).
+  Typing `/` at the start of the field lists them, with what each does.
+  The command `/compact` has the model write a summary of the open
+  conversation, whatever its size.
+  The command `/clear` opens the greeting, as the drawer's New does.
+  The command `/undo` takes back the assistant's last edit, past the edits of
+  the user's after it, and `/redo` applies again what the last undo took back,
+  whoever made the edit.
+  Neither calls the model, and the note of what others changed counts both as
+  the user's.
+  A `/name` sends the skill's text with the message, which the model gets as
+  today's prompt words it, while the transcript shows the line as the user
+  typed it.
+  Where R cannot read the skill, the chat sends nothing, keeps the line in the
+  field and raises the error `assistant_skills_failed`.
+  While a turn runs, every command but `/clear` waits, as a message does.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.

@@ -2141,13 +2141,16 @@ function piMessages(messages, kept, model2, files) {
   return out;
 }
 function userContent(message2, files, model2, sent3) {
+  const called = message2.parts.some((part) => part.type === "skill");
   let index = -1;
   return message2.parts.flatMap((part) => {
     switch (part.type) {
       case "text":
+        return called ? [] : [text(part.text)];
       case "changes":
-      case "skill":
         return [text(part.text)];
+      case "skill":
+        return [text(skillPrompt(part, joinText(message2)))];
       case "attachment":
         index += 1;
         return fileContent(part, files[index], { message: message2.id, index, name: part.name }, model2, sent3);
@@ -2155,6 +2158,16 @@ function userContent(message2, files, model2, sent3) {
         return [];
     }
   });
+}
+function skillPrompt(part, line) {
+  const command2 = `/${part.name}`;
+  const request = (line.startsWith(command2) ? line.slice(command2.length) : line).trim();
+  const asked = request === "" ? "" : `
+
+The user's request: ${request}`;
+  return `The user invoked the \`${part.name}\` skill. Its instructions:
+
+${part.text}${asked}`;
 }
 function fileContent(part, file, at2, model2, sent3) {
   const attached = `The user attached the file "${part.name}", of the type ${part.media_type}`;
@@ -2865,6 +2878,72 @@ async function skillsNaming(context6, kind, id) {
   return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
 }
 
+// srcts/tools/changes.ts
+var ORIGIN2 = "assistant";
+var OWN_STATE = at();
+function hear(core) {
+  const heard = [];
+  let last = core.store.board();
+  const stop = core.store.subscribe((change, board) => {
+    const before = last;
+    last = board;
+    if (!("delta" in change) || change.origin !== ORIGIN2 || ownStateOnly(change.delta)) return;
+    heard.push({ delta: change.delta, before, after: board });
+  });
+  return { heard: () => heard, stop };
+}
+function changedBlocks(heard) {
+  const changed = /* @__PURE__ */ new Set();
+  const add = (id) => {
+    if (id !== void 0) changed.add(id);
+  };
+  for (const { delta, before, after } of heard) {
+    for (const id of Object.keys(delta.blocks?.add ?? {})) add(id);
+    for (const [id, mod] of Object.entries(delta.blocks?.mod ?? {})) {
+      if (mod.state !== void 0 || mod.unset !== void 0) add(id);
+    }
+    for (const link of Object.values(delta.links?.add ?? {})) add(link.to);
+    for (const id of delta.links?.rm ?? []) add(own(before.links, id)?.to);
+    for (const id of Object.keys(delta.links?.mod ?? {})) {
+      add(own(before.links, id)?.to);
+      add(own(after.links, id)?.to);
+    }
+  }
+  return [...changed];
+}
+function addedAndRemoved(heard) {
+  const first = heard[0];
+  const last = heard.at(-1);
+  if (first === void 0 || last === void 0) return { added: {}, removed: {} };
+  return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
+}
+function setsOnlyOptions(heard) {
+  return heard.every(({ delta }) => holds(delta).every((part) => part === "options"));
+}
+function missing(board, other) {
+  const ids = {};
+  for (const kind of ["blocks", "links", "stacks"]) {
+    const lacking = Object.keys(board[kind]).filter((id) => !Object.hasOwn(other[kind], id));
+    if (lacking.length > 0) ids[kind] = lacking;
+  }
+  return ids;
+}
+function ownStateOnly(delta) {
+  const patches = delta.patches ?? [];
+  return holds(delta).every((part) => part === "patches") && patches.length > 0 && patches.every(({ path }) => path === OWN_STATE || path.startsWith(`${OWN_STATE}/`));
+}
+function holds(delta) {
+  return Object.entries(delta).filter(([, part]) => holdsChange(part)).map(([key]) => key);
+}
+function holdsChange(part) {
+  if (typeof part === "string") return true;
+  if (Array.isArray(part)) return part.length > 0;
+  if (part === null || typeof part !== "object") return false;
+  return Object.values(part).some(
+    (member) => Array.isArray(member) ? member.length > 0 : member !== null && typeof member === "object" && Object.keys(member).length > 0
+  );
+}
+
 // srcts/tools/edit.ts
 import { context as context4 } from "@opentelemetry/api";
 
@@ -2936,7 +3015,7 @@ function referenced(value) {
 }
 
 // srcts/commands/commands.ts
-function holds(board, conversation2) {
+function holds2(board, conversation2) {
   return findConversation(board, conversation2) !== void 0;
 }
 function drops(conversation2, count) {
@@ -2969,7 +3048,7 @@ var assistantCommands = [
     label: "Rename conversation",
     description: "Gives a conversation a new title.",
     args: object({ conversation, title }, ["conversation", "title"]),
-    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
     run: (_board, { conversation: conversation2, title: title2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "title"), value: title2 }]
     })
@@ -2979,7 +3058,7 @@ var assistantCommands = [
     label: "Remove conversation",
     description: "Removes a conversation with its messages.",
     args: object({ conversation }, ["conversation"]),
-    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
     run: (_board, { conversation: conversation2 }) => ({ patches: [{ op: "remove", path: at("conversations", conversation2) }] })
   }),
   command({
@@ -3060,7 +3139,7 @@ var assistantCommands = [
       },
       ["conversation", "input", "output"]
     ),
-    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
     run: (board, { conversation: conversation2, input, output, total }) => {
       const usage = findConversation(board, conversation2)?.usage ?? { input: 0, output: 0, last: 0 };
       return {
@@ -3073,7 +3152,7 @@ var assistantCommands = [
     label: "Set model",
     description: "Sets a conversation's pick of the model, or removes it with null, after which the conversation talks to the default.",
     args: object({ conversation, model }, ["conversation", "model"]),
-    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
     run: (_board, { conversation: conversation2, model: model2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "model"), value: model2 }]
     })
@@ -3083,7 +3162,7 @@ var assistantCommands = [
     label: "Set thinking level",
     description: "Sets a conversation's pick of the thinking level, or removes it with null, after which the conversation's calls reason at the level that the deployment's model settings give the model, or else at the assistant's default.",
     args: object({ conversation, thinking_level: thinkingLevel }, ["conversation", "thinking_level"]),
-    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
     run: (board, { conversation: conversation2, thinking_level: level2 }) => {
       const path = at("conversations", conversation2, "thinking_level");
       if (level2 !== null) return { patches: [{ op: "add", path, value: level2 }] };
@@ -3091,72 +3170,6 @@ var assistantCommands = [
     }
   })
 ];
-
-// srcts/tools/changes.ts
-var ORIGIN2 = "assistant";
-var OWN_STATE = at();
-function hear(core) {
-  const heard = [];
-  let last = core.store.board();
-  const stop = core.store.subscribe((change, board) => {
-    const before = last;
-    last = board;
-    if (!("delta" in change) || change.origin !== ORIGIN2 || ownStateOnly(change.delta)) return;
-    heard.push({ delta: change.delta, before, after: board });
-  });
-  return { heard: () => heard, stop };
-}
-function changedBlocks(heard) {
-  const changed = /* @__PURE__ */ new Set();
-  const add = (id) => {
-    if (id !== void 0) changed.add(id);
-  };
-  for (const { delta, before, after } of heard) {
-    for (const id of Object.keys(delta.blocks?.add ?? {})) add(id);
-    for (const [id, mod] of Object.entries(delta.blocks?.mod ?? {})) {
-      if (mod.state !== void 0 || mod.unset !== void 0) add(id);
-    }
-    for (const link of Object.values(delta.links?.add ?? {})) add(link.to);
-    for (const id of delta.links?.rm ?? []) add(own(before.links, id)?.to);
-    for (const id of Object.keys(delta.links?.mod ?? {})) {
-      add(own(before.links, id)?.to);
-      add(own(after.links, id)?.to);
-    }
-  }
-  return [...changed];
-}
-function addedAndRemoved(heard) {
-  const first = heard[0];
-  const last = heard.at(-1);
-  if (first === void 0 || last === void 0) return { added: {}, removed: {} };
-  return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
-}
-function setsOnlyOptions(heard) {
-  return heard.every(({ delta }) => holds2(delta).every((part) => part === "options"));
-}
-function missing(board, other) {
-  const ids = {};
-  for (const kind of ["blocks", "links", "stacks"]) {
-    const lacking = Object.keys(board[kind]).filter((id) => !Object.hasOwn(other[kind], id));
-    if (lacking.length > 0) ids[kind] = lacking;
-  }
-  return ids;
-}
-function ownStateOnly(delta) {
-  const patches = delta.patches ?? [];
-  return holds2(delta).every((part) => part === "patches") && patches.length > 0 && patches.every(({ path }) => path === OWN_STATE || path.startsWith(`${OWN_STATE}/`));
-}
-function holds2(delta) {
-  return Object.entries(delta).filter(([, part]) => holdsChange(part)).map(([key]) => key);
-}
-function holdsChange(part) {
-  if (typeof part === "string") return true;
-  if (Array.isArray(part)) return part.length > 0;
-  if (part === null || typeof part !== "object") return false;
-  return Object.values(part).some(
-    (member) => Array.isArray(member) ? member.length > 0 : member !== null && typeof member === "object" && Object.keys(member).length > 0
-  );
-}
 
 // srcts/tools/failures.ts
 function failureText(error) {
@@ -4643,7 +4656,21 @@ function base64url(bytes) {
 // srcts/skills/skills.ts
 function createSkills(core, signal) {
   const listed3 = listSkills(core, signal);
-  return { list: () => listed3 };
+  const readFailed = heldError(core, signal, "assistant_skills_failed");
+  return {
+    list: () => listed3,
+    async read(name) {
+      try {
+        const { answer } = await sendUntilReplied(core, "read_skill", { name, packages: appPackages(core) }, { signal });
+        const text3 = answeredText(answer, "read_skill");
+        readFailed.withdraw();
+        return text3;
+      } catch (error) {
+        readFailed.raise(`The chat sent nothing, since R could not read the skill ${name}: ${failureMessage(error)}`);
+        throw error;
+      }
+    }
+  };
 }
 async function listSkills(core, signal) {
   try {
@@ -4856,12 +4883,12 @@ function nextAssistant(core) {
 }
 
 // srcts/chat/panel.tsx
-import { useEffect as useEffect6, useState as useState6 } from "react";
+import { useEffect as useEffect6, useState as useState7 } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo4, useRef as useRef5, useState as useState5 } from "react";
+import { useCallback as useCallback2, useMemo as useMemo6, useRef as useRef5, useState as useState6 } from "react";
 
 // srcts/chat/attach.ts
 function attachmentAdapter() {
@@ -4922,7 +4949,7 @@ function stagedBytes(field) {
 }
 
 // srcts/chat/composer.tsx
-import { useLayoutEffect, useRef as useRef2 } from "react";
+import { useId, useLayoutEffect, useMemo as useMemo2, useRef as useRef2, useState as useState2 } from "react";
 
 // srcts/chat/context.ts
 import { createContext, useContext } from "react";
@@ -5109,34 +5136,140 @@ function recall(history, at2, text3, key) {
   return { at: at2 + 1, text: history[at2 + 1] ?? "" };
 }
 
+// srcts/chat/slash.ts
+var BUILTINS = [
+  { name: "compact", description: "Summarize the conversation so far, keeping the newest messages as they are." },
+  { name: "clear", description: "Start a new conversation, keeping this one." },
+  { name: "undo", description: "Take back the assistant's last edit of the board." },
+  { name: "redo", description: "Apply again what the last undo took back." }
+];
+function slashCommandOf(line, skills) {
+  const name = /^\/(\S+)/u.exec(line)?.[1];
+  if (name === void 0) return void 0;
+  const builtin = BUILTINS.find((command2) => command2.name === name);
+  if (builtin !== void 0) return { kind: "builtin", name: builtin.name };
+  const skill = callable(skills).find((given2) => given2.name === name);
+  return skill === void 0 ? void 0 : { kind: "skill", skill };
+}
+function waits(command2, { running, noKey }) {
+  if (command2.kind === "builtin" && command2.name === "clear") return false;
+  if (running) return true;
+  return noKey && (command2.kind === "skill" || command2.name === "compact");
+}
+function slashCommands(skills) {
+  return [...BUILTINS, ...callable(skills).map(({ name, description }) => ({ name, description }))];
+}
+function listedFor(text3, commands) {
+  if (!/^\/\S*$/u.test(text3)) return void 0;
+  const typed = text3.slice(1).toLowerCase();
+  return commands.filter((command2) => command2.name.toLowerCase().startsWith(typed));
+}
+function callable(skills) {
+  return skills.filter((skill) => skill.userInvocable && !BUILTINS.some((command2) => command2.name === skill.name));
+}
+
 // srcts/chat/composer.tsx
 import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var PLACEHOLDER = "Ask about your board";
+var FIRST = { text: "", index: 0 };
 function Composer() {
   const { ComposerPrimitive, useAui, useAuiState } = libraries();
-  const { addFiles: addFiles2, stop } = useChatActions();
-  const { filesNote, history, noKey, running, runsHere, titleOf } = useChat();
+  const { addFiles: addFiles2, runCommand, stop } = useChatActions();
+  const { commandNote, filesNote, history, noKey, running, runsHere, skills, titleOf } = useChat();
   const aui = useAui();
   const text3 = useAuiState(({ composer }) => composer.text);
   const field = useRef2(null);
   const picker = useRef2(null);
-  const recalled = useRef2(void 0);
+  const list = useRef2(null);
+  const [recalled, setRecalled] = useState2(void 0);
+  const listId = useId();
+  const [highlighted, setHighlighted] = useState2(FIRST);
+  const [closedFor, setClosedFor] = useState2(void 0);
+  const commandRuns = useRef2(false);
+  const commands = useMemo2(() => slashCommands(skills), [skills]);
+  const command2 = slashCommandOf(text3, skills);
+  const showsRecalled = recalled !== void 0 && history[recalled] === text3;
+  const listed3 = closedFor === text3 || showsRecalled ? void 0 : listedFor(text3, commands);
+  const index = highlighted.text === text3 && listed3 !== void 0 && highlighted.index < listed3.length ? highlighted.index : 0;
+  const picked2 = listed3?.[index];
+  const optionId = (name) => `${listId}-${name}`;
   useLayoutEffect(() => {
     const el = field.current;
     if (el === null) return;
     el.style.height = "auto";
     el.style.height = `${String(el.scrollHeight)}px`;
   }, [text3]);
+  useLayoutEffect(() => {
+    const shown3 = list.current;
+    const option = shown3?.querySelector('[aria-selected="true"]');
+    if (shown3 == null || option == null) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    if (top < shown3.scrollTop) shown3.scrollTop = top;
+    else if (bottom > shown3.scrollTop + shown3.clientHeight) shown3.scrollTop = bottom - shown3.clientHeight;
+  }, [picked2]);
+  const complete = (chosen) => {
+    aui.composer.setText(`/${chosen.name} `);
+    field.current?.focus();
+  };
+  const run = (named2, line) => {
+    if (commandRuns.current || waits(named2, { running: running !== void 0, noKey })) return;
+    commandRuns.current = true;
+    runCommand(named2, line).then((ran) => {
+      if (ran && aui.composer.getState().text === line) aui.composer.setText("");
+    }).catch(() => void 0).finally(() => {
+      commandRuns.current = false;
+    });
+  };
+  const listKeys = (event, shown3) => {
+    const value = event.currentTarget.value;
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp": {
+        if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false;
+        event.preventDefault();
+        if (shown3.length > 0) {
+          const step = event.key === "ArrowDown" ? 1 : shown3.length - 1;
+          setHighlighted({ text: value, index: (index + step) % shown3.length });
+        }
+        return true;
+      }
+      case "Tab":
+      case "Enter": {
+        const chosen = shown3[index];
+        if (event.shiftKey || chosen === void 0) return false;
+        if (event.key === "Enter" && value === `/${chosen.name}`) return false;
+        event.preventDefault();
+        complete(chosen);
+        return true;
+      }
+      case "Escape":
+        event.preventDefault();
+        setClosedFor(value);
+        return true;
+      default:
+        return false;
+    }
+  };
   const keys2 = (event) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    if (event.nativeEvent.isComposing || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.nativeEvent.isComposing) return;
+    if (listed3 !== void 0 && listKeys(event, listed3)) return;
     const el = event.currentTarget;
+    if (event.key === "Enter" && !event.shiftKey) {
+      const named2 = slashCommandOf(el.value, skills);
+      if (named2 === void 0) return;
+      event.preventDefault();
+      run(named2, el.value);
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
     const key = event.key === "ArrowUp" ? "up" : "down";
     if (el.value !== "" && el.selectionStart !== el.value.length) return;
-    const back = recall(history, recalled.current, el.value, key);
+    const back = recall(history, recalled, el.value, key);
     if (back === void 0) return;
     event.preventDefault();
-    recalled.current = back.at;
+    setRecalled(back.at);
     aui.composer.setText(back.text);
   };
   const paste = (event) => {
@@ -5152,13 +5285,52 @@ function Composer() {
     addFiles2([pastedFile(pasted)]);
   };
   const waitsFor = running === void 0 || runsHere ? void 0 : titleOf(running.conversation) ?? "another conversation";
-  const sendLabel = noKey ? "Sends once you enter your key" : waitsFor === void 0 ? "Send" : `Sends once the turn in \u201C${waitsFor}\u201D ends`;
+  const turnLabel = waitsFor === void 0 ? "Send" : `Sends once the turn in \u201C${waitsFor}\u201D ends`;
+  const sendLabel = noKey ? "Sends once you enter your key" : turnLabel;
+  const commandWaits = command2 !== void 0 && waits(command2, { running: running !== void 0, noKey });
+  const commandLabel = !commandWaits ? "Send" : running === void 0 ? "Sends once you enter your key" : turnLabel;
   return /* @__PURE__ */ jsxs2(ComposerPrimitive.Root, { className: "blockr-assistant-composer", children: [
     waitsFor === void 0 ? null : /* @__PURE__ */ jsxs2("p", { className: "blockr-assistant-composer-note", children: [
       "A turn runs in \u201C",
       waitsFor,
       "\u201D."
     ] }),
+    listed3 === void 0 ? null : /* @__PURE__ */ jsx2(
+      "ul",
+      {
+        ref: list,
+        id: listId,
+        className: "blockr-assistant-commands",
+        role: "listbox",
+        "aria-label": "Slash commands",
+        onMouseDown: (event) => {
+          event.preventDefault();
+        },
+        children: listed3.length === 0 ? /* @__PURE__ */ jsx2("li", { className: "blockr-assistant-commands-none", role: "presentation", children: "No matching commands" }) : listed3.map((each, i) => /* @__PURE__ */ jsxs2(
+          "li",
+          {
+            id: optionId(each.name),
+            className: "blockr-assistant-command",
+            role: "option",
+            "aria-selected": i === index,
+            onClick: () => {
+              complete(each);
+            },
+            onMouseEnter: () => {
+              setHighlighted({ text: text3, index: i });
+            },
+            children: [
+              /* @__PURE__ */ jsxs2("span", { className: "blockr-assistant-command-name", children: [
+                "/",
+                each.name
+              ] }),
+              /* @__PURE__ */ jsx2("span", { className: "blockr-assistant-command-description", children: each.description })
+            ]
+          },
+          each.name
+        ))
+      }
+    ),
     /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-field", children: [
       /* @__PURE__ */ jsx2(StagedFiles, {}),
       /* @__PURE__ */ jsxs2("div", { className: "blockr-assistant-field-row", children: [
@@ -5192,7 +5364,28 @@ function Composer() {
             children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M13.5 7.5 8.2 12.8a3.25 3.25 0 0 1-4.6-4.6l5.7-5.7a2.1 2.1 0 0 1 3 3l-5.6 5.6a1 1 0 0 1-1.4-1.4l5.1-5.1" }) })
           }
         ),
-        /* @__PURE__ */ jsx2(ComposerPrimitive.Input, { asChild: true, placeholder: PLACEHOLDER, "aria-label": "Message", onKeyDown: keys2, onPaste: paste, addAttachmentOnPaste: false, submitMode: "enter", children: /* @__PURE__ */ jsx2("textarea", { ref: field, rows: 1 }) }),
+        /* @__PURE__ */ jsx2(
+          ComposerPrimitive.Input,
+          {
+            asChild: true,
+            placeholder: PLACEHOLDER,
+            "aria-label": "Message",
+            "aria-haspopup": "listbox",
+            "aria-autocomplete": "list",
+            "aria-controls": listed3 === void 0 ? void 0 : listId,
+            "aria-activedescendant": picked2 === void 0 ? void 0 : optionId(picked2.name),
+            onChange: () => {
+              setClosedFor(void 0);
+              setHighlighted(FIRST);
+            },
+            onKeyDown: keys2,
+            onPaste: paste,
+            addAttachmentOnPaste: false,
+            submitMode: "enter",
+            cancelOnEscape: false,
+            children: /* @__PURE__ */ jsx2("textarea", { ref: field, rows: 1 })
+          }
+        ),
         runsHere && running !== void 0 ? /* @__PURE__ */ jsx2(
           "button",
           {
@@ -5205,22 +5398,36 @@ function Composer() {
             onClick: stop,
             children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("rect", { x: "4", y: "4", width: "8", height: "8", rx: "1.5" }) })
           }
+        ) : command2 !== void 0 ? /* @__PURE__ */ jsx2(
+          "button",
+          {
+            type: "button",
+            className: "blockr-assistant-send",
+            disabled: commandWaits,
+            title: commandLabel,
+            "aria-label": commandLabel,
+            onClick: () => {
+              run(command2, text3);
+            },
+            children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M8 13V3M3.5 7.5 8 3l4.5 4.5" }) })
+          }
         ) : /* @__PURE__ */ jsx2(ComposerPrimitive.Send, { className: "blockr-assistant-send", title: sendLabel, "aria-label": sendLabel, children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M8 13V3M3.5 7.5 8 3l4.5 4.5" }) }) })
       ] })
     ] }),
-    filesNote === void 0 ? null : /* @__PURE__ */ jsx2("p", { className: "blockr-assistant-files-note", role: "status", children: filesNote })
+    filesNote === void 0 ? null : /* @__PURE__ */ jsx2("p", { className: "blockr-assistant-files-note", role: "status", children: filesNote }),
+    commandNote === void 0 ? null : /* @__PURE__ */ jsx2("p", { className: "blockr-assistant-command-note", role: "status", children: commandNote })
   ] });
 }
 
 // srcts/chat/drawer.tsx
-import { useEffect as useEffect2, useId, useMemo as useMemo2, useRef as useRef3, useState as useState2 } from "react";
+import { useEffect as useEffect2, useId as useId2, useMemo as useMemo3, useRef as useRef3, useState as useState3 } from "react";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var DAY = 24 * 60 * 60 * 1e3;
 function Drawer(props) {
   const { onClose, opener, conversations, open: open2, running } = props;
   const search = useRef3(null);
-  const heading = useId();
-  const [query, setQuery] = useState2("");
+  const heading = useId2();
+  const [query, setQuery] = useState3("");
   useEffect2(() => {
     const button = opener.current;
     search.current?.focus();
@@ -5228,7 +5435,7 @@ function Drawer(props) {
       button?.focus();
     };
   }, [opener]);
-  const groups = useMemo2(() => groupConversations(conversations, query), [conversations, query]);
+  const groups = useMemo3(() => groupConversations(conversations, query), [conversations, query]);
   const empty = Object.keys(conversations).length === 0;
   const keys2 = (event) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -5285,7 +5492,7 @@ function Drawer(props) {
   ] });
 }
 function Row({ id, conversation: conversation2, open: open2, running, onSelect, onRename, onDelete }) {
-  const [mode, setMode] = useState2("shown");
+  const [mode, setMode] = useState3("shown");
   const keep2 = useRef3(null);
   useEffect2(() => {
     if (mode === "confirming") keep2.current?.focus();
@@ -5381,7 +5588,7 @@ function Row({ id, conversation: conversation2, open: open2, running, onSelect, 
   ] });
 }
 function Rename({ title: title2, onDone }) {
-  const [draft, setDraft] = useState2(title2);
+  const [draft, setDraft] = useState3(title2);
   const field = useRef3(null);
   useEffect2(() => {
     field.current?.select();
@@ -5518,7 +5725,7 @@ function Meter({ usage }) {
 }
 
 // srcts/chat/hooks.ts
-import { useCallback, useEffect as useEffect3, useState as useState3, useSyncExternalStore } from "react";
+import { useCallback, useEffect as useEffect3, useMemo as useMemo4, useState as useState4, useSyncExternalStore } from "react";
 function useBoard(core) {
   const subscribe = useCallback((changed) => core.store.subscribe(changed), [core]);
   const board = useCallback(() => core.store.board(), [core]);
@@ -5559,25 +5766,30 @@ function useOpenRouterLogin(login) {
   const current = useCallback(() => login.current(), [login]);
   return useSyncExternalStore(subscribe, current);
 }
-function useDeployment(deployment) {
-  const [read, setRead] = useState3(void 0);
+function useResolved(promise) {
+  const [read, setRead] = useState4(void 0);
   useEffect3(() => {
     let live = true;
-    deployment.then(
-      (given2) => {
-        if (live) setRead({ of: deployment, deployment: given2 });
+    promise.then(
+      (value) => {
+        if (live) setRead({ of: promise, value });
       },
       () => void 0
     );
     return () => {
       live = false;
     };
-  }, [deployment]);
-  return read?.of === deployment ? read.deployment : void 0;
+  }, [promise]);
+  return read?.of === promise ? read.value : void 0;
 }
+function useSkills(skills) {
+  const listed3 = useMemo4(() => skills.list(), [skills]);
+  return useResolved(listed3) ?? NO_SKILLS;
+}
+var NO_SKILLS = [];
 
 // srcts/chat/key.tsx
-import { useId as useId2 } from "react";
+import { useId as useId3 } from "react";
 import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function KeyForm() {
   const { keyField } = useChat();
@@ -5586,7 +5798,7 @@ function KeyForm() {
 }
 function Field({ field }) {
   const { giveKey } = useChatActions();
-  const note2 = useId2();
+  const note2 = useId3();
   const { state, openRouterLogin } = field;
   const submit = (event) => {
     event.preventDefault();
@@ -5874,7 +6086,7 @@ function storeConversation(id) {
 }
 
 // srcts/chat/send.ts
-async function sendMessage(assistant, open2, text3, files, picks, opened2) {
+async function sendMessage(assistant, open2, text3, files, picks, opened2, skill) {
   const { conversations, turns } = assistant;
   let conversation2 = open2;
   if (conversation2 === void 0) {
@@ -5884,6 +6096,7 @@ async function sendMessage(assistant, open2, text3, files, picks, opened2) {
   }
   const parts = [
     ...text3.trim() === "" ? [] : [{ type: "text", text: text3 }],
+    ...skill === void 0 ? [] : [{ type: "skill", name: skill.name, text: skill.text }],
     ...files.map((file) => ({ type: "attachment", name: file.name, media_type: file.mediaType }))
   ];
   const message2 = { id: newId(), role: "user", parts, created: (/* @__PURE__ */ new Date()).toISOString() };
@@ -5892,7 +6105,7 @@ async function sendMessage(assistant, open2, text3, files, picks, opened2) {
 }
 
 // srcts/chat/transcript.tsx
-import { useMemo as useMemo3 } from "react";
+import { useMemo as useMemo5 } from "react";
 
 // srcts/chat/greeting.ts
 var EMPTY = {
@@ -5910,7 +6123,7 @@ function greetingOf(board) {
 }
 
 // srcts/chat/markdown.tsx
-import { useEffect as useEffect5, useState as useState4 } from "react";
+import { useEffect as useEffect5, useState as useState5 } from "react";
 import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
@@ -5932,7 +6145,7 @@ function Table({ children }) {
   return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx7("table", { children }) });
 }
 function CodeHeader({ language, code }) {
-  const [copied, setCopied] = useState4(false);
+  const [copied, setCopied] = useState5(false);
   useEffect5(() => {
     if (!copied) return;
     const timer = setTimeout(() => {
@@ -6234,7 +6447,7 @@ function Reply() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const running = useAuiState(({ message: message2 }) => message2.status?.type === "running");
-  const segments = useMemo3(() => segmentsOf(parts), [parts]);
+  const segments = useMemo5(() => segmentsOf(parts), [parts]);
   return /* @__PURE__ */ jsx9(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
     switch (segment.kind) {
       case "text":
@@ -6302,18 +6515,20 @@ function Chat({ core, assistant }) {
   const running = useRunning(turns);
   const offered = useOffered(models);
   const levelsOf = useThinkingLevels(assistant.thinkingLevels);
-  const deployment = useDeployment(assistant.deployment);
+  const deployment = useResolved(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
   const openRouterLogin = useOpenRouterLogin(assistant.openRouterLogin);
-  const [chosen, setChosen] = useState5(storedConversation);
+  const [chosen, setChosen] = useState6(storedConversation);
   const [nextPicks, setNextPicks] = useNextPicks(assistant);
-  const [drawer, setDrawer] = useState5(false);
+  const [drawer, setDrawer] = useState6(false);
   const opener = useRef5(null);
-  const [link, setLink] = useState5(void 0);
-  const [file, setFile] = useState5(void 0);
-  const [filesNote, setFilesNote] = useState5(void 0);
-  const [dragging, setDragging] = useState5(false);
-  const attachments = useMemo4(() => attachmentAdapter(), []);
+  const [link, setLink] = useState6(void 0);
+  const [file, setFile] = useState6(void 0);
+  const [filesNote, setFilesNote] = useState6(void 0);
+  const [commandNote, setCommandNote] = useState6(void 0);
+  const skills = useSkills(assistant.skills);
+  const [dragging, setDragging] = useState6(false);
+  const attachments = useMemo6(() => attachmentAdapter(), []);
   const adding = useRef5(Promise.resolve());
   const open2 = chosen !== void 0 && Object.hasOwn(all, chosen) ? chosen : void 0;
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
@@ -6322,7 +6537,7 @@ function Chat({ core, assistant }) {
   const compacting = useCompacting(compaction, open2);
   const visitorAuthenticates = deployment?.credential.kind === "visitor";
   const noKey = visitorAuthenticates && keyOf(visitorKey) === void 0;
-  const keyField = useMemo4(() => {
+  const keyField = useMemo6(() => {
     if (deployment === void 0 || !visitorAuthenticates || visitorKey.kind === "given") return void 0;
     const offered2 = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : void 0;
     return { state: visitorKey, host: new URL(deployment.baseUrl).host, openRouterLogin: offered2 };
@@ -6353,11 +6568,53 @@ function Chat({ core, assistant }) {
     if (open2 === void 0) setNextPicks({ ...nextPicks, thinkingLevel: level2 });
     else conversations.setThinkingLevel(open2, level2).catch(logError);
   };
-  const startNew = () => {
-    if (conversation2 !== void 0) setNextPicks(picksOf(conversation2));
+  const clear = useCallback2(() => {
+    const held = open2 === void 0 ? void 0 : conversations.get(open2);
+    if (held !== void 0) setNextPicks(picksOf(held));
     openConversation(void 0);
+  }, [conversations, open2, openConversation, setNextPicks]);
+  const startNew = () => {
+    clear();
     setDrawer(false);
   };
+  const runCommand = useCallback2(
+    async (command2, line) => {
+      if (waits(command2, { running: turns.current() !== void 0, noKey })) return false;
+      setCommandNote(void 0);
+      if (command2.kind === "skill") {
+        const { name } = command2.skill;
+        let text3;
+        try {
+          text3 = await assistant.skills.read(name);
+        } catch {
+          return false;
+        }
+        if (turns.current() !== void 0 || assistant.signal.aborted) return false;
+        try {
+          await sendMessage(assistant, open2, line, [], nextPicks, openConversation, { name, text: text3 });
+        } catch (error) {
+          logError(error);
+          return false;
+        }
+        return true;
+      }
+      switch (command2.name) {
+        case "compact":
+          if (open2 !== void 0) compaction.compact(open2).catch(logError);
+          return true;
+        case "clear":
+          clear();
+          return true;
+        case "undo":
+          setCommandNote(undoAssistant(core, assistant.notes));
+          return true;
+        case "redo":
+          setCommandNote(redo(core));
+          return true;
+      }
+    },
+    [assistant, clear, compaction, core, logError, nextPicks, noKey, open2, openConversation, turns]
+  );
   const remove = async (id) => {
     const removed = all[id];
     const wasOpen = id === open2;
@@ -6382,6 +6639,7 @@ function Chat({ core, assistant }) {
     adapters: { attachments },
     onNew: async (message2) => {
       setFilesNote(void 0);
+      setCommandNote(void 0);
       try {
         await send(textOf3(message2), attachedOf(message2.attachments ?? []));
       } catch (error) {
@@ -6394,7 +6652,7 @@ function Chat({ core, assistant }) {
       return Promise.resolve();
     }
   });
-  const actions = useMemo4(
+  const actions = useMemo6(
     () => ({
       core,
       send: (text3) => {
@@ -6402,6 +6660,7 @@ function Chat({ core, assistant }) {
           core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
         });
       },
+      runCommand,
       stop: () => {
         turns.stop();
       },
@@ -6423,11 +6682,11 @@ function Chat({ core, assistant }) {
         assistant.openRouterLogin.start();
       }
     }),
-    [assistant, core, runtime, send, turns]
+    [assistant, core, runCommand, runtime, send, turns]
   );
-  const history = useMemo4(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(joinText).filter((text3) => text3 !== ""), [messages]);
-  const waiting2 = useMemo4(() => waitingCalls(messages, runsHere ? running : void 0), [messages, running, runsHere]);
-  const state = useMemo4(
+  const history = useMemo6(() => messages.filter((message2) => message2.role === "user" && !isNote(message2)).map(joinText).filter((text3) => text3 !== ""), [messages]);
+  const waiting2 = useMemo6(() => waitingCalls(messages, runsHere ? running : void 0), [messages, running, runsHere]);
+  const state = useMemo6(
     () => ({
       running,
       runsHere,
@@ -6436,10 +6695,12 @@ function Chat({ core, assistant }) {
       history,
       titleOf: (id) => Object.hasOwn(all, id) ? all[id]?.title : void 0,
       filesNote,
+      skills,
+      commandNote,
       keyField,
       noKey
     }),
-    [all, compacting, filesNote, history, keyField, noKey, running, runsHere, waiting2]
+    [all, commandNote, compacting, filesNote, history, keyField, noKey, running, runsHere, skills, waiting2]
   );
   const closeFile = useCallback2(() => {
     setFile(void 0);
@@ -6531,10 +6792,30 @@ function Chat({ core, assistant }) {
   ) }) }) });
 }
 var NO_MESSAGES = [];
+function undoAssistant(core, notes) {
+  if (!core.store.canUndo(ORIGIN2)) return "The assistant has no edit left to take back.";
+  try {
+    notes.asUser(() => {
+      core.store.undo(ORIGIN2);
+    });
+    return void 0;
+  } catch (error) {
+    return `The board refused to take back the assistant's last edit: ${failuresOf(error).join(" ")}`;
+  }
+}
+function redo(core) {
+  if (!core.store.canRedo()) return "No undo has taken back an edit to apply again.";
+  try {
+    core.store.redo();
+    return void 0;
+  } catch (error) {
+    return `The board refused to apply the edit again: ${failuresOf(error).join(" ")}`;
+  }
+}
 var heldPicks = /* @__PURE__ */ new WeakMap();
 var NO_PICKS = { model: null };
 function useNextPicks(assistant) {
-  const [nextPicks, setPicks] = useState5(() => heldPicks.get(assistant) ?? NO_PICKS);
+  const [nextPicks, setPicks] = useState6(() => heldPicks.get(assistant) ?? NO_PICKS);
   const setNextPicks = useCallback2(
     (picks) => {
       heldPicks.set(assistant, picks);
@@ -6582,7 +6863,7 @@ function Panel({ core }) {
   return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
-  const [assistant, setAssistant] = useState6(() => open(assistantOf(core)));
+  const [assistant, setAssistant] = useState7(() => open(assistantOf(core)));
   useEffect6(() => {
     if (assistant !== void 0 && !assistant.signal.aborted) {
       const closed2 = () => {
@@ -6604,7 +6885,7 @@ function useAssistant(core) {
   return open(assistant);
 }
 function useLibraries(core) {
-  const [loaded2, setLoaded] = useState6(librariesLoaded);
+  const [loaded2, setLoaded] = useState7(librariesLoaded);
   useEffect6(() => {
     if (loaded2 !== false) return;
     let live = true;
@@ -6624,7 +6905,7 @@ function useLibraries(core) {
   return loaded2;
 }
 function useThinkingLevels2(assistant) {
-  const [, setLoaded] = useState6(void 0);
+  const [, setLoaded] = useState7(void 0);
   const done = assistant !== void 0 && levelsLoaded.has(assistant);
   useEffect6(() => {
     if (assistant === void 0 || done) return;

@@ -9,14 +9,22 @@
 import { createContext, useContext } from "react";
 import type { CoreApi } from "@blockr/core";
 import type { OpenRouterLoginState } from "../openrouter/index.ts";
+import type { Skill } from "../skills/index.ts";
 import type { Running } from "../turns/index.ts";
 import type { KeyState } from "../visitor-key/index.ts";
 import type { OpenedFile } from "./files.tsx";
+import type { SlashCommand } from "./slash.ts";
 
 export interface ChatActions {
   readonly core: CoreApi;
   // Sends the text as the user's message.
   readonly send: (text: string) => void;
+  // Runs the slash command that the line in the message field names, and
+  // resolves with whether the field drops the line: once the command ran, or
+  // once the message of a skill entered the conversation. Where the message
+  // of a skill did not enter it, as where R could not read the skill, it
+  // resolves with false, so that the field keeps the line.
+  readonly runCommand: (command: SlashCommand, line: string) => Promise<boolean>;
   // Stops the turn that runs.
   readonly stop: () => void;
   // Asks before a link opens another site.
@@ -61,6 +69,12 @@ export interface ChatState {
   // What the chat says of the files that it left out of the message field as
   // the user last added files, if any.
   readonly filesNote: string | undefined;
+  // The skills that R listed for the open board, or none until R answers,
+  // among which the message field takes those that the user may call.
+  readonly skills: readonly Skill[];
+  // What the chat says of the slash command that the user ran last, as where
+  // /undo found no edit to take back, if anything.
+  readonly commandNote: string | undefined;
   // What the field for the visitor's key shows, where the chat asks for a
   // key, or undefined where it shows no such field.
   readonly keyField: KeyField | undefined;
