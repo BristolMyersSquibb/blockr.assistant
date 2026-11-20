@@ -384,9 +384,12 @@
   `openssl rand -base64 32` prints, and never a password, since the page
   derives its encryption key from the secret through HKDF, which does nothing
   to slow down a guess at the secret.
-  The browser keeps one key for each app and base URL to which the visitor
-  gave one, from the time that the base URL takes the key until it refuses
-  it.
+  The browser keeps a key from the time that the base URL takes it until it
+  refuses it, by default one key for each app and base URL to which the
+  visitor gave one.
+  The blockr option `assistant_key_scope`, set to `"origin"`, has it keep one
+  key for each base URL instead, which every app of the origin that sets
+  `"origin"` and the same secret finds.
   The key that OpenRouter's login gives is kept the same way, and OpenRouter's
   page then has it expire after 30 days rather than a day.
   Every page of the app's origin can read local storage, so a deployment sets

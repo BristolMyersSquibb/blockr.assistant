@@ -562,7 +562,7 @@ describe("the chat's field for the visitor's key", () => {
 
   test("says that the browser keeps the key where the app sets a secret for it, and keeps a key once a call takes it, so that the chat after a reload asks for none", async () => {
     const keys: (string | undefined)[] = [];
-    const credential: Credential = { kind: "visitor", keySecret: "a-long-random-secret" };
+    const credential: Credential = { kind: "visitor", kept: { secret: "a-long-random-secret", scope: "app" } };
     const first = await chat({ credential, replies: [keyed(keys)] });
     await act(() => first.assistant.deployment);
 
@@ -589,10 +589,17 @@ describe("the chat's field for the visitor's key", () => {
     expect(keys).toEqual(["sk-visitor", "sk-visitor"]);
   });
 
+  test("says that the browser keeps the key for the apps on the host of the app's page, where the app keeps it for the apps of the origin", async () => {
+    const { el, assistant } = await chat({ credential: { kind: "visitor", kept: { secret: "a-long-random-secret", scope: "origin" } } });
+    await act(() => assistant.deployment);
+
+    expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe("Enter your API key for faux.invalid. The browser keeps it for the apps on localhost:3000.");
+  });
+
   test("says that the browser keeps the key beside OpenRouter's login, whose key then expires after 30 days", async () => {
     const key = createVisitorKey();
     const { login: openRouterLogin, sentTo } = fauxOpenRouterLogin(key);
-    const { el, assistant } = await chat({ credential: { kind: "visitor", keySecret: "a-long-random-secret" }, key, openRouterLogin });
+    const { el, assistant } = await chat({ credential: { kind: "visitor", kept: { secret: "a-long-random-secret", scope: "app" } }, key, openRouterLogin });
     await act(() => assistant.deployment);
 
     expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(

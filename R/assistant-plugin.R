@@ -133,15 +133,27 @@
 #' So whoever copies the keys that the browser kept, as from the browser's
 #' files, can try guesses at the secret as fast as their computers allow, and
 #' a secret that they guess decrypts every key that they copied.
-#' The browser keeps one key for each app and base URL to which the visitor
-#' gave a key.
-#' It keeps a key from the time that the base URL takes it, for a call or for
-#' its list of models, until the base URL refuses it.
+#' The browser keeps a key from the time that the base URL takes it, for a
+#' call or for its list of models, until the base URL refuses it.
 #' Changing the secret makes every key that the browser kept unreadable, so
 #' each visitor then gives their key again.
 #' The browser keeps the key only on a page that it deems secure, such as one
 #' served over HTTPS or from localhost, since it offers the page no means to
 #' encrypt the key otherwise.
+#'
+#' The blockr option `assistant_key_scope` says for whom the browser keeps the
+#' key.
+#' Its default, `"app"`, keeps one key for each app and base URL to which the
+#' visitor gave a key.
+#' With `"origin"`, set as `BLOCKR_ASSISTANT_KEY_SCOPE=origin`, the browser
+#' keeps one key for each base URL, which every app of the origin that sets
+#' `"origin"` and the same secret finds.
+#' So the visitor gives their key once for all those apps, and an app that the
+#' origin serves at two paths, such as its content URL and a vanity URL on
+#' Posit Connect, finds the key at both.
+#' An app with another secret keeps a key of its own.
+#' The field for the key then says that the browser keeps the key for the apps
+#' on the host of the app's page.
 #'
 #' The option trades some safety for convenience.
 #' Every page that the same origin serves can read local storage, whoever
@@ -153,8 +165,8 @@
 #' reads local storage without running the app, such as a script that dumps
 #' the storage, or a copy of the browser's files whose holder cannot open the
 #' app.
-#' Keeping one key for each app keeps another blockr app from taking a key
-#' that the visitor gave this one.
+#' With the default scope, keeping one key for each app keeps another blockr
+#' app from taking a key that the visitor gave this one.
 #' Neither keeps out a page of the same origin that sets out to get the key.
 #' Such a page comes from a malicious app on the origin, or from a hole in
 #' another app's page through which an attacker runs script there.
@@ -162,6 +174,11 @@
 #' the secret as the app does.
 #' So a deployment sets the option where the app has an origin of its own, or
 #' where it trusts every page of its origin.
+#' The scope `"origin"` gives up one key for each app: every app of the origin
+#' that sets `"origin"` and the same secret spends the key that the visitor
+#' gave any one of them.
+#' So a deployment sets it for apps that the visitor trusts alike, such as the
+#' apps of one team.
 #'
 #' Where the base URL is OpenRouter's, `https://openrouter.ai/api/v1`, the
 #' chat also offers OpenRouter's login beside the field for the key.

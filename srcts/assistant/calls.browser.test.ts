@@ -501,7 +501,7 @@ describe("the visitor's own key, where the browser keeps it", () => {
   });
 
   test("is removed once the base URL refuses it, so that the chat asks for a key", async () => {
-    await keyEntry({ secret: SECRET, baseUrl: `${mock.origin}/anthropic`, path: location.pathname, subtle: crypto.subtle, storage: localStorage }).write("wrong-key");
+    await keyEntry({ secret: SECRET, scope: "app", baseUrl: `${mock.origin}/anthropic`, path: location.pathname, subtle: crypto.subtle, storage: localStorage }).write("wrong-key");
 
     const { assistant } = await turned(at("/anthropic", "anthropic-messages"));
 

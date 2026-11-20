@@ -260,7 +260,7 @@ describe("the start of the assistant's plugin class", () => {
     const first = await started(undefined, three, kept);
     await act(() => first.settled());
     await assistantOf(first.core)?.deployment;
-    expect(assistantOf(first.core)?.key.kept()).toBe(true);
+    expect(assistantOf(first.core)?.key.kept()).toBe("app");
 
     assistantOf(first.core)?.key.give("sk-visitor");
     await assistantOf(first.core)?.models.offered();

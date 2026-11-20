@@ -17,7 +17,8 @@
 // it in after a reload or in another tab. The plugin keeps the key in its
 // memory, as the visitor gives it. Where the deployment sets the blockr option
 // assistant_key_secret, the browser keeps the key as well, and the field's
-// note says so (../visitor-key).
+// note says so, and whether for this app alone or for the apps on the host of
+// the app's page (../visitor-key).
 //
 // Where the base URL is OpenRouter's, the field offers OpenRouter's login, in
 // a button above the key (../openrouter):
@@ -30,6 +31,7 @@
 
 import { useId } from "react";
 import type { ReactElement, SubmitEvent } from "react";
+import type { KeyScope } from "../deployment/index.ts";
 import type { OpenRouterLoginState } from "../openrouter/index.ts";
 import { useChat, useChatActions } from "./context.ts";
 import type { KeyField } from "./context.ts";
@@ -96,15 +98,14 @@ function alerts({ state, openRouterLogin }: KeyField): boolean {
 
 // What the field says of why the chat asks for a key, or of why OpenRouter's
 // login failed.
-export function noteOf({ state, host, kept, openRouterLogin }: KeyField): string {
+export function noteOf({ state, host, kept, appHost, openRouterLogin }: KeyField): string {
   if (openRouterLogin?.kind === "blocked") return "The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.";
   if (openRouterLogin?.kind === "failed") return `${openRouterLogin.reason} Log in again, or enter your API key.`;
   switch (state.kind) {
     case "missing":
-      if (openRouterLogin === undefined) {
-        return `Enter your API key for ${host}. ${kept ? "The browser keeps it for this app." : "The assistant keeps it only until the page reloads."}`;
-      }
-      return `Log in with OpenRouter, or enter your API key for ${host}. ${kept ? "The browser keeps the key for this app." : "The assistant keeps the key only until the page reloads."}`;
+      return openRouterLogin === undefined
+        ? `Enter your API key for ${host}. ${keepsOf(kept, appHost, "it")}`
+        : `Log in with OpenRouter, or enter your API key for ${host}. ${keepsOf(kept, appHost, "the key")}`;
     case "refused":
       return openRouterLogin === undefined
         ? `The server at ${host} refused your key. Enter another one.`
@@ -112,4 +113,10 @@ export function noteOf({ state, host, kept, openRouterLogin }: KeyField): string
     case "lost":
       return `The connection to ${host} was lost, and your key may be wrong. Change it, or send your message again.`;
   }
+}
+
+// What the note says of who keeps the key, which it names by the words given.
+function keepsOf(kept: KeyScope | undefined, appHost: string, key: string): string {
+  if (kept === undefined) return `The assistant keeps ${key} only until the page reloads.`;
+  return kept === "app" ? `The browser keeps ${key} for this app.` : `The browser keeps ${key} for the apps on ${appHost}.`;
 }

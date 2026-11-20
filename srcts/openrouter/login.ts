@@ -231,7 +231,7 @@ export function createOpenRouterLogin(options: OpenRouterLoginOptions): OpenRout
         });
       }
       set(IDLE);
-      const expiration = options.key.kept() ? KEPT_EXPIRATION : EXPIRATION;
+      const expiration = options.key.kept() === undefined ? EXPIRATION : KEPT_EXPIRATION;
       void challengeOf(verifier).then((challenge) => {
         login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState, expiration));
       });

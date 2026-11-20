@@ -7,7 +7,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Deployment } from "../deployment/index.ts";
+import type { Deployment, KeyScope } from "../deployment/index.ts";
 import { keyEntry } from "./entry.ts";
 import type { KeyEntry } from "./entry.ts";
 import { createVisitorKey, keepKey, keyOf, pageKey, reloadPageKey } from "./visitor-key.ts";
@@ -88,11 +88,12 @@ describe("the visitor's key", () => {
   });
 });
 
-// An entry in memory, which holds the key given, and records what the key
-// writes to it and removes from it.
+// An entry in memory for the app alone, which holds the key given, and
+// records what the key writes to it and removes from it.
 function memoryEntry(held?: string) {
   const told: string[] = [];
   const entry: KeyEntry = {
+    scope: "app",
     read: () => Promise.resolve(held),
     write(key) {
       held = key;
@@ -110,7 +111,7 @@ function memoryEntry(held?: string) {
 
 describe("the visitor's key, where an entry keeps it", () => {
   test("is not kept until an entry keeps it", () => {
-    expect(createVisitorKey().kept()).toBe(false);
+    expect(createVisitorKey().kept()).toBeUndefined();
   });
 
   test("takes the key that the entry holds where the visitor has given none", async () => {
@@ -119,7 +120,7 @@ describe("the visitor's key, where an entry keeps it", () => {
     await key.keepIn(memoryEntry("sk-kept").entry);
 
     expect(key.current()).toEqual({ kind: "given", key: "sk-kept" });
-    expect(key.kept()).toBe(true);
+    expect(key.kept()).toBe("app");
   });
 
   test("keeps the key that the visitor gave rather than the entry's, and stays missing where the entry holds none", async () => {
@@ -137,6 +138,7 @@ describe("the visitor's key, where an entry keeps it", () => {
     const key = createVisitorKey();
     let release: (held: string) => void = () => undefined;
     const slow: KeyEntry = {
+      scope: "app",
       read: () => new Promise((resolve) => (release = resolve)),
       write: () => Promise.resolve(),
       remove: () => Promise.resolve(),
@@ -208,10 +210,10 @@ describe("the visitor's key, where an entry keeps it", () => {
 describe("keepKey()", () => {
   const SECRET = "a-long-random-secret";
   const OPENROUTER = "https://openrouter.ai/api/v1";
-  const visitor = (keySecret?: string): Deployment => ({
+  const visitor = (secret?: string, scope: KeyScope = "app"): Deployment => ({
     baseUrl: OPENROUTER,
     api: "openai-completions",
-    credential: keySecret === undefined ? { kind: "visitor" } : { kind: "visitor", keySecret },
+    credential: secret === undefined ? { kind: "visitor" } : { kind: "visitor", kept: { secret, scope } },
     models: undefined,
   });
 
@@ -222,10 +224,12 @@ describe("keepKey()", () => {
     return { core: { log } as unknown as Pick<CoreApi, "log">, warned };
   }
 
-  // Has the browser keep the key given for the page's path and OpenRouter's
-  // base URL, as an earlier visit did.
-  function keptBefore(kept: string): Promise<void> {
-    return keyEntry({ secret: SECRET, baseUrl: OPENROUTER, path: location.pathname, subtle: crypto.subtle, storage: localStorage }).write(kept);
+  // Has the browser keep the key given for OpenRouter's base URL, as an
+  // earlier visit did, for the page's path, or for the apps of the origin
+  // from the page of another app.
+  function keptBefore(kept: string, scope: KeyScope = "app"): Promise<void> {
+    const path = scope === "app" ? location.pathname : "/content/77d1e3f0/";
+    return keyEntry({ secret: SECRET, scope, baseUrl: OPENROUTER, path, subtle: crypto.subtle, storage: localStorage }).write(kept);
   }
 
   afterEach(() => {
@@ -241,7 +245,17 @@ describe("keepKey()", () => {
     await keepKey(logging().core, key, visitor(SECRET));
 
     expect(key.current()).toEqual({ kind: "given", key: "sk-or-kept" });
-    expect(key.kept()).toBe(true);
+    expect(key.kept()).toBe("app");
+  });
+
+  test("has the entry of the origin's apps keep the key where the deployment names that scope, so that the key takes what another app's page kept", async () => {
+    await keptBefore("sk-or-kept", "origin");
+    const key = createVisitorKey();
+
+    await keepKey(logging().core, key, visitor(SECRET, "origin"));
+
+    expect(key.current()).toEqual({ kind: "given", key: "sk-or-kept" });
+    expect(key.kept()).toBe("origin");
   });
 
   test("leaves the key in the page's memory where the deployment sets no secret, or a key of its own", async () => {
@@ -252,7 +266,7 @@ describe("keepKey()", () => {
       const key = createVisitorKey();
       await keepKey(logging().core, key, deployment);
       expect(key.current()).toEqual({ kind: "missing" });
-      expect(key.kept()).toBe(false);
+      expect(key.kept()).toBeUndefined();
     }
   });
 
@@ -263,7 +277,7 @@ describe("keepKey()", () => {
 
     await keepKey(core, key, visitor(SECRET));
 
-    expect(key.kept()).toBe(false);
+    expect(key.kept()).toBeUndefined();
     expect(warned).toEqual([
       "The blockr option assistant_key_secret is set, but the browser offers this page no Web Crypto to encrypt the visitor's key, as on a page that it does not deem secure. So the page keeps the key in its memory alone.",
     ]);
@@ -278,7 +292,7 @@ describe("keepKey()", () => {
 
     await keepKey(core, key, visitor(SECRET));
 
-    expect(key.kept()).toBe(false);
+    expect(key.kept()).toBeUndefined();
     expect(warned).toEqual([]);
   });
 });

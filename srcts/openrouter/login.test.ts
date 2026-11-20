@@ -125,15 +125,17 @@ describe("the login", () => {
     expect(url.searchParams.get("expiration")).toBe("1-day");
   });
 
-  test("asks for an expiry of 30 days where the browser keeps the key, so that a reload finds a key that still works", async () => {
-    const key = createVisitorKey();
+  test("asks for an expiry of 30 days where the browser keeps the key, for the app or for the apps of the origin, so that a reload finds a key that still works", async () => {
     const nothing = () => Promise.resolve(undefined);
-    await key.keepIn({ read: nothing, write: nothing, remove: nothing });
-    const { login, windows } = started({ key });
+    for (const scope of ["app", "origin"] as const) {
+      const key = createVisitorKey();
+      await key.keepIn({ scope, read: nothing, write: nothing, remove: nothing });
+      const { login, windows } = started({ key });
 
-    login.start();
+      login.start();
 
-    expect((await sentTo(windows)).searchParams.get("expiration")).toBe("30-days");
+      expect((await sentTo(windows)).searchParams.get("expiration")).toBe("30-days");
+    }
   });
 
   test("exchanges the code of its own state, with the verifier whose SHA-256 is the challenge, and gives the visitor's key the key", async () => {

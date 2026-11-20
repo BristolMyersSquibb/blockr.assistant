@@ -15,8 +15,9 @@
 // of its local storage that the secret encrypts (./entry.ts), so that a reload
 // or another tab of the app finds it
 // (https://github.com/BristolMyersSquibb/blockr.assistant/issues/273):
-// 1. As each board opens, keepKey() hands the key the entry of the app and
-//    the base URL.
+// 1. As each board opens, keepKey() hands the key the entry of the base URL,
+//    for the app alone or for the apps of the origin that keep the key with
+//    the same secret, by the blockr option assistant_key_scope.
 // 2. Where the page holds no key, the key reads the entry, and takes the key
 //    that the entry holds as given.
 // 3. Once the base URL takes a key, for a call or for its list of models, the
@@ -40,7 +41,7 @@
 // decides whether the chat asks again.
 
 import type { CoreApi } from "@blockr/core";
-import type { Deployment } from "../deployment/index.ts";
+import type { Deployment, KeyScope } from "../deployment/index.ts";
 import { keyEntry } from "./entry.ts";
 import type { KeyEntry } from "./entry.ts";
 
@@ -82,8 +83,9 @@ export interface VisitorKey {
   // key, the key takes the one that the entry holds. It resolves once the key
   // has read the entry, and never rejects.
   keepIn(entry: KeyEntry): Promise<void>;
-  // Whether the browser keeps the key, as it does once an entry keeps it.
-  kept(): boolean;
+  // For whom the browser keeps the key, once an entry keeps it, or undefined
+  // where the page keeps the key in its memory alone.
+  kept(): KeyScope | undefined;
 }
 
 const MISSING: KeyState = { kind: "missing" };
@@ -138,14 +140,14 @@ export function createVisitorKey(): VisitorKey {
       if (read !== undefined && keyOf(state) === undefined) set({ kind: "given", key: read });
     },
     kept() {
-      return entry !== undefined;
+      return entry?.scope;
     },
   };
 }
 
 // Has the browser keep the visitor's key, where the deployment sets a secret
-// for it. The entry of the app's path and the base URL then keeps the key, and
-// this resolves once the key has read the entry. The page keeps the key in its
+// for it. The entry of the base URL, for the scope that the deployment names,
+// then keeps the key, and this resolves once the key has read the entry. The page keeps the key in its
 // memory alone in two cases:
 // - The browser refuses local storage, as a visitor may have it do.
 // - The page has no Web Crypto, as a page that the browser does not deem
@@ -153,7 +155,7 @@ export function createVisitorKey(): VisitorKey {
 //   HTTPS.
 export async function keepKey(core: Pick<CoreApi, "log">, key: VisitorKey, deployment: Deployment): Promise<void> {
   const { credential, baseUrl } = deployment;
-  if (credential.kind !== "visitor" || credential.keySecret === undefined) return;
+  if (credential.kind !== "visitor" || credential.kept === undefined) return;
   const subtle = (globalThis.crypto as Crypto | undefined)?.subtle;
   if (subtle === undefined) {
     core
@@ -169,7 +171,8 @@ export async function keepKey(core: Pick<CoreApi, "log">, key: VisitorKey, deplo
   } catch {
     return;
   }
-  await key.keepIn(keyEntry({ secret: credential.keySecret, baseUrl, path: globalThis.location.pathname, subtle, storage }));
+  const { secret, scope } = credential.kept;
+  await key.keepIn(keyEntry({ secret, scope, baseUrl, path: globalThis.location.pathname, subtle, storage }));
 }
 
 // The key of the page, which the assistants of every board that opens in the
