@@ -97,9 +97,11 @@
   A call that fails raises the error `assistant_call_failed`, which the
   plugin withdraws once a later call succeeds.
 
-* The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
-  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the chat
-  first mounts (#225, #271).
+* The build bundles pi, minified, into `inst/js/pi-<hash>.js`, which the
+  browser loads as the chat first mounts (#225, #271).
+  Pi's code for each of the three APIs goes into a file of its own, such as
+  `inst/js/api-openai-responses-<hash>.js`, and the browser loads only the
+  file of the API that `assistant_api` names (#299).
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
@@ -196,6 +198,17 @@
   catalog of the gateway's models (#271).
   So such a model reasons, at the level `medium` unless its conversation
   picks another, where it reasoned at its provider's default before.
+
+* The calls to Vercel's AI Gateway go through from the browser (#299).
+  Where the base URL is the gateway's, each call leaves without the headers
+  that the gateway's answer to a page's preflight does not allow.
+  These are the headers that the SDKs under pi add to each call, such as
+  `x-stainless-os`, the `User-Agent` that pi sets, which Firefox sends, and
+  `anthropic-dangerous-direct-browser-access`, which Anthropic's own API
+  needs from a page.
+  The request for the gateway's list of models on Anthropic's Messages API
+  leaves out `anthropic-dangerous-direct-browser-access` too, so that a
+  deployment there that names no models is offered the gateway's models.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
