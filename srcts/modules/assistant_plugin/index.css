@@ -26,6 +26,10 @@
  * parts as elements of their own.
  * The links take the blue in which core's cards mark a message: blue-700, or
  * the lighter blue-400 under the dark theme.
+ * A fill of danger or warning lays its border's colour at 10% over the chat,
+ * as core tints a card's mark.
+ * A subtle edge mixes the same colour at 35% for danger and 45% for warning,
+ * as blockr.ui mixes its subtle borders.
  * The radii, the weights of the face and the transitions come from core's
  * theme as well, and the shadows are those of Tailwind's theme, which core's
  * UIs use.
@@ -34,14 +38,19 @@
   --blockr-assistant-text: var(--bc-color-text-default, currentColor);
   --blockr-assistant-text-muted: var(--bc-color-text-muted, color-mix(in oklab, currentColor 65%, transparent));
   --blockr-assistant-text-danger: var(--bc-color-text-danger, oklch(50.5% 0.213 27.518));
+  --blockr-assistant-text-warning: var(--bc-color-text-warning, oklch(47.3% 0.137 46.201));
   --blockr-assistant-text-on-accent: var(--bc-color-text-on-accent, #fff);
   --blockr-assistant-border: var(--bc-color-border-default, color-mix(in oklab, currentColor 25%, transparent));
   --blockr-assistant-border-accent: var(--bc-color-border-accent, oklch(62.3% 0.214 259.815));
   --blockr-assistant-border-danger: var(--bc-color-border-danger, oklch(63.7% 0.237 25.331));
+  --blockr-assistant-border-warning: var(--bc-color-border-warning, oklch(76.9% 0.188 70.08));
+  --blockr-assistant-border-danger-subtle: color-mix(in oklab, var(--blockr-assistant-border-danger) 35%, transparent);
+  --blockr-assistant-border-warning-subtle: color-mix(in oklab, var(--blockr-assistant-border-warning) 45%, transparent);
   --blockr-assistant-bg-subtle: var(--bc-color-bg-subtle, color-mix(in oklab, currentColor 5%, transparent));
   --blockr-assistant-bg-raised: var(--bc-color-bg-raised, Canvas);
   --blockr-assistant-bg-accent: var(--bc-color-bg-accent, oklch(54.6% 0.245 262.881));
   --blockr-assistant-bg-danger: color-mix(in oklab, var(--blockr-assistant-border-danger) 10%, transparent);
+  --blockr-assistant-bg-warning: color-mix(in oklab, var(--blockr-assistant-border-warning) 10%, transparent);
   --blockr-assistant-link: var(--bc-color-blue-700, oklch(48.8% 0.243 264.376));
   --blockr-assistant-radius: var(--bc-radius-lg, 0.5rem);
   --blockr-assistant-radius-sm: var(--bc-radius-md, 0.375rem);
@@ -738,15 +747,64 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   color: var(--blockr-assistant-text-muted);
 }
 
-/* Why a turn failed, where the turn ended. */
-.blockr-assistant-failure {
+/*
+ * Why a turn failed, where the turn ended, and each notification about the
+ * plugin, above the message field.
+ * Each takes the message style of blockr.ui's design system: 13px on a fill
+ * and an edge for its severity, with a radius of 6px, as the dock's cards
+ * draw a block's notifications.
+ * So a failed turn looks the same in both places.
+ * A failure and an error take the danger set, and a warning the amber set.
+ * The design system gives a message no colour, so a message is neutral.
+ * Each keeps its line breaks and wraps a long word, such as a path.
+ */
+.blockr-assistant-failure,
+.blockr-assistant-notification {
   margin: 0;
   padding: 6px 10px;
-  border: 1px solid var(--blockr-assistant-border-danger);
-  border-radius: var(--blockr-assistant-radius);
-  background: var(--blockr-assistant-bg-danger);
+  border: 1px solid var(--blockr-assistant-border);
+  border-radius: var(--blockr-assistant-radius-sm);
+  background: var(--blockr-assistant-bg-subtle);
   font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.blockr-assistant-failure,
+.blockr-assistant-notification[data-severity="error"] {
+  border-color: var(--blockr-assistant-border-danger-subtle);
+  background: var(--blockr-assistant-bg-danger);
   color: var(--blockr-assistant-text-danger);
+}
+
+.blockr-assistant-notification[data-severity="warning"] {
+  border-color: var(--blockr-assistant-border-warning-subtle);
+  background: var(--blockr-assistant-bg-warning);
+  color: var(--blockr-assistant-text-warning);
+}
+
+/*
+ * The notifications sit between the transcript and the field for the
+ * visitor's key, in the order they came.
+ * Where the frontend gives the chat a fixed height, as a dock's panel has,
+ * they take at most two fifths of it, and scroll beyond it, so that the
+ * message field and the end of the transcript stay in view.
+ * Where the chat grows with its content, as in a section of core's basic
+ * frontend, they grow with it.
+ */
+.blockr-assistant-notifications {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.blockr-assistant-notifications ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px 0;
+  list-style: none;
 }
 
 /* The greeting and its suggestions, as rows of 30px. */

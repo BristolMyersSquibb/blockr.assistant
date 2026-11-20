@@ -2,9 +2,9 @@
 // pi's fake provider, drawn by React on happy-dom, so that the tests need
 // neither R, a browser nor a model.
 
-import type { Json } from "@blockr/core";
+import type { Condition, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
-import type { Answer } from "@blockr/core/stubs";
+import type { Answer, StubCoreOptions } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { act } from "react";
@@ -77,6 +77,9 @@ interface Options {
   // How R answers the requests that core sends, as the assistant's requests,
   // which go unanswered unless given.
   readonly answer?: Answer;
+  // The conditions that R raises in its reply to a request, none unless
+  // given.
+  readonly conditions?: StubCoreOptions["conditions"];
 }
 
 // Core on a board that holds the assistant's state given, with the assistant
@@ -103,6 +106,7 @@ async function chat(options: Options = {}) {
       modules: { [ASSISTANT]: { api: 1, default: { ...assistantModule.default, start: undefined } } },
       ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
       ...(options.answer === undefined ? {} : { answer: options.answer }),
+      ...(options.conditions === undefined ? {} : { conditions: options.conditions }),
     }),
   );
   const controller = new AbortController();
@@ -516,6 +520,136 @@ describe("the assistant's chat", () => {
     await until(() => el.querySelector(".blockr-assistant-failure") !== null, "the failure");
 
     expect(el.querySelector(".blockr-assistant-failure")?.textContent).toBe("The assistant's call to the model failed: 401 Unauthorized");
+  });
+});
+
+describe("the chat's notifications", () => {
+  // R's answers to the requests that the assistant sends as the board opens,
+  // with no skills, no template and no model settings, so that the plugin
+  // raises none of its errors, and to the request probe, which a test sends.
+  const quiet: Answer = (request) => {
+    if (request.kind !== "request" || request.type !== "plugin" || request.plugin !== ASSISTANT) return undefined;
+    switch (request.name) {
+      case "list_skills":
+        return [];
+      case "read_template":
+      case "read_model_settings":
+      case "probe":
+        return null;
+      default:
+        return undefined;
+    }
+  };
+
+  // The notifications that the chat shows, in order, each as its severity and
+  // its text.
+  function shown(el: HTMLElement): (string | undefined)[][] {
+    return [...el.querySelectorAll<HTMLElement>(".blockr-assistant-notification")].map((item) => [item.dataset.severity, item.textContent]);
+  }
+
+  test("shows each notification about the plugin above the field for the key and the message field, in the order they came, until it is withdrawn", async () => {
+    const { el, core } = await chat({ answer: quiet, credential: VISITOR });
+    const region = el.querySelector(".blockr-assistant-notifications");
+    expect(region?.getAttribute("aria-live")).toBe("polite");
+    expect(shown(el)).toEqual([]);
+
+    let withdraw = (): void => undefined;
+    act(() => {
+      withdraw = core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_models_failed", message: "The base URL lists no model." });
+      core.notifications.notify(ASSISTANT, { severity: "warning", code: "assistant_compaction_failed", message: "The summary failed." });
+      core.notifications.notify(ASSISTANT, { severity: "message", code: "assistant_note", message: "A note." });
+    });
+
+    expect(shown(el)).toEqual([
+      ["error", "The base URL lists no model."],
+      ["warning", "The summary failed."],
+      ["message", "A note."],
+    ]);
+    const column = el.querySelector(".blockr-assistant-chat-main");
+    expect([...(column?.children ?? [])].map((child) => child.className)).toEqual([
+      "blockr-assistant-transcript",
+      "blockr-assistant-notifications",
+      "blockr-assistant-key",
+      "blockr-assistant-composer",
+      "blockr-assistant-footer",
+    ]);
+
+    act(withdraw);
+    expect(shown(el)).toEqual([
+      ["warning", "The summary failed."],
+      ["message", "A note."],
+    ]);
+  });
+
+  test("shows what core and other plugins raise about the plugin, such as the conditions of R's reply to its request, and none about the board or a block", async () => {
+    const warned: Condition = { severity: "warning", class: ["simpleWarning", "warning", "condition"], message: "R warned." };
+    const { el, core } = await chat({
+      answer: quiet,
+      blocks: true,
+      conditions: (request) => (request.kind === "request" && request.type === "plugin" && request.name === "probe" ? [warned] : undefined),
+    });
+    const block = Object.keys(core.store.board().blocks)[0] ?? "";
+
+    await act(() => core.request(ASSISTANT, "probe", {}));
+    act(() => {
+      core.notifications.notify("blockr.core-file_storage_plugin", { severity: "error", code: "storage_failed", message: "About the assistant.", about: { plugin: ASSISTANT } });
+      core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_board", message: "About the board.", about: null });
+      core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_block", message: "About a block.", about: { block } });
+    });
+
+    expect(shown(el)).toEqual([
+      ["warning", "R warned."],
+      ["error", "About the assistant."],
+    ]);
+  });
+
+  test("shows the notifications that hold as it mounts, as where the dock draws it again", async () => {
+    const { el, core, remove } = await chat({ answer: quiet });
+    act(() => {
+      core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_call_failed", message: "The call failed." });
+    });
+    remove();
+
+    let again = (): void => undefined;
+    act(() => {
+      again = renderChat({ el, core });
+    });
+    onTestFinished(() => {
+      act(again);
+    });
+    await settle();
+
+    expect(shown(el)).toEqual([["error", "The call failed."]]);
+  });
+
+  test("shows a message without the ANSI escapes of R's colours and links", async () => {
+    const { el, core } = await chat({ answer: quiet });
+    act(() => {
+      core.notifications.notify(ASSISTANT, {
+        severity: "error",
+        code: "assistant_skills_failed",
+        message: "R could not list the skills: \u001b[1m\u001b[31mthe directory\u001b[39m\u001b[22m \u001b]8;;file:///srv/skills\u0007/srv/skills\u001b]8;;\u0007 does not exist.",
+      });
+    });
+
+    expect(shown(el)).toEqual([["error", "R could not list the skills: the directory /srv/skills does not exist."]]);
+  });
+
+  test("shows a failed call above the message field as well as at its turn, until a later call succeeds", async () => {
+    const { el, assistant } = await chat({
+      answer: quiet,
+      replies: [fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" }), fauxAssistantMessage("Two blocks.")],
+    });
+
+    type(el, "How many blocks?");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-failure") !== null && assistant.turns.current() === undefined, "the failure");
+    expect(shown(el)).toEqual([["error", "The assistant's call to the model failed: 401 Unauthorized"]]);
+
+    type(el, "And now?");
+    press(field(el), "Enter");
+    await until(() => el.textContent.includes("Two blocks.") && assistant.turns.current() === undefined, "the reply");
+    expect(shown(el)).toEqual([]);
   });
 });
 

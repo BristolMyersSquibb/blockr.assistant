@@ -491,6 +491,16 @@
   The preamble of the Focus section becomes a rule, and the message of the
   app's opens with one sentence that says that the app writes it.
 
+* The chat shows every notification about the plugin above the message field,
+  so that the user reads why the assistant fails where they would send (#284).
+  Those are what the plugin raises, such as the error
+  `assistant_call_failed`, and what core and R raise about the plugin.
+  Each shows until its cause has gone, or until the next board opens.
+  An error takes the danger colours of blockr.ui's design system, and a
+  warning its amber ones.
+  A failure that ended a turn still shows at that turn too, now in the same
+  style.
+
 # blockr.assistant 0.1.0.9000
 
 * The assistant works with ellmer 0.5.0 again.
