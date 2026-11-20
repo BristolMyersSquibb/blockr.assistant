@@ -333,8 +333,11 @@
 #'   Style \tab \code{style} \tab To answer concisely \cr
 #'   What the app sends you \tab none \tab
 #'     That a message of the app's follows the conversation, with the board
-#'     and what the user has on screen, that a note says what others changed,
-#'     and that what the user changed is what the user wants \cr
+#'     and what the user has on screen, what the Board section lists first
+#'     where the board does not fit its cap, that a request that names no
+#'     block is most likely about the block that has focus, that a note says
+#'     what others changed, and that what the user changed is what the user
+#'     wants \cr
 #'   Statuses \tab none \tab
 #'     What each status marker in the Board section means \cr
 #'   Look, don't guess \tab none \tab
@@ -342,6 +345,9 @@
 #'     than guessing \cr
 #'   Edits \tab none \tab
 #'     That ids never change, and that changing one needs the user's yes \cr
+#'   Plugins and board options \tab none \tab
+#'     The app's plugins and the board options that its packages define,
+#'     which do not change while the board is open \cr
 #'   Skills \tab none \tab
 #'     Each skill that names no block class or plugin class, and when to read
 #'     one \cr
@@ -350,7 +356,9 @@
 #'     conversation's previous call, and who changed it, in a note of the
 #'     app's that the conversation keeps \cr
 #'   Board \tab none \tab
-#'     The board as it is when the call goes out, in the app's message \cr
+#'     The board as it is when the call goes out, in the app's message, as
+#'     much of it as the blockr option `assistant_board_section_max_chars`
+#'     holds, with what the call most likely needs first \cr
 #'   Focus \tab none \tab
 #'     Which block has focus and what the user has on screen, in the app's
 #'     message

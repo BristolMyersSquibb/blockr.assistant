@@ -493,6 +493,23 @@ describe("the note of what others changed in the board", () => {
     expect(note?.type === "changes" ? note.text : "").toContain("- Stack s9: added by the assistant in another conversation.");
   });
 
+  test("gives the message of the app's the blocks that changes touched since the conversation's previous call, the conversation's own edits included", async () => {
+    const at: { core?: CoreApi } = {};
+    const tool = running(at, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "adults" }, "assistant");
+    const changed: (readonly string[])[] = [];
+    const appMessage = (blocks: Iterable<string> = []) => {
+      changed.push([...blocks]);
+      return Promise.resolve(APP_MESSAGE);
+    };
+    const open = await opened({ tools: [tool], replies: touching("t-1"), prompt: { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage } });
+    at.core = open.core;
+
+    await open.turns.run("c1");
+
+    expect(open.core.store.board().blocks).toHaveProperty("adults");
+    expect(changed).toEqual([[], ["adults"]]);
+  });
+
   test("goes to no conversation's first call, and to no call where nothing changed since the conversation's previous call", async () => {
     const tool: Tool = { ...listBlocks, name: "touch_board" };
     const { core, turns } = await opened({ tools: [tool], replies: touching("t-1") });
