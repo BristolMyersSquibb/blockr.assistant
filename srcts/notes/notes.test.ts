@@ -1,23 +1,64 @@
-// The notes (./notes.ts) on core's CoreApi for tests, on the board of core's
-// reply to hello: what a note says of the blocks, links and stacks that others
-// added, removed or changed since a conversation's previous call, how it
-// groups what one origin added or removed, whom it names for each change, what
-// it leaves out, the conversation's own edits, the undo that /undo asks for,
-// the cap, and the message that holds the note, and the blocks that changes
-// touched, which the Board section lists early.
+// The notes (./notes.ts) on core's CoreApi for tests, on a board of a test
+// package's block classes: what a note says of the blocks, links and stacks
+// that others added, removed or changed since a conversation's previous call,
+// how it groups what one origin added or removed, whom it names for each
+// change, what it leaves out, the conversation's own edits, the undo that
+// /undo asks for, the cap, and the message that holds the note, and the blocks
+// that changes touched, which the Board section lists early.
 
-import type { CoreApi, Json } from "@blockr/core";
-import { stubCore } from "@blockr/core/stubs";
+import type { Board, CoreApi, Json } from "@blockr/core";
+import { HELLO, stubCore } from "@blockr/core/stubs";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { isNote } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
+import { blockClass, helloWith } from "../testing/index.ts";
 import { createNotes } from "./notes.ts";
 
-// Core on the board of the reply to hello, which holds the blocks a to f, the
-// links ab, ac, bc, ad, be, de and keen_finch, and the stack s1 of a and b,
-// with the notes of that board. Core stops as the test finishes.
+// The block classes of a test package that the board's blocks are of.
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const MERGE = blockClass("blockr.test-merge_block", { inputs: ["x", "y"] });
+const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
+const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
+const SCATTER = blockClass("blockr.test-scatter_block", { inputs: ["data"] });
+
+// The board: the data block a, which feeds the head block b, the merge block c
+// of a and b, the subset block d and the scatter block f, and the bind block
+// e of b and d, with the stack s1 of a and b.
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: { dataset: "iris" }, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: { n: 6, direction: "head" }, name: "Head", locked: null },
+    c: { registry_id: MERGE.id, state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
+    d: { registry_id: SUBSET.id, state: { subset: "Sepal.Width > 3" }, name: "Wide sepals", locked: null },
+    e: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
+    f: { registry_id: SCATTER.id, state: { x: "Sepal.Length", y: "Sepal.Width" }, name: "Scatter", locked: null },
+  },
+  links: {
+    ab: { from: "a", to: "b", input: "data" },
+    ac: { from: "a", to: "c", input: "x" },
+    bc: { from: "b", to: "c", input: "y" },
+    ad: { from: "a", to: "d", input: "data" },
+    be: { from: "b", to: "e", input: "" },
+    de: { from: "d", to: "e", input: "" },
+    af: { from: "a", to: "f", input: "data" },
+  },
+  stacks: { s1: { name: "Input", blocks: ["a", "b"], color: null } },
+} satisfies Partial<Board>;
+
+// A plugin of the app's that tidies the board, whose class keeps no state.
+const TIDY = "blockr.test-tidy_plugin";
+
+// Core on that board, in an app that runs core's plugins and the plugin
+// Tidy, with the notes of that board.
+// Core stops as the test finishes.
 async function opened(blockrOptions?: Readonly<Record<string, Json>>) {
-  const stubbed = await stubCore(blockrOptions === undefined ? {} : { blockrOptions });
+  const hello = helloWith(HELLO, { blockClasses: [DATA, HEAD, MERGE, SUBSET, BIND, SCATTER], board: BOARD });
+  const stubbed = await stubCore({
+    hello: { ...hello, plugins: { ...hello.plugins, [TIDY]: { name: "Tidy", version: 1, module: `app/${TIDY}.js` } } },
+    modules: { [TIDY]: { api: 1, default: {} } },
+    ...(blockrOptions === undefined ? {} : { blockrOptions }),
+  });
   const controller = new AbortController();
   onTestFinished(() => {
     controller.abort();
@@ -65,7 +106,7 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c1");
 
     await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "g" });
+    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "g" });
     await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
     await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
     await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" });
@@ -85,8 +126,8 @@ describe("the note of what others changed in the board", () => {
 
     await edit(core, "blockr.core-remove_block", { id: "d" });
     await edit(core, "blockr.core-remove_block", { id: "e" });
-    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "g" });
-    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "h" });
+    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "g" });
+    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "h" });
     await edit(core, "blockr.core-add_link", { from: "a", to: "g", id: "ag" });
     await edit(core, "blockr.core-remove_link", { id: "ab" });
     await edit(core, "blockr.core-remove_link", { id: "ac" });
@@ -128,19 +169,19 @@ describe("the note of what others changed in the board", () => {
     await edit(core, "blockr.core-rename_block", { id: "a", name: "Data" }, "assistant");
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "f" }, "blockr.session");
-    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" }, "blockr.core-edit_board_plugin");
+    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" }, TIDY);
     await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block a: name changed by the assistant in another conversation.",
-      "- Block f, with its link keen_finch: removed by the plugin blockr.session.",
+      "- Block f, with its link af: removed by the plugin blockr.session.",
       "- Block b: arg n changed by the user.",
-      "- Stack s1: name changed by the plugin Edit board.",
+      "- Stack s1: name changed by the plugin Tidy.",
     ]);
     expect(linesOf(await notes.take("c2"))).toEqual([
-      "- Block f, with its link keen_finch: removed by the plugin blockr.session.",
+      "- Block f, with its link af: removed by the plugin blockr.session.",
       "- Block b: arg n changed by the user.",
-      "- Stack s1: name changed by the plugin Edit board.",
+      "- Stack s1: name changed by the plugin Tidy.",
     ]);
   });
 
@@ -160,7 +201,7 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c1");
 
     turnIn("c1");
-    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "adults" }, "assistant");
+    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
     await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } }, "assistant");
     await edit(core, "blockr.core-remove_block", { id: "adults" });
     await edit(core, "blockr.core-set_block", { id: "b", state: { n: 6 } });
@@ -270,7 +311,7 @@ describe("the note of what others changed in the board", () => {
     const { core, notes, turnIn } = await opened();
     await notes.take("c1");
     turnIn("c1");
-    await edit(core, "blockr.core-add_block", { registry_id: "blockr.core-head_block", id: "adults" }, "assistant");
+    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "adults" });
     await edit(core, "blockr.core-remove_block", { id: "d" });

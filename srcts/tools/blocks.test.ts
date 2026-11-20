@@ -1,11 +1,11 @@
 // The tools that read the blocks of the board, on blockr.core's CoreApi for
-// tests, whose board is that of core's fixture hello: a dataset block a, b
-// and d downstream of it, the merge block c of a and b, the rbind block e of
-// b and d, and the scatter block f of a.
+// tests, on a board of a test package's block classes: a data block a, b and
+// d downstream of it, the merge block c of a and b, and the bind block e of b
+// and d.
 
-import type { Condition } from "@blockr/core";
+import type { Board, Condition } from "@blockr/core";
 import { describe, expect, test } from "vitest";
-import { callTool, parsed, skill, skillsHolding, startAssistant } from "../testing/index.ts";
+import { blockClass, callTool, parsed, skill, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import type { Skill } from "../skills/index.ts";
 import { readTools } from "./index.ts";
@@ -13,8 +13,32 @@ import { readTools } from "./index.ts";
 const ERROR: Condition = { severity: "error", class: ["simpleError", "error", "condition"], phase: "expr", message: "object 'Sepal.Width' not found" };
 const WARNING: Condition = { severity: "warning", class: ["simpleWarning", "warning", "condition"], phase: "expr", message: "NaNs produced" };
 
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const MERGE = blockClass("blockr.test-merge_block", { inputs: ["x", "y"] });
+const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
+const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
+
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: { dataset: "iris" }, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: { n: 6 }, name: "Head", locked: null },
+    c: { registry_id: MERGE.id, state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
+    d: { registry_id: SUBSET.id, state: { subset: "log(Sepal.Width - 3) > 0", select: "" }, name: "Wide sepals", locked: null },
+    e: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
+  },
+  links: {
+    ab: { from: "a", to: "b", input: "data" },
+    ac: { from: "a", to: "c", input: "x" },
+    bc: { from: "b", to: "c", input: "y" },
+    ad: { from: "a", to: "d", input: "data" },
+    be: { from: "b", to: "e", input: "" },
+    de: { from: "d", to: "e", input: "" },
+  },
+} satisfies Partial<Board>;
+
 async function started(options: StartOptions = {}, skills: readonly Skill[] = []) {
-  const stub = await startAssistant(options);
+  const stub = await startAssistant({ blockClasses: [DATA, HEAD, MERGE, SUBSET, BIND], board: BOARD, ...options });
   return { ...stub, tools: readTools(stub.core, skillsHolding(...skills)) };
 }
 
@@ -27,12 +51,11 @@ describe("list_blocks", () => {
 
     expect(result.isError).toBe(false);
     expect(parsed(result)).toEqual([
-      { id: "a", name: "Iris", registry_id: "blockr.core-dataset_block", status: "ready" },
-      { id: "b", name: "Head", registry_id: "blockr.core-head_block", status: "ready" },
-      { id: "c", name: "Merge", registry_id: "blockr.core-merge_block", status: "unevaluated" },
-      { id: "d", name: "Wide sepals", registry_id: "blockr.core-subset_block", status: "unevaluated" },
-      { id: "e", name: "Bind", registry_id: "blockr.core-rbind_block", status: "unevaluated" },
-      { id: "f", name: "Scatter", registry_id: "blockr.core-scatter_block", status: "unevaluated" },
+      { id: "a", name: "Iris", registry_id: "blockr.test-data_block", status: "ready" },
+      { id: "b", name: "Head", registry_id: "blockr.test-head_block", status: "ready" },
+      { id: "c", name: "Merge", registry_id: "blockr.test-merge_block", status: "unevaluated" },
+      { id: "d", name: "Wide sepals", registry_id: "blockr.test-subset_block", status: "unevaluated" },
+      { id: "e", name: "Bind", registry_id: "blockr.test-bind_block", status: "unevaluated" },
     ]);
   });
 });
@@ -45,7 +68,7 @@ describe("describe_block", () => {
     expect(parsed(await callTool(tools, "describe_block", { id: "c" }))).toEqual({
       id: "c",
       name: "Merge",
-      registry_id: "blockr.core-merge_block",
+      registry_id: "blockr.test-merge_block",
       status: "ready",
       summary: "<data.frame> [150 × 5]",
       conditions: [],
@@ -102,12 +125,10 @@ describe("describe_block", () => {
   test("gives why the transport could not send the block's latest evaluation", async () => {
     const { core, tools } = await started({ refuse: ["evaluate"] });
     await core.scheduler.evaluate(["a"]);
+    const unsent = core.scheduler.status("a")?.unsent;
 
-    expect(parsed(await callTool(tools, "describe_block", { id: "a" }))).toMatchObject({
-      status: "failed",
-      unsent: "The evaluation could not be sent to R: The transport is closed.",
-      conditions: [],
-    });
+    expect(unsent).toEqual(expect.any(String));
+    expect(parsed(await callTool(tools, "describe_block", { id: "a" }))).toMatchObject({ status: "failed", unsent, conditions: [] });
   });
 
   test("leaves out a value of the state too long to show, and marks it with get_block_state", async () => {
@@ -131,9 +152,9 @@ describe("describe_block", () => {
 
   test("lists the skills that the model may read and that name the block's class, each description on one line and cut", async () => {
     const skills = [
-      skill("subsets", { blocks: ["blockr.core-subset_block"], description: `How this site\n  writes   its subsets: ${"a".repeat(150)}` }),
-      skill("hidden", { blocks: ["blockr.core-subset_block"], modelInvocable: false }),
-      skill("heads", { blocks: ["blockr.core-head_block"] }),
+      skill("subsets", { blocks: ["blockr.test-subset_block"], description: `How this site\n  writes   its subsets: ${"a".repeat(150)}` }),
+      skill("hidden", { blocks: ["blockr.test-subset_block"], modelInvocable: false }),
+      skill("heads", { blocks: ["blockr.test-head_block"] }),
     ];
     const { tools } = await started({ blockrOptions: { assistant_skill_description_max_chars: 100 } }, skills);
 
@@ -224,24 +245,23 @@ describe("get_block_conditions", () => {
   test("gives why the transport could not send the block's latest evaluation, which raised nothing", async () => {
     const { core, tools } = await started({ refuse: ["evaluate"] });
     await core.scheduler.evaluate(["a"]);
+    const unsent = core.scheduler.status("a")?.unsent;
 
-    expect(parsed(await callTool(tools, "get_block_conditions", { id: "a" }))).toEqual({
-      id: "a",
-      status: "failed",
-      unsent: "The evaluation could not be sent to R: The transport is closed.",
-      conditions: {},
-    });
+    expect(unsent).toEqual(expect.any(String));
+    expect(parsed(await callTool(tools, "get_block_conditions", { id: "a" }))).toEqual({ id: "a", status: "failed", unsent, conditions: {} });
   });
 
   test("gives why the transport could not send the evaluation of a stale block before its latest change", async () => {
     const { core, tools } = await started({ refuse: ["evaluate"] });
     await core.scheduler.evaluate(["a"]);
     core.scheduler.invalidate("a");
+    const unsent = core.scheduler.status("a")?.unsent;
 
+    expect(unsent).toEqual(expect.any(String));
     expect(parsed(await callTool(tools, "get_block_conditions", { id: "a" }))).toEqual({
       id: "a",
       status: "stale",
-      unsent: "The evaluation could not be sent to R: The transport is closed.",
+      unsent,
       note: expect.stringContaining("out of date") as unknown,
       conditions: {},
     });

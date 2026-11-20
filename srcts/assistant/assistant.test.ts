@@ -5,6 +5,7 @@
 // assistant itself, on the assistant's class without its start, which would
 // open the board's own.
 
+import type { Board } from "@blockr/core";
 import { stubCore } from "@blockr/core/stubs";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -15,7 +16,7 @@ import { expect, onTestFinished, test } from "vitest";
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import { ASSISTANT } from "../state/index.ts";
 import type { AssistantState } from "../state/index.ts";
-import { fauxLoop, HELLO_ASSISTANT } from "../testing/index.ts";
+import { blockClass, fauxLoop, HELLO_ASSISTANT, helloWith } from "../testing/index.ts";
 import type { Locks } from "../turns/index.ts";
 import { openAssistant } from "./assistant.ts";
 
@@ -26,11 +27,23 @@ const LOCKS: Locks = {
   request: ((name: string, callback: (lock: Lock | null) => Promise<unknown>) => callback({ name, mode: "exclusive" })) as Locks["request"],
 };
 
-// Core on the board of core's fixture hello, whose assistant's state holds
-// the conversation c1 with the user's question given, and the assistant of
-// that board on pi's fake provider, with the replies given. R answers the
-// request describe_result for each block that it reads. Core stops as the
-// test finishes.
+// The block classes of a test package that the board's blocks are of, and
+// the board: the data block a, which feeds the head block b.
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: { dataset: "iris" }, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: { n: 6, direction: "head" }, name: "Head", locked: null },
+  },
+  links: { ab: { from: "a", to: "b", input: "data" } },
+} satisfies Partial<Board>;
+
+// Core on that board, whose assistant's state holds the conversation c1 with
+// the user's question given, and the assistant of that board on pi's fake
+// provider, with the replies given.
+// R answers the request describe_result for each block that it reads.
+// Core stops as the test finishes.
 async function openedWith(question: string, replies: FauxResponseStep[]) {
   const state: AssistantState = {
     conversations: {
@@ -43,12 +56,10 @@ async function openedWith(question: string, replies: FauxResponseStep[]) {
       },
     },
   };
-  const { board } = HELLO_ASSISTANT.board;
+  const hello = helloWith(HELLO_ASSISTANT, { blockClasses: [DATA, HEAD], board: BOARD });
+  const { board } = hello.board;
   const stubbed = await stubCore({
-    hello: {
-      ...HELLO_ASSISTANT,
-      board: { ...HELLO_ASSISTANT.board, board: { ...board, plugins: { ...board.plugins, [ASSISTANT]: { state, version: 1 } } } },
-    },
+    hello: { ...hello, board: { ...hello.board, board: { ...board, plugins: { ...board.plugins, [ASSISTANT]: { state, version: 1 } } } } },
     modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
     answer: (request) => {
       if (request.kind !== "request" || request.type !== "plugin") return undefined;
@@ -100,9 +111,9 @@ test("sends each call the system prompt of the open board, and after the convers
     { role: "system", content: expect.stringMatching(/^You are an assistant embedded next to a blockr data analysis board\.\n/) as unknown },
     { role: "system", content: expect.stringMatching(/## Statuses\n/) as unknown },
   ]);
-  expect(boards[0]).toContain("### Blocks\n- a <blockr.core-dataset_block> dataset, package [unevaluated]\n- b <blockr.core-head_block> n, direction [unevaluated] <- data: a (ab)\n");
+  expect(boards[0]).toContain("### Blocks\n- a <blockr.test-data_block> dataset [unevaluated]\n- b <blockr.test-head_block> n, direction [unevaluated] <- data: a (ab)");
   // The model's edit changed b, which the board of the next call lists first.
-  expect(boards[1]).toContain("### Blocks\n- b <blockr.core-head_block> n, direction <- data: a (ab)\n");
+  expect(boards[1]).toContain("### Blocks\n- b <blockr.test-head_block> n, direction <- data: a (ab)\n");
 });
 
 test("offers the edit tools, so that an edit that the model makes in a turn applies as a step of the assistant", async () => {

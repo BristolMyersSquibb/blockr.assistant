@@ -29,13 +29,19 @@ describe("list_commands", () => {
 
   test("cuts each description at assistant_description_max_chars, pointing at describe_command, and lists a command without one by its label", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_description_max_chars: 90 } });
+    core.commands.register({
+      id: "blockr.test-sort",
+      label: "Sort",
+      description: "Sorts the rows of a block's result by the columns given, each in the order given, the first column first.",
+      run: () => [],
+    });
     core.commands.register({ id: "blockr.test-noop", label: "Do nothing", undo: false, run: () => [] });
 
     const listed = parsed(await callTool(tools, "list_commands"));
 
     expect(listed).toContainEqual({
-      id: "blockr.core-set_block",
-      description: "Sets values o\n... [+126 chars truncated -- call describe_command for the full description]",
+      id: "blockr.test-sort",
+      description: "Sorts the row\n... [+92 chars truncated -- call describe_command for the full description]",
     });
     expect(listed).toContainEqual({ id: "blockr.test-noop", description: "Do nothing" });
   });
@@ -48,7 +54,7 @@ describe("describe_command", () => {
 
     expect(parsed(await callTool(tools, "describe_command", { id: "blockr.core-set_block" }))).toEqual({
       id: "blockr.core-set_block",
-      label: "Set block state",
+      label: command?.label,
       description: command?.description,
       args: command?.args,
       undo: true,

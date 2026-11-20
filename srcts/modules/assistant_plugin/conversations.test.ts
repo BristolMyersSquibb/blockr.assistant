@@ -144,7 +144,7 @@ describe("the conversations under a cap above 0", () => {
       model: "gpt-5.4",
       usage: { input: 140, output: 28, last: 130 },
     });
-    await expect(conversations.addConversation("c1", "Again")).rejects.toThrow(/fails its preflight/);
+    await expect(conversations.addConversation("c1", "Again")).rejects.toMatchObject({ preflight: false });
   });
 
   test("drop what the memory holds of a conversation that the state no longer holds, whoever removed it", async () => {
