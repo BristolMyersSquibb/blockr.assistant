@@ -6,12 +6,16 @@
 // - "Open Link" opens it, and "Cancel" leaves it.
 // - "Always open external links" opens it, and every later one without the
 //   dialog, until the page reloads.
-// The dialog opens in the browser's top layer, through showModal(), and sits
-// in the chat's element, as the panel's contract asks
+// The dialog is the modal of core's React SDK, which React Aria draws in a
+// portal at the end of the page's body, as every overlay of the chat is
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.2.4#a-plugins-panel).
+// It takes the focus to "Open Link" as it opens, as today's dialog does, and
+// gives the focus back to where it was as it closes.
+// It closes on Escape, which stops no turn, since the modal takes the key
+// (./chat.tsx).
 
-import { useEffect, useRef } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
 import { useChatActions } from "./context.ts";
 
 // Whether the user chose to open every link without the dialog, which holds
@@ -50,56 +54,54 @@ export function TextLink({ href, title, children }: { readonly href?: string | u
 
 // The dialog before a link opens another site, open while `url` names the
 // link, which calls onClose() as it closes.
-export function LinkDialog({ url, onClose }: { readonly url: string | undefined; readonly onClose: () => void }): ReactElement {
-  const ref = useRef<HTMLDialogElement>(null);
-
-  // The dialog focuses "Open Link" as it opens, as today's does. React
-  // focuses an element with autoFocus as it mounts, while the dialog is
-  // closed, so the dialog focuses the button itself.
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (url !== undefined && !dialog.open) {
-      dialog.showModal();
-      dialog.querySelector<HTMLButtonElement>(".blockr-assistant-dialog-open")?.focus();
-    }
-    if (url === undefined && dialog.open) dialog.close();
-  }, [url]);
+export function LinkDialog({ url, onClose }: { readonly url: string | undefined; readonly onClose: () => void }): ReactElement | null {
+  if (url === undefined) return null;
 
   const open = (remember: boolean): void => {
     if (remember) always = true;
-    if (url !== undefined) globalThis.open(url, "_blank", "noopener,noreferrer");
+    globalThis.open(url, "_blank", "noopener,noreferrer");
     onClose();
   };
 
   return (
-    <dialog ref={ref} className="blockr-assistant-dialog" aria-labelledby="blockr-assistant-dialog-title" onClose={onClose}>
-      <h2 id="blockr-assistant-dialog-title">External Link</h2>
-      <p>This link will take you to an external website:</p>
-      <p className="blockr-assistant-dialog-url">{url}</p>
-      <div className="blockr-assistant-dialog-buttons">
-        <button
-          type="button"
-          className="blockr-assistant-dialog-always"
-          onClick={() => {
-            open(true);
-          }}
-        >
-          Always open external links
-        </button>
-        <button
-          type="button"
-          className="blockr-assistant-dialog-open"
-          onClick={() => {
-            open(false);
-          }}
-        >
-          Open Link
-        </button>
-        <button type="button" className="blockr-assistant-dialog-cancel" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-    </dialog>
+    <Modal
+      isOpen
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}
+      className="blockr-assistant-overlay blockr-assistant-dialog"
+    >
+      <Dialog>
+        <Heading slot="title" level={2}>
+          External Link
+        </Heading>
+        <p>This link will take you to an external website:</p>
+        <p className="blockr-assistant-dialog-url">{url}</p>
+        <div className="blockr-assistant-dialog-buttons">
+          <Button
+            variant="quiet"
+            className="blockr-assistant-dialog-always"
+            onPress={() => {
+              open(true);
+            }}
+          >
+            Always open external links
+          </Button>
+          <Button
+            variant="primary"
+            className="blockr-assistant-dialog-open"
+            autoFocus
+            onPress={() => {
+              open(false);
+            }}
+          >
+            Open Link
+          </Button>
+          <Button variant="secondary" className="blockr-assistant-dialog-cancel" onPress={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </Dialog>
+    </Modal>
   );
 }

@@ -12,14 +12,21 @@
 //   refused, which says so.
 // The chat shows a file from the copy of its bytes that the memory keeps,
 // through an object URL, which it releases once it no longer shows the file.
-// The dialog opens in the browser's top layer, through showModal(), and sits
-// in the chat's element, as the dialog before a link does (./links.tsx).
+// The dialog is the modal of core's React SDK, in a portal at the end of the
+// page's body, as the dialog before a link is (./links.tsx). It closes on
+// Escape, on its close button and on a press outside the dialog.
+// It keeps today's size, up to 960 pixels wide and the window's height less
+// 32 pixels, which is larger than the SDK's modal is otherwise.
+// A sent file whose content the chat holds is a Button of the SDK, which
+// opens the file.
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import type { Attachment } from "@assistant-ui/react";
+import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
 import { kindOf, PDF } from "../attachments/index.ts";
 import type { KeptFile } from "../conversations/index.ts";
+import { withAttributes } from "./attributes.tsx";
 import { useChatActions } from "./context.ts";
 import { libraries } from "./libraries.ts";
 import type { SentFile } from "./messages.ts";
@@ -88,17 +95,17 @@ function Sent({ file }: { readonly file: SentFile }): ReactElement {
     );
   }
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
       className="blockr-assistant-file"
-      title={`Open ${file.name}`}
-      onClick={() => {
+      render={withAttributes({ title: `Open ${file.name}` })}
+      onPress={() => {
         openFile({ name: file.name, mediaType: file.media_type, content });
       }}
     >
       {mark}
       {name}
-    </button>
+    </Button>
   );
 }
 
@@ -119,45 +126,35 @@ export interface OpenedFile {
 // The dialog that shows a file large, open while `file` names one, which
 // calls onClose() as it closes. The chat draws again as each token of a reply
 // streams, so the dialog draws again only as its file changes.
-export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly file: OpenedFile | undefined; readonly onClose: () => void }): ReactElement {
-  const ref = useRef<HTMLDialogElement>(null);
+export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly file: OpenedFile | undefined; readonly onClose: () => void }): ReactElement | null {
   const url = useObjectUrl(file === undefined || kindOf(file.mediaType) === "text" ? undefined : file.content.blob);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (file !== undefined && !dialog.open) dialog.showModal();
-    if (file === undefined && dialog.open) dialog.close();
-  }, [file]);
+  if (file === undefined) return null;
 
   return (
-    <dialog
-      ref={ref}
-      className="blockr-assistant-dialog blockr-assistant-file-dialog"
-      aria-label={file?.name ?? "File"}
-      onClose={onClose}
-      onClick={(event) => {
-        // A click on the backdrop lands on the dialog itself, whose content
-        // fills it.
-        if (event.target === event.currentTarget) onClose();
+    <Modal
+      isOpen
+      isDismissable
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
       }}
+      className="blockr-assistant-overlay blockr-assistant-file-dialog"
     >
-      {file === undefined ? null : (
-        <div className="blockr-assistant-file-view">
-          <div className="blockr-assistant-file-view-head">
-            <h2>{file.name}</h2>
-            <button type="button" className="blockr-assistant-file-view-close" title="Close" aria-label="Close" onClick={onClose}>
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-              </svg>
-            </button>
-          </div>
-          <div className="blockr-assistant-file-view-body">
-            <FileView file={file} url={url} />
-          </div>
+      <Dialog className="blockr-assistant-file-view">
+        <div className="blockr-assistant-file-view-head">
+          <Heading slot="title" level={2}>
+            {file.name}
+          </Heading>
+          <Button variant="quiet" className="blockr-assistant-file-view-close" aria-label="Close" render={withAttributes({ title: "Close" })} onPress={onClose}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+            </svg>
+          </Button>
         </div>
-      )}
-    </dialog>
+        <div className="blockr-assistant-file-view-body">
+          <FileView file={file} url={url} />
+        </div>
+      </Dialog>
+    </Modal>
   );
 });
 

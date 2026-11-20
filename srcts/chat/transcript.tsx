@@ -4,7 +4,7 @@
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn).
 // - A conversation with no message shows the greeting (./greeting.ts), whose
 //   suggestions send nothing while a turn runs or the chat lacks the
-//   visitor's key.
+//   visitor's key. Each suggestion is a Button of core's React SDK.
 // - A message that the user sent shows its text as the user typed it, with
 //   each file that it holds, which a click opens large (./files.tsx).
 // - A turn shows as one reply (./messages.ts), whose pieces show in the order
@@ -21,6 +21,7 @@
 
 import { useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { Button } from "@blockr/core/react";
 import { useChat, useChatActions } from "./context.ts";
 import { SentFiles } from "./files.tsx";
 import { greetingOf } from "./greeting.ts";
@@ -83,16 +84,16 @@ function Greeting(): ReactElement {
       <ul className="blockr-assistant-suggestions">
         {suggestions.map((suggestion) => (
           <li key={suggestion}>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               className="blockr-assistant-suggestion"
-              disabled={running !== undefined || noKey}
-              onClick={() => {
+              isDisabled={running !== undefined || noKey}
+              onPress={() => {
                 send(suggestion);
               }}
             >
               {suggestion}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
