@@ -206,6 +206,9 @@
   `x-stainless-os`, the `User-Agent` that pi sets, which Firefox sends, and
   `anthropic-dangerous-direct-browser-access`, which Anthropic's own API
   needs from a page.
+  The request for the gateway's list of models on Anthropic's Messages API
+  leaves out `anthropic-dangerous-direct-browser-access` too, so that a
+  deployment there that names no models is offered the gateway's models.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).

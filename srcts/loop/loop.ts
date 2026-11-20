@@ -17,16 +17,12 @@
 //   in its answer to a page's preflight. Each of pi's APIs refuses to call
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
-// - Where the base URL is that of Vercel's AI Gateway, the loop's fetch also
-//   removes from each request the headers that the gateway's answer to a
-//   page's preflight does not allow, since the browser sends no call that
-//   carries one (blockr.assistant#299). These are the headers by which the
-//   SDKs that pi calls describe themselves, whose names start with
-//   x-stainless-, and Anthropic's opt-in header,
-//   anthropic-dangerous-direct-browser-access. They are also the User-Agent
-//   that pi and Anthropic's SDK set, which Firefox sends, while Chrome drops
-//   it. Anthropic's own API needs its opt-in header from a page, so the calls
-//   to any other base URL keep all of these headers.
+// - The loop's fetch also removes from each request the headers that the
+//   base URL's answer to a page's preflight does not allow, since the browser
+//   sends no call that carries one. The answer of Vercel's AI Gateway allows
+//   none of the headers by which the SDKs that pi calls describe themselves,
+//   nor the User-Agent that pi sets, nor Anthropic's opt-in header
+//   (../gateways).
 // - The loop's fetch also notes what each call's request got back, where that
 //   says something of the key: a 401 or a 403, by which the base URL refused
 //   the key, or no answer that the page could read. OpenAI's 401 for a call
@@ -145,6 +141,7 @@ import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextC
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
+import { refusesHeader } from "../gateways/index.ts";
 import type { Message, MessageId, Part, ThinkingLevel, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { loadApi } from "./apis.ts";
@@ -492,49 +489,22 @@ function piLevel(level: ThinkingLevel): PiThinkingLevel | undefined {
   return level === "off" ? undefined : level;
 }
 
-// The host of Vercel's AI Gateway, whose base URL for OpenAI's APIs is
-// https://ai-gateway.vercel.sh/v1, and for Anthropic's
-// https://ai-gateway.vercel.sh.
-const VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
-
-// The headers that the answer of Vercel's AI Gateway to a page's preflight
-// does not allow, by their names in lower case, besides those whose names
-// start with x-stainless-.
-const REFUSED_BY_GATEWAY: ReadonlySet<string> = new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
-
 // The page's fetch for the calls to the base URL, which edits the headers of
 // each request before the request leaves. The SDKs that pi calls give their
 // headers with the request's init.
 // - It takes off the placeholder of a call that carries no key.
-// - Where the base URL is that of Vercel's AI Gateway, it removes the
-//   headers that the gateway's answer to a page's preflight does not allow:
-//   each header whose name starts with x-stainless-, User-Agent, and
-//   Anthropic's opt-in header. It compares names in lower case, as HTTP
-//   does, since Anthropic's SDK writes X-Stainless-OS where OpenAI's writes
-//   x-stainless-os.
+// - It takes off each header that the base URL's answer to a page's preflight
+//   does not allow (../gateways).
 function fetchAt(baseUrl: string): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-  const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
   return (input, init) => {
     const headers = new Headers(init?.headers);
     if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
     if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
-    if (gateway) {
-      for (const name of [...headers.keys()]) {
-        const lower = name.toLowerCase();
-        if (lower.startsWith("x-stainless-") || REFUSED_BY_GATEWAY.has(lower)) headers.delete(name);
-      }
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
     }
     return globalThis.fetch(input, { ...init, headers });
   };
-}
-
-// The host of the base URL, or undefined where it is no URL.
-function hostOf(baseUrl: string): string | undefined {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    return undefined;
-  }
 }
 
 // The statuses with which a provider refuses a request for what it holds.

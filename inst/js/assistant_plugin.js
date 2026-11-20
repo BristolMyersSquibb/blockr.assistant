@@ -624,6 +624,22 @@ function pageKey() {
   return page;
 }
 
+// srcts/gateways/gateways.ts
+var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+var REFUSED = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
+function refusesHeader(baseUrl, name) {
+  if (hostOf(baseUrl) !== VERCEL_AI_GATEWAY) return false;
+  const lower = name.toLowerCase();
+  return lower.startsWith("x-stainless-") || REFUSED.has(lower);
+}
+function hostOf(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
+}
+
 // srcts/models/list.ts
 var NO_TOOLS = /* @__PURE__ */ new Set([
   "audio",
@@ -657,7 +673,7 @@ async function askList(deployment, key, fetch, signal) {
   const none = (why) => ({ kind: "failed", message: `The assistant offers no model, since ${why}` });
   let response;
   try {
-    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+    response = await fetch(url, { headers: listHeaders(deployment, key), signal });
   } catch (error) {
     return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
   }
@@ -737,15 +753,13 @@ function takesTools(entry, id, api2) {
 function listUrl(deployment) {
   return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
 }
-function listHeaders(api2, key) {
-  if (api2 === "anthropic-messages") {
-    return {
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      ...key === void 0 ? {} : { "x-api-key": key }
-    };
-  }
-  return key === void 0 ? {} : { authorization: `Bearer ${key}` };
+function listHeaders(deployment, key) {
+  const headers = deployment.api === "anthropic-messages" ? {
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+    ...key === void 0 ? {} : { "x-api-key": key }
+  } : key === void 0 ? {} : { authorization: `Bearer ${key}` };
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !refusesHeader(deployment.baseUrl, name)));
 }
 async function answerOf(response) {
   let message2;
@@ -2587,31 +2601,18 @@ function findFailure(reply, text3) {
 function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
-var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
-var REFUSED_BY_GATEWAY = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
 function fetchAt(baseUrl) {
-  const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
   return (input, init) => {
     const headers = new Headers(init?.headers);
     if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
     if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
-    if (gateway) {
-      for (const name of [...headers.keys()]) {
-        const lower = name.toLowerCase();
-        if (lower.startsWith("x-stainless-") || REFUSED_BY_GATEWAY.has(lower)) headers.delete(name);
-      }
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
     }
     return globalThis.fetch(input, { ...init, headers });
   };
 }
-function hostOf(baseUrl) {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    return void 0;
-  }
-}
-var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
+var REFUSED2 = /* @__PURE__ */ new Set([400, 413, 415, 422]);
 function callOf(pi, reply, model2, carried, status, unread) {
   const written = convertReply(reply);
   const answer = unread ? "unread" : status === 401 || status === 403 ? "refused" : void 0;
@@ -2621,7 +2622,7 @@ function callOf(pi, reply, model2, carried, status, unread) {
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
     ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
-    refused: failed2 && status !== void 0 && REFUSED.has(status),
+    refused: failed2 && status !== void 0 && REFUSED2.has(status),
     ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {},
     ...failed2 && answer !== void 0 ? { answer } : {}
   };
