@@ -63,6 +63,10 @@ const BLOCKS = {
   b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
 } satisfies Board["blocks"];
 
+// A plugin of a test package that the app runs beside the assistant, whose
+// class keeps no state.
+const TIDY = "blockr.test-tidy_plugin";
+
 // The label of core's command, as core's command registry gives it.
 function labelOf(core: CoreApi, id: string): string {
   const label = core.commands.registered()[id]?.label;
@@ -98,10 +102,12 @@ interface Options {
   readonly conditions?: StubCoreOptions["conditions"];
 }
 
-// Core on a board that holds the assistant's state given, with the assistant
-// of the board on pi's fake provider at https://faux.invalid/v1, which the
-// class's start would open, and the chat drawn in an element of the page, once
-// its libraries have loaded. Core stops as the test finishes.
+// Core on a board that holds the assistant's state given, in an app that runs
+// the plugin Tidy beside the assistant, with the assistant of the board on
+// pi's fake provider at https://faux.invalid/v1, which the class's start would
+// open, and the chat drawn in an element of the page, once its libraries have
+// loaded.
+// Core stops as the test finishes.
 async function chat(options: Options = {}) {
   const hello = helloWith(HELLO, { blockClasses: [DATA, HEAD], board: { blocks: options.blocks ?? {} } });
   const { board } = hello.board;
@@ -110,13 +116,17 @@ async function chat(options: Options = {}) {
       hello: {
         ...hello,
         packages: { ...hello.packages, "blockr.assistant": "0.2.0" },
-        plugins: { ...hello.plugins, [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" } },
+        plugins: {
+          ...hello.plugins,
+          [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
+          [TIDY]: { name: "Tidy", version: 1, module: `app/${TIDY}.js` },
+        },
         board: {
           ...hello.board,
           board: { ...board, plugins: { ...board.plugins, [ASSISTANT]: { state: options.state ?? { conversations: {} }, version: 1 } } },
         },
       },
-      modules: { [ASSISTANT]: { api: 1, default: { ...assistantModule.default, start: undefined } } },
+      modules: { [ASSISTANT]: { api: 1, default: { ...assistantModule.default, start: undefined } }, [TIDY]: { api: 1, default: {} } },
       ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
       ...(options.answer === undefined ? {} : { answer: options.answer }),
       ...(options.conditions === undefined ? {} : { conditions: options.conditions }),
@@ -605,7 +615,7 @@ describe("the chat's notifications", () => {
 
     await act(() => core.request(ASSISTANT, "probe", {}));
     act(() => {
-      core.notifications.notify("blockr.core-file_storage_plugin", { severity: "error", code: "storage_failed", message: "About the assistant.", about: { plugin: ASSISTANT } });
+      core.notifications.notify(TIDY, { severity: "error", code: "storage_failed", message: "About the assistant.", about: { plugin: ASSISTANT } });
       core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_board", message: "About the board.", about: null });
       core.notifications.notify(ASSISTANT, { severity: "error", code: "assistant_block", message: "About a block.", about: { block } });
     });
