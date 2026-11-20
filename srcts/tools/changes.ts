@@ -88,14 +88,6 @@ export function addedAndRemoved(heard: readonly Heard[]): { added: Ids; removed:
   return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
 }
 
-// Whether the step sets or removes board option values alone, which takes no
-// undo step, since an undo leaves board options as they are
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.2#undo).
-// A step that changes nothing sets nothing else either.
-export function setsOnlyOptions(heard: readonly Heard[]): boolean {
-  return heard.every(({ delta }) => holds(delta).every((part) => part === "options"));
-}
-
 export type Ids = Partial<Record<"blocks" | "links" | "stacks", string[]>>;
 
 // The ids of each kind that `board` holds and `other` lacks.
