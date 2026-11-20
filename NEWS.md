@@ -380,6 +380,10 @@
   A deployment sets the secret as the environment variable
   `BLOCKR_ASSISTANT_KEY_SECRET`, so that every R process of the app hands the
   page the same secret.
+  The secret has to be a long random string, such as one that
+  `openssl rand -base64 32` prints, and never a password, since the page
+  derives its encryption key from the secret through HKDF, which does nothing
+  to slow down a guess at the secret.
   The browser keeps one key for each app and base URL to which the visitor
   gave one, from the time that the base URL takes the key until it refuses
   it.

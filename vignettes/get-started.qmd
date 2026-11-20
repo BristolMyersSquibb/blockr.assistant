@@ -300,9 +300,11 @@ It sets a secret in the blockr option `assistant_key_secret`, as an environment 
 BLOCKR_ASSISTANT_KEY_SECRET=<a long random string>
 ```
 
-A command such as `openssl rand -base64 32` prints such a string.
 The page encrypts the key with the secret, and keeps it in the browser's local storage.
 R hands the page the secret with the other blockr options, so the key still never reaches R.
+The secret has to be a long random string, such as one that `openssl rand -base64 32` prints, and never a password or a phrase that a person chose.
+The page derives its encryption key from the secret through HKDF, which, unlike a hash for passwords, does nothing to slow down a guess at the secret.
+So whoever copies the keys that the browser kept, as from the browser's files, can try guesses at the secret as fast as their computers allow, and a secret that they guess decrypts every key that they copied.
 The browser keeps one key for each app and base URL to which the visitor gave a key.
 It keeps a key once the base URL takes it, for a call or for its list of models, and drops the key once the base URL refuses it.
 The key that the login with OpenRouter gives is kept the same way.
@@ -312,7 +314,7 @@ The browser keeps the key only on a page that it deems secure, such as one serve
 The option trades some safety for convenience.
 Every page that the same origin serves can read local storage, whoever published that page.
 Posit Connect, for one, serves each content item under a path of one host, as `https://connect.example.com/content/<guid>/` or a vanity URL such as `https://connect.example.com/my-dashboard/`.
-The encryption keeps the key from whatever reads local storage without running the app, such as a script that dumps the storage, or a copy of the browser's files whose holder cannot open the app.
+Where the secret is random, the encryption keeps the key from whatever reads local storage without running the app, such as a script that dumps the storage, or a copy of the browser's files whose holder cannot open the app.
 Keeping one key for each app keeps another blockr app from taking a key that the visitor gave this one.
 Neither keeps out a page of the same origin that sets out to get the key.
 Such a page comes from a malicious app on the origin, or from a hole in another app's page through which an attacker runs script there.

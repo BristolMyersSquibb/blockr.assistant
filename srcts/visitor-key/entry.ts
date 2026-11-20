@@ -7,7 +7,13 @@
 // blockr options. The page encrypts and decrypts the key itself, so the key
 // never reaches R:
 // - The page derives a key for AES-GCM from the secret, through HKDF with
-//   SHA-256.
+//   SHA-256. HKDF has no means to slow down a guess at the secret
+//   (https://www.rfc-editor.org/rfc/rfc5869#section-4), so the secret has to
+//   be a long random string, which nobody can guess, as the help page of
+//   new_assistant_plugin() says. A hash for passwords, such as PBKDF2, would
+//   slow down a guess, but each page that reads the key would wait for it, by
+//   about half a second with the 600,000 rounds that OWASP asks for, to
+//   protect only a secret that the help page rules out.
 // - Each write encrypts the visitor's key with a random IV. The entry holds
 //   the IV and the encrypted key, in base64.
 // - The entry's name holds the app's path and the base URL. So local storage

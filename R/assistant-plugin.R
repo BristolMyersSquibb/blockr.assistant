@@ -122,10 +122,17 @@
 #' A deployment sets it as the environment variable
 #' `BLOCKR_ASSISTANT_KEY_SECRET`, so that every R process of the app hands the
 #' page the same secret.
-#' The secret is a long random string, such as one that
-#' `openssl rand -base64 32` prints.
 #' The page encrypts the key with the secret, which R hands the page with the
 #' other blockr options, so the key still never reaches R.
+#' The secret has to be a long random string, such as one that
+#' `openssl rand -base64 32` prints, and never a password or a phrase that a
+#' person chose.
+#' The page derives its encryption key from the secret through HKDF, which,
+#' unlike a hash for passwords, does nothing to slow down a guess at the
+#' secret.
+#' So whoever copies the keys that the browser kept, as from the browser's
+#' files, can try guesses at the secret as fast as their computers allow, and
+#' a secret that they guess decrypts every key that they copied.
 #' The browser keeps one key for each app and base URL to which the visitor
 #' gave a key.
 #' It keeps a key from the time that the base URL takes it, for a call or for
@@ -142,9 +149,10 @@
 #' Posit Connect, for one, serves each content item under a path of one host,
 #' as `https://connect.example.com/content/<guid>/` or a vanity URL such as
 #' `https://connect.example.com/my-dashboard/`.
-#' The encryption keeps the key from whatever reads local storage without
-#' running the app, such as a script that dumps the storage, or a copy of the
-#' browser's files whose holder cannot open the app.
+#' Where the secret is random, the encryption keeps the key from whatever
+#' reads local storage without running the app, such as a script that dumps
+#' the storage, or a copy of the browser's files whose holder cannot open the
+#' app.
 #' Keeping one key for each app keeps another blockr app from taking a key
 #' that the visitor gave this one.
 #' Neither keeps out a page of the same origin that sets out to get the key.
