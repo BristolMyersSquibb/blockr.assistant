@@ -278,15 +278,15 @@ describe("edit", () => {
   });
 
   test("takes no undo step for a list that sets board options beside a command with undo: false, as the store takes none", async () => {
-    const { core, tools } = await started();
+    const { core, tools } = await started({ options: { page_size: PAGE_SIZE } });
     core.commands.register({ id: "blockr.test-rename", label: "Rename", undo: false, run: () => ({ name: "Renamed" }) });
 
     const result = await callTool(tools, "edit", {
-      commands: [{ command: "blockr.test-rename" }, { command: "blockr.core-set_option", args: { id: "n_rows", value: 10 } }],
+      commands: [{ command: "blockr.test-rename" }, { command: "blockr.core-set_option", args: { id: "page_size", value: 10 } }],
     });
     expect(parsed(result)).toEqual({ applied: true, undo_step: false });
     expect(core.store.board().name).toBe("Renamed");
-    expect(core.store.board().options.n_rows).toBe(10);
+    expect(core.store.board().options.page_size).toBe(10);
     expect(core.store.canUndo("assistant")).toBe(false);
   });
 
@@ -302,19 +302,19 @@ describe("edit", () => {
   });
 
   test("takes no undo step for a delta that sets a board option and gives a block the state it holds, as the store takes none", async () => {
-    const { core, tools } = await started();
+    const { core, tools } = await started({ options: { page_size: PAGE_SIZE } });
     // A plugin's command whose delta sets a board option's value and gives
     // block b the state it holds, { n: 6 }. The store announces the block's
     // part of the delta too, but keeps no inverse of it.
     core.commands.register({
       id: "blockr.test-set_rows",
       label: "Set the rows",
-      run: () => ({ blocks: { mod: { b: { state: { n: 6 } } } }, options: { set: { n_rows: 10 } } }),
+      run: () => ({ blocks: { mod: { b: { state: { n: 6 } } } }, options: { set: { page_size: 10 } } }),
     });
 
     const result = await callTool(tools, "edit", { commands: [{ command: "blockr.test-set_rows" }] });
     expect(parsed(result)).toMatchObject({ applied: true, undo_step: false });
-    expect(core.store.board().options.n_rows).toBe(10);
+    expect(core.store.board().options.page_size).toBe(10);
     expect(core.store.canUndo("assistant")).toBe(false);
   });
 
