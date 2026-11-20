@@ -903,8 +903,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding-top: 0;
   padding-bottom: 0;
 }
+.blockr-assistant-footer .blockr-assistant-pick [role=group]:not(:hover, [data-focus-within], [data-invalid]) {
+  border-color: transparent;
+}
 .blockr-assistant-footer .blockr-assistant-pick input {
   font-size: 12px;
+  text-overflow: ellipsis;
 }
 .blockr-assistant-footer .blockr-assistant-pick input:focus-visible {
   outline: none;

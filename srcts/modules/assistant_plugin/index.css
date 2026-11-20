@@ -1245,6 +1245,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
  * The picks of the model and of the thinking level, which core's select draws
  * in core's theme, at the height of the footer's row and in its type. Each
  * shrinks before the meter does.
+ * Each pick is quiet, as the footer's other controls are. Its field shows its
+ * border only while the pointer is over it, the focus is in it or its value
+ * is invalid, and a name too long for the field ends with an ellipsis.
  */
 .blockr-assistant-pick {
   flex: 0 1 auto;
@@ -1265,8 +1268,13 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding-bottom: 0;
 }
 
+.blockr-assistant-footer .blockr-assistant-pick [role="group"]:not(:hover, [data-focus-within], [data-invalid]) {
+  border-color: transparent;
+}
+
 .blockr-assistant-footer .blockr-assistant-pick input {
   font-size: 12px;
+  text-overflow: ellipsis;
 }
 
 /* Core's select rings its whole field while its text field holds the focus. */
