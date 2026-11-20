@@ -1,12 +1,32 @@
 // The tools that read results through requests that R answers, on
-// blockr.core's CoreApi for tests, whose board is that of core's fixture
-// hello, and where R answers each request as the test gives.
+// blockr.core's CoreApi for tests, where R answers each request as the test
+// gives, on a board of a test package's block classes: a data block a, which
+// feeds the head block b, the subset block d and the scatter block f.
 
-import type { Condition, CoreApi } from "@blockr/core";
+import type { Board, Condition, CoreApi } from "@blockr/core";
 import { describe, expect, test } from "vitest";
-import { callTool, requestNotifications, skillsHolding, startAssistant } from "../testing/index.ts";
+import { blockClass, callTool, requestNotifications, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
+
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
+const SCATTER = blockClass("blockr.test-scatter_block", { inputs: ["data"] });
+
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
+    d: { registry_id: SUBSET.id, state: {}, name: "Wide sepals", locked: null },
+    f: { registry_id: SCATTER.id, state: {}, name: "Scatter", locked: null },
+  },
+  links: {
+    ab: { from: "a", to: "b", input: "data" },
+    ad: { from: "a", to: "d", input: "data" },
+    af: { from: "a", to: "f", input: "data" },
+  },
+} satisfies Partial<Board>;
 
 const ERROR: Condition = { severity: "error", class: ["simpleError", "error", "condition"], phase: "expr", message: "object 'Sepal.Width' not found" };
 
@@ -18,7 +38,7 @@ const JOINED: Condition = { severity: "message", class: ["simpleMessage", "messa
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 async function started(options: StartOptions = {}) {
-  const stub = await startAssistant(options);
+  const stub = await startAssistant({ blockClasses: [DATA, HEAD, SUBSET, SCATTER], board: BOARD, ...options });
   return { ...stub, tools: readTools(stub.core, skillsHolding()) };
 }
 

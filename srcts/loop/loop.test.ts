@@ -24,7 +24,7 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { ModelSettings } from "../model-settings/index.ts";
 import type { Message, ThinkingLevel } from "../state/index.ts";
-import { CATALOG_PARTS, FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
+import { blockClass, CATALOG_PARTS, FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
 import { PROVIDER } from "./catalogs.ts";
@@ -978,7 +978,14 @@ describe("before each call", () => {
 describe("the spans of a turn", () => {
   test("hold each call to the model and each tool call under the turn's span, and core's span of a tool's request under the tool's span", async () => {
     const recorded = recordSpans();
-    const stub = await startAssistant({ answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) } });
+    // A board that holds the block a of a test package's class, which the
+    // tool call reads.
+    const data = blockClass("blockr.test-data_block", { category: "input" });
+    const stub = await startAssistant({
+      blockClasses: [data],
+      board: { blocks: { a: { registry_id: data.id, state: {}, name: "Iris", locked: null } } },
+      answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) },
+    });
     await stub.settled();
     const tools = readTools(stub.core, skillsHolding());
     const { run } = turnWith(
