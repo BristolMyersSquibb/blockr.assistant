@@ -460,6 +460,24 @@
   field and raises the error `assistant_skills_failed`.
   While a turn runs, every command but `/clear` waits, as a message does.
 
+* The Board section holds the whole board within one cap, the blockr option
+  `assistant_board_section_max_chars`, at 3000 characters by default, where
+  version 0.1 caps each of its parts at 1500 (#285).
+  Where the board does not fit, the section lists first the blocks that failed
+  or are invalid, the block that has focus, the blocks that changed since the
+  conversation's previous call and those on screen, then the rest in the
+  board's order.
+  Each block's line ends with the links into it, and the stacks and the dock's
+  views follow the blocks.
+  Each list that the cap cuts ends with a line that counts what it left out
+  and names the tool that gives it.
+  The line of counts gives the blocks by each status that marks one.
+  The app's plugins and the board options that its packages define move into
+  the system prompt, after the rules, since neither changes while the board is
+  open.
+  The preamble of the Focus section becomes a rule, and the message of the
+  app's opens with one sentence that says that the app writes it.
+
 * The chat shows every notification about the plugin above the message field,
   so that the user reads why the assistant fails where they would send (#284).
   Those are what the plugin raises, such as the error

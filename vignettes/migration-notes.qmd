@@ -231,7 +231,7 @@ serve(new_board())
 ```
 
 The plugin writes the rest of the prompt, whatever the template holds.
-After the template, the system prompt holds blockr.assistant's rules and the catalogue of skills.
+After the template, the system prompt holds blockr.assistant's rules, the app's plugins and the board options that its packages define, and the catalogue of skills.
 After the conversation's last message, a message of the app's holds the board and what the user has on screen.
 So a string that took the place of the whole prompt in version 0.1 has no counterpart.
 Its text goes into a template or a skill, beside what the plugin writes.
@@ -503,12 +503,16 @@ The caps on what the assistant's tools give the model carry over, with their def
 | `assistant_description_max_chars` | 1000 |
 | `assistant_skill_description_max_chars` | 1024 |
 | `assistant_skill_catalogue_max_chars` | 4000 |
-| `assistant_board_section_max_chars` | 1500 |
+| `assistant_board_section_max_chars` | 3000 |
 | `assistant_eval_max_chars` | 16000 |
 | `assistant_review_max_blocks` | 50 |
 | `assistant_plot_render_px` | 768 |
 | `assistant_plot_render_range` | 200 to 2000 |
 | `assistant_plot_render_max` | 4 |
+
+The blockr option `assistant_board_section_max_chars` caps the whole Board section, at 3000 characters by default, where version 0.1 caps each of its parts at 1500.
+So a deployment that sets the option sets it anew, for the whole section.
+Where the board does not fit, the Board section lists first the blocks that a call most likely needs, and counts what it leaves out.
 
 Each blockr option of version 0.1 goes as follows:
 
@@ -654,10 +658,13 @@ A skill that shows a call of `inspect_results` gives it the blocks that the code
 The commands of blockr.dock name a panel as `{ "block": id }` for a block's card, or as `{ "plugin": id }` for the UI of a plugin, by the id of the plugin's class.
 In version 0.1, the view tools named a block's panel by the block's id, and an extension's panel by the extension's name, such as `slides`.
 
-The Board section of the system prompt changes with the tools.
+The Board section changes with the tools, and a message of the app's after the conversation's last message holds it, in place of the system prompt.
 A block whose state is not valid yet reads `invalid`, where it read `unset` in version 0.1, so a skill that names the status `unset` names `invalid`.
 No arg carries the mark `*` of version 0.1, which marked the args that `modify_block` could change.
 A skill drops what it says of that mark.
+The links into each block are on the block's line, in place of a list of the links.
+The app's plugins and the board options are in the system prompt, in place of the Board section.
+So a skill that sends the model to the Board section's list of links, of extensions or of options sends it to the blocks' lines, to the tool `list_links`, or to the plugins and board options in the system prompt.
 
 ### The skill `layout`
 

@@ -28,8 +28,11 @@ const DEFAULTS = {
   // The description of a skill, in the list of the skills that name a class
   // and in the Skills section of the system prompt.
   assistant_skill_description_max_chars: 1024,
-  // Each part of the Board section, which the message of the app's holds.
-  assistant_board_section_max_chars: 1500,
+  // The whole Board section, which the message of the app's holds, where
+  // today's caps each of its parts at 1500. It caps each part of the section
+  // on the plugins and the board options in the system prompt too, and the
+  // list of the note of what others changed.
+  assistant_board_section_max_chars: 3000,
   // What the model's own R code prints, which R cuts, and the warnings and
   // messages of R's reply to a tool's request.
   assistant_eval_max_chars: 16000,

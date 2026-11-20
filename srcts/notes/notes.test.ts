@@ -3,7 +3,8 @@
 // added, removed or changed since a conversation's previous call, how it
 // groups what one origin added or removed, whom it names for each change, what
 // it leaves out, the conversation's own edits, the undo that /undo asks for,
-// the cap, and the message that holds the note.
+// the cap, and the message that holds the note, and the blocks that changes
+// touched, which the Board section lists early.
 
 import type { CoreApi, Json } from "@blockr/core";
 import { stubCore } from "@blockr/core/stubs";
@@ -195,6 +196,40 @@ describe("the note of what others changed in the board", () => {
     expect(await notes.take("c2")).toBeUndefined();
   });
 
+  test("gives the blocks that changes touched since the conversation's previous call, the conversation's own edits included, as its last take() found them", async () => {
+    const { core, notes, turnIn } = await opened();
+    await notes.take("c1");
+    await notes.take("c2");
+    expect(notes.changed("c1")).toEqual([]);
+
+    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
+    turnIn("c1");
+    await edit(core, "blockr.core-rename_block", { id: "e", name: "Data" }, "assistant");
+    turnIn(undefined);
+    await edit(core, "blockr.core-remove_block", { id: "d" });
+    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 6 } });
+    await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" });
+    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" });
+
+    expect(notes.changed("c1")).toEqual([]);
+    await notes.take("c1");
+    await notes.take("c2");
+    expect(notes.changed("c1")).toEqual(["b", "e", "d"]);
+    expect(notes.changed("c2")).toEqual(["b", "e", "d"]);
+    await notes.take("c1");
+    expect(notes.changed("c1")).toEqual([]);
+  });
+
+  test("gives no changed blocks at a conversation's first call", async () => {
+    const { core, notes } = await opened();
+    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
+
+    await notes.take("c1");
+
+    expect(notes.changed("c1")).toEqual([]);
+    expect(notes.changed("c2")).toEqual([]);
+  });
+
   test("cuts its list at assistant_board_section_max_chars, and says where the board is", async () => {
     const { core, notes } = await opened({ assistant_board_section_max_chars: 120 });
     await notes.take("c1");
@@ -228,6 +263,7 @@ describe("the note of what others changed in the board", () => {
     await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
 
     expect(await notes.take("c1")).toBeUndefined();
+    expect(notes.changed("c1")).toEqual([]);
   });
 
   test("matches its snapshot", async () => {
