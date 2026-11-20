@@ -199,6 +199,13 @@
   So such a model reasons, at the level `medium` unless its conversation
   picks another, where it reasoned at its provider's default before.
 
+* The calls to Vercel's AI Gateway go through from the browser (#299).
+  The gateway's answer to a page's preflight allows none of the headers that
+  the SDKs under pi add to each call, such as `x-stainless-os`, nor
+  `anthropic-dangerous-direct-browser-access`, which Anthropic's own API
+  needs from a page.
+  So where the base URL is the gateway's, each call leaves without them.
+
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
   The tools `get_block_result`, `inspect_results` and `read_skill` give the

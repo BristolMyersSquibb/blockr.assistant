@@ -2464,9 +2464,10 @@ async function runAgent(pi, catalogs, streams, turn, span) {
   let status;
   let unread = false;
   let added;
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input, init) => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -2563,7 +2564,7 @@ function callModel(pi, catalogs, streams, call) {
     const reply = await models.completeSimple(
       model2,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span }
+      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span }
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
@@ -2586,11 +2587,28 @@ function findFailure(reply, text3) {
 function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
-function keyless(input, init) {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+function fetchAt(baseUrl) {
+  const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
+    if (gateway) {
+      for (const name of [...headers.keys()]) {
+        const lower = name.toLowerCase();
+        if (lower.startsWith("x-stainless-") || lower === "anthropic-dangerous-direct-browser-access") headers.delete(name);
+      }
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
+}
+function hostOf(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
 }
 var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
 function callOf(pi, reply, model2, carried, status, unread) {

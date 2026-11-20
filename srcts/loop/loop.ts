@@ -17,6 +17,14 @@
 //   in its answer to a page's preflight. Each of pi's APIs refuses to call
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
+// - Where the base URL is that of Vercel's AI Gateway, the loop's fetch also
+//   removes from each request the headers that the gateway's answer to a
+//   page's preflight does not allow, since the browser sends no call that
+//   carries one (blockr.assistant#299). These are the headers by which the
+//   SDKs that pi calls describe themselves, whose names start with
+//   x-stainless-, and Anthropic's opt-in header,
+//   anthropic-dangerous-direct-browser-access. Anthropic's own API needs that
+//   header from a page, so the calls to any other base URL keep it.
 // - The loop's fetch also notes what each call's request got back, where that
 //   says something of the key: a 401 or a 403, by which the base URL refused
 //   the key, or no answer that the page could read. OpenAI's 401 for a call
@@ -339,9 +347,10 @@ async function runAgent(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record
   // any.
   let added: string | undefined;
 
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -450,7 +459,7 @@ function callModel(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record<stri
     const reply = await models.completeSimple(
       model,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span },
+      { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span },
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
@@ -481,14 +490,43 @@ function piLevel(level: ThinkingLevel): PiThinkingLevel | undefined {
   return level === "off" ? undefined : level;
 }
 
-// The page's fetch, but for the placeholder of a call that carries no key,
-// which it takes off the request. The SDKs that pi calls give their headers
-// with the request's init.
-function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+// The host of Vercel's AI Gateway, whose base URL for OpenAI's APIs is
+// https://ai-gateway.vercel.sh/v1, and for Anthropic's
+// https://ai-gateway.vercel.sh.
+const VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+
+// The page's fetch for the calls to the base URL, which edits the headers of
+// each request before the request leaves. The SDKs that pi calls give their
+// headers with the request's init.
+// - It takes off the placeholder of a call that carries no key.
+// - Where the base URL is that of Vercel's AI Gateway, it removes the
+//   headers that the gateway's answer to a page's preflight does not allow:
+//   each header whose name starts with x-stainless-, and Anthropic's opt-in
+//   header. It compares names in lower case, as HTTP does, since Anthropic's
+//   SDK writes X-Stainless-OS where OpenAI's writes x-stainless-os.
+function fetchAt(baseUrl: string): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+  const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+    if (gateway) {
+      for (const name of [...headers.keys()]) {
+        const lower = name.toLowerCase();
+        if (lower.startsWith("x-stainless-") || lower === "anthropic-dangerous-direct-browser-access") headers.delete(name);
+      }
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
+}
+
+// The host of the base URL, or undefined where it is no URL.
+function hostOf(baseUrl: string): string | undefined {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return undefined;
+  }
 }
 
 // The statuses with which a provider refuses a request for what it holds.

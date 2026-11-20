@@ -1104,3 +1104,63 @@ describe("a failed call's request", () => {
     expect(calls[0]).not.toHaveProperty("answer");
   });
 });
+
+describe("the headers of a call", () => {
+  // The headers of each request that a turn and a model call of the plugin's
+  // own send on pi's own code for the API given, to the base URL given,
+  // through the page's fetch, which the test stubs, by their names in lower
+  // case, as a browser's Headers gives them. Each request gets a 401, so that
+  // each call fails at once.
+  async function sent(baseUrl: string, api: string): Promise<Record<string, string>[]> {
+    const headers: Record<string, string>[] = [];
+    vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
+      headers.push(Object.fromEntries([...new Headers(init?.headers)].map(([name, value]) => [name.toLowerCase(), value])));
+      return Promise.resolve(Response.json({ error: { message: "Invalid API key." } }, { status: 401 }));
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const loop = createLoop(pi, CATALOG_PARTS, APIS);
+    const called = { connection: { baseUrl, api, apiKey: () => Promise.resolve("test-key") }, model: "openai/gpt-5.4-nano" };
+    await loop.run({
+      ...called,
+      tools: [],
+      messages: () => [asked],
+      kept: () => undefined,
+      signal: new AbortController().signal,
+      on: { streaming: () => undefined, called: () => Promise.resolve(), returned: () => undefined, results: () => Promise.resolve() },
+    });
+    await loop.callModel({ ...called, systemPrompt: "Title the conversation.", prompt: "How many blocks?", signal: new AbortController().signal });
+    return headers;
+  }
+
+  // The names of the headers given that Vercel's AI Gateway does not allow in
+  // its answer to a page's preflight.
+  function refused(headers: Record<string, string>): string[] {
+    return Object.keys(headers).filter((name) => name.startsWith("x-stainless-") || name === "anthropic-dangerous-direct-browser-access");
+  }
+
+  test.each([
+    { api: "openai-completions", baseUrl: "https://ai-gateway.vercel.sh/v1", key: ["authorization", "Bearer test-key"] },
+    { api: "openai-responses", baseUrl: "https://ai-gateway.vercel.sh/v1", key: ["authorization", "Bearer test-key"] },
+    { api: "anthropic-messages", baseUrl: "https://ai-gateway.vercel.sh", key: ["x-api-key", "test-key"] },
+  ])("leave out those that Vercel's AI Gateway does not allow, on each call to the gateway in $api", async ({ api, baseUrl, key: [name = "", value] }) => {
+    const headers = await sent(baseUrl, api);
+
+    expect(headers).toHaveLength(2);
+    expect(headers.map(refused)).toEqual([[], []]);
+    expect(headers.map((each) => each[name])).toEqual([value, value]);
+  });
+
+  test.each([
+    { api: "openai-completions", baseUrl: "https://api.openai.com/v1" },
+    { api: "openai-responses", baseUrl: "https://api.openai.com/v1" },
+    { api: "anthropic-messages", baseUrl: "https://api.anthropic.com" },
+  ])("keep them on each call to another base URL, as to $baseUrl in $api", async ({ api, baseUrl }) => {
+    const headers = await sent(baseUrl, api);
+
+    expect(headers).toHaveLength(2);
+    for (const each of headers) expect(refused(each)).toContain("x-stainless-os");
+    if (api === "anthropic-messages") expect(headers.map((each) => each["anthropic-dangerous-direct-browser-access"])).toEqual(["true", "true"]);
+  });
+});
