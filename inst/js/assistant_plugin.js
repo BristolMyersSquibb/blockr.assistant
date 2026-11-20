@@ -583,6 +583,93 @@ function holdLock(locks) {
 function nothing() {
 }
 
+// srcts/visitor-key/entry.ts
+var PREFIX = "blockr.assistant-visitor_key";
+var ID_INFO = `${PREFIX} id`;
+var IV_BYTES = 12;
+var ID_BYTES = 16;
+function keyEntry(options) {
+  const { scope, subtle, storage } = options;
+  let derived;
+  const derive = () => derived ??= deriveFrom(subtle, options.secret);
+  const nameOf2 = async () => `${PREFIX} ${JSON.stringify([scope === "app" ? options.path : (await derive()).id, options.baseUrl])}`;
+  async function read() {
+    const name = await nameOf2();
+    const held = getItem(storage, name);
+    if (held === void 0) return void 0;
+    let key;
+    try {
+      const bytes = fromBase64(held);
+      const opened2 = await subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, IV_BYTES) }, (await derive()).key, bytes.slice(IV_BYTES));
+      key = new TextDecoder().decode(opened2);
+    } catch {
+      key = void 0;
+    }
+    if (key === void 0 || key === "") {
+      removeItem(storage, name);
+      return void 0;
+    }
+    return key;
+  }
+  return {
+    scope,
+    read,
+    async write(key) {
+      const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+      const sealed = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, (await derive()).key, encode(key)));
+      const bytes = new Uint8Array(IV_BYTES + sealed.length);
+      bytes.set(iv);
+      bytes.set(sealed, IV_BYTES);
+      setItem(storage, await nameOf2(), toBase64(bytes));
+    },
+    async remove(key) {
+      if (await read() === key) removeItem(storage, await nameOf2());
+    }
+  };
+}
+async function deriveFrom(subtle, secret) {
+  const material = await subtle.importKey("raw", encode(secret), "HKDF", false, ["deriveKey", "deriveBits"]);
+  const hkdf = (info) => ({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encode(info) });
+  const [key, id] = await Promise.all([
+    subtle.deriveKey(hkdf(PREFIX), material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]),
+    subtle.deriveBits(hkdf(ID_INFO), material, ID_BYTES * 8)
+  ]);
+  return { key, id: toHex(new Uint8Array(id)) };
+}
+function getItem(storage, name) {
+  try {
+    return storage.getItem(name) ?? void 0;
+  } catch {
+    return void 0;
+  }
+}
+function setItem(storage, name, value) {
+  try {
+    storage.setItem(name, value);
+  } catch {
+  }
+}
+function removeItem(storage, name) {
+  try {
+    storage.removeItem(name);
+  } catch {
+  }
+}
+function encode(text3) {
+  return new TextEncoder().encode(text3);
+}
+function toHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function toBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function fromBase64(text3) {
+  return Uint8Array.from(atob(text3), (char) => char.charCodeAt(0));
+}
+
 // srcts/visitor-key/visitor-key.ts
 var MISSING = { kind: "missing" };
 function keyOf(state) {
@@ -591,6 +678,7 @@ function keyOf(state) {
 function createVisitorKey() {
   let state = MISSING;
   const listeners = /* @__PURE__ */ new Set();
+  let entry;
   function set(next) {
     state = next;
     for (const listener of [...listeners]) listener();
@@ -610,14 +698,45 @@ function createVisitorKey() {
     },
     refused(key) {
       if (keyOf(state) === key) set({ kind: "refused" });
+      void entry?.remove(key);
     },
     lost(key) {
       if (keyOf(state) === key && state.kind !== "lost") set({ kind: "lost", key });
     },
     took(key) {
-      if (state.kind === "lost" && state.key === key) set({ kind: "given", key });
+      if (keyOf(state) !== key) return;
+      if (state.kind === "lost") set({ kind: "given", key });
+      void entry?.write(key);
+    },
+    async keepIn(next) {
+      entry = next;
+      if (keyOf(state) !== void 0) return;
+      const read = await next.read();
+      if (read !== void 0 && keyOf(state) === void 0) set({ kind: "given", key: read });
+    },
+    kept() {
+      return entry?.scope;
     }
   };
+}
+async function keepKey(core, key, deployment) {
+  const { credential, baseUrl } = deployment;
+  if (credential.kind !== "visitor" || credential.kept === void 0) return;
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === void 0) {
+    core.log("blockr.assistant").warn(
+      "The blockr option assistant_key_secret is set, but the browser offers this page no Web Crypto to encrypt the visitor's key, as on a page that it does not deem secure. So the page keeps the key in its memory alone."
+    );
+    return;
+  }
+  let storage;
+  try {
+    storage = globalThis.localStorage;
+  } catch {
+    return;
+  }
+  const { secret, scope } = credential.kept;
+  await key.keepIn(keyEntry({ secret, scope, baseUrl, path: globalThis.location.pathname, subtle, storage }));
 }
 var page = createVisitorKey();
 function pageKey() {
@@ -1822,13 +1941,15 @@ function compacted(messages, summary2, from, conversation2) {
 var OPENAI = "https://api.openai.com/v1";
 var APIS = ["openai-responses", "openai-completions", "anthropic-messages"];
 async function readDeployment(core) {
-  const [baseUrl, api2, key, models] = await Promise.all([
+  const [baseUrl, api2, key, models, keySecret, keyScope] = await Promise.all([
     core.blockrOption("assistant_base_url"),
     core.blockrOption("assistant_api"),
     core.blockrOption("assistant_api_key"),
-    core.blockrOption("assistant_models")
+    core.blockrOption("assistant_models"),
+    core.blockrOption("assistant_key_secret"),
+    core.blockrOption("assistant_key_scope")
   ]);
-  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api2), credential: credentialOf(key), models: modelsOf(models) };
+  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api2), credential: credentialOf(key, keepingOf(keySecret, keyScope)), models: modelsOf(models) };
 }
 function baseUrlOf(sent3) {
   if (sent3 === void 0) return OPENAI;
@@ -1848,8 +1969,8 @@ function apiOf(sent3) {
   }
   return api2;
 }
-function credentialOf(sent3) {
-  if (sent3 === void 0) return { kind: "visitor" };
+function credentialOf(sent3, kept) {
+  if (sent3 === void 0) return kept === void 0 ? { kind: "visitor" } : { kind: "visitor", kept };
   const key = typeof sent3 === "string" ? sent3.trim() : "";
   if (key === "") {
     throw new TypeError(
@@ -1857,6 +1978,31 @@ function credentialOf(sent3) {
     );
   }
   return key === "none" ? { kind: "none" } : { kind: "deployment", key };
+}
+function keepingOf(secret, scope) {
+  const keptWith = keySecretOf(secret);
+  const keptFor = keyScopeOf(scope);
+  return keptWith === void 0 ? void 0 : { secret: keptWith, scope: keptFor };
+}
+function keySecretOf(sent3) {
+  if (sent3 === void 0) return void 0;
+  const secret = typeof sent3 === "string" ? sent3.trim() : "";
+  if (secret === "") {
+    throw new TypeError(
+      `The blockr option assistant_key_secret holds ${kindOf2(sent3)}, where it takes the secret with which the browser keeps a visitor's key, as a string.`
+    );
+  }
+  return secret;
+}
+function keyScopeOf(sent3) {
+  if (sent3 === void 0) return "app";
+  const scope = typeof sent3 === "string" ? sent3.trim() : "";
+  if (scope !== "app" && scope !== "origin") {
+    throw new TypeError(
+      `The blockr option assistant_key_scope is ${JSON.stringify(sent3)}, where it takes for whom the browser keeps a visitor's key: "app", for the app alone, or "origin", for every app of the origin that keeps the key with the same secret.`
+    );
+  }
+  return scope;
 }
 function modelsOf(sent3) {
   if (sent3 === void 0) return void 0;
@@ -4656,6 +4802,7 @@ var OPENROUTER = {
 };
 var LABEL = "blockr";
 var EXPIRATION = "1-day";
+var KEPT_EXPIRATION = "30-days";
 var IDLE = { kind: "idle" };
 var EXCHANGING = { kind: "exchanging" };
 var BLOCKED = { kind: "blocked" };
@@ -4725,8 +4872,9 @@ function createOpenRouterLogin(options) {
         });
       }
       set(IDLE);
+      const expiration = options.key.kept() === void 0 ? EXPIRATION : KEPT_EXPIRATION;
       void challengeOf(verifier).then((challenge) => {
-        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState));
+        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState, expiration));
       });
     }
   };
@@ -4739,7 +4887,7 @@ function openRouterLoginOf(key) {
   logins.set(key, login);
   return login;
 }
-function authUrlOf(urls, callbackUrl, challenge, state) {
+function authUrlOf(urls, callbackUrl, challenge, state, expiration) {
   const url = new URL(urls.authUrl);
   url.search = new URLSearchParams({
     callback_url: callbackUrl,
@@ -4747,7 +4895,7 @@ function authUrlOf(urls, callbackUrl, challenge, state) {
     code_challenge_method: "S256",
     state,
     key_label: LABEL,
-    expiration: EXPIRATION
+    expiration
   }).toString();
   return url.href;
 }
@@ -4972,10 +5120,13 @@ function openAssistant(core, signal, options = {}) {
   });
   const skills = createSkills(core, signal);
   const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
-  const deployment = options.deployment ?? readDeployment(core);
+  const key = options.key ?? pageKey();
+  const deployment = (options.deployment ?? readDeployment(core)).then(async (chosen) => {
+    await keepKey(core, key, chosen);
+    return chosen;
+  });
   deployment.catch(() => void 0);
   const callFailed = heldError(core, signal, "assistant_call_failed");
-  const key = options.key ?? pageKey();
   const openRouterLogin = options.openRouterLogin ?? openRouterLoginOf(key);
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
@@ -5981,17 +6132,21 @@ function OpenRouterButton({ login }) {
 function alerts({ state, openRouterLogin }) {
   return state.kind !== "missing" || openRouterLogin?.kind === "blocked" || openRouterLogin?.kind === "failed";
 }
-function noteOf({ state, host, openRouterLogin }) {
+function noteOf({ state, host, kept, appHost, openRouterLogin }) {
   if (openRouterLogin?.kind === "blocked") return "The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.";
   if (openRouterLogin?.kind === "failed") return `${openRouterLogin.reason} Log in again, or enter your API key.`;
   switch (state.kind) {
     case "missing":
-      return openRouterLogin === void 0 ? `Enter your API key for ${host}. The assistant keeps it only until the page reloads.` : `Log in with OpenRouter, or enter your API key for ${host}. The assistant keeps the key only until the page reloads.`;
+      return openRouterLogin === void 0 ? `Enter your API key for ${host}. ${keepsOf(kept, appHost, "it")}` : `Log in with OpenRouter, or enter your API key for ${host}. ${keepsOf(kept, appHost, "the key")}`;
     case "refused":
       return openRouterLogin === void 0 ? `The server at ${host} refused your key. Enter another one.` : `The server at ${host} refused your key. Log in with OpenRouter, or enter another key.`;
     case "lost":
       return `The connection to ${host} was lost, and your key may be wrong. Change it, or send your message again.`;
   }
+}
+function keepsOf(kept, appHost, key) {
+  if (kept === void 0) return `The assistant keeps ${key} only until the page reloads.`;
+  return kept === "app" ? `The browser keeps ${key} for this app.` : `The browser keeps ${key} for the apps on ${appHost}.`;
 }
 
 // srcts/chat/links.tsx
@@ -6697,7 +6852,7 @@ function Chat({ core, assistant }) {
   const keyField = useMemo6(() => {
     if (deployment === void 0 || !visitorAuthenticates || visitorKey.kind === "given") return void 0;
     const offered2 = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : void 0;
-    return { state: visitorKey, host: new URL(deployment.baseUrl).host, openRouterLogin: offered2 };
+    return { state: visitorKey, host: new URL(deployment.baseUrl).host, kept: assistant.key.kept(), appHost: globalThis.location.host, openRouterLogin: offered2 };
   }, [assistant, deployment, openRouterLogin, visitorAuthenticates, visitorKey]);
   const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const openConversation = useCallback2((id) => {

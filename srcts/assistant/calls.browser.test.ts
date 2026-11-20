@@ -12,17 +12,20 @@
 // The mock records the body of each call, which shows where pi puts the system
 // prompt and the message of the app's in each API's request.
 // Where the deployment sets no key, the test gives the visitor's own key, as
-// the chat would, and reads what the base URL's answers did to it.
+// the chat would, and reads what the base URL's answers did to it. Where the
+// deployment sets assistant_key_secret too, the test reads what the browser
+// kept of the key, on a page that has Chromium's Web Crypto.
 // The files that the user attaches reach each API in its blocks, and the mock
 // refuses a file named refused.pdf, as a provider refuses a file
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
 
 import type { Board, CoreApi, Json } from "@blockr/core";
-import { beforeEach, describe, expect, inject, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, inject, test, vi } from "vitest";
 import type { KeptFile } from "../conversations/index.ts";
 import type { Message } from "../state/index.ts";
 import { blockClass, startAssistant, storedIn } from "../testing/index.ts";
 import type { RecordedRequest } from "../testing/index.ts";
+import { keyEntry, reloadPageKey } from "../visitor-key/index.ts";
 import { assistantOf } from "./index.ts";
 
 const mock = inject("mockApis");
@@ -475,6 +478,51 @@ describe("the visitor's own key", () => {
     await expect(assistant.models.offered()).resolves.toEqual({ models: ["gpt-5.4", "gpt-5.4-nano"], named: false });
     expect(assistant.key.current()).toEqual({ kind: "given", key: mock.key });
     expect((await reached("GET")).map((request) => request.headers.authorization)).toEqual(["Bearer wrong-key", `Bearer ${mock.key}`]);
+  });
+});
+
+describe("the visitor's own key, where the browser keeps it", () => {
+  const SECRET = "a-long-random-secret";
+  const at = (base: string, api = "openai-responses") => ({
+    assistant_base_url: `${mock.origin}${base}`,
+    assistant_api: api,
+    assistant_models: "mock-model",
+    assistant_key_secret: SECRET,
+  });
+  // The names of the entries that keep a visitor's key.
+  const entries = () => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? "").filter((name) => name.startsWith("blockr.assistant-visitor_key"));
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  test("is kept, encrypted, once a call takes it, and goes with each call of the board that opens after a reload", async () => {
+    await turned(at("/openai/v1"), mock.key);
+    await vi.waitFor(() => {
+      expect(entries()).toEqual([`blockr.assistant-visitor_key ${JSON.stringify([location.pathname, `${mock.origin}/openai/v1`])}`]);
+    });
+    expect(storedIn(localStorage)).not.toContain(mock.key);
+    expect(storedIn(localStorage)).not.toContain(SECRET);
+
+    reloadPageKey();
+    const { core, assistant, conversation } = await turned(at("/openai/v1"));
+
+    expect(assistant.key.current()).toEqual({ kind: "given", key: mock.key });
+    expect(raised(core, "assistant_call_failed")).toEqual([]);
+    expect(lastText(conversation)).toBe(mock.done);
+    expect((await reached("POST")).map((call) => call.headers.authorization)).toEqual(Array.from({ length: 4 }, () => `Bearer ${mock.key}`));
+  });
+
+  test("is removed once the base URL refuses it, so that the chat asks for a key", async () => {
+    await keyEntry({ secret: SECRET, scope: "app", baseUrl: `${mock.origin}/anthropic`, path: location.pathname, subtle: crypto.subtle, storage: localStorage }).write("wrong-key");
+
+    const { assistant } = await turned(at("/anthropic", "anthropic-messages"));
+
+    expect((await reached("POST")).map((call) => call.headers["x-api-key"])).toEqual(["wrong-key"]);
+    expect(assistant.key.current()).toEqual({ kind: "refused" });
+    await vi.waitFor(() => {
+      expect(entries()).toEqual([]);
+    });
   });
 });
 

@@ -1,4 +1,4 @@
-// Reading the deployment's four blockr options (./deployment.ts): what each
+// Reading the deployment's six blockr options (./deployment.ts): what each
 // gives where it is unset, the values that each takes, as R sends an R option
 // or an environment variable, and the values that fail the read.
 
@@ -64,5 +64,42 @@ describe("the deployment's blockr options", () => {
       'The blockr option assistant_api_key holds an array, where it takes the deployment\'s key as a string, or "none" for a base URL that needs no key.',
     );
     await expect(read({ assistant_api_key: " " })).rejects.toThrow("The blockr option assistant_api_key holds an empty string");
+  });
+
+  test("give the visitor's key the secret with which the browser keeps it, for the app alone, where the deployment sets one", async () => {
+    await expect(read({ assistant_key_secret: " a-long-random-secret " })).resolves.toMatchObject({
+      credential: { kind: "visitor", kept: { secret: "a-long-random-secret", scope: "app" } },
+    });
+  });
+
+  test("have the browser keep the key for the apps of the origin where the deployment names that scope", async () => {
+    await expect(read({ assistant_key_secret: "a-long-random-secret", assistant_key_scope: " origin " })).resolves.toMatchObject({
+      credential: { kind: "visitor", kept: { secret: "a-long-random-secret", scope: "origin" } },
+    });
+    const unkept = await read({ assistant_key_scope: "origin" });
+    expect(unkept.credential).toEqual({ kind: "visitor" });
+  });
+
+  test("leave the secret out where the deployment sets a key or none, since the calls then carry no key of the visitor's", async () => {
+    const keyed = await read({ assistant_api_key: "sk-deployment", assistant_key_secret: "a-long-random-secret" });
+    expect(keyed.credential).toEqual({ kind: "deployment", key: "sk-deployment" });
+    const keyless = await read({ assistant_api_key: "none", assistant_key_secret: "a-long-random-secret" });
+    expect(keyless.credential).toEqual({ kind: "none" });
+  });
+
+  test("fail the read of a secret that is no string without naming its value, even where the deployment sets a key", async () => {
+    await expect(read({ assistant_key_secret: 42 })).rejects.toThrow(
+      "The blockr option assistant_key_secret holds a number, where it takes the secret with which the browser keeps a visitor's key, as a string.",
+    );
+    await expect(read({ assistant_api_key: "sk-deployment", assistant_key_secret: " " })).rejects.toThrow(
+      "The blockr option assistant_key_secret holds an empty string",
+    );
+  });
+
+  test("fail the read of a scope that it does not take, naming the value, even where the deployment sets no secret", async () => {
+    await expect(read({ assistant_key_scope: "site" })).rejects.toThrow(
+      'The blockr option assistant_key_scope is "site", where it takes for whom the browser keeps a visitor\'s key: "app", for the app alone, or "origin", for every app of the origin that keeps the key with the same secret.',
+    );
+    await expect(read({ assistant_api_key: "sk-deployment", assistant_key_scope: true })).rejects.toThrow("The blockr option assistant_key_scope is true");
   });
 });

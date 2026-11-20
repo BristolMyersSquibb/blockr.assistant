@@ -8,6 +8,7 @@
 
 import { createContext, useContext } from "react";
 import type { CoreApi } from "@blockr/core";
+import type { KeyScope } from "../deployment/index.ts";
 import type { OpenRouterLoginState } from "../openrouter/index.ts";
 import type { Skill } from "../skills/index.ts";
 import type { Running } from "../turns/index.ts";
@@ -42,11 +43,15 @@ export interface ChatActions {
 }
 
 // What the field for the visitor's key shows: why the chat asks for a key,
-// the host of the base URL that the key is for, such as api.openai.com, and
-// what OpenRouter's login is doing, where the field offers it beside the key.
+// the host of the base URL that the key is for, such as api.openai.com, for
+// whom the browser keeps the key, if it does, with the host of the app's
+// page, such as connect.example.com, and what OpenRouter's login is doing,
+// where the field offers it beside the key.
 export interface KeyField {
   readonly state: Exclude<KeyState, { readonly kind: "given" }>;
   readonly host: string;
+  readonly kept: KeyScope | undefined;
+  readonly appHost: string;
   readonly openRouterLogin: OpenRouterLoginState | undefined;
 }
 

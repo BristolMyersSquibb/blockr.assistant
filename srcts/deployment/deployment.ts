@@ -1,8 +1,9 @@
 // What a deployment chooses through the assistant's four blockr options:
 // where the calls go, how they are authenticated and which models it offers
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#the-blockr-options).
-// The assistant reads them through CoreApi.blockrOption(), which asks R once
-// per page, as each board opens.
+// A fifth and a sixth say whether the browser keeps the visitor's own key,
+// and for whom. The assistant reads all six through CoreApi.blockrOption(),
+// which asks R once per page, as each board opens.
 // - The blockr option assistant_base_url gives the base URL that every call
 //   goes to, which is OpenAI's API where it is unset.
 // - The blockr option assistant_api gives the API that the base URL speaks,
@@ -21,9 +22,18 @@
 //   string at its commas, since an environment variable gives a string, as
 //   does an R option that names one model. Where it is unset, the base URL's
 //   list gives the models (../models).
+// - The blockr option assistant_key_secret gives the secret with which the
+//   browser keeps the visitor's own key in its local storage, where the
+//   visitor authenticates. Where it is unset, the page keeps the key in its
+//   memory alone (../visitor-key). A deployment sets it as an environment
+//   variable, so that every R process of the app hands the page the same
+//   secret.
+// - The blockr option assistant_key_scope says for whom the browser keeps the
+//   key: "app", where it is unset, keeps it for the app alone, and "origin"
+//   for every app of the origin that keeps the key with the same secret.
 // A value that an option does not take fails the read, with a message that
-// names the option and the value as R sent it. The message of the key leaves
-// the value out, since it may be a key.
+// names the option and the value as R sent it. The messages of the key and of
+// the secret leave the value out, since it may be a key or the secret.
 
 import type { CoreApi, Json } from "@blockr/core";
 
@@ -33,10 +43,25 @@ const OPENAI = "https://api.openai.com/v1";
 // The APIs that the assistant speaks, by pi's names for them.
 const APIS: readonly string[] = ["openai-responses", "openai-completions", "anthropic-messages"];
 
+// For whom the browser keeps the visitor's key: for the app alone, or for
+// every app of the origin that keeps the key with the same secret.
+export type KeyScope = "app" | "origin";
+
+// How the browser keeps the visitor's key: with the secret, which encrypts
+// it, and for whom.
+export interface Keeping {
+  readonly secret: string;
+  readonly scope: KeyScope;
+}
+
 // How the calls are authenticated: with the deployment's key, which every
 // call carries, with no key, for a base URL that needs none, or with the
-// visitor's own key.
-export type Credential = { readonly kind: "deployment"; readonly key: string } | { readonly kind: "none" } | { readonly kind: "visitor" };
+// visitor's own key. The visitor's key holds how the browser keeps it, where
+// the deployment sets a secret for it.
+export type Credential =
+  | { readonly kind: "deployment"; readonly key: string }
+  | { readonly kind: "none" }
+  | { readonly kind: "visitor"; readonly kept?: Keeping };
 
 export interface Deployment {
   // The base URL that every call goes to, without a slash at its end.
@@ -50,13 +75,15 @@ export interface Deployment {
 }
 
 export async function readDeployment(core: Pick<CoreApi, "blockrOption">): Promise<Deployment> {
-  const [baseUrl, api, key, models] = await Promise.all([
+  const [baseUrl, api, key, models, keySecret, keyScope] = await Promise.all([
     core.blockrOption("assistant_base_url"),
     core.blockrOption("assistant_api"),
     core.blockrOption("assistant_api_key"),
     core.blockrOption("assistant_models"),
+    core.blockrOption("assistant_key_secret"),
+    core.blockrOption("assistant_key_scope"),
   ]);
-  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api), credential: credentialOf(key), models: modelsOf(models) };
+  return { baseUrl: baseUrlOf(baseUrl), api: apiOf(api), credential: credentialOf(key, keepingOf(keySecret, keyScope)), models: modelsOf(models) };
 }
 
 function baseUrlOf(sent: Json | undefined): string {
@@ -79,8 +106,8 @@ function apiOf(sent: Json | undefined): string {
   return api;
 }
 
-function credentialOf(sent: Json | undefined): Credential {
-  if (sent === undefined) return { kind: "visitor" };
+function credentialOf(sent: Json | undefined, kept: Keeping | undefined): Credential {
+  if (sent === undefined) return kept === undefined ? { kind: "visitor" } : { kind: "visitor", kept };
   const key = typeof sent === "string" ? sent.trim() : "";
   if (key === "") {
     throw new TypeError(
@@ -88,6 +115,38 @@ function credentialOf(sent: Json | undefined): Credential {
     );
   }
   return key === "none" ? { kind: "none" } : { kind: "deployment", key };
+}
+
+// How the browser keeps the visitor's key, or undefined where the deployment
+// sets no secret for it. A secret or a scope that its option does not take
+// fails the read even where the deployment sets a key, which leaves both
+// unused, and a scope fails it even where the deployment sets no secret.
+function keepingOf(secret: Json | undefined, scope: Json | undefined): Keeping | undefined {
+  const keptWith = keySecretOf(secret);
+  const keptFor = keyScopeOf(scope);
+  return keptWith === undefined ? undefined : { secret: keptWith, scope: keptFor };
+}
+
+function keySecretOf(sent: Json | undefined): string | undefined {
+  if (sent === undefined) return undefined;
+  const secret = typeof sent === "string" ? sent.trim() : "";
+  if (secret === "") {
+    throw new TypeError(
+      `The blockr option assistant_key_secret holds ${kindOf(sent)}, where it takes the secret with which the browser keeps a visitor's key, as a string.`,
+    );
+  }
+  return secret;
+}
+
+function keyScopeOf(sent: Json | undefined): KeyScope {
+  if (sent === undefined) return "app";
+  const scope = typeof sent === "string" ? sent.trim() : "";
+  if (scope !== "app" && scope !== "origin") {
+    throw new TypeError(
+      `The blockr option assistant_key_scope is ${JSON.stringify(sent)}, where it takes for whom the browser keeps a visitor's key: "app", for the app alone, or "origin", for every app of the origin that keeps the key with the same secret.`,
+    );
+  }
+  return scope;
 }
 
 function modelsOf(sent: Json | undefined): readonly string[] | undefined {

@@ -38,9 +38,13 @@
 // opens, which the turns hand the loop (../model-settings).
 // Where the deployment leaves the key to the visitor, the models, the turns
 // and the compaction read the visitor's own key, which the page keeps across
-// boards, and which the chat asks for (../visitor-key). Where the base URL is
-// OpenRouter's, the chat also offers OpenRouter's login, which gives the key,
-// and which the page keeps with the key (../openrouter).
+// boards, and which the chat asks for (../visitor-key). Where the deployment
+// sets the blockr option assistant_key_secret, the browser keeps the key as
+// well. The chat, the models and the turns then read the deployment only once
+// the key has read what the browser kept, so that none of them asks for a key
+// that the browser kept. Where the base URL is OpenRouter's, the chat also
+// offers OpenRouter's login, which gives the key, and which the page keeps
+// with the key (../openrouter).
 //
 // Once a conversation's first exchange that the model answered ends, the
 // assistant has a model call of its own title the conversation (../titles).
@@ -76,7 +80,7 @@ import { titleConversations } from "../titles/index.ts";
 import { editTools, readTools } from "../tools/index.ts";
 import { createTurns } from "../turns/index.ts";
 import type { Locks, Turns } from "../turns/index.ts";
-import { pageKey } from "../visitor-key/index.ts";
+import { keepKey, pageKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
 
 export interface Assistant {
@@ -90,8 +94,9 @@ export interface Assistant {
   // The thinking levels that the footer offers.
   readonly thinkingLevels: ThinkingLevels;
   // What the deployment chose, which the chat reads to tell whether it asks
-  // the visitor for a key. It rejects where an option holds a value that it
-  // does not take.
+  // the visitor for a key. It resolves once the visitor's key has read what
+  // the browser kept, and rejects where an option holds a value that it does
+  // not take.
   readonly deployment: Promise<Deployment>;
   // The visitor's own key.
   readonly key: VisitorKey;
@@ -137,11 +142,15 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
   });
   const skills = createSkills(core, signal);
   const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
-  const deployment = options.deployment ?? readDeployment(core);
+  const key = options.key ?? pageKey();
+  // What the deployment chose, once the key has read what the browser kept.
+  const deployment = (options.deployment ?? readDeployment(core)).then(async (chosen) => {
+    await keepKey(core, key, chosen);
+    return chosen;
+  });
   // The turns report why the options cannot be read, as each turn starts.
   deployment.catch(() => undefined);
   const callFailed = heldError(core, signal, "assistant_call_failed");
-  const key = options.key ?? pageKey();
   const openRouterLogin = options.openRouterLogin ?? openRouterLoginOf(key);
   const models = createModels(core, signal, { deployment, callFailed, key, fetch: options.fetch });
   const settings = createModelSettings(core, signal);
