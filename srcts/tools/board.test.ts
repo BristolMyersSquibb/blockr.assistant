@@ -1,14 +1,34 @@
 // The tools that read the links and the stacks of the board, on blockr.core's
-// CoreApi for tests, whose board is that of core's fixture hello, with the
-// stack s1 of the blocks a and b.
+// CoreApi for tests, on a board of a test package's block classes: a data
+// block a, which feeds the head block b, and the bind block c of a and b,
+// with the stack s1 of a and b.
 
+import type { Board } from "@blockr/core";
 import { describe, expect, test } from "vitest";
-import { callTool, parsed, skillsHolding, startAssistant } from "../testing/index.ts";
+import { blockClass, callTool, parsed, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
+
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
+    c: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
+  },
+  links: {
+    ab: { from: "a", to: "b", input: "data" },
+    ac: { from: "a", to: "c", input: "" },
+    bc: { from: "b", to: "c", input: "" },
+  },
+  stacks: { s1: { name: "Input", blocks: ["a", "b"], color: "#66c2a5" } },
+} satisfies Partial<Board>;
+
 async function started(options: StartOptions = {}) {
-  const stub = await startAssistant(options);
+  const stub = await startAssistant({ blockClasses: [DATA, HEAD, BIND], board: BOARD, ...options });
   return { ...stub, tools: readTools(stub.core, skillsHolding()) };
 }
 
@@ -18,12 +38,8 @@ describe("list_links", () => {
 
     expect(parsed(await callTool(tools, "list_links"))).toEqual([
       { id: "ab", from: "a", to: "b", input: "data" },
-      { id: "ac", from: "a", to: "c", input: "x" },
-      { id: "bc", from: "b", to: "c", input: "y" },
-      { id: "ad", from: "a", to: "d", input: "data" },
-      { id: "be", from: "b", to: "e", input: "" },
-      { id: "de", from: "d", to: "e", input: "" },
-      { id: "keen_finch", from: "a", to: "f", input: "data" },
+      { id: "ac", from: "a", to: "c", input: "" },
+      { id: "bc", from: "b", to: "c", input: "" },
     ]);
   });
 });
@@ -44,7 +60,7 @@ describe("describe_stack", () => {
     expect(parsed(await callTool(tools, "describe_stack", { id: "s1" }))).toEqual({
       id: "s1",
       name: "Input",
-      color: null,
+      color: "#66c2a5",
       blocks: [
         { id: "a", name: "Iris", status: "ready" },
         { id: "b", name: "Head", status: "unevaluated" },

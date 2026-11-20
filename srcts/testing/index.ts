@@ -1,13 +1,21 @@
 // The assistant's plugin class on blockr.core's CoreApi for tests, which the
 // tests of the assistant's tools and skills share
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#testing).
-// It starts core as the page of an app that runs the assistant would, on the
-// board of core's fixture hello, with R played from the fixtures of core's
-// wire protocol, so that the tests need neither R nor a browser. Core draws no
-// frontend, so nothing demands a block, and every block reads unevaluated
-// until something evaluates it. Core stops as the test finishes, and the page
-// forgets the visitor's key that the class's start shares across boards, as a
-// reload does.
+// It starts core as the page of an app that runs the assistant would, with R
+// played from the fixtures of core's wire protocol, so that the tests need
+// neither R nor a browser.
+// Core opens the board that the test gives, or else the board of core's
+// fixture hello.
+// A test may give block classes and board options of the package
+// blockr.test, which the app offers beside core's.
+// A test that asserts on what the board holds, or on what a package defines,
+// gives what it asserts on.
+// The test then fails where the assistant breaks, and not where core changes
+// its fixture or what it defines.
+// Core draws no frontend, so nothing demands a block, and every block reads
+// unevaluated until something evaluates it.
+// Core stops as the test finishes, and the page forgets the visitor's key
+// that the class's start shares across boards, as a reload does.
 // R answers each of the assistant's requests with what the test gives under
 // its name, list_skills with no skill and read_template with no template
 // unless the test gives one, and read_model_settings with null, as for an
@@ -19,7 +27,7 @@
 // A test records the spans that core and the assistant start in memory, with
 // recordSpans() (./spans.ts).
 
-import type { Condition, CoreApi, Json } from "@blockr/core";
+import type { Board, Condition, CoreApi, Json, RegistryEntry } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCore, StubCoreOptions } from "@blockr/core/stubs";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -100,6 +108,13 @@ export interface StartOptions {
   // Board options that the package blockr.test defines beside core's, by id,
   // each the default export of its module.
   readonly options?: Readonly<Record<string, unknown>>;
+  // Block classes that the package blockr.test registers beside core's, each
+  // as its entry in the block registry gives it (blockClass()).
+  readonly blockClasses?: readonly RegistryEntry[];
+  // The board that core opens in place of the board of core's fixture hello.
+  // It holds the blocks, links, stacks and values of board options given, and
+  // none of those that the fixture's board holds.
+  readonly board?: Partial<Pick<Board, "blocks" | "links" | "stacks" | "options">>;
 }
 
 export interface Started extends StubCore {
@@ -119,6 +134,54 @@ export const HELLO_ASSISTANT: typeof HELLO = {
   },
 };
 
+// R's reply to hello given, with the block classes given beside the classes
+// of its block registry.
+// Where a board is given, the reply opens that board in place of its own.
+// R writes each block of that board with the version of its class, and each
+// value of a board option with the version of the board option's shape.
+export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockClasses" | "board">): typeof HELLO {
+  const registry = { ...hello.block_registry, ...Object.fromEntries((given.blockClasses ?? []).map((entry) => [entry.id, entry])) };
+  if (given.board === undefined) return { ...hello, block_registry: registry };
+  const { blocks = {}, links = {}, stacks = {}, options = {} } = given.board;
+  return {
+    ...hello,
+    block_registry: registry,
+    board: {
+      ...hello.board,
+      board: {
+        ...hello.board.board,
+        blocks: Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id, { ...block, version: registry[block.registry_id]?.version ?? 1 }])),
+        links,
+        stacks,
+        options: Object.fromEntries(Object.entries(options).map(([id, value]) => [id, { value, version: hello.options[id]?.version ?? 1 }])),
+      },
+    },
+  };
+}
+
+// A block class under the registry id given, as its entry in the block
+// registry gives it, with what the test gives.
+// Unless the test gives them, the class has the category transform and no
+// data inputs, a block of it starts with no state args, and any state fits
+// the schema of its state.
+export function blockClass(id: string, given: Partial<RegistryEntry> = {}): RegistryEntry {
+  return {
+    id,
+    name: id,
+    description: `What ${id} does.`,
+    keywords: [],
+    category: "transform",
+    icon: "",
+    inputs: [],
+    module: `blockr.test/${id}.js`,
+    version: 1,
+    schema: { type: "object" },
+    state: {},
+    requests: {},
+    ...given,
+  };
+}
+
 export async function startAssistant(options: StartOptions = {}): Promise<Started> {
   const answers: Answers = { list_skills: () => [], read_template: () => null, read_model_settings: () => null, ...options.answers };
   const answer: Answer = (request) => {
@@ -133,18 +196,21 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
   const plugins = Object.entries(options.plugins ?? {});
   const boardOptions = Object.entries(options.options ?? {});
   const stubbed = await stubCore({
-    hello: {
-      ...HELLO_ASSISTANT,
-      lock: { ...HELLO_ASSISTANT.lock, board: options.locked === true },
-      plugins: {
-        ...HELLO_ASSISTANT.plugins,
-        ...Object.fromEntries(plugins.map(([id, { name }]) => [id, { name, version: 1, module: `app/${id}.js` }])),
+    hello: helloWith(
+      {
+        ...HELLO_ASSISTANT,
+        lock: { ...HELLO_ASSISTANT.lock, board: options.locked === true },
+        plugins: {
+          ...HELLO_ASSISTANT.plugins,
+          ...Object.fromEntries(plugins.map(([id, { name }]) => [id, { name, version: 1, module: `app/${id}.js` }])),
+        },
+        options: {
+          ...HELLO_ASSISTANT.options,
+          ...Object.fromEntries(boardOptions.map(([id]) => [id, { package: "blockr.test", module: `blockr.test/${id}.js`, version: 1 }])),
+        },
       },
-      options: {
-        ...HELLO_ASSISTANT.options,
-        ...Object.fromEntries(boardOptions.map(([id]) => [id, { package: "blockr.test", module: `blockr.test/${id}.js`, version: 1 }])),
-      },
-    },
+      options,
+    ),
     modules: {
       [ASSISTANT]: assistant,
       ...Object.fromEntries(plugins.map(([id, { definition }]) => [id, { api: 1, default: definition }])),

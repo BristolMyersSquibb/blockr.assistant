@@ -1,6 +1,7 @@
 // The tools that read the app's plugins, on blockr.core's CoreApi for tests,
-// where the app runs core's plugins, the assistant and a plugin of notes,
-// whose class keeps the notes in its state.
+// where the app runs core's plugins, the assistant, a plugin of notes, whose
+// class keeps the notes in its state, and a plugin that tidies the board,
+// whose class keeps no state.
 
 import { describe, expect, test } from "vitest";
 import { callTool, parsed, skill, skillsHolding, startAssistant } from "../testing/index.ts";
@@ -10,6 +11,7 @@ import { ASSISTANT } from "../state/index.ts";
 import { readTools } from "./index.ts";
 
 const NOTES = "blockr.test-notes_plugin";
+const TIDY = "blockr.test-tidy_plugin";
 
 const TEXT = "Look at the outliers first, then at the groups that hold fewer than ten rows.";
 
@@ -24,7 +26,10 @@ const SCHEMA = {
 
 async function started(options: StartOptions = {}, skills: readonly Skill[] = []) {
   const stub = await startAssistant({
-    plugins: { [NOTES]: { name: "Notes", definition: { state: { schema: SCHEMA, default: { text: TEXT } } } } },
+    plugins: {
+      [NOTES]: { name: "Notes", definition: { state: { schema: SCHEMA, default: { text: TEXT } } } },
+      [TIDY]: { name: "Tidy", definition: {} },
+    },
     ...options,
   });
   return { ...stub, tools: readTools(stub.core, skillsHolding(...skills)) };
@@ -39,7 +44,7 @@ describe("list_plugins", () => {
     expect(Object.keys(core.plugins.appPlugins())).toContain(ASSISTANT);
     expect(listed.map(({ id }) => id)).toEqual(Object.keys(core.plugins.appPlugins()).filter((id) => id !== ASSISTANT));
     expect(listed).toContainEqual({ id: NOTES, name: "Notes", description: SCHEMA.description });
-    expect(listed).toContainEqual({ id: "blockr.core-file_storage_plugin", name: "File storage" });
+    expect(listed).toContainEqual({ id: TIDY, name: "Tidy" });
   });
 
   test("cuts each description at assistant_description_max_chars, pointing at get_plugin_state", async () => {
@@ -78,9 +83,9 @@ describe("get_plugin_state", () => {
   test("gives no state and no schema for a plugin whose class keeps none", async () => {
     const { tools } = await started();
 
-    expect(parsed(await callTool(tools, "get_plugin_state", { id: "blockr.core-file_storage_plugin" }))).toEqual({
-      id: "blockr.core-file_storage_plugin",
-      name: "File storage",
+    expect(parsed(await callTool(tools, "get_plugin_state", { id: TIDY }))).toEqual({
+      id: TIDY,
+      name: "Tidy",
       state: null,
       schema: null,
     });

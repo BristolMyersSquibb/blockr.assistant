@@ -7,7 +7,7 @@
 
 import { context, createContextKey, ROOT_CONTEXT } from "@opentelemetry/api";
 import type { ContextManager } from "@opentelemetry/api";
-import type { Condition, CoreApi, Json } from "@blockr/core";
+import type { CommandError, Condition, CoreApi, Json } from "@blockr/core";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { callTool, parsed, requestNotifications, startAssistant } from "../testing/index.ts";
 import type { Answers, StartOptions } from "../testing/index.ts";
@@ -29,6 +29,15 @@ function warning(message: string): Condition {
 }
 
 const ERROR: Condition = { severity: "error", class: ["simpleError", "error", "condition"], phase: "expr", message: "object 'Sepal.Width' not found" };
+
+// A board option of a test package, which the board holds no value of.
+const PAGE_SIZE = {
+  label: "Page size",
+  category: "Table",
+  schema: { type: "integer", minimum: 1 },
+  default: 25,
+  ui: { render: () => () => undefined },
+};
 
 async function started(options: StartOptions = {}, board: AbortSignal = new AbortController().signal) {
   const stub = await startAssistant({ answers: DESCRIBED, ...options });
@@ -115,17 +124,19 @@ describe("edit", () => {
   });
 
   test("gives why the transport could not send the evaluation of a block that the edit changed", async () => {
-    const { tools, requests } = await started({ refuse: ["evaluate"] });
+    const { core, tools, requests } = await started({ refuse: ["evaluate"] });
 
     const called = await callTool(tools, "edit", {
       commands: [{ command: "blockr.core-set_block", args: { id: "a", state: { dataset: "mtcars", package: "datasets" } } }],
     });
     const result = parsed(called);
+    const unsent = core.scheduler.status("a")?.unsent;
 
     expect(called.isError).toBe(false);
+    expect(unsent).toEqual(expect.any(String));
     expect(result).toMatchObject({
       blocks: {
-        a: { status: "failed", unsent: "The evaluation could not be sent to R: The transport is closed.", conditions: [] },
+        a: { status: "failed", unsent, conditions: [] },
         b: { status: "waiting", conditions: [] },
       },
     });
@@ -222,10 +233,10 @@ describe("edit", () => {
   });
 
   test("takes no undo step for a list that only sets board options, or whose commands all have undo: false", async () => {
-    const { core, tools } = await started();
+    const { core, tools } = await started({ options: { page_size: PAGE_SIZE } });
     core.commands.register({ id: "blockr.test-rename", label: "Rename", undo: false, run: () => ({ name: "Renamed" }) });
 
-    expect(parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_option", args: { id: "n_rows", value: 10 } }] }))).toEqual({
+    expect(parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_option", args: { id: "page_size", value: 10 } }] }))).toEqual({
       applied: true,
       undo_step: false,
     });
@@ -237,6 +248,16 @@ describe("edit", () => {
   test("returns the index, the id and the failures of a command that fails its preflight, with a hint, applies none of the list, and core raises no notification for it", async () => {
     const { core, tools, sent, settled } = await started();
     const board = core.store.board();
+    // The failures with which core's command registry refuses the list.
+    const refused = await core.commands
+      .plan([
+        { id: "blockr.core-add_block", args: { registry_id: "blockr.core-head_block", id: "h" } },
+        { id: "blockr.core-add_link", args: { from: "a", to: "hh" } },
+      ])
+      .then(
+        () => [],
+        (error: unknown) => [...(error as CommandError).failures],
+      );
     const before = sent.length;
 
     const result = await callTool(tools, "edit", {
@@ -246,14 +267,9 @@ describe("edit", () => {
       ],
     });
 
+    expect(refused).toHaveLength(1);
     expect(result.isError).toBe(true);
-    expect(parsed(result)).toEqual({
-      applied: false,
-      index: 1,
-      command: "blockr.core-add_link",
-      failures: ['It fails its preflight on the board as it is, with the args {"from":"a","to":"hh"}.'],
-      hint: HINT,
-    });
+    expect(parsed(result)).toEqual({ applied: false, index: 1, command: "blockr.core-add_link", failures: refused, hint: HINT });
     expect(core.store.board()).toBe(board);
     expect(refusedEdits(core)).toEqual([]);
     await settled();
@@ -508,15 +524,15 @@ describe("edit meanwhile", () => {
     const prepared = new Promise<void>((resolve) => {
       preparing = resolve;
     });
-    const { core, tools } = await started();
+    const { core, tools } = await started({ options: { page_size: PAGE_SIZE } });
     core.commands.register({
       id: "blockr.test-slow_option",
-      label: "Set rows slowly",
+      label: "Set the page size slowly",
       prepare: () => {
         preparing();
         return gate;
       },
-      run: () => ({ options: { set: { n_rows: 10 } } }),
+      run: () => ({ options: { set: { page_size: 10 } } }),
     });
 
     const called = callTool(tools, "edit", { commands: [{ command: "blockr.test-slow_option" }] });

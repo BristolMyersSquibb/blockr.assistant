@@ -68,10 +68,14 @@ describe("get_block_result", () => {
   });
 
   test("gives why the transport could not send the evaluation of a block that it reads, and sends R nothing", async () => {
-    const { tools, requests } = await started({ refuse: ["evaluate"], answers: { describe_result: () => ({}) } });
+    const { core, tools, requests } = await started({ refuse: ["evaluate"], answers: { describe_result: () => ({}) } });
 
-    await expect(callTool(tools, "get_block_result", { id: "a" })).resolves.toEqual({
-      text: 'The request did not go to R, since a block that it reads is not ready:\n- Block "a" reads failed: The evaluation could not be sent to R: The transport is closed.',
+    const result = await callTool(tools, "get_block_result", { id: "a" });
+    const unsent = core.scheduler.status("a")?.unsent;
+
+    expect(unsent).toEqual(expect.any(String));
+    expect(result).toEqual({
+      text: `The request did not go to R, since a block that it reads is not ready:\n- Block "a" reads failed: ${String(unsent)}`,
       isError: true,
       images: [],
     });
