@@ -1,10 +1,10 @@
 // The Focus section, which the message of the app's holds after the Board
-// section: what the user has on screen as the call goes out, under today's
-// preamble on the block last clicked (R/system-prompt.R at fcbdb27)
+// section: what the user has on screen as the call goes out
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#the-sections).
-// The preamble reads the block that has focus in place of the block last
-// clicked, and the blocks and plugins on screen in place of the blocks in the
-// current view
+// Today's preamble on the block last clicked (R/system-prompt.R at fcbdb27)
+// is a rule (./rules.md), which the cache serves with the system prompt. It
+// reads the block that has focus in place of the block last clicked, and the
+// blocks and plugins on screen in place of the blocks in the current view
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#today).
 // - Where the dock is the frontend, the active view (./dock.ts).
 // - The blocks and the plugins on screen, from CoreApi.onScreen, where the
@@ -22,7 +22,6 @@
 import type { CoreApi } from "@blockr/core";
 import { ASSISTANT } from "../state/index.ts";
 import { dockViews } from "./dock.ts";
-import preamble from "./focus-preamble.md" with { type: "text" };
 
 // What of CoreApi the section reads.
 export type Core = Pick<CoreApi, "store" | "plugins" | "focus" | "onScreen">;
@@ -55,5 +54,5 @@ export function focusSection(core: Core): string | undefined {
   const focused = core.focus.get();
   if (focused !== null && Object.hasOwn(blocks, focused)) lines.push(`Block ${focused} has focus.`);
 
-  return lines.length === 0 ? undefined : ["## Focus", preamble.trim(), "", ...lines].join("\n");
+  return lines.length === 0 ? undefined : ["## Focus", ...lines].join("\n");
 }

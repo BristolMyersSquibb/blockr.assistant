@@ -125,7 +125,7 @@ async function opened(options: OpenOptions) {
     callFailed: heldError(stubbed.core, controller.signal, "assistant_call_failed"),
     prompt: { system: () => Promise.resolve("You edit a board."), appMessage: () => Promise.resolve("The board holds no block.") },
     compaction,
-    notes: { take: () => Promise.resolve(undefined) },
+    notes: { take: () => Promise.resolve(undefined), changed: () => [] },
     locks: undefined,
   });
   const close = (): void => {

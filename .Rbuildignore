@@ -17,3 +17,4 @@
 ^tsconfig(\.[a-z]+)?\.json$
 ^eslint\.config\.ts$
 ^vitest\.config\.ts$
+^coverage$
