@@ -25,6 +25,8 @@
 //   visitor's own key in a field above the message field, and sends nothing
 //   while it lacks one (./key.tsx). Where the base URL is OpenRouter's, the
 //   field offers OpenRouter's login beside the key (../openrouter).
+// - The notifications about the plugin show above the field for the
+//   visitor's key and the message field (./notifications.tsx).
 // - The stop button, which shows in the turn's conversation, and Escape
 //   anywhere in the chat stop the turn, with a summary that the turn waits
 //   for, while a summary that the user asked for goes on.
@@ -109,6 +111,7 @@ import { KeyForm } from "./key.tsx";
 import { libraries } from "./libraries.ts";
 import { LinkDialog } from "./links.tsx";
 import { shownOf, threadMessageOf, waitingCalls } from "./messages.ts";
+import { Notifications } from "./notifications.tsx";
 import { storeConversation, storedConversation } from "./open.ts";
 import { sendMessage } from "./send.ts";
 import type { Attached } from "./send.ts";
@@ -397,6 +400,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
           >
             <div className="blockr-assistant-chat-main" inert={drawer}>
               <Transcript />
+              <Notifications core={core} />
               <KeyForm />
               <Composer />
               <Footer

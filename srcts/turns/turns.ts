@@ -21,7 +21,9 @@
 //    Each call sends the system prompt of the open board, and after the
 //    conversation's last message the message of the app's, as it is when the
 //    call goes out, with the board and what the user has on screen
-//    (../prompt). So the note comes before the board.
+//    (../prompt). So the note comes before the board. The board lists early
+//    the blocks that the store's deltas touched since the conversation's
+//    previous call, which the notes give as the note is taken.
 //    The reply streams in the plugin's memory, which current() gives, and
 //    enters the conversation as one finished message, with the results of its
 //    tool calls as a message of the role tool. The memory keeps each reply's
@@ -138,8 +140,9 @@ export interface TurnsOptions extends CallOptions {
   // one, and after a call that outgrew the window.
   readonly compaction: Pick<Compaction, "beforeCall" | "compact">;
   // The notes of what others changed in the board, which give the note that
-  // a call's conversation takes before the call goes out.
-  readonly notes: Pick<Notes, "take">;
+  // a call's conversation takes before the call goes out, and the blocks that
+  // changed since the conversation's previous call, for its board.
+  readonly notes: Pick<Notes, "take" | "changed">;
   // The tab's Web Locks, the page's by default.
   readonly locks?: Locks | undefined;
 }
@@ -417,7 +420,7 @@ export function createTurns(core: CoreApi, signal: AbortSignal, options: TurnsOp
         messages: () => conversations.get(turn.conversation)?.messages ?? [],
         kept: (message) => conversations.kept(turn.conversation, message),
         systemPrompt,
-        appMessage: () => options.prompt.appMessage(),
+        appMessage: () => options.prompt.appMessage(options.notes.changed(turn.conversation)),
         beforeCall: async (stop) => {
           await options.compaction.beforeCall(turn.conversation, call, stop);
           await addNote(turn);

@@ -4,9 +4,11 @@
 // that each request meets CORS as a page's request to a provider does
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#where-the-calls-go).
 // Each test starts the assistant's plugin class on core's CoreApi for tests,
-// with the blockr options of a deployment that point at the mock. A turn then
-// runs on pi's own code for the API, through the page's fetch: the model calls
-// the tool list_blocks, and replies once it has the tool's result.
+// on a board of a test package's block classes, a data block a that feeds the
+// head block b, with the blockr options of a deployment that point at the
+// mock.
+// A turn then runs on pi's own code for the API, through the page's fetch: the
+// model calls the tool list_blocks, and replies once it has the tool's result.
 // The mock records the body of each call, which shows where pi puts the system
 // prompt and the message of the app's in each API's request.
 // Where the deployment sets no key, the test gives the visitor's own key, as
@@ -17,16 +19,27 @@
 // refuses a file named refused.pdf, as a provider refuses a file
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
 
-import type { CoreApi, Json } from "@blockr/core";
+import type { Board, CoreApi, Json } from "@blockr/core";
 import { afterEach, beforeEach, describe, expect, inject, test, vi } from "vitest";
 import type { KeptFile } from "../conversations/index.ts";
 import type { Message } from "../state/index.ts";
-import { startAssistant, storedIn } from "../testing/index.ts";
+import { blockClass, startAssistant, storedIn } from "../testing/index.ts";
 import type { RecordedRequest } from "../testing/index.ts";
 import { keyEntry, reloadPageKey } from "../visitor-key/index.ts";
 import { assistantOf } from "./index.ts";
 
 const mock = inject("mockApis");
+
+const DATA = blockClass("blockr.test-data_block", { category: "input" });
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+
+const BOARD = {
+  blocks: {
+    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
+    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
+  },
+  links: { ab: { from: "a", to: "b", input: "data" } },
+} satisfies Partial<Board>;
 
 beforeEach(async () => {
   await fetch(`${mock.origin}/__reset`, { method: "POST" });
@@ -41,7 +54,7 @@ async function reached(method: string): Promise<RecordedRequest[]> {
 // The assistant of a board on core's CoreApi for tests, where R holds the
 // blockr options given, with the visitor's key given, where a test gives one.
 async function opened(blockrOptions: Readonly<Record<string, Json>>, key?: string) {
-  const started = await startAssistant({ blockrOptions });
+  const started = await startAssistant({ blockClasses: [DATA, HEAD], board: BOARD, blockrOptions });
   await started.settled();
   const assistant = assistantOf(started.core);
   if (assistant === undefined) throw new Error("The class's start opened no assistant.");
@@ -212,7 +225,7 @@ describe.each(APIS)("a turn on $api", ({ api, keyed, keyless, calls: path, heade
     for (const body of calls) {
       expect(systemOf(body)).toMatch(/^You are an assistant embedded next to a blockr data analysis board\.\n/);
       expect(sent(body).at(-1)?.role).toBe("user");
-      expect(textOf(sent(body).at(-1))).toMatch(/^This message comes from the app, not from the user\.\n[^]*\n## Board\n6 block\(s\), 7 link\(s\), 1 stack\(s\)\.\n/);
+      expect(textOf(sent(body).at(-1))).toMatch(/^This message comes from the app, not from the user\.\n\n## Board\n2 block\(s\)( \([^)]*\))?, 1 link\(s\), 0 stack\(s\)\.\n/);
     }
     const [first, second] = calls.map(sent);
     expect(textOf(first?.at(-2))).toBe("Which blocks does the board hold?");

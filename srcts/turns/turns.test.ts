@@ -27,7 +27,7 @@ import type { Prompt } from "../prompt/index.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
+import { blockClass, FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
@@ -46,11 +46,16 @@ function conversation(model: string | null, ...messages: Message[]): Conversatio
   return { title: "Blocks", updated: CREATED, messages, usage: { input: 0, output: 0, last: 0 }, model };
 }
 
-// R's reply to hello in an app that runs the assistant, on a board that holds
-// no block and holds the assistant's state given.
+// A block class of a test package, which a tool adds a block of.
+const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+
+// R's reply to hello in an app that runs the assistant and offers the block
+// class HEAD, on a board that holds no block and holds the assistant's state
+// given.
 function helloWith(state: AssistantState): typeof HELLO {
   return {
     ...HELLO,
+    block_registry: { ...HELLO.block_registry, [HEAD.id]: HEAD },
     packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
     plugins: {
       ...HELLO.plugins,
@@ -491,6 +496,23 @@ describe("the note of what others changed in the board", () => {
     expect(c2?.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "user", "assistant"]);
     const note = c2?.messages[3]?.parts[0];
     expect(note?.type === "changes" ? note.text : "").toContain("- Stack s9: added by the assistant in another conversation.");
+  });
+
+  test("gives the message of the app's the blocks that changes touched since the conversation's previous call, the conversation's own edits included", async () => {
+    const at: { core?: CoreApi } = {};
+    const tool = running(at, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
+    const changed: (readonly string[])[] = [];
+    const appMessage = (blocks: Iterable<string> = []) => {
+      changed.push([...blocks]);
+      return Promise.resolve(APP_MESSAGE);
+    };
+    const open = await opened({ tools: [tool], replies: touching("t-1"), prompt: { system: () => Promise.resolve(SYSTEM_PROMPT), appMessage } });
+    at.core = open.core;
+
+    await open.turns.run("c1");
+
+    expect(open.core.store.board().blocks).toHaveProperty("adults");
+    expect(changed).toEqual([[], ["adults"]]);
   });
 
   test("goes to no conversation's first call, and to no call where nothing changed since the conversation's previous call", async () => {

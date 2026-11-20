@@ -97,9 +97,11 @@
   A call that fails raises the error `assistant_call_failed`, which the
   plugin withdraws once a later call succeeds.
 
-* The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
-  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the chat
-  first mounts (#225, #271).
+* The build bundles pi, minified, into `inst/js/pi-<hash>.js`, which the
+  browser loads as the chat first mounts (#225, #271).
+  Pi's code for each of the three APIs goes into a file of its own, such as
+  `inst/js/api-openai-responses-<hash>.js`, and the browser loads only the
+  file of the API that `assistant_api` names (#299).
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.
@@ -196,6 +198,17 @@
   catalog of the gateway's models (#271).
   So such a model reasons, at the level `medium` unless its conversation
   picks another, where it reasoned at its provider's default before.
+
+* The calls to Vercel's AI Gateway go through from the browser (#299).
+  Where the base URL is the gateway's, each call leaves without the headers
+  that the gateway's answer to a page's preflight does not allow.
+  These are the headers that the SDKs under pi add to each call, such as
+  `x-stainless-os`, the `User-Agent` that pi sets, which Firefox sends, and
+  `anthropic-dangerous-direct-browser-access`, which Anthropic's own API
+  needs from a page.
+  The request for the gateway's list of models on Anthropic's Messages API
+  leaves out `anthropic-dangerous-direct-browser-access` too, so that a
+  deployment there that names no models is offered the gateway's models.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).
@@ -483,6 +496,34 @@
   Where R cannot read the skill, the chat sends nothing, keeps the line in the
   field and raises the error `assistant_skills_failed`.
   While a turn runs, every command but `/clear` waits, as a message does.
+
+* The Board section holds the whole board within one cap, the blockr option
+  `assistant_board_section_max_chars`, at 3000 characters by default, where
+  version 0.1 caps each of its parts at 1500 (#285).
+  Where the board does not fit, the section lists first the blocks that failed
+  or are invalid, the block that has focus, the blocks that changed since the
+  conversation's previous call and those on screen, then the rest in the
+  board's order.
+  Each block's line ends with the links into it, and the stacks and the dock's
+  views follow the blocks.
+  Each list that the cap cuts ends with a line that counts what it left out
+  and names the tool that gives it.
+  The line of counts gives the blocks by each status that marks one.
+  The app's plugins and the board options that its packages define move into
+  the system prompt, after the rules, since neither changes while the board is
+  open.
+  The preamble of the Focus section becomes a rule, and the message of the
+  app's opens with one sentence that says that the app writes it.
+
+* The chat shows every notification about the plugin above the message field,
+  so that the user reads why the assistant fails where they would send (#284).
+  Those are what the plugin raises, such as the error
+  `assistant_call_failed`, and what core and R raise about the plugin.
+  Each shows until its cause has gone, or until the next board opens.
+  An error takes the danger colours of blockr.ui's design system, and a
+  warning its amber ones.
+  A failure that ended a turn still shows at that turn too, now in the same
+  style.
 
 # blockr.assistant 0.1.0.9000
 

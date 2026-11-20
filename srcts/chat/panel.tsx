@@ -13,7 +13,11 @@
 //    the catalogs, and waits until they have loaded, or failed to, so that the
 //    footer knows the thinking levels of each model as it first draws
 //    (../thinking-levels).
-// 4. Then it draws the chat. As the next board opens, it draws the chat again
+// 4. Once the assistant has read the deployment, the panel also has the page
+//    start to import pi's code for the deployment's API, which the calls
+//    take, so that the first call need not wait for it. The panel does not
+//    wait for that code.
+// 5. Then it draws the chat. As the next board opens, it draws the chat again
 //    for that board's assistant.
 // Where the libraries fail to load, the panel says so and logs why.
 
@@ -24,7 +28,7 @@ import { createRoot } from "react-dom/client";
 import type { CoreApi } from "@blockr/core";
 import { assistantOf, nextAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
-import { preloadCatalogs } from "../loop/index.ts";
+import { preloadApi, preloadCatalogs } from "../loop/index.ts";
 import { Chat } from "./chat.tsx";
 import { librariesLoaded, loadLibraries } from "./libraries.ts";
 
@@ -44,6 +48,7 @@ function Panel({ core }: { readonly core: CoreApi }): ReactElement {
   const assistant = useAssistant(core);
   const loaded = useLibraries(core);
   const levels = useThinkingLevels(assistant);
+  usePreloadedApi(assistant);
   return (
     <div className="blockr-assistant">
       {loaded === "failed" ? (
@@ -130,6 +135,21 @@ function useThinkingLevels(assistant: Assistant | undefined): boolean {
 // The assistants whose thinking levels have loaded the catalogs, or failed to,
 // so that a mount of the chat again draws it at once.
 const levelsLoaded = new WeakSet<Assistant>();
+
+// Has the page start to import pi's code for the API of the assistant's
+// deployment, once the assistant has read the deployment. Where the
+// deployment's options cannot be read, the turns report why as each starts.
+function usePreloadedApi(assistant: Assistant | undefined): void {
+  useEffect(() => {
+    if (assistant === undefined) return;
+    assistant.deployment.then(
+      (deployment) => {
+        preloadApi(deployment.api);
+      },
+      () => undefined,
+    );
+  }, [assistant]);
+}
 
 // The assistant, where its board is open.
 function open(assistant: Assistant | undefined): Assistant | undefined {

@@ -395,19 +395,19 @@ function isNote(message2) {
   return message2.role === "user" && message2.parts.length > 0 && message2.parts.every((part) => part.type === "changes");
 }
 function messagesToDrop(messages, keep2) {
-  let counted = 0;
+  let counted2 = 0;
   let fits;
   let last;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message2 = messages[i];
     if (message2 === void 0) continue;
-    if (!isNote(message2)) counted += 1;
+    if (!isNote(message2)) counted2 += 1;
     if (opensExchange(message2)) {
       last ??= i;
-      if (counted <= keep2) fits = i;
+      if (counted2 <= keep2) fits = i;
     }
   }
-  if (counted <= keep2) return 0;
+  if (counted2 <= keep2) return 0;
   return fits ?? last ?? 0;
 }
 function opensExchange(message2) {
@@ -488,11 +488,11 @@ function mediaTypeOf(file) {
   return TEXTS.has(file.type) ? file.type : void 0;
 }
 var ACCEPT = [...IMAGES, PDF, ...TEXTS, ...Object.keys(TEXT_EXTENSIONS).map((extension) => `.${extension}`)].join(",");
-function scaledSize(width, height, bound = MAX_EDGE) {
-  const longer = Math.max(width, height);
+function scaledSize(width2, height, bound = MAX_EDGE) {
+  const longer = Math.max(width2, height);
   if (longer <= bound) return void 0;
   const scale = bound / longer;
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+  return { width: Math.round(width2 * scale), height: Math.round(height * scale) };
 }
 function namesOf(names) {
   const quoted = names.map((name) => `"${name}"`);
@@ -743,6 +743,22 @@ function pageKey() {
   return page;
 }
 
+// srcts/gateways/gateways.ts
+var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+var REFUSED = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
+function refusesHeader(baseUrl, name) {
+  if (hostOf(baseUrl) !== VERCEL_AI_GATEWAY) return false;
+  const lower = name.toLowerCase();
+  return lower.startsWith("x-stainless-") || REFUSED.has(lower);
+}
+function hostOf(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
+}
+
 // srcts/models/list.ts
 var NO_TOOLS = /* @__PURE__ */ new Set([
   "audio",
@@ -776,7 +792,7 @@ async function askList(deployment, key, fetch, signal) {
   const none = (why) => ({ kind: "failed", message: `The assistant offers no model, since ${why}` });
   let response;
   try {
-    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+    response = await fetch(url, { headers: listHeaders(deployment, key), signal });
   } catch (error) {
     return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
   }
@@ -856,15 +872,13 @@ function takesTools(entry, id, api2) {
 function listUrl(deployment) {
   return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
 }
-function listHeaders(api2, key) {
-  if (api2 === "anthropic-messages") {
-    return {
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      ...key === void 0 ? {} : { "x-api-key": key }
-    };
-  }
-  return key === void 0 ? {} : { authorization: `Bearer ${key}` };
+function listHeaders(deployment, key) {
+  const headers = deployment.api === "anthropic-messages" ? {
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+    ...key === void 0 ? {} : { "x-api-key": key }
+  } : key === void 0 ? {} : { authorization: `Bearer ${key}` };
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !refusesHeader(deployment.baseUrl, name)));
 }
 async function answerOf(response) {
   let message2;
@@ -1009,7 +1023,7 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   let catalogs;
   let loop;
   try {
-    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
   }
@@ -1242,7 +1256,7 @@ function createTurns(core, signal, options) {
       messages: () => conversations.get(turn.conversation)?.messages ?? [],
       kept: (message2) => conversations.kept(turn.conversation, message2),
       systemPrompt: systemPrompt2,
-      appMessage: () => options.prompt.appMessage(),
+      appMessage: () => options.prompt.appMessage(options.notes.changed(turn.conversation)),
       beforeCall: async (stop) => {
         await options.compaction.beforeCall(turn.conversation, call, stop);
         await addNote(turn);
@@ -2017,6 +2031,20 @@ function kindOf2(sent3) {
   return Array.isArray(sent3) ? "an array" : "an object";
 }
 
+// srcts/loop/apis.ts
+var APIS2 = /* @__PURE__ */ new Map([
+  ["anthropic-messages", () => import("./api-anthropic-messages-32f57ac1.js")],
+  ["openai-completions", () => import("./api-openai-completions-6b7777a6.js")],
+  ["openai-responses", () => import("./api-openai-responses-1d29cdfc.js")]
+]);
+function loadApi(api2) {
+  const load = APIS2.get(api2);
+  return load === void 0 ? Promise.reject(new Error(`The assistant speaks no API named ${JSON.stringify(api2)}.`)) : load();
+}
+function preloadApi(api2) {
+  loadApi(api2).catch(() => void 0);
+}
+
 // srcts/loop/catalogs.ts
 var PROVIDER = "blockr.assistant";
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -2026,7 +2054,7 @@ var GATEWAYS = /* @__PURE__ */ new Map([
 ]);
 var loading = /* @__PURE__ */ new Map();
 function preloadCatalogs() {
-  void import("./pi-b163b862.js").catch(() => void 0);
+  void import("./pi-fd483a06.js").catch(() => void 0);
 }
 async function loadCatalogs(baseUrl) {
   return createCatalogs(await loadCatalogParts(baseUrl));
@@ -2036,7 +2064,7 @@ function loadCatalogParts(baseUrl) {
   const loaded2 = loading.get(host);
   if (loaded2 !== void 0) return loaded2;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
+  const parts = Promise.all([import("./pi-fd483a06.js"), gateway?.()]).then(
     ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
   );
   loading.set(host, parts);
@@ -2559,21 +2587,15 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var NO_KEY2 = "blockr-assistant-no-key";
-function createLoop(pi, catalogs, apis = {}) {
-  const streams = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis
-  };
+function createLoop(pi, catalogs, apis) {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call)
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call)
   };
 }
-async function loadLoop(baseUrl) {
-  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+async function loadLoop(connection) {
+  const [pi, catalogs, streams] = await Promise.all([import("./pi-fd483a06.js"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 function runTurn(pi, catalogs, streams, turn) {
   return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
@@ -2602,9 +2624,10 @@ async function runAgent(pi, catalogs, streams, turn, span) {
   let status;
   let unread = false;
   let added;
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input, init) => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -2701,7 +2724,7 @@ function callModel(pi, catalogs, streams, call) {
     const reply = await models.completeSimple(
       model2,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span }
+      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span }
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
@@ -2724,13 +2747,18 @@ function findFailure(reply, text3) {
 function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
-function keyless(input, init) {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+function fetchAt(baseUrl) {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
 }
-var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
+var REFUSED2 = /* @__PURE__ */ new Set([400, 413, 415, 422]);
 function callOf(pi, reply, model2, carried, status, unread) {
   const written = convertReply(reply);
   const answer = unread ? "unread" : status === 401 || status === 403 ? "refused" : void 0;
@@ -2740,7 +2768,7 @@ function callOf(pi, reply, model2, carried, status, unread) {
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
     ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
-    refused: failed2 && status !== void 0 && REFUSED.has(status),
+    refused: failed2 && status !== void 0 && REFUSED2.has(status),
     ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {},
     ...failed2 && answer !== void 0 ? { answer } : {}
   };
@@ -2957,8 +2985,11 @@ var DEFAULTS = {
   // The description of a skill, in the list of the skills that name a class
   // and in the Skills section of the system prompt.
   assistant_skill_description_max_chars: 1024,
-  // Each part of the Board section, which the message of the app's holds.
-  assistant_board_section_max_chars: 1500,
+  // The whole Board section, which the message of the app's holds, where
+  // today's caps each of its parts at 1500. It caps each part of the section
+  // on the plugins and the board options in the system prompt too, and the
+  // list of the note of what others changed.
+  assistant_board_section_max_chars: 3e3,
   // What the model's own R code prints, which R cuts, and the warnings and
   // messages of R's reply to a tool's request.
   assistant_eval_max_chars: 16e3,
@@ -3065,9 +3096,6 @@ function addedAndRemoved(heard) {
   const last = heard.at(-1);
   if (first === void 0 || last === void 0) return { added: {}, removed: {} };
   return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
-}
-function setsOnlyOptions(heard) {
-  return heard.every(({ delta }) => holds(delta).every((part) => part === "options"));
 }
 function missing(board, other) {
   const ids = {};
@@ -3614,7 +3642,7 @@ var STOPPED_PREPARING = "The user stopped the turn while a command of the list p
 var NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo.";
 var UNDID_NOTHING = "The undo changed nothing, since what the edit changed is no longer on the board.";
 var CHANGED_NOTHING = "The commands changed nothing on the board, so there is nothing to review. The board may hold what they set already.";
-var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Make each edit one change that the user would take back as one, since the user's Undo takes back a whole edit, as undo_edit does. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Then change the args or the commands, rather than sending the same list again. On a locked board, where the lock refuses a command, tell the user what the lock refuses, rather than trying to make the change another way. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. Check the review against what the user asked. Where the edit left a block `failed`, `invalid` or `waiting`, correct it with another edit, rather than reporting the change as done. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Where it left blocks out, say that you have not checked them, rather than reporting the change as verified. Its `undo_step` says whether undo_edit can take the edit back: an edit that only changes what the user looks at, such as the active view, or that only sets board options, takes no undo step.";
+var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Make each edit one change that the user would take back as one, since the user's Undo takes back a whole edit, as undo_edit does. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Then change the args or the commands, rather than sending the same list again. On a locked board, where the lock refuses a command, tell the user what the lock refuses, rather than trying to make the change another way. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. Check the review against what the user asked. Where the edit left a block `failed`, `invalid` or `waiting`, correct it with another edit, rather than reporting the change as done. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Where it left blocks out, say that you have not checked them, rather than reporting the change as verified. Its `undo_step` says whether undo_edit can take the edit back. An undo never takes back a board option's value, or what a command whose `undo` is false changes, such as the active view. So an edit that changes nothing else takes no undo step.";
 var UNDO_DESCRIPTION = "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. The tool returns a review of what the undo changed, as edit does. The edit that it takes back may come from another of the assistant's conversations, so tell the user what the undo took back, as the review shows it, rather than taking for granted that it was your own last edit. Where the assistant has no edit left to take back, the tool changes nothing and says so. On a locked board, where the lock refuses the undo, tell the user what the lock refuses, rather than trying to take the edit back another way.";
 function editTools(core, board) {
   return [
@@ -3651,8 +3679,9 @@ function editTools(core, board) {
         const before = conditionsNow(core);
         const hearing = hear(core);
         let refusal;
+        let undoStep = false;
         try {
-          await context4.with(
+          undoStep = await context4.with(
             active,
             () => core.commands.run(
               commands.map(({ command: command2, args }) => args === void 0 ? { id: command2 } : { id: command2, args }),
@@ -3667,7 +3696,7 @@ function editTools(core, board) {
         }
         if (refusal !== void 0) return refusedList(core, commands, refusal.error, signal.aborted);
         const heard = hearing.heard();
-        const head = { applied: true, undo_step: tookUndoStep(core, commands, heard) };
+        const head = { applied: true, undo_step: undoStep };
         const notes = heard.length === 0 ? [CHANGED_NOTHING] : [];
         if (signal.aborted) return json({ ...stepResult(heard, head), notes: [STOPPED_PREPARING, ...notes] });
         return json(await reviewed(core, { heard, before, head, what: "the commands", notes, caps }, { turn: signal, board }, active));
@@ -3726,10 +3755,6 @@ function refusedList(core, commands, error, stopped) {
 }
 function refusedResult(value) {
   return { text: json(value), isError: true, images: [] };
-}
-function tookUndoStep(core, commands, heard) {
-  const registered = core.commands.registered();
-  return commands.some(({ command: command2 }) => own(registered, command2)?.undo !== false) && !setsOnlyOptions(heard);
 }
 function failuresOf(error) {
   if (error instanceof Error && (error.name === "CommandError" || error.name === "StoreError")) {
@@ -4116,12 +4141,12 @@ function resultTools({ core }) {
         },
         ["code", "blocks"]
       ),
-      run: async ({ code, blocks, width, height }, signal) => {
+      run: async ({ code, blocks, width: width2, height }, signal) => {
         if (core.lock.board) throw new Error(LOCKED);
         const board = core.store.board();
         const absent = blocks.filter((block) => own(board.blocks, block) === void 0);
         if (absent.length > 0) throw new Error(noBlocks(absent));
-        const given2 = { code, ...width === void 0 ? {} : { width }, ...height === void 0 ? {} : { height } };
+        const given2 = { code, ...width2 === void 0 ? {} : { width: width2 }, ...height === void 0 ? {} : { height } };
         const { answer, notifications } = await toolRequest(core, "inspect_results", given2, { reads: [...blocks], signal });
         const inspection = answeredObject(answer, "inspect_results");
         return {
@@ -4150,7 +4175,7 @@ function readTools(core, skills) {
 }
 
 // srcts/prompt/app-preamble.md
-var app_preamble_default = "This message comes from the app, not from the user.\nIt shows the board, and what the user has on screen, as they are when this call goes out.\n";
+var app_preamble_default = "This message comes from the app, not from the user.\n";
 
 // srcts/prompt/dock.ts
 var DOCK = "blockr.dock-dock_plugin";
@@ -4201,24 +4226,126 @@ function isRecord4(value) {
 }
 
 // srcts/prompt/board.ts
-var NO_RESULT = /* @__PURE__ */ new Set(["waiting", "invalid", "failed", "unevaluated", "stale"]);
+var MARKED = ["waiting", "invalid", "failed", "unevaluated", "stale"];
+var NO_RESULT = new Set(MARKED);
+var WRONG = /* @__PURE__ */ new Set(["failed", "invalid"]);
 var ICONS = { error: "\u2716", warning: "\u26A0", message: "\u2139" };
-function boardSection(core, max) {
+function boardSection(core, max, changed = []) {
   const board = core.store.board();
   const blocks = Object.entries(board.blocks);
   const links = Object.entries(board.links);
   const stacks = Object.entries(board.stacks);
-  const counts = `${String(blocks.length)} block(s), ${String(links.length)} link(s), ${String(stacks.length)} stack(s).`;
-  const part = (heading, lines, tool2) => lines.length === 0 ? [] : [cutText([`### ${heading}`, ...lines].join("\n"), max, `call ${tool2} for the full list`)];
-  const parts = blocks.length + links.length + stacks.length === 0 ? [`${counts} (empty board -- no blocks yet)`] : [
-    counts,
-    "",
-    ...part("Blocks", blocks.map(([id, block]) => withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, core.scheduler.status(id))), "list_blocks"),
-    ...part("Links", links.map(([id, { from, to, input }]) => `- ${id}: ${from} -> ${to}${input === "" ? "" : `$${input}`}`), "list_links"),
-    ...part("Stacks", stacks.map(([id, { name, blocks: held }]) => `- ${id} "${name}"${held.length === 0 ? "" : `: ${held.join(", ")}`}`), "list_stacks"),
-    ...optionPart(core, Object.keys(board.options), part)
+  const statuses = new Map(blocks.map(([id]) => [id, core.scheduler.status(id)]));
+  const counts = countsLine(blocks.length, links.length, stacks.length, [...statuses.values()]);
+  if (blocks.length + links.length + stacks.length === 0) return ["## Board", `${counts} (empty board -- no blocks yet)`].join("\n");
+  const order = blockOrder(core, blocks, statuses, new Set(changed));
+  const into = linksInto(links);
+  const blockPart = {
+    heading: "### Blocks",
+    lines: order.map(([id, block]) => blockLine(id, block, statuses.get(id), into.get(id) ?? [])),
+    rest: (shown4) => {
+      const left = order.slice(shown4);
+      if (left.length === 0) return void 0;
+      const linked = left.reduce((sum, [id]) => sum + (into.get(id)?.length ?? 0), 0);
+      const tail = linked === 0 ? "" : `, with the ${counted(linked, "link")} into ${left.length === 1 ? "it" : "them"}`;
+      return `${more(left.length, shown4, "block")}${tail}: list_blocks gives every block${linked === 0 ? "" : ", list_links every link"}`;
+    }
+  };
+  const stackPart = (listed4) => {
+    const shown4 = stacks.filter(([, { blocks: held }]) => held.length === 0 || held.some((id) => listed4.has(id)));
+    return {
+      heading: "### Stacks",
+      lines: shown4.map(([id, stack]) => stackLine(id, stack.name, stack.blocks, listed4)),
+      rest: (taken2) => taken2 === stacks.length ? void 0 : `${more(stacks.length - taken2, taken2, "stack")}: list_stacks gives every stack`
+    };
+  };
+  const viewPart = viewsOf2(core);
+  const lines = ["## Board", counts, ""];
+  let room = max - width(lines.join("\n"));
+  const add = (part, kept) => {
+    const { shown: shown4, filled } = fill(part, room - kept);
+    lines.push(...filled);
+    room -= width(["", ...filled].join("\n"));
+    return shown4;
+  };
+  const forViews = least(viewPart);
+  const forStacks = stacks.length === 0 ? 0 : least(stackPart(/* @__PURE__ */ new Set()));
+  const shown3 = blocks.length === 0 ? 0 : add(blockPart, forStacks + forViews);
+  const listed3 = new Set(order.slice(0, shown3).map(([id]) => id));
+  if (stacks.length > 0) add(stackPart(listed3), forViews);
+  if (viewPart !== void 0) add(viewPart, 0);
+  return lines.join("\n");
+}
+function fill(part, room) {
+  let used = width(`
+${part.heading}`);
+  let shown3 = 0;
+  for (const line of part.lines) {
+    const rest2 = part.rest(shown3 + 1);
+    if (used + width(`
+${line}`) + (rest2 === void 0 ? 0 : width(`
+${rest2}`)) > room) break;
+    used += width(`
+${line}`);
+    shown3 += 1;
+  }
+  const rest = part.rest(shown3);
+  return { shown: shown3, filled: [part.heading, ...part.lines.slice(0, shown3), ...rest === void 0 ? [] : [rest]] };
+}
+function least(part) {
+  if (part === void 0) return 0;
+  const rest = part.rest(0);
+  return width(["", part.heading, ...rest === void 0 ? [] : [rest]].join("\n"));
+}
+function width(text3) {
+  return Array.from(text3).length;
+}
+function counted(count, word) {
+  return `${String(count)} ${word}${count === 1 ? "" : "s"}`;
+}
+function more(left, shown3, word) {
+  return shown3 === 0 ? `\u2026 ${counted(left, word)}` : `\u2026 and ${counted(left, `more ${word}`)}`;
+}
+function countsLine(blocks, links, stacks, statuses) {
+  const marked = MARKED.flatMap((status) => {
+    const count = statuses.filter((held) => held?.status === status).length;
+    return count === 0 ? [] : [`${String(count)} ${status}`];
+  });
+  return `${String(blocks)} block(s)${marked.length === 0 ? "" : ` (${marked.join(", ")})`}, ${String(links)} link(s), ${String(stacks)} stack(s).`;
+}
+function blockOrder(core, blocks, statuses, changed) {
+  const focused = core.focus.get();
+  const shown3 = new Set(core.onScreen.get()?.blocks ?? []);
+  const groups = [
+    (id) => {
+      const status = statuses.get(id)?.status;
+      return status !== void 0 && WRONG.has(status);
+    },
+    (id) => id === focused,
+    (id) => changed.has(id),
+    (id) => shown3.has(id),
+    () => true
   ];
-  return ["## Board", ...parts, ...part("Plugins", pluginLines(core), "list_plugins"), ...part("Views", viewLines(core), `get_plugin_state("${DOCK}")`)].join("\n");
+  const order = /* @__PURE__ */ new Map();
+  for (const inGroup of groups) for (const [id, block] of blocks) if (!order.has(id) && inGroup(id)) order.set(id, block);
+  return [...order];
+}
+function linksInto(links) {
+  const into = /* @__PURE__ */ new Map();
+  for (const entry of links) into.set(entry[1].to, [...into.get(entry[1].to) ?? [], entry]);
+  return into;
+}
+function blockLine(id, block, status, into) {
+  const line = withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, status);
+  if (into.length === 0) return line;
+  const fed = into.map(([link, { from, input }]) => `${input === "" ? "" : `${input}: `}${from} (${link})`);
+  return `${line} <- ${fed.join(", ")}`;
+}
+function stackLine(id, name, held, listed3) {
+  const shown3 = held.filter((block) => listed3.has(block));
+  const others = held.length - shown3.length;
+  const tail = others === 0 ? "" : ` and ${counted(others, "more block")}`;
+  return `- ${id} "${name}"${held.length === 0 ? "" : `: ${shown3.join(", ")}${tail}`}`;
 }
 function joinNames(names) {
   return names.length === 0 ? "" : ` ${names.join(", ")}`;
@@ -4227,38 +4354,22 @@ function withMarkers(line, status) {
   if (status === void 0) return line;
   const counts = ["error", "warning", "message"].flatMap((severity) => {
     const count = status.conditions.filter((condition) => condition.severity === severity).length;
-    return count === 0 ? [] : [`${ICONS[severity]} ${String(count)} ${severity}${count === 1 ? "" : "s"}`];
+    return count === 0 ? [] : [`${ICONS[severity]} ${counted(count, severity)}`];
   });
   const markers = [...NO_RESULT.has(status.status) ? [`[${status.status}]`] : [], ...counts.length === 0 ? [] : [`[${counts.join(", ")}]`]];
   return markers.length === 0 ? line : `${line} ${markers.join(" ")}`;
 }
-function optionPart(core, ids, part) {
-  if (ids.length === 0) return [];
-  const registered = core.options.registered();
-  const lines = ids.map((id) => {
-    const category = Object.hasOwn(registered, id) ? registered[id]?.category : void 0;
-    return category === void 0 ? `- ${id}` : `- ${id} (${category})`;
-  });
-  return part("Options", [...lines, "Current values via list_board_options; change with blockr.core-set_option."], "list_board_options");
-}
-function pluginLines(core) {
-  return Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT).flatMap(([id, { name }]) => {
-    const described = core.plugins.pluginClass(id).state?.schema.description;
-    const line = `- ${name} (id: ${id})`;
-    return typeof described === "string" && described.trim() !== "" ? [line, `  ${described.replace(/\s+/g, " ").trim()}`] : [line];
-  });
-}
-function viewLines(core) {
+function viewsOf2(core) {
   const views = dockViews(core);
-  if (views === void 0 || views.views.length <= 1) return [];
-  return views.views.map(({ id, name, panels }) => {
-    const active = views.active?.id === id ? " (active)" : "";
-    return `- ${name} (id: ${id})${active} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`;
-  });
+  if (views === void 0 || views.views.length <= 1) return void 0;
+  const { active } = views;
+  const ordered = active === null ? views.views : [active, ...views.views.filter((view) => view.id !== active.id)];
+  return {
+    heading: "### Views",
+    lines: ordered.map(({ id, name, panels }) => `- ${name} (id: ${id})${active?.id === id ? " (active)" : ""} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`),
+    rest: (shown3) => shown3 === ordered.length ? void 0 : `${more(ordered.length - shown3, shown3, "view")}: get_plugin_state("${DOCK}") gives every view`
+  };
 }
-
-// srcts/prompt/focus-preamble.md
-var focus_preamble_default = 'What the user is looking at: the block that has focus, and the blocks and plugins on screen.\nA request that names no block -- "this plot", "add a filter here" -- is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n';
 
 // srcts/prompt/focus.ts
 function focusSection(core) {
@@ -4282,11 +4393,30 @@ function focusSection(core) {
   }
   const focused = core.focus.get();
   if (focused !== null && Object.hasOwn(blocks, focused)) lines.push(`Block ${focused} has focus.`);
-  return lines.length === 0 ? void 0 : ["## Focus", focus_preamble_default.trim(), "", ...lines].join("\n");
+  return lines.length === 0 ? void 0 : ["## Focus", ...lines].join("\n");
+}
+
+// srcts/prompt/plugins.ts
+function pluginsSection(core, max) {
+  const part = (heading, lines, tool2) => lines.length === 0 ? [] : [cutText([`### ${heading}`, ...lines].join("\n"), max, `call ${tool2} for the full list`)];
+  const parts = [...part("Plugins", pluginLines(core), "list_plugins"), ...part("Options", optionLines(core), "list_board_options")];
+  return parts.length === 0 ? void 0 : ["## Plugins and board options", ...parts].join("\n");
+}
+function pluginLines(core) {
+  return Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT).flatMap(([id, { name }]) => {
+    const described = core.plugins.pluginClass(id).state?.schema.description;
+    const line = `- ${name} (id: ${id})`;
+    return typeof described === "string" && described.trim() !== "" ? [line, `  ${described.replace(/\s+/g, " ").trim()}`] : [line];
+  });
+}
+function optionLines(core) {
+  const options = Object.values(core.options.registered());
+  if (options.length === 0) return [];
+  return [...options.map(({ id, category }) => `- ${id} (${category})`), "Current values via list_board_options; change with blockr.core-set_option."];
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then the views.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
@@ -4303,18 +4433,24 @@ function createPrompt(core, options) {
   let written;
   return {
     system: () => written ??= systemPrompt(core, options),
-    appMessage: () => appMessage2(core)
+    appMessage: (changed) => appMessage2(core, changed)
   };
 }
 async function systemPrompt(core, { skills, template }) {
-  const [text3, listed3, max] = await Promise.all([template.text(), skills.list(), readToolCap(core, "assistant_skill_description_max_chars")]);
-  const catalogue = skillsSection(listed3, max);
-  return [text3, rules_default.trim(), ...catalogue === void 0 ? [] : [catalogue]].join("\n\n");
+  const [text3, listed3, descriptionMax, partMax] = await Promise.all([
+    template.text(),
+    skills.list(),
+    readToolCap(core, "assistant_skill_description_max_chars"),
+    readToolCap(core, "assistant_board_section_max_chars")
+  ]);
+  const app = pluginsSection(core, partMax);
+  const catalogue = skillsSection(listed3, descriptionMax);
+  return [text3, rules_default.trim(), ...app === void 0 ? [] : [app], ...catalogue === void 0 ? [] : [catalogue]].join("\n\n");
 }
-async function appMessage2(core) {
+async function appMessage2(core, changed = []) {
   const max = await readToolCap(core, "assistant_board_section_max_chars");
   const focus = focusSection(core);
-  return [app_preamble_default.trim(), boardSection(core, max), ...focus === void 0 ? [] : [focus]].join("\n\n");
+  return [app_preamble_default.trim(), boardSection(core, max, changed), ...focus === void 0 ? [] : [focus]].join("\n\n");
 }
 
 // srcts/prompt/build.md
@@ -4394,6 +4530,7 @@ var HINT2 = "the Board section shows the board as it is now";
 var KINDS = ["blocks", "links", "stacks"];
 function createNotes(core, signal, options) {
   const followed = /* @__PURE__ */ new Map();
+  const taken2 = /* @__PURE__ */ new Map();
   let asUser = 0;
   function makerOf(origin) {
     if (asUser > 0 || origin === "user") return { who: USER };
@@ -4403,6 +4540,7 @@ function createNotes(core, signal, options) {
   const stop = core.store.subscribe((change, board) => {
     if (!("delta" in change)) {
       followed.clear();
+      taken2.clear();
       return;
     }
     if (followed.size === 0) return;
@@ -4410,6 +4548,7 @@ function createNotes(core, signal, options) {
     if (touches.length === 0) return;
     const maker = makerOf(change.origin);
     for (const [conversation2, held] of followed) {
+      for (const touch of touches) if (touch.kind === "blocks") held.blocks.add(touch.id);
       if (maker.conversation === conversation2) held.copy = folded(held.copy, touches, board);
       else record(held.touched, touches, maker.who);
     }
@@ -4419,6 +4558,7 @@ function createNotes(core, signal, options) {
     () => {
       stop();
       followed.clear();
+      taken2.clear();
     },
     { once: true }
   );
@@ -4427,13 +4567,15 @@ function createNotes(core, signal, options) {
       const max = await readToolCap(core, "assistant_board_section_max_chars");
       const board = core.store.board();
       const held = followed.get(conversation2);
-      followed.set(conversation2, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched() });
+      followed.set(conversation2, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched(), blocks: /* @__PURE__ */ new Set() });
+      taken2.set(conversation2, held === void 0 ? [] : [...held.blocks]);
       if (held === void 0 || signal.aborted) return void 0;
       const lines = noteLines(held, board);
       if (lines.length === 0) return void 0;
       const text3 = [preamble_default.trim(), cutText(["## Changes", ...lines].join("\n"), max, HINT2)].join("\n\n");
       return { id: newId(), role: "user", parts: [{ type: "changes", text: text3 }], created: (/* @__PURE__ */ new Date()).toISOString() };
     },
+    changed: (conversation2) => taken2.get(conversation2) ?? [],
     asUser(fn) {
       asUser += 1;
       try {
@@ -4789,11 +4931,11 @@ function messageOf3(body) {
   return /[.!?]$/.test(message2) ? message2 : `${message2}.`;
 }
 function windowFeatures() {
-  const width = 520;
+  const width2 = 520;
   const height = 720;
-  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+  const left = Math.round(window.screenX + (window.outerWidth - width2) / 2);
   const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-  return `popup,width=${String(width)},height=${String(height)},left=${String(left)},top=${String(top)}`;
+  return `popup,width=${String(width2)},height=${String(height)},left=${String(left)},top=${String(top)}`;
 }
 function randomToken(bytes) {
   return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
@@ -6226,6 +6368,18 @@ function same(a, b) {
   return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
+// srcts/chat/notifications.tsx
+import { useNotified } from "@blockr/core/react";
+import { jsx as jsx7 } from "react/jsx-runtime";
+function Notifications({ core }) {
+  const notifications = useNotified(core, { plugin: ASSISTANT });
+  return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-notifications", "aria-live": "polite", children: notifications.length === 0 ? null : /* @__PURE__ */ jsx7("ul", { "aria-label": "Notifications", children: notifications.map(({ id, severity, message: message2 }) => /* @__PURE__ */ jsx7("li", { className: "blockr-assistant-notification", "data-severity": severity, children: plainText(message2) }, id)) }) });
+}
+var ANSI = /(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+function plainText(message2) {
+  return message2.replace(ANSI, "");
+}
+
 // srcts/chat/open.ts
 var KEY = "blockr.assistant-open_conversation";
 function storedConversation() {
@@ -6282,7 +6436,7 @@ function greetingOf(board) {
 
 // srcts/chat/markdown.tsx
 import { useEffect as useEffect5, useState as useState5 } from "react";
-import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
+import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
   a: TextLink,
@@ -6293,14 +6447,14 @@ var plugins;
 function MarkdownText() {
   const { MarkdownTextPrimitive, remarkGfm } = libraries();
   plugins ??= [remarkGfm];
-  return /* @__PURE__ */ jsx7(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
+  return /* @__PURE__ */ jsx8(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
 }
 function Markdown({ text: text3, running = false }) {
   const { TextMessagePartProvider } = libraries();
-  return /* @__PURE__ */ jsx7(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx7(MarkdownText, {}) });
+  return /* @__PURE__ */ jsx8(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx8(MarkdownText, {}) });
 }
 function Table({ children }) {
-  return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx7("table", { children }) });
+  return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx8("table", { children }) });
 }
 function CodeHeader({ language, code }) {
   const [copied, setCopied] = useState5(false);
@@ -6314,8 +6468,8 @@ function CodeHeader({ language, code }) {
     };
   }, [copied]);
   return /* @__PURE__ */ jsxs7("div", { className: "blockr-assistant-code-header", children: [
-    /* @__PURE__ */ jsx7("span", { children: language ?? "" }),
-    /* @__PURE__ */ jsx7(
+    /* @__PURE__ */ jsx8("span", { children: language ?? "" }),
+    /* @__PURE__ */ jsx8(
       "button",
       {
         type: "button",
@@ -6455,24 +6609,24 @@ function dotColor(status, dot) {
 }
 
 // srcts/chat/tools.tsx
-import { Fragment, jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
 var EDITS = /* @__PURE__ */ new Set(["edit", "undo_edit"]);
 function ToolRows({ rows }) {
-  return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx8(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
+  return /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx9(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
 }
 function ToolRow({ row }) {
   const { waiting: waiting2 } = useChat();
   const states = row.calls.map((call) => stateOf(call, waiting2));
   const state = rowState(states);
-  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx8(Edits, { calls: row.calls }) : null;
+  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx9(Edits, { calls: row.calls }) : null;
   return /* @__PURE__ */ jsxs8("details", { className: "blockr-assistant-tool", "data-state": state, children: [
     /* @__PURE__ */ jsxs8("summary", { children: [
-      /* @__PURE__ */ jsx8(StateMark, { state }),
-      /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
-      row.calls.length > 1 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
+      /* @__PURE__ */ jsx9(StateMark, { state }),
+      /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
+      row.calls.length > 1 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
       edits
     ] }),
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx8(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx9(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
   ] });
 }
 function Edits({ calls }) {
@@ -6484,8 +6638,8 @@ function Edits({ calls }) {
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);
   const refused2 = views.flatMap((view) => view.refused === void 0 ? [] : [view.refused]);
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-edit", children: [
-    commands.length > 0 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
-    blocks.size > 0 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx8(Block, { block }, block.id)) }) : null,
+    commands.length > 0 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
+    blocks.size > 0 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx9(Block, { block }, block.id)) }) : null,
     refused2.map((refusal, index) => /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-edit-refused", children: [
       refusal.command === void 0 ? "Refused" : `Refused by ${refusal.command}`,
       refusal.failures.length > 0 ? `: ${refusal.failures.join(" ")}` : ""
@@ -6496,25 +6650,25 @@ function Block({ block }) {
   const dot = block.status === void 0 ? void 0 : dotOf(block.status);
   const style = dot === void 0 || block.status === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(block.status, dot) };
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
-    dot === void 0 ? null : /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
-    /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-block-name", children: block.name })
+    dot === void 0 ? null : /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
+    /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-block-name", children: block.name })
   ] });
 }
 function CallDetails({ call, state }) {
   return /* @__PURE__ */ jsxs8("div", { className: "blockr-assistant-call", "data-state": state, children: [
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-call-label", children: "Args" }),
-    /* @__PURE__ */ jsx8("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-call-label", children: "Result" }),
-    /* @__PURE__ */ jsx8(Result, { call, state })
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-call-label", children: "Args" }),
+    /* @__PURE__ */ jsx9("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-call-label", children: "Result" }),
+    /* @__PURE__ */ jsx9(Result, { call, state })
   ] });
 }
 function Result({ call, state }) {
-  if (state === "running") return /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: "Running" });
-  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: ENDED });
+  if (state === "running") return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: "Running" });
+  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: ENDED });
   const { text: text3, images, count } = call.result;
   return /* @__PURE__ */ jsxs8(Fragment, { children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx8("pre", { className: "blockr-assistant-call-result", children: text3 }),
-    images.map((image2, index) => /* @__PURE__ */ jsx8(
+    text3 === "" ? null : /* @__PURE__ */ jsx9("pre", { className: "blockr-assistant-call-result", children: text3 }),
+    images.map((image2, index) => /* @__PURE__ */ jsx9(
       "img",
       {
         className: "blockr-assistant-call-image",
@@ -6523,12 +6677,12 @@ function Result({ call, state }) {
       },
       index
     )),
-    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
+    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
   ] });
 }
 function StateMark({ state }) {
   const label = { running: "Running", done: "Done", failed: "Failed", ended: "Ended before it returned" }[state];
-  return /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
+  return /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
 }
 function stateOf(call, waiting2) {
   if (call.result === void 0) return waiting2.has(call.id) ? "running" : "ended";
@@ -6545,15 +6699,15 @@ function argsText(args) {
 }
 
 // srcts/chat/transcript.tsx
-import { jsx as jsx9, jsxs as jsxs9 } from "react/jsx-runtime";
+import { jsx as jsx10, jsxs as jsxs9 } from "react/jsx-runtime";
 function Transcript() {
   const { AuiIf, ThreadPrimitive } = libraries();
   return /* @__PURE__ */ jsxs9(ThreadPrimitive.Viewport, { className: "blockr-assistant-transcript", children: [
-    /* @__PURE__ */ jsx9(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx9(Greeting, {}) }),
-    /* @__PURE__ */ jsx9(ThreadPrimitive.Messages, { children: drawMessage }),
-    /* @__PURE__ */ jsx9(Working, {}),
-    /* @__PURE__ */ jsx9(Compacting, {}),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx9(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx9("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx9("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
+    /* @__PURE__ */ jsx10(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx10(Greeting, {}) }),
+    /* @__PURE__ */ jsx10(ThreadPrimitive.Messages, { children: drawMessage }),
+    /* @__PURE__ */ jsx10(Working, {}),
+    /* @__PURE__ */ jsx10(Compacting, {}),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx10(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx10("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx10("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
   ] });
 }
 function isEmpty(state) {
@@ -6562,11 +6716,11 @@ function isEmpty(state) {
 function drawMessage({ message: message2 }) {
   switch (message2.role) {
     case "user":
-      return /* @__PURE__ */ jsx9(UserMessage, {});
+      return /* @__PURE__ */ jsx10(UserMessage, {});
     case "system":
-      return /* @__PURE__ */ jsx9(Summary, {});
+      return /* @__PURE__ */ jsx10(Summary, {});
     default:
-      return /* @__PURE__ */ jsx9(Reply, {});
+      return /* @__PURE__ */ jsx10(Reply, {});
   }
 }
 function Greeting() {
@@ -6575,9 +6729,9 @@ function Greeting() {
   const board = useBoard(core);
   const { lead, note: note2, suggestions } = greetingOf(board);
   return /* @__PURE__ */ jsxs9("div", { className: "blockr-assistant-greeting", children: [
-    /* @__PURE__ */ jsx9("h3", { children: lead }),
-    /* @__PURE__ */ jsx9("p", { children: note2 }),
-    /* @__PURE__ */ jsx9("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx9("li", { children: /* @__PURE__ */ jsx9(
+    /* @__PURE__ */ jsx10("h3", { children: lead }),
+    /* @__PURE__ */ jsx10("p", { children: note2 }),
+    /* @__PURE__ */ jsx10("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx10("li", { children: /* @__PURE__ */ jsx10(
       "button",
       {
         type: "button",
@@ -6597,8 +6751,8 @@ function UserMessage() {
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
   const files = parts.flatMap((part) => part.type === "data" && part.name === ATTACHMENT ? [sentFile(part.data)] : []);
   return /* @__PURE__ */ jsxs9(MessagePrimitive.Root, { className: "blockr-assistant-user", children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-user-text", children: text3 }),
-    files.length === 0 ? null : /* @__PURE__ */ jsx9(SentFiles, { files })
+    text3 === "" ? null : /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-user-text", children: text3 }),
+    files.length === 0 ? null : /* @__PURE__ */ jsx10(SentFiles, { files })
   ] });
 }
 function Reply() {
@@ -6606,37 +6760,37 @@ function Reply() {
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const running = useAuiState(({ message: message2 }) => message2.status?.type === "running");
   const segments = useMemo5(() => segmentsOf(parts), [parts]);
-  return /* @__PURE__ */ jsx9(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
+  return /* @__PURE__ */ jsx10(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
     switch (segment.kind) {
       case "text":
-        return /* @__PURE__ */ jsx9(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx10(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
       case "reasoning": {
         const part = parts[segment.index];
         const text3 = part?.type === "reasoning" ? part.text : "";
         const last = segment.index === parts.length - 1;
-        return /* @__PURE__ */ jsx9(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx10(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
       }
       case "tools":
-        return /* @__PURE__ */ jsx9(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
+        return /* @__PURE__ */ jsx10(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
       case "failure":
-        return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
+        return /* @__PURE__ */ jsx10("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
     }
   }) });
 }
 var TEXT = { Text: MarkdownText };
 function Reasoning({ text: text3, running }) {
   return /* @__PURE__ */ jsxs9("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
-    /* @__PURE__ */ jsx9("summary", { children: /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx9(Markdown, { text: text3, running }) })
+    /* @__PURE__ */ jsx10("summary", { children: /* @__PURE__ */ jsx10("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx10(Markdown, { text: text3, running }) })
   ] });
 }
 function Summary() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
-  return /* @__PURE__ */ jsx9(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs9("details", { children: [
-    /* @__PURE__ */ jsx9("summary", { children: "Summary of the earlier messages" }),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx9(Markdown, { text: text3 }) })
+  return /* @__PURE__ */ jsx10(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs9("details", { children: [
+    /* @__PURE__ */ jsx10("summary", { children: "Summary of the earlier messages" }),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx10(Markdown, { text: text3 }) })
   ] }) });
 }
 function Working() {
@@ -6645,15 +6799,15 @@ function Working() {
   const streamed = running.reply !== void 0 && (running.reply.parts.length > 0 || running.reply.reasoning.length > 0);
   if (streamed || waiting2.size > 0) return null;
   return /* @__PURE__ */ jsxs9("p", { className: "blockr-assistant-working", "aria-label": "The assistant is working", children: [
-    /* @__PURE__ */ jsx9("span", {}),
-    /* @__PURE__ */ jsx9("span", {}),
-    /* @__PURE__ */ jsx9("span", {})
+    /* @__PURE__ */ jsx10("span", {}),
+    /* @__PURE__ */ jsx10("span", {}),
+    /* @__PURE__ */ jsx10("span", {})
   ] });
 }
 function Compacting() {
   const { compacting } = useChat();
   if (!compacting) return null;
-  return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
+  return /* @__PURE__ */ jsx10("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
 }
 function sentFile(data) {
   const given2 = typeof data === "object" && data !== null ? data : {};
@@ -6665,7 +6819,7 @@ function sentFile(data) {
 }
 
 // srcts/chat/chat.tsx
-import { jsx as jsx10, jsxs as jsxs10 } from "react/jsx-runtime";
+import { jsx as jsx11, jsxs as jsxs10 } from "react/jsx-runtime";
 function Chat({ core, assistant }) {
   const { AssistantRuntimeProvider, MessageNotSentError, useExternalStoreRuntime } = libraries();
   const { conversations, turns, models, compaction } = assistant;
@@ -6884,7 +7038,7 @@ function Chat({ core, assistant }) {
     event.preventDefault();
     actions.addFiles([...event.dataTransfer.files]);
   };
-  return /* @__PURE__ */ jsx10(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx10(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx10(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs10(
+  return /* @__PURE__ */ jsx11(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx11(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx11(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs10(
     "div",
     {
       className: "blockr-assistant-chat",
@@ -6895,10 +7049,11 @@ function Chat({ core, assistant }) {
       onDrop: drop,
       children: [
         /* @__PURE__ */ jsxs10("div", { className: "blockr-assistant-chat-main", inert: drawer, children: [
-          /* @__PURE__ */ jsx10(Transcript, {}),
-          /* @__PURE__ */ jsx10(KeyForm, {}),
-          /* @__PURE__ */ jsx10(Composer, {}),
-          /* @__PURE__ */ jsx10(
+          /* @__PURE__ */ jsx11(Transcript, {}),
+          /* @__PURE__ */ jsx11(Notifications, { core }),
+          /* @__PURE__ */ jsx11(KeyForm, {}),
+          /* @__PURE__ */ jsx11(Composer, {}),
+          /* @__PURE__ */ jsx11(
             Footer,
             {
               usage: conversation2?.usage,
@@ -6914,7 +7069,7 @@ function Chat({ core, assistant }) {
             }
           )
         ] }),
-        drawer ? /* @__PURE__ */ jsx10(
+        drawer ? /* @__PURE__ */ jsx11(
           Drawer,
           {
             onClose: () => {
@@ -6935,7 +7090,7 @@ function Chat({ core, assistant }) {
             onDelete: remove
           }
         ) : null,
-        /* @__PURE__ */ jsx10(
+        /* @__PURE__ */ jsx11(
           LinkDialog,
           {
             url: link,
@@ -6944,7 +7099,7 @@ function Chat({ core, assistant }) {
             }
           }
         ),
-        /* @__PURE__ */ jsx10(FileDialog, { file, onClose: closeFile })
+        /* @__PURE__ */ jsx11(FileDialog, { file, onClose: closeFile })
       ]
     }
   ) }) }) });
@@ -7004,12 +7159,12 @@ function textOf3(message2) {
 }
 
 // srcts/chat/panel.tsx
-import { jsx as jsx11 } from "react/jsx-runtime";
+import { jsx as jsx12 } from "react/jsx-runtime";
 function renderChat({ el, core }) {
   preloadCatalogs();
   const root = createRoot(el);
   flushSync(() => {
-    root.render(/* @__PURE__ */ jsx11(Panel, { core }));
+    root.render(/* @__PURE__ */ jsx12(Panel, { core }));
   });
   return () => {
     root.unmount();
@@ -7019,7 +7174,8 @@ function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
   const levels = useThinkingLevels2(assistant);
-  return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
+  usePreloadedApi(assistant);
+  return /* @__PURE__ */ jsx12("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx12("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx12(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
   const [assistant, setAssistant] = useState7(() => open(assistantOf(core)));
@@ -7080,6 +7236,17 @@ function useThinkingLevels2(assistant) {
   return done;
 }
 var levelsLoaded = /* @__PURE__ */ new WeakSet();
+function usePreloadedApi(assistant) {
+  useEffect6(() => {
+    if (assistant === void 0) return;
+    assistant.deployment.then(
+      (deployment) => {
+        preloadApi(deployment.api);
+      },
+      () => void 0
+    );
+  }, [assistant]);
+}
 function open(assistant) {
   return assistant?.signal.aborted === false ? assistant : void 0;
 }
