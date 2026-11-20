@@ -2,8 +2,10 @@
 // turn with the tools and the hooks, so that a move to the AI SDK rewrites
 // this module alone (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 // Its catalogs give the model of each call and the thinking levels that the
-// model takes.
+// model takes, and pi's code for each API loads for the deployment's API
+// alone.
 
+export { preloadApi } from "./apis.ts";
 export { createCatalogs, loadCatalogs, preloadCatalogs, PROVIDER } from "./catalogs.ts";
 export type { CallModel, CatalogParts, Catalogs, ModelAt } from "./catalogs.ts";
 export { createLoop, loadLoop } from "./loop.ts";

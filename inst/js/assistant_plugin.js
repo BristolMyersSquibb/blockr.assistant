@@ -624,6 +624,22 @@ function pageKey() {
   return page;
 }
 
+// srcts/gateways/gateways.ts
+var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+var REFUSED = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
+function refusesHeader(baseUrl, name) {
+  if (hostOf(baseUrl) !== VERCEL_AI_GATEWAY) return false;
+  const lower = name.toLowerCase();
+  return lower.startsWith("x-stainless-") || REFUSED.has(lower);
+}
+function hostOf(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
+}
+
 // srcts/models/list.ts
 var NO_TOOLS = /* @__PURE__ */ new Set([
   "audio",
@@ -657,7 +673,7 @@ async function askList(deployment, key, fetch, signal) {
   const none = (why) => ({ kind: "failed", message: `The assistant offers no model, since ${why}` });
   let response;
   try {
-    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+    response = await fetch(url, { headers: listHeaders(deployment, key), signal });
   } catch (error) {
     return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
   }
@@ -737,15 +753,13 @@ function takesTools(entry, id, api2) {
 function listUrl(deployment) {
   return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
 }
-function listHeaders(api2, key) {
-  if (api2 === "anthropic-messages") {
-    return {
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      ...key === void 0 ? {} : { "x-api-key": key }
-    };
-  }
-  return key === void 0 ? {} : { authorization: `Bearer ${key}` };
+function listHeaders(deployment, key) {
+  const headers = deployment.api === "anthropic-messages" ? {
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+    ...key === void 0 ? {} : { "x-api-key": key }
+  } : key === void 0 ? {} : { authorization: `Bearer ${key}` };
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !refusesHeader(deployment.baseUrl, name)));
 }
 async function answerOf(response) {
   let message2;
@@ -890,7 +904,7 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   let catalogs;
   let loop;
   try {
-    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
   }
@@ -1871,6 +1885,20 @@ function kindOf2(sent3) {
   return Array.isArray(sent3) ? "an array" : "an object";
 }
 
+// srcts/loop/apis.ts
+var APIS2 = /* @__PURE__ */ new Map([
+  ["anthropic-messages", () => import("./api-anthropic-messages-32f57ac1.js")],
+  ["openai-completions", () => import("./api-openai-completions-6b7777a6.js")],
+  ["openai-responses", () => import("./api-openai-responses-1d29cdfc.js")]
+]);
+function loadApi(api2) {
+  const load = APIS2.get(api2);
+  return load === void 0 ? Promise.reject(new Error(`The assistant speaks no API named ${JSON.stringify(api2)}.`)) : load();
+}
+function preloadApi(api2) {
+  loadApi(api2).catch(() => void 0);
+}
+
 // srcts/loop/catalogs.ts
 var PROVIDER = "blockr.assistant";
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -1880,7 +1908,7 @@ var GATEWAYS = /* @__PURE__ */ new Map([
 ]);
 var loading = /* @__PURE__ */ new Map();
 function preloadCatalogs() {
-  void import("./pi-b163b862.js").catch(() => void 0);
+  void import("./pi-fd483a06.js").catch(() => void 0);
 }
 async function loadCatalogs(baseUrl) {
   return createCatalogs(await loadCatalogParts(baseUrl));
@@ -1890,7 +1918,7 @@ function loadCatalogParts(baseUrl) {
   const loaded2 = loading.get(host);
   if (loaded2 !== void 0) return loaded2;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
+  const parts = Promise.all([import("./pi-fd483a06.js"), gateway?.()]).then(
     ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
   );
   loading.set(host, parts);
@@ -2413,21 +2441,15 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var NO_KEY2 = "blockr-assistant-no-key";
-function createLoop(pi, catalogs, apis = {}) {
-  const streams = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis
-  };
+function createLoop(pi, catalogs, apis) {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call)
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call)
   };
 }
-async function loadLoop(baseUrl) {
-  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+async function loadLoop(connection) {
+  const [pi, catalogs, streams] = await Promise.all([import("./pi-fd483a06.js"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 function runTurn(pi, catalogs, streams, turn) {
   return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
@@ -2456,9 +2478,10 @@ async function runAgent(pi, catalogs, streams, turn, span) {
   let status;
   let unread = false;
   let added;
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input, init) => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -2555,7 +2578,7 @@ function callModel(pi, catalogs, streams, call) {
     const reply = await models.completeSimple(
       model2,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span }
+      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span }
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
@@ -2578,13 +2601,18 @@ function findFailure(reply, text3) {
 function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
-function keyless(input, init) {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+function fetchAt(baseUrl) {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
 }
-var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
+var REFUSED2 = /* @__PURE__ */ new Set([400, 413, 415, 422]);
 function callOf(pi, reply, model2, carried, status, unread) {
   const written = convertReply(reply);
   const answer = unread ? "unread" : status === 401 || status === 403 ? "refused" : void 0;
@@ -2594,7 +2622,7 @@ function callOf(pi, reply, model2, carried, status, unread) {
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
     ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
-    refused: failed2 && status !== void 0 && REFUSED.has(status),
+    refused: failed2 && status !== void 0 && REFUSED2.has(status),
     ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {},
     ...failed2 && answer !== void 0 ? { answer } : {}
   };
@@ -6185,6 +6213,18 @@ function same(a, b) {
   return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
+// srcts/chat/notifications.tsx
+import { useNotified } from "@blockr/core/react";
+import { jsx as jsx7 } from "react/jsx-runtime";
+function Notifications({ core }) {
+  const notifications = useNotified(core, { plugin: ASSISTANT });
+  return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-notifications", "aria-live": "polite", children: notifications.length === 0 ? null : /* @__PURE__ */ jsx7("ul", { "aria-label": "Notifications", children: notifications.map(({ id, severity, message: message2 }) => /* @__PURE__ */ jsx7("li", { className: "blockr-assistant-notification", "data-severity": severity, children: plainText(message2) }, id)) }) });
+}
+var ANSI = /(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+function plainText(message2) {
+  return message2.replace(ANSI, "");
+}
+
 // srcts/chat/open.ts
 var KEY = "blockr.assistant-open_conversation";
 function storedConversation() {
@@ -6241,7 +6281,7 @@ function greetingOf(board) {
 
 // srcts/chat/markdown.tsx
 import { useEffect as useEffect5, useState as useState5 } from "react";
-import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
+import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
   a: TextLink,
@@ -6252,14 +6292,14 @@ var plugins;
 function MarkdownText() {
   const { MarkdownTextPrimitive, remarkGfm } = libraries();
   plugins ??= [remarkGfm];
-  return /* @__PURE__ */ jsx7(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
+  return /* @__PURE__ */ jsx8(MarkdownTextPrimitive, { className: "blockr-assistant-markdown", remarkPlugins: plugins, smooth: false, components: COMPONENTS });
 }
 function Markdown({ text: text3, running = false }) {
   const { TextMessagePartProvider } = libraries();
-  return /* @__PURE__ */ jsx7(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx7(MarkdownText, {}) });
+  return /* @__PURE__ */ jsx8(TextMessagePartProvider, { text: text3, isRunning: running, children: /* @__PURE__ */ jsx8(MarkdownText, {}) });
 }
 function Table({ children }) {
-  return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx7("table", { children }) });
+  return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-table", children: /* @__PURE__ */ jsx8("table", { children }) });
 }
 function CodeHeader({ language, code }) {
   const [copied, setCopied] = useState5(false);
@@ -6273,8 +6313,8 @@ function CodeHeader({ language, code }) {
     };
   }, [copied]);
   return /* @__PURE__ */ jsxs7("div", { className: "blockr-assistant-code-header", children: [
-    /* @__PURE__ */ jsx7("span", { children: language ?? "" }),
-    /* @__PURE__ */ jsx7(
+    /* @__PURE__ */ jsx8("span", { children: language ?? "" }),
+    /* @__PURE__ */ jsx8(
       "button",
       {
         type: "button",
@@ -6414,24 +6454,24 @@ function dotColor(status, dot) {
 }
 
 // srcts/chat/tools.tsx
-import { Fragment, jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
 var EDITS = /* @__PURE__ */ new Set(["edit", "undo_edit"]);
 function ToolRows({ rows }) {
-  return /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx8(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
+  return /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-tools", children: rows.map((row) => /* @__PURE__ */ jsx9(ToolRow, { row }, row.calls[0]?.id ?? row.tool)) });
 }
 function ToolRow({ row }) {
   const { waiting: waiting2 } = useChat();
   const states = row.calls.map((call) => stateOf(call, waiting2));
   const state = rowState(states);
-  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx8(Edits, { calls: row.calls }) : null;
+  const edits = EDITS.has(row.tool) ? /* @__PURE__ */ jsx9(Edits, { calls: row.calls }) : null;
   return /* @__PURE__ */ jsxs8("details", { className: "blockr-assistant-tool", "data-state": state, children: [
     /* @__PURE__ */ jsxs8("summary", { children: [
-      /* @__PURE__ */ jsx8(StateMark, { state }),
-      /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
-      row.calls.length > 1 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
+      /* @__PURE__ */ jsx9(StateMark, { state }),
+      /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-title", children: toolTitle(row.tool) }),
+      row.calls.length > 1 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-count", children: row.calls.length }) : null,
       edits
     ] }),
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx8(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-tool-calls", children: row.calls.map((call, index) => /* @__PURE__ */ jsx9(CallDetails, { call, state: states[index] ?? "done" }, call.id)) })
   ] });
 }
 function Edits({ calls }) {
@@ -6443,8 +6483,8 @@ function Edits({ calls }) {
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);
   const refused2 = views.flatMap((view) => view.refused === void 0 ? [] : [view.refused]);
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-edit", children: [
-    commands.length > 0 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
-    blocks.size > 0 ? /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx8(Block, { block }, block.id)) }) : null,
+    commands.length > 0 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-edit-commands", children: commands.join(", ") }) : null,
+    blocks.size > 0 ? /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-edit-blocks", children: [...blocks.values()].map((block) => /* @__PURE__ */ jsx9(Block, { block }, block.id)) }) : null,
     refused2.map((refusal, index) => /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-edit-refused", children: [
       refusal.command === void 0 ? "Refused" : `Refused by ${refusal.command}`,
       refusal.failures.length > 0 ? `: ${refusal.failures.join(" ")}` : ""
@@ -6455,25 +6495,25 @@ function Block({ block }) {
   const dot = block.status === void 0 ? void 0 : dotOf(block.status);
   const style = dot === void 0 || block.status === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(block.status, dot) };
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
-    dot === void 0 ? null : /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
-    /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-block-name", children: block.name })
+    dot === void 0 ? null : /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
+    /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-block-name", children: block.name })
   ] });
 }
 function CallDetails({ call, state }) {
   return /* @__PURE__ */ jsxs8("div", { className: "blockr-assistant-call", "data-state": state, children: [
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-call-label", children: "Args" }),
-    /* @__PURE__ */ jsx8("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
-    /* @__PURE__ */ jsx8("div", { className: "blockr-assistant-call-label", children: "Result" }),
-    /* @__PURE__ */ jsx8(Result, { call, state })
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-call-label", children: "Args" }),
+    /* @__PURE__ */ jsx9("pre", { className: "blockr-assistant-call-args", children: argsText(call.args) }),
+    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-call-label", children: "Result" }),
+    /* @__PURE__ */ jsx9(Result, { call, state })
   ] });
 }
 function Result({ call, state }) {
-  if (state === "running") return /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: "Running" });
-  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: ENDED });
+  if (state === "running") return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: "Running" });
+  if (state === "ended" || call.result === void 0) return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: ENDED });
   const { text: text3, images, count } = call.result;
   return /* @__PURE__ */ jsxs8(Fragment, { children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx8("pre", { className: "blockr-assistant-call-result", children: text3 }),
-    images.map((image2, index) => /* @__PURE__ */ jsx8(
+    text3 === "" ? null : /* @__PURE__ */ jsx9("pre", { className: "blockr-assistant-call-result", children: text3 }),
+    images.map((image2, index) => /* @__PURE__ */ jsx9(
       "img",
       {
         className: "blockr-assistant-call-image",
@@ -6482,12 +6522,12 @@ function Result({ call, state }) {
       },
       index
     )),
-    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx8("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
+    images.length === 0 && count > 0 ? /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-call-note", children: count === 1 ? "The result had an image, which the board does not keep." : `The result had ${String(count)} images, which the board does not keep.` }) : null
   ] });
 }
 function StateMark({ state }) {
   const label = { running: "Running", done: "Done", failed: "Failed", ended: "Ended before it returned" }[state];
-  return /* @__PURE__ */ jsx8("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
+  return /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-tool-mark", "data-state": state, role: "img", "aria-label": label, title: label });
 }
 function stateOf(call, waiting2) {
   if (call.result === void 0) return waiting2.has(call.id) ? "running" : "ended";
@@ -6504,15 +6544,15 @@ function argsText(args) {
 }
 
 // srcts/chat/transcript.tsx
-import { jsx as jsx9, jsxs as jsxs9 } from "react/jsx-runtime";
+import { jsx as jsx10, jsxs as jsxs9 } from "react/jsx-runtime";
 function Transcript() {
   const { AuiIf, ThreadPrimitive } = libraries();
   return /* @__PURE__ */ jsxs9(ThreadPrimitive.Viewport, { className: "blockr-assistant-transcript", children: [
-    /* @__PURE__ */ jsx9(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx9(Greeting, {}) }),
-    /* @__PURE__ */ jsx9(ThreadPrimitive.Messages, { children: drawMessage }),
-    /* @__PURE__ */ jsx9(Working, {}),
-    /* @__PURE__ */ jsx9(Compacting, {}),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx9(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx9("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx9("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
+    /* @__PURE__ */ jsx10(AuiIf, { condition: isEmpty, children: /* @__PURE__ */ jsx10(Greeting, {}) }),
+    /* @__PURE__ */ jsx10(ThreadPrimitive.Messages, { children: drawMessage }),
+    /* @__PURE__ */ jsx10(Working, {}),
+    /* @__PURE__ */ jsx10(Compacting, {}),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-transcript-end", children: /* @__PURE__ */ jsx10(ThreadPrimitive.ScrollToBottom, { className: "blockr-assistant-to-bottom", title: "Scroll to the newest message", "aria-label": "Scroll to the newest message", children: /* @__PURE__ */ jsx10("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx10("path", { d: "M8 3v10M3.5 8.5 8 13l4.5-4.5" }) }) }) })
   ] });
 }
 function isEmpty(state) {
@@ -6521,11 +6561,11 @@ function isEmpty(state) {
 function drawMessage({ message: message2 }) {
   switch (message2.role) {
     case "user":
-      return /* @__PURE__ */ jsx9(UserMessage, {});
+      return /* @__PURE__ */ jsx10(UserMessage, {});
     case "system":
-      return /* @__PURE__ */ jsx9(Summary, {});
+      return /* @__PURE__ */ jsx10(Summary, {});
     default:
-      return /* @__PURE__ */ jsx9(Reply, {});
+      return /* @__PURE__ */ jsx10(Reply, {});
   }
 }
 function Greeting() {
@@ -6534,9 +6574,9 @@ function Greeting() {
   const board = useBoard(core);
   const { lead, note: note2, suggestions } = greetingOf(board);
   return /* @__PURE__ */ jsxs9("div", { className: "blockr-assistant-greeting", children: [
-    /* @__PURE__ */ jsx9("h3", { children: lead }),
-    /* @__PURE__ */ jsx9("p", { children: note2 }),
-    /* @__PURE__ */ jsx9("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx9("li", { children: /* @__PURE__ */ jsx9(
+    /* @__PURE__ */ jsx10("h3", { children: lead }),
+    /* @__PURE__ */ jsx10("p", { children: note2 }),
+    /* @__PURE__ */ jsx10("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx10("li", { children: /* @__PURE__ */ jsx10(
       "button",
       {
         type: "button",
@@ -6556,8 +6596,8 @@ function UserMessage() {
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
   const files = parts.flatMap((part) => part.type === "data" && part.name === ATTACHMENT ? [sentFile(part.data)] : []);
   return /* @__PURE__ */ jsxs9(MessagePrimitive.Root, { className: "blockr-assistant-user", children: [
-    text3 === "" ? null : /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-user-text", children: text3 }),
-    files.length === 0 ? null : /* @__PURE__ */ jsx9(SentFiles, { files })
+    text3 === "" ? null : /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-user-text", children: text3 }),
+    files.length === 0 ? null : /* @__PURE__ */ jsx10(SentFiles, { files })
   ] });
 }
 function Reply() {
@@ -6565,37 +6605,37 @@ function Reply() {
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const running = useAuiState(({ message: message2 }) => message2.status?.type === "running");
   const segments = useMemo5(() => segmentsOf(parts), [parts]);
-  return /* @__PURE__ */ jsx9(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
+  return /* @__PURE__ */ jsx10(MessagePrimitive.Root, { className: "blockr-assistant-reply", children: segments.map((segment) => {
     switch (segment.kind) {
       case "text":
-        return /* @__PURE__ */ jsx9(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx10(MessagePrimitive.PartByIndex, { index: segment.index, components: TEXT }, `text-${String(segment.index)}`);
       case "reasoning": {
         const part = parts[segment.index];
         const text3 = part?.type === "reasoning" ? part.text : "";
         const last = segment.index === parts.length - 1;
-        return /* @__PURE__ */ jsx9(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
+        return /* @__PURE__ */ jsx10(Reasoning, { text: text3, running: running && last }, `reasoning-${String(segment.index)}`);
       }
       case "tools":
-        return /* @__PURE__ */ jsx9(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
+        return /* @__PURE__ */ jsx10(ToolRows, { rows: segment.rows }, `tools-${segment.rows[0]?.calls[0]?.id ?? ""}`);
       case "failure":
-        return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
+        return /* @__PURE__ */ jsx10("p", { className: "blockr-assistant-failure", role: "alert", children: segment.text }, "failure");
     }
   }) });
 }
 var TEXT = { Text: MarkdownText };
 function Reasoning({ text: text3, running }) {
   return /* @__PURE__ */ jsxs9("details", { className: "blockr-assistant-reasoning", "data-running": running ? "" : void 0, children: [
-    /* @__PURE__ */ jsx9("summary", { children: /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx9(Markdown, { text: text3, running }) })
+    /* @__PURE__ */ jsx10("summary", { children: /* @__PURE__ */ jsx10("span", { className: "blockr-assistant-reasoning-label", children: "Reasoning" }) }),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-reasoning-text", children: /* @__PURE__ */ jsx10(Markdown, { text: text3, running }) })
   ] });
 }
 function Summary() {
   const { MessagePrimitive, useAuiState } = libraries();
   const parts = useAuiState(({ message: message2 }) => message2.parts);
   const text3 = parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");
-  return /* @__PURE__ */ jsx9(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs9("details", { children: [
-    /* @__PURE__ */ jsx9("summary", { children: "Summary of the earlier messages" }),
-    /* @__PURE__ */ jsx9("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx9(Markdown, { text: text3 }) })
+  return /* @__PURE__ */ jsx10(MessagePrimitive.Root, { className: "blockr-assistant-summary", children: /* @__PURE__ */ jsxs9("details", { children: [
+    /* @__PURE__ */ jsx10("summary", { children: "Summary of the earlier messages" }),
+    /* @__PURE__ */ jsx10("div", { className: "blockr-assistant-summary-text", children: /* @__PURE__ */ jsx10(Markdown, { text: text3 }) })
   ] }) });
 }
 function Working() {
@@ -6604,15 +6644,15 @@ function Working() {
   const streamed = running.reply !== void 0 && (running.reply.parts.length > 0 || running.reply.reasoning.length > 0);
   if (streamed || waiting2.size > 0) return null;
   return /* @__PURE__ */ jsxs9("p", { className: "blockr-assistant-working", "aria-label": "The assistant is working", children: [
-    /* @__PURE__ */ jsx9("span", {}),
-    /* @__PURE__ */ jsx9("span", {}),
-    /* @__PURE__ */ jsx9("span", {})
+    /* @__PURE__ */ jsx10("span", {}),
+    /* @__PURE__ */ jsx10("span", {}),
+    /* @__PURE__ */ jsx10("span", {})
   ] });
 }
 function Compacting() {
   const { compacting } = useChat();
   if (!compacting) return null;
-  return /* @__PURE__ */ jsx9("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
+  return /* @__PURE__ */ jsx10("p", { className: "blockr-assistant-compacting", role: "status", children: "Writing a summary of the earlier messages" });
 }
 function sentFile(data) {
   const given2 = typeof data === "object" && data !== null ? data : {};
@@ -6624,7 +6664,7 @@ function sentFile(data) {
 }
 
 // srcts/chat/chat.tsx
-import { jsx as jsx10, jsxs as jsxs10 } from "react/jsx-runtime";
+import { jsx as jsx11, jsxs as jsxs10 } from "react/jsx-runtime";
 function Chat({ core, assistant }) {
   const { AssistantRuntimeProvider, MessageNotSentError, useExternalStoreRuntime } = libraries();
   const { conversations, turns, models, compaction } = assistant;
@@ -6843,7 +6883,7 @@ function Chat({ core, assistant }) {
     event.preventDefault();
     actions.addFiles([...event.dataTransfer.files]);
   };
-  return /* @__PURE__ */ jsx10(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx10(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx10(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs10(
+  return /* @__PURE__ */ jsx11(AssistantRuntimeProvider, { runtime, children: /* @__PURE__ */ jsx11(ChatActionsContext, { value: actions, children: /* @__PURE__ */ jsx11(ChatStateContext, { value: state, children: /* @__PURE__ */ jsxs10(
     "div",
     {
       className: "blockr-assistant-chat",
@@ -6854,10 +6894,11 @@ function Chat({ core, assistant }) {
       onDrop: drop,
       children: [
         /* @__PURE__ */ jsxs10("div", { className: "blockr-assistant-chat-main", inert: drawer, children: [
-          /* @__PURE__ */ jsx10(Transcript, {}),
-          /* @__PURE__ */ jsx10(KeyForm, {}),
-          /* @__PURE__ */ jsx10(Composer, {}),
-          /* @__PURE__ */ jsx10(
+          /* @__PURE__ */ jsx11(Transcript, {}),
+          /* @__PURE__ */ jsx11(Notifications, { core }),
+          /* @__PURE__ */ jsx11(KeyForm, {}),
+          /* @__PURE__ */ jsx11(Composer, {}),
+          /* @__PURE__ */ jsx11(
             Footer,
             {
               usage: conversation2?.usage,
@@ -6873,7 +6914,7 @@ function Chat({ core, assistant }) {
             }
           )
         ] }),
-        drawer ? /* @__PURE__ */ jsx10(
+        drawer ? /* @__PURE__ */ jsx11(
           Drawer,
           {
             onClose: () => {
@@ -6894,7 +6935,7 @@ function Chat({ core, assistant }) {
             onDelete: remove
           }
         ) : null,
-        /* @__PURE__ */ jsx10(
+        /* @__PURE__ */ jsx11(
           LinkDialog,
           {
             url: link,
@@ -6903,7 +6944,7 @@ function Chat({ core, assistant }) {
             }
           }
         ),
-        /* @__PURE__ */ jsx10(FileDialog, { file, onClose: closeFile })
+        /* @__PURE__ */ jsx11(FileDialog, { file, onClose: closeFile })
       ]
     }
   ) }) }) });
@@ -6963,12 +7004,12 @@ function textOf3(message2) {
 }
 
 // srcts/chat/panel.tsx
-import { jsx as jsx11 } from "react/jsx-runtime";
+import { jsx as jsx12 } from "react/jsx-runtime";
 function renderChat({ el, core }) {
   preloadCatalogs();
   const root = createRoot(el);
   flushSync(() => {
-    root.render(/* @__PURE__ */ jsx11(Panel, { core }));
+    root.render(/* @__PURE__ */ jsx12(Panel, { core }));
   });
   return () => {
     root.unmount();
@@ -6978,7 +7019,8 @@ function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
   const levels = useThinkingLevels2(assistant);
-  return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
+  usePreloadedApi(assistant);
+  return /* @__PURE__ */ jsx12("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx12("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx12(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
   const [assistant, setAssistant] = useState7(() => open(assistantOf(core)));
@@ -7039,6 +7081,17 @@ function useThinkingLevels2(assistant) {
   return done;
 }
 var levelsLoaded = /* @__PURE__ */ new WeakSet();
+function usePreloadedApi(assistant) {
+  useEffect6(() => {
+    if (assistant === void 0) return;
+    assistant.deployment.then(
+      (deployment) => {
+        preloadApi(deployment.api);
+      },
+      () => void 0
+    );
+  }, [assistant]);
+}
 function open(assistant) {
   return assistant?.signal.aborted === false ? assistant : void 0;
 }

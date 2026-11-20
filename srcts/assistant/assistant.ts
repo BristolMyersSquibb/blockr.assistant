@@ -58,7 +58,7 @@ import type { Conversations } from "../conversations/index.ts";
 import { readDeployment } from "../deployment/index.ts";
 import type { Deployment } from "../deployment/index.ts";
 import { loadCatalogs, loadLoop } from "../loop/index.ts";
-import type { Catalogs, Loop } from "../loop/index.ts";
+import type { Catalogs, Connection, Loop } from "../loop/index.ts";
 import { createModelSettings } from "../model-settings/index.ts";
 import { createModels } from "../models/index.ts";
 import type { Fetch, Models } from "../models/index.ts";
@@ -106,9 +106,9 @@ export interface AssistantOptions {
   // What the deployment chose, which the assistant reads from its blockr
   // options unless given.
   readonly deployment?: Promise<Deployment>;
-  // Loads the loop for the calls to the base URL given, which imports pi's
-  // bundle.
-  readonly load?: (baseUrl: string) => Promise<Loop>;
+  // Loads the loop for the calls to the base URL given, in the API given,
+  // which imports pi's bundle and pi's code for the API.
+  readonly load?: (connection: Pick<Connection, "baseUrl" | "api">) => Promise<Loop>;
   // Loads pi's catalogs for the calls to the base URL given.
   readonly catalogs?: (baseUrl: string) => Promise<Catalogs>;
   // The tab's Web Locks, the page's by default.
