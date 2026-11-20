@@ -439,9 +439,10 @@ Instructions for one kind of task go in a skill ([A deployment's skills](#a-depl
 The rules and what the plugin writes reach the model whatever the file holds:
 
 1. After the template, the system prompt holds the rules of blockr.assistant, on the board and the assistant's tools.
-2. After the rules, the system prompt holds its Skills section, with the skills that name no class.
-3. Where others changed the board's blocks, links or stacks since the conversation's previous call, the conversation ends on a note of the app's, which says what changed and who changed it.
-4. After the conversation's last message, a message of the app's holds the board, in its Board section, and what the user has on screen, in its Focus section.
+2. After the rules, the system prompt holds the app's plugins and the board options that its packages define, which do not change while the board is open.
+3. After those, the system prompt holds its Skills section, with the skills that name no class.
+4. Where others changed the board's blocks, links or stacks since the conversation's previous call, the conversation ends on a note of the app's, which says what changed and who changed it.
+5. After the conversation's last message, a message of the app's holds the board, in its Board section, and what the user has on screen, in its Focus section.
 
 No template can leave these out or move them.
 The section Template of `?new_assistant_plugin` lists every part of what a call sends, in the order in which the model reads them.
@@ -494,12 +495,23 @@ Where another tool reads the rest, the mark names that tool.
 | `assistant_description_max_chars` | A description in the lists of `list_block_types`, `list_commands` and `list_plugins` | 1000 characters |
 | `assistant_skill_description_max_chars` | A skill's description, in the system prompt and where a tool lists the skills of a class | 1024 characters |
 | `assistant_skill_catalogue_max_chars` | The descriptions of the skills in the system prompt, together, past which R logs a warning and cuts nothing | 4000 characters |
-| `assistant_board_section_max_chars` | Each part of the Board section, such as its list of blocks, and the list in the note of what others changed | 1500 characters |
+| `assistant_board_section_max_chars` | The whole Board section, each of the two lists of the app's plugins and board options in the system prompt, and the list in the note of what others changed | 3000 characters |
 | `assistant_eval_max_chars` | What the model's R code prints in `inspect_results`, and the warnings and messages of R's reply to a tool's request | 16000 characters |
 | `assistant_review_max_blocks` | The blocks that an edit's review covers | 50 blocks |
 | `assistant_plot_render_px` | The width and the height of a plot of `inspect_results`, where the model gives none | 768 pixels |
 | `assistant_plot_render_range` | The smallest and the largest width and height that a plot of `inspect_results` takes, whatever the model gives | 200 to 2000 pixels |
 | `assistant_plot_render_max` | The plots that one call of `inspect_results` returns | 4 plots |
+
+The Board section holds the whole board where the board fits its cap.
+Otherwise, it lists first what a call most likely needs:
+
+1. The blocks that failed or are invalid.
+2. The block that has focus.
+3. The blocks that changed since the conversation's previous call, whoever changed them.
+4. The blocks on screen.
+
+The rest of the blocks follow in the board's order, while they fit, and then the stacks and the views.
+Each list that the cap cuts ends with a line that counts what it left out and names the tool that gives it.
 
 A cap that the plugin reads takes a whole number of 0 or more.
 Any other value fails the tool or the turn that reads the cap, with a message that names the value.

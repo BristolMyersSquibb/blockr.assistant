@@ -6,7 +6,7 @@
 // next board opens, as the signal aborts. So the first call after the board
 // opens again carries no note.
 //
-// For each conversation that has made a call, the notes keep two things in
+// For each conversation that has made a call, the notes keep three things in
 // the plugin's memory:
 // - A copy of the board's blocks, links and stacks, as the conversation's
 //   previous call saw them.
@@ -14,6 +14,11 @@
 //   who touched it and which of its properties: a block's args by name, its
 //   name and its lock, a link's from, to and input, and a stack's name,
 //   blocks and color.
+// - Each block that any change touched since then, the conversation's own
+//   edits included, which the Board section lists before the blocks that
+//   nothing touched (../prompt). The note leaves out the conversation's own
+//   edits, since the model knows what it did, but the board shows what those
+//   edits did.
 //
 // They follow the store, and tell who made each change by its origin:
 // - The origin "user" is the user.
@@ -39,9 +44,11 @@
 //      another origin changed of it, such as a block's name or the names of
 //      its args rather than their values. So an arg set and set back leaves
 //      no line.
-// 3. The board as it is then becomes the conversation's copy.
-// The note's list is cut at assistant_board_section_max_chars, as each part
-// of the Board section is.
+// 3. The board as it is then becomes the conversation's copy, and the blocks
+//    that the changes since the previous call touched are those that
+//    changed() gives, for the call that goes out.
+// The note's list is cut at assistant_board_section_max_chars, as the Board
+// section is.
 //
 // The copy also takes in each of the conversation's own edits, as the store
 // announces them, rather than at the conversation's next call. So the note
@@ -69,6 +76,13 @@ export interface Notes {
   // conversation's copy. It rejects where
   // assistant_board_section_max_chars holds a value that it does not take.
   take(conversation: ConversationId): Promise<Message | undefined>;
+  // The blocks that the store's deltas touched since the conversation's
+  // previous call, as the conversation's last take() found them for the call
+  // that goes out, in the order in which a change first touched them: those
+  // that others touched and those of the conversation's own edits. A block
+  // that a change touched and that the board no longer holds is among them.
+  // None at the conversation's first call.
+  changed(conversation: ConversationId): readonly string[];
   // Calls the function, and counts each change that the store announces
   // meanwhile as the user's, as for the undo that /undo asks for.
   asUser<T>(fn: () => T): T;
@@ -118,10 +132,13 @@ interface Touched {
   last: string;
 }
 
-// What the notes keep of a conversation that has made a call.
+// What the notes keep of a conversation that has made a call: the copy, who
+// touched what since its previous call, and the blocks that any change
+// touched since then.
 interface Followed {
   copy: Copy;
   readonly touched: Record<Kind, Map<string, Touched>>;
+  readonly blocks: Set<string>;
 }
 
 // Who made a change: whom a note names, and the conversation whose own edit
@@ -133,6 +150,9 @@ interface Maker {
 
 export function createNotes(core: Core, signal: AbortSignal, options: NotesOptions): Notes {
   const followed = new Map<ConversationId, Followed>();
+  // The blocks that changed() gives for each conversation, as its last take()
+  // found them.
+  const taken = new Map<ConversationId, readonly string[]>();
   // How many calls of asUser() run.
   let asUser = 0;
 
@@ -148,6 +168,7 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
     // so each conversation's next call carries no note.
     if (!("delta" in change)) {
       followed.clear();
+      taken.clear();
       return;
     }
     if (followed.size === 0) return;
@@ -155,6 +176,7 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
     if (touches.length === 0) return;
     const maker = makerOf(change.origin);
     for (const [conversation, held] of followed) {
+      for (const touch of touches) if (touch.kind === "blocks") held.blocks.add(touch.id);
       if (maker.conversation === conversation) held.copy = folded(held.copy, touches, board);
       else record(held.touched, touches, maker.who);
     }
@@ -164,6 +186,7 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
     () => {
       stop();
       followed.clear();
+      taken.clear();
     },
     { once: true },
   );
@@ -174,13 +197,16 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
       // The board as it is once the cap is read.
       const board = core.store.board();
       const held = followed.get(conversation);
-      followed.set(conversation, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched() });
+      followed.set(conversation, { copy: { blocks: board.blocks, links: board.links, stacks: board.stacks }, touched: untouched(), blocks: new Set() });
+      taken.set(conversation, held === undefined ? [] : [...held.blocks]);
       if (held === undefined || signal.aborted) return undefined;
       const lines = noteLines(held, board);
       if (lines.length === 0) return undefined;
       const text = [preamble.trim(), cutText(["## Changes", ...lines].join("\n"), max, HINT)].join("\n\n");
       return { id: newId(), role: "user", parts: [{ type: "changes", text }], created: new Date().toISOString() };
     },
+
+    changed: (conversation) => taken.get(conversation) ?? [],
 
     asUser(fn) {
       asUser += 1;

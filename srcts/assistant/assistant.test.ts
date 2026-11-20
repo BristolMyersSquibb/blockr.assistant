@@ -100,8 +100,9 @@ test("sends each call the system prompt of the open board, and after the convers
     { role: "system", content: expect.stringMatching(/^You are an assistant embedded next to a blockr data analysis board\.\n/) as unknown },
     { role: "system", content: expect.stringMatching(/## Statuses\n/) as unknown },
   ]);
-  expect(boards[0]).toContain("- b <blockr.core-head_block> n, direction [unevaluated]\n");
-  expect(boards[1]).toContain("- b <blockr.core-head_block> n, direction\n");
+  expect(boards[0]).toContain("### Blocks\n- a <blockr.core-dataset_block> dataset, package [unevaluated]\n- b <blockr.core-head_block> n, direction [unevaluated] <- data: a (ab)\n");
+  // The model's edit changed b, which the board of the next call lists first.
+  expect(boards[1]).toContain("### Blocks\n- b <blockr.core-head_block> n, direction <- data: a (ab)\n");
 });
 
 test("offers the edit tools, so that an edit that the model makes in a turn applies as a step of the assistant", async () => {

@@ -209,7 +209,7 @@ describe.each(APIS)("a turn on $api", ({ api, keyed, keyless, calls: path, heade
     for (const body of calls) {
       expect(systemOf(body)).toMatch(/^You are an assistant embedded next to a blockr data analysis board\.\n/);
       expect(sent(body).at(-1)?.role).toBe("user");
-      expect(textOf(sent(body).at(-1))).toMatch(/^This message comes from the app, not from the user\.\n[^]*\n## Board\n6 block\(s\), 7 link\(s\), 1 stack\(s\)\.\n/);
+      expect(textOf(sent(body).at(-1))).toMatch(/^This message comes from the app, not from the user\.\n\n## Board\n6 block\(s\)( \([^)]*\))?, 7 link\(s\), 1 stack\(s\)\.\n/);
     }
     const [first, second] = calls.map(sent);
     expect(textOf(first?.at(-2))).toBe("Which blocks does the board hold?");
