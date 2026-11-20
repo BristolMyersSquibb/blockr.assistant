@@ -624,6 +624,22 @@ function pageKey() {
   return page;
 }
 
+// srcts/gateways/gateways.ts
+var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+var REFUSED = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
+function refusesHeader(baseUrl, name) {
+  if (hostOf(baseUrl) !== VERCEL_AI_GATEWAY) return false;
+  const lower = name.toLowerCase();
+  return lower.startsWith("x-stainless-") || REFUSED.has(lower);
+}
+function hostOf(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return void 0;
+  }
+}
+
 // srcts/models/list.ts
 var NO_TOOLS = /* @__PURE__ */ new Set([
   "audio",
@@ -657,7 +673,7 @@ async function askList(deployment, key, fetch, signal) {
   const none = (why) => ({ kind: "failed", message: `The assistant offers no model, since ${why}` });
   let response;
   try {
-    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+    response = await fetch(url, { headers: listHeaders(deployment, key), signal });
   } catch (error) {
     return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
   }
@@ -737,15 +753,13 @@ function takesTools(entry, id, api2) {
 function listUrl(deployment) {
   return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
 }
-function listHeaders(api2, key) {
-  if (api2 === "anthropic-messages") {
-    return {
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      ...key === void 0 ? {} : { "x-api-key": key }
-    };
-  }
-  return key === void 0 ? {} : { authorization: `Bearer ${key}` };
+function listHeaders(deployment, key) {
+  const headers = deployment.api === "anthropic-messages" ? {
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+    ...key === void 0 ? {} : { "x-api-key": key }
+  } : key === void 0 ? {} : { authorization: `Bearer ${key}` };
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !refusesHeader(deployment.baseUrl, name)));
 }
 async function answerOf(response) {
   let message2;
@@ -890,7 +904,7 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   let catalogs;
   let loop;
   try {
-    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
   }
@@ -1871,6 +1885,20 @@ function kindOf2(sent3) {
   return Array.isArray(sent3) ? "an array" : "an object";
 }
 
+// srcts/loop/apis.ts
+var APIS2 = /* @__PURE__ */ new Map([
+  ["anthropic-messages", () => import("./api-anthropic-messages-32f57ac1.js")],
+  ["openai-completions", () => import("./api-openai-completions-6b7777a6.js")],
+  ["openai-responses", () => import("./api-openai-responses-1d29cdfc.js")]
+]);
+function loadApi(api2) {
+  const load = APIS2.get(api2);
+  return load === void 0 ? Promise.reject(new Error(`The assistant speaks no API named ${JSON.stringify(api2)}.`)) : load();
+}
+function preloadApi(api2) {
+  loadApi(api2).catch(() => void 0);
+}
+
 // srcts/loop/catalogs.ts
 var PROVIDER = "blockr.assistant";
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -1880,7 +1908,7 @@ var GATEWAYS = /* @__PURE__ */ new Map([
 ]);
 var loading = /* @__PURE__ */ new Map();
 function preloadCatalogs() {
-  void import("./pi-b163b862.js").catch(() => void 0);
+  void import("./pi-fd483a06.js").catch(() => void 0);
 }
 async function loadCatalogs(baseUrl) {
   return createCatalogs(await loadCatalogParts(baseUrl));
@@ -1890,7 +1918,7 @@ function loadCatalogParts(baseUrl) {
   const loaded2 = loading.get(host);
   if (loaded2 !== void 0) return loaded2;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
+  const parts = Promise.all([import("./pi-fd483a06.js"), gateway?.()]).then(
     ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
   );
   loading.set(host, parts);
@@ -2413,21 +2441,15 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var NO_KEY2 = "blockr-assistant-no-key";
-function createLoop(pi, catalogs, apis = {}) {
-  const streams = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis
-  };
+function createLoop(pi, catalogs, apis) {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call)
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call)
   };
 }
-async function loadLoop(baseUrl) {
-  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+async function loadLoop(connection) {
+  const [pi, catalogs, streams] = await Promise.all([import("./pi-fd483a06.js"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 function runTurn(pi, catalogs, streams, turn) {
   return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
@@ -2456,9 +2478,10 @@ async function runAgent(pi, catalogs, streams, turn, span) {
   let status;
   let unread = false;
   let added;
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input, init) => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -2555,7 +2578,7 @@ function callModel(pi, catalogs, streams, call) {
     const reply = await models.completeSimple(
       model2,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span }
+      { ...level2 === void 0 ? {} : { reasoning: level2 }, identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span }
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text3 = reply.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("").trim();
@@ -2578,13 +2601,18 @@ function findFailure(reply, text3) {
 function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
-function keyless(input, init) {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+function fetchAt(baseUrl) {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY2}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY2) headers.delete("x-api-key");
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
 }
-var REFUSED = /* @__PURE__ */ new Set([400, 413, 415, 422]);
+var REFUSED2 = /* @__PURE__ */ new Set([400, 413, 415, 422]);
 function callOf(pi, reply, model2, carried, status, unread) {
   const written = convertReply(reply);
   const answer = unread ? "unread" : status === 401 || status === 403 ? "refused" : void 0;
@@ -2594,7 +2622,7 @@ function callOf(pi, reply, model2, carried, status, unread) {
     usage: { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens },
     ...failed2 ? { failure: reply.errorMessage ?? "The provider gave no reason." } : {},
     files: carried.files,
-    refused: failed2 && status !== void 0 && REFUSED.has(status),
+    refused: failed2 && status !== void 0 && REFUSED2.has(status),
     ...failed2 && pi.isContextOverflow(reply, model2.contextWindow) ? { overflow: true } : {},
     ...failed2 && answer !== void 0 ? { answer } : {}
   };
@@ -6991,6 +7019,7 @@ function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
   const levels = useThinkingLevels2(assistant);
+  usePreloadedApi(assistant);
   return /* @__PURE__ */ jsx12("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx12("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx12(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
@@ -7052,6 +7081,17 @@ function useThinkingLevels2(assistant) {
   return done;
 }
 var levelsLoaded = /* @__PURE__ */ new WeakSet();
+function usePreloadedApi(assistant) {
+  useEffect6(() => {
+    if (assistant === void 0) return;
+    assistant.deployment.then(
+      (deployment) => {
+        preloadApi(deployment.api);
+      },
+      () => void 0
+    );
+  }, [assistant]);
+}
 function open(assistant) {
   return assistant?.signal.aborted === false ? assistant : void 0;
 }

@@ -6,6 +6,8 @@
 // - The calls go through a provider that pi's createProvider() makes for a
 //   base URL and the API that it speaks, by pi's name for the API
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#where-the-calls-go).
+//   The provider holds pi's code for that API alone, which loads in a file
+//   of its own (./apis.ts).
 // - The loop takes the credential through getApiKey, which pi calls for each
 //   request, so that the loop knows no way to authenticate
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
@@ -15,6 +17,12 @@
 //   in its answer to a page's preflight. Each of pi's APIs refuses to call
 //   without a key, so the loop gives pi a placeholder, which its fetch takes
 //   off the request before the request leaves.
+// - The loop's fetch also removes from each request the headers that the
+//   base URL's answer to a page's preflight does not allow, since the browser
+//   sends no call that carries one. The answer of Vercel's AI Gateway allows
+//   none of the headers by which the SDKs that pi calls describe themselves,
+//   nor the User-Agent that pi sets, nor Anthropic's opt-in header
+//   (../gateways).
 // - The loop's fetch also notes what each call's request got back, where that
 //   says something of the key: a 401 or a 403, by which the base URL refused
 //   the key, or no answer that the page could read. OpenAI's 401 for a call
@@ -133,8 +141,10 @@ import type { Api, AssistantMessage, ImageContent, Model, ProviderStreams, TextC
 import type { TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
+import { refusesHeader } from "../gateways/index.ts";
 import type { Message, MessageId, Part, ThinkingLevel, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
+import { loadApi } from "./apis.ts";
 import { markBeforeAppMessage } from "./cache.ts";
 import { buildModel, levelOf, loadCatalogParts, PROVIDER } from "./catalogs.ts";
 import type { CallModel, CatalogParts } from "./catalogs.ts";
@@ -268,28 +278,24 @@ export interface Loop {
   callModel(call: ModelCall): Promise<ModelReply>;
 }
 
-// The loop on the parts of pi given and on its catalogs, with the three APIs
-// that the assistant speaks, and the APIs given beside them, by pi's name for
-// each, as a test gives pi's fake API.
-export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record<string, ProviderStreams>> = {}): Loop {
-  const streams: Readonly<Record<string, ProviderStreams>> = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis,
-  };
+// The loop on the parts of pi given, on its catalogs, and on pi's code for
+// the APIs given, by pi's name for each: that of the connection's API, or
+// pi's fake API, which a test gives.
+export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record<string, ProviderStreams>>): Loop {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call),
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call),
   };
 }
 
-// The loop for the calls to the base URL, once the page has imported pi's
-// bundle and the catalogs for the base URL (./catalogs.ts).
-// The browser imports the bundle once, as the chat first mounts (./vendor.ts).
-export async function loadLoop(baseUrl: string): Promise<Loop> {
-  const [pi, catalogs] = await Promise.all([import("./vendor.ts"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+// The loop for the calls to the base URL, in the API given, once the page has
+// imported pi's bundle, the catalogs for the base URL (./catalogs.ts) and pi's
+// code for the API (./apis.ts).
+// The browser imports the bundle once, as the chat first mounts (./vendor.ts),
+// and the code of the API once the chat has read the deployment.
+export async function loadLoop(connection: Pick<Connection, "baseUrl" | "api">): Promise<Loop> {
+  const [pi, catalogs, streams] = await Promise.all([import("./vendor.ts"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 
 // Runs the turn in its span, invoke_agent.
@@ -340,9 +346,10 @@ async function runAgent(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record
   // any.
   let added: string | undefined;
 
+  const send = fetchAt(turn.connection.baseUrl);
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     try {
-      const response = await keyless(input, init);
+      const response = await send(input, init);
       status = response.status;
       return response;
     } catch (error) {
@@ -451,7 +458,7 @@ function callModel(pi: Pi, catalogs: CatalogParts, streams: Readonly<Record<stri
     const reply = await models.completeSimple(
       model,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
-      { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: keyless, signal: call.signal, cacheRetention: "none", telemetry: span },
+      { ...(level === undefined ? {} : { reasoning: level }), identity: { attribution: null }, apiKey, fetch: fetchAt(call.connection.baseUrl), signal: call.signal, cacheRetention: "none", telemetry: span },
     );
     const usage = { input: reply.usage.input, output: reply.usage.output, total: reply.usage.totalTokens };
     const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("").trim();
@@ -482,14 +489,22 @@ function piLevel(level: ThinkingLevel): PiThinkingLevel | undefined {
   return level === "off" ? undefined : level;
 }
 
-// The page's fetch, but for the placeholder of a call that carries no key,
-// which it takes off the request. The SDKs that pi calls give their headers
-// with the request's init.
-function keyless(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
-  if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
-  return globalThis.fetch(input, { ...init, headers });
+// The page's fetch for the calls to the base URL, which edits the headers of
+// each request before the request leaves. The SDKs that pi calls give their
+// headers with the request's init.
+// - It takes off the placeholder of a call that carries no key.
+// - It takes off each header that the base URL's answer to a page's preflight
+//   does not allow (../gateways).
+function fetchAt(baseUrl: string): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") === `Bearer ${NO_KEY}`) headers.delete("authorization");
+    if (headers.get("x-api-key") === NO_KEY) headers.delete("x-api-key");
+    for (const name of [...headers.keys()]) {
+      if (refusesHeader(baseUrl, name)) headers.delete(name);
+    }
+    return globalThis.fetch(input, { ...init, headers });
+  };
 }
 
 // The statuses with which a provider refuses a request for what it holds.

@@ -10,6 +10,9 @@
 // - The key goes as the calls of the API carry it: in Authorization for
 //   OpenAI's APIs, and in x-api-key for Anthropic's. Without a key, the
 //   request carries neither header.
+// - The request leaves out each header that the base URL's answer to a page's
+//   preflight does not allow, as that of Vercel's AI Gateway does not allow
+//   the header by which a page opts in to Anthropic's API (../gateways).
 // - The list keeps its order, so that the first model kept is the default.
 //
 // A model of the list takes tools where the list says so, in these steps:
@@ -43,6 +46,7 @@
 // entries give none of them.
 
 import type { Deployment } from "../deployment/index.ts";
+import { refusesHeader } from "../gateways/index.ts";
 import type { ListedSettings } from "../model-settings/index.ts";
 
 // The words that name a kind of model that takes no tools, in a model's id or
@@ -96,7 +100,7 @@ export async function askList(deployment: Deployment, key: string | undefined, f
 
   let response: Response;
   try {
-    response = await fetch(url, { headers: listHeaders(deployment.api, key), signal });
+    response = await fetch(url, { headers: listHeaders(deployment, key), signal });
   } catch (error) {
     return none(`it could not reach the list of models at ${url}: ${messageOf(error)}`);
   }
@@ -202,15 +206,21 @@ export function listUrl(deployment: Pick<Deployment, "baseUrl" | "api">): string
   return deployment.api === "anthropic-messages" ? `${deployment.baseUrl}/v1/models?limit=1000` : `${deployment.baseUrl}/models`;
 }
 
-function listHeaders(api: string, key: string | undefined): Record<string, string> {
-  if (api === "anthropic-messages") {
-    return {
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      ...(key === undefined ? {} : { "x-api-key": key }),
-    };
-  }
-  return key === undefined ? {} : { authorization: `Bearer ${key}` };
+// The headers of a request for the list, as the calls of the deployment's API
+// carry them, but for those that the base URL's answer to a page's preflight
+// does not allow.
+function listHeaders(deployment: Pick<Deployment, "baseUrl" | "api">, key: string | undefined): Record<string, string> {
+  const headers: Record<string, string> =
+    deployment.api === "anthropic-messages"
+      ? {
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+          ...(key === undefined ? {} : { "x-api-key": key }),
+        }
+      : key === undefined
+        ? {}
+        : { authorization: `Bearer ${key}` };
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !refusesHeader(deployment.baseUrl, name)));
 }
 
 // The status of a response that failed, with the message of the error that

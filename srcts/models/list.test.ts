@@ -206,6 +206,17 @@ describe("a request for the list", () => {
     });
   });
 
+  test("leaves out the header by which a page opts in at Vercel's AI Gateway, whose answer to a page's preflight does not allow it", async () => {
+    const { fetch, asked } = fetching(() => Response.json({ object: "list", data: [{ id: "anthropic/claude-haiku-4.5", type: "language", tags: ["tool-use"] }] }));
+
+    const listed = await askList(deployment("https://ai-gateway.vercel.sh", "anthropic-messages"), "vck-test", fetch, signal);
+
+    expect(listed).toMatchObject({ kind: "listed", models: ["anthropic/claude-haiku-4.5"] });
+    expect(asked.map(({ url, headers }) => [url, Object.fromEntries(headers)])).toEqual([
+      ["https://ai-gateway.vercel.sh/v1/models?limit=1000", { "anthropic-version": "2023-06-01", "x-api-key": "vck-test" }],
+    ]);
+  });
+
   test("carries no key where the deployment gives none", async () => {
     const openai = fetching(() => Response.json({ data: [{ id: "gpt-5.4" }] }));
     const anthropic = fetching(() => Response.json({ data: [{ id: "claude-haiku-5-5" }] }));
