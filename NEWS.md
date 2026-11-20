@@ -200,11 +200,12 @@
   picks another, where it reasoned at its provider's default before.
 
 * The calls to Vercel's AI Gateway go through from the browser (#299).
-  The gateway's answer to a page's preflight allows none of the headers that
-  the SDKs under pi add to each call, such as `x-stainless-os`, nor
+  Where the base URL is the gateway's, each call leaves without the headers
+  that the gateway's answer to a page's preflight does not allow.
+  These are the headers that the SDKs under pi add to each call, such as
+  `x-stainless-os`, the `User-Agent` that pi sets, which Firefox sends, and
   `anthropic-dangerous-direct-browser-access`, which Anthropic's own API
   needs from a page.
-  So where the base URL is the gateway's, each call leaves without them.
 
 * The assistant takes the conditions of R's replies to its requests itself,
   so that core raises no notification for them (#250).

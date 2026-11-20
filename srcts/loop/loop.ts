@@ -23,8 +23,10 @@
 //   carries one (blockr.assistant#299). These are the headers by which the
 //   SDKs that pi calls describe themselves, whose names start with
 //   x-stainless-, and Anthropic's opt-in header,
-//   anthropic-dangerous-direct-browser-access. Anthropic's own API needs that
-//   header from a page, so the calls to any other base URL keep it.
+//   anthropic-dangerous-direct-browser-access. They are also the User-Agent
+//   that pi and Anthropic's SDK set, which Firefox sends, while Chrome drops
+//   it. Anthropic's own API needs its opt-in header from a page, so the calls
+//   to any other base URL keep all of these headers.
 // - The loop's fetch also notes what each call's request got back, where that
 //   says something of the key: a 401 or a 403, by which the base URL refused
 //   the key, or no answer that the page could read. OpenAI's 401 for a call
@@ -495,15 +497,21 @@ function piLevel(level: ThinkingLevel): PiThinkingLevel | undefined {
 // https://ai-gateway.vercel.sh.
 const VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
 
+// The headers that the answer of Vercel's AI Gateway to a page's preflight
+// does not allow, by their names in lower case, besides those whose names
+// start with x-stainless-.
+const REFUSED_BY_GATEWAY: ReadonlySet<string> = new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
+
 // The page's fetch for the calls to the base URL, which edits the headers of
 // each request before the request leaves. The SDKs that pi calls give their
 // headers with the request's init.
 // - It takes off the placeholder of a call that carries no key.
 // - Where the base URL is that of Vercel's AI Gateway, it removes the
 //   headers that the gateway's answer to a page's preflight does not allow:
-//   each header whose name starts with x-stainless-, and Anthropic's opt-in
-//   header. It compares names in lower case, as HTTP does, since Anthropic's
-//   SDK writes X-Stainless-OS where OpenAI's writes x-stainless-os.
+//   each header whose name starts with x-stainless-, User-Agent, and
+//   Anthropic's opt-in header. It compares names in lower case, as HTTP
+//   does, since Anthropic's SDK writes X-Stainless-OS where OpenAI's writes
+//   x-stainless-os.
 function fetchAt(baseUrl: string): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
   return (input, init) => {
@@ -513,7 +521,7 @@ function fetchAt(baseUrl: string): (input: RequestInfo | URL, init?: RequestInit
     if (gateway) {
       for (const name of [...headers.keys()]) {
         const lower = name.toLowerCase();
-        if (lower.startsWith("x-stainless-") || lower === "anthropic-dangerous-direct-browser-access") headers.delete(name);
+        if (lower.startsWith("x-stainless-") || REFUSED_BY_GATEWAY.has(lower)) headers.delete(name);
       }
     }
     return globalThis.fetch(input, { ...init, headers });

@@ -2588,6 +2588,7 @@ function piLevel(level2) {
   return level2 === "off" ? void 0 : level2;
 }
 var VERCEL_AI_GATEWAY = "ai-gateway.vercel.sh";
+var REFUSED_BY_GATEWAY = /* @__PURE__ */ new Set(["anthropic-dangerous-direct-browser-access", "user-agent"]);
 function fetchAt(baseUrl) {
   const gateway = hostOf(baseUrl) === VERCEL_AI_GATEWAY;
   return (input, init) => {
@@ -2597,7 +2598,7 @@ function fetchAt(baseUrl) {
     if (gateway) {
       for (const name of [...headers.keys()]) {
         const lower = name.toLowerCase();
-        if (lower.startsWith("x-stainless-") || lower === "anthropic-dangerous-direct-browser-access") headers.delete(name);
+        if (lower.startsWith("x-stainless-") || REFUSED_BY_GATEWAY.has(lower)) headers.delete(name);
       }
     }
     return globalThis.fetch(input, { ...init, headers });

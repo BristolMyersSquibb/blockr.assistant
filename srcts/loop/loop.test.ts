@@ -1137,7 +1137,7 @@ describe("the headers of a call", () => {
   // The names of the headers given that Vercel's AI Gateway does not allow in
   // its answer to a page's preflight.
   function refused(headers: Record<string, string>): string[] {
-    return Object.keys(headers).filter((name) => name.startsWith("x-stainless-") || name === "anthropic-dangerous-direct-browser-access");
+    return Object.keys(headers).filter((name) => name.startsWith("x-stainless-") || name === "user-agent" || name === "anthropic-dangerous-direct-browser-access");
   }
 
   test.each([
@@ -1160,7 +1160,7 @@ describe("the headers of a call", () => {
     const headers = await sent(baseUrl, api);
 
     expect(headers).toHaveLength(2);
-    for (const each of headers) expect(refused(each)).toContain("x-stainless-os");
+    for (const each of headers) expect(refused(each)).toEqual(expect.arrayContaining(["x-stainless-os", "user-agent"]));
     if (api === "anthropic-messages") expect(headers.map((each) => each["anthropic-dangerous-direct-browser-access"])).toEqual(["true", "true"]);
   });
 });
