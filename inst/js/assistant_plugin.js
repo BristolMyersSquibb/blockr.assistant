@@ -890,7 +890,7 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
   let catalogs;
   let loop;
   try {
-    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf2(error)}`);
   }
@@ -1871,6 +1871,20 @@ function kindOf2(sent3) {
   return Array.isArray(sent3) ? "an array" : "an object";
 }
 
+// srcts/loop/apis.ts
+var APIS2 = /* @__PURE__ */ new Map([
+  ["anthropic-messages", () => import("./api-anthropic-messages-32f57ac1.js")],
+  ["openai-completions", () => import("./api-openai-completions-6b7777a6.js")],
+  ["openai-responses", () => import("./api-openai-responses-1d29cdfc.js")]
+]);
+function loadApi(api2) {
+  const load = APIS2.get(api2);
+  return load === void 0 ? Promise.reject(new Error(`The assistant speaks no API named ${JSON.stringify(api2)}.`)) : load();
+}
+function preloadApi(api2) {
+  loadApi(api2).catch(() => void 0);
+}
+
 // srcts/loop/catalogs.ts
 var PROVIDER = "blockr.assistant";
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -1880,7 +1894,7 @@ var GATEWAYS = /* @__PURE__ */ new Map([
 ]);
 var loading = /* @__PURE__ */ new Map();
 function preloadCatalogs() {
-  void import("./pi-b163b862.js").catch(() => void 0);
+  void import("./pi-fd483a06.js").catch(() => void 0);
 }
 async function loadCatalogs(baseUrl) {
   return createCatalogs(await loadCatalogParts(baseUrl));
@@ -1890,7 +1904,7 @@ function loadCatalogParts(baseUrl) {
   const loaded2 = loading.get(host);
   if (loaded2 !== void 0) return loaded2;
   const gateway = GATEWAYS.get(host);
-  const parts = Promise.all([import("./pi-b163b862.js"), gateway?.()]).then(
+  const parts = Promise.all([import("./pi-fd483a06.js"), gateway?.()]).then(
     ([pi, models]) => ({ pi, gateways: new Map(models === void 0 ? [] : [[host, models]]) })
   );
   loading.set(host, parts);
@@ -2413,21 +2427,15 @@ function isInput(name) {
 
 // srcts/loop/loop.ts
 var NO_KEY2 = "blockr-assistant-no-key";
-function createLoop(pi, catalogs, apis = {}) {
-  const streams = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis
-  };
+function createLoop(pi, catalogs, apis) {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call)
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call)
   };
 }
-async function loadLoop(baseUrl) {
-  const [pi, catalogs] = await Promise.all([import("./pi-b163b862.js"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+async function loadLoop(connection) {
+  const [pi, catalogs, streams] = await Promise.all([import("./pi-fd483a06.js"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 function runTurn(pi, catalogs, streams, turn) {
   return startAgentSpan(turn, (span) => runAgent(pi, catalogs, streams, turn, span));
@@ -6864,6 +6872,7 @@ function Panel({ core }) {
   const assistant = useAssistant(core);
   const loaded2 = useLibraries(core);
   const levels = useThinkingLevels2(assistant);
+  usePreloadedApi(assistant);
   return /* @__PURE__ */ jsx11("div", { className: "blockr-assistant", children: loaded2 === "failed" ? /* @__PURE__ */ jsx11("p", { className: "blockr-assistant-unloaded", children: "The chat could not load. Reload the page to try again." }) : loaded2 && levels && assistant !== void 0 ? /* @__PURE__ */ jsx11(Chat, { core, assistant }, assistantKey(assistant)) : null });
 }
 function useAssistant(core) {
@@ -6925,6 +6934,17 @@ function useThinkingLevels2(assistant) {
   return done;
 }
 var levelsLoaded = /* @__PURE__ */ new WeakSet();
+function usePreloadedApi(assistant) {
+  useEffect6(() => {
+    if (assistant === void 0) return;
+    assistant.deployment.then(
+      (deployment) => {
+        preloadApi(deployment.api);
+      },
+      () => void 0
+    );
+  }, [assistant]);
+}
 function open(assistant) {
   return assistant?.signal.aborted === false ? assistant : void 0;
 }

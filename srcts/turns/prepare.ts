@@ -13,12 +13,14 @@
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#who-picks-the-model).
 //    Where the deployment names no models, the models ask for the base URL's
 //    list again, where the last list offered none (../models).
-// 3. The loop and its provider code load with a dynamic import of pi's
-//    bundle, which the browser does once, as the chat first mounts, since the
-//    bundle holds pi's catalogs, which the footer reads as it first draws
-//    (../thinking-levels). So a page that never shows the chat never loads
-//    them, and a call takes them, with the catalogs for the base URL, from
-//    there (../loop).
+// 3. The loop loads with a dynamic import of pi's bundle, which the browser
+//    does once, as the chat first mounts, since the bundle holds pi's
+//    catalogs, which the footer reads as it first draws (../thinking-levels).
+//    Pi's code for the API that the base URL speaks loads in a file of its
+//    own, which the chat has the page import once the assistant has read the
+//    deployment. So a page that never shows the chat never loads them, and a
+//    call takes them, with the catalogs for the base URL, from there
+//    (../loop).
 // 4. The model takes the settings that the deployment's model settings give
 //    it, and those that the base URL's list gives it, where either gives any
 //    (../model-settings). Once the catalogs have loaded, the model settings
@@ -56,9 +58,9 @@ export interface CallOptions {
   readonly key: VisitorKey;
   // Loads pi's catalogs for the calls to the base URL given.
   readonly catalogs: (baseUrl: string) => Promise<Catalogs>;
-  // Loads the loop for the calls to the base URL given, which imports pi's
-  // bundle.
-  readonly load: (baseUrl: string) => Promise<Loop>;
+  // Loads the loop for the calls to the base URL given, in the API given,
+  // which imports pi's bundle and pi's code for the API.
+  readonly load: (connection: Pick<Connection, "baseUrl" | "api">) => Promise<Loop>;
 }
 
 // A key that a call carried, and whether it is the visitor's.
@@ -115,7 +117,7 @@ export async function prepareCall(
   let catalogs: Catalogs;
   let loop: Loop;
   try {
-    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment.baseUrl)]);
+    [catalogs, loop] = await Promise.all([options.catalogs(deployment.baseUrl), options.load(deployment)]);
   } catch (error) {
     return failed(`The assistant could not load the code that runs its turns: ${messageOf(error)}`);
   }

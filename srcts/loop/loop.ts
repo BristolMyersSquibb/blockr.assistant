@@ -6,6 +6,8 @@
 // - The calls go through a provider that pi's createProvider() makes for a
 //   base URL and the API that it speaks, by pi's name for the API
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#where-the-calls-go).
+//   The provider holds pi's code for that API alone, which loads in a file
+//   of its own (./apis.ts).
 // - The loop takes the credential through getApiKey, which pi calls for each
 //   request, so that the loop knows no way to authenticate
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.1#how-a-call-is-authenticated).
@@ -135,6 +137,7 @@ import type { Encoded } from "../attachments/index.ts";
 import type { Kept, KeptImage } from "../conversations/index.ts";
 import type { Message, MessageId, Part, ThinkingLevel, ToolCallPart } from "../state/index.ts";
 import type { Tool } from "../tools/index.ts";
+import { loadApi } from "./apis.ts";
 import { markBeforeAppMessage } from "./cache.ts";
 import { buildModel, levelOf, loadCatalogParts, PROVIDER } from "./catalogs.ts";
 import type { CallModel, CatalogParts } from "./catalogs.ts";
@@ -268,28 +271,24 @@ export interface Loop {
   callModel(call: ModelCall): Promise<ModelReply>;
 }
 
-// The loop on the parts of pi given and on its catalogs, with the three APIs
-// that the assistant speaks, and the APIs given beside them, by pi's name for
-// each, as a test gives pi's fake API.
-export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record<string, ProviderStreams>> = {}): Loop {
-  const streams: Readonly<Record<string, ProviderStreams>> = {
-    "anthropic-messages": pi.anthropicMessages,
-    "openai-completions": pi.openaiCompletions,
-    "openai-responses": pi.openaiResponses,
-    ...apis,
-  };
+// The loop on the parts of pi given, on its catalogs, and on pi's code for
+// the APIs given, by pi's name for each: that of the connection's API, or
+// pi's fake API, which a test gives.
+export function createLoop(pi: Pi, catalogs: CatalogParts, apis: Readonly<Record<string, ProviderStreams>>): Loop {
   return {
-    run: (turn) => runTurn(pi, catalogs, streams, turn),
-    callModel: (call) => callModel(pi, catalogs, streams, call),
+    run: (turn) => runTurn(pi, catalogs, apis, turn),
+    callModel: (call) => callModel(pi, catalogs, apis, call),
   };
 }
 
-// The loop for the calls to the base URL, once the page has imported pi's
-// bundle and the catalogs for the base URL (./catalogs.ts).
-// The browser imports the bundle once, as the chat first mounts (./vendor.ts).
-export async function loadLoop(baseUrl: string): Promise<Loop> {
-  const [pi, catalogs] = await Promise.all([import("./vendor.ts"), loadCatalogParts(baseUrl)]);
-  return createLoop(pi, catalogs);
+// The loop for the calls to the base URL, in the API given, once the page has
+// imported pi's bundle, the catalogs for the base URL (./catalogs.ts) and pi's
+// code for the API (./apis.ts).
+// The browser imports the bundle once, as the chat first mounts (./vendor.ts),
+// and the code of the API once the chat has read the deployment.
+export async function loadLoop(connection: Pick<Connection, "baseUrl" | "api">): Promise<Loop> {
+  const [pi, catalogs, streams] = await Promise.all([import("./vendor.ts"), loadCatalogParts(connection.baseUrl), loadApi(connection.api)]);
+  return createLoop(pi, catalogs, { [connection.api]: streams });
 }
 
 // Runs the turn in its span, invoke_agent.

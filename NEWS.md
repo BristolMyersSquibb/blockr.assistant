@@ -97,9 +97,11 @@
   A call that fails raises the error `assistant_call_failed`, which the
   plugin withdraws once a later call succeeds.
 
-* The build bundles pi with its providers for OpenAI's and Anthropic's APIs,
-  minified, into `inst/js/pi-<hash>.js`, which the browser loads as the chat
-  first mounts (#225, #271).
+* The build bundles pi, minified, into `inst/js/pi-<hash>.js`, which the
+  browser loads as the chat first mounts (#225, #271).
+  Pi's code for each of the three APIs goes into a file of its own, such as
+  `inst/js/api-openai-responses-<hash>.js`, and the browser loads only the
+  file of the API that `assistant_api` names (#299).
   The file `inst/js/LICENSES` names the projects whose code it holds, with
   their copyright holders and their licenses, as the `Copyright` field of
   DESCRIPTION says.

@@ -22,15 +22,22 @@
 import type { Condition, CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCore, StubCoreOptions } from "@blockr/core/stubs";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, ProviderStreams } from "@earendil-works/pi-ai";
 import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
 import { onTestFinished } from "vitest";
 import { createCatalogs, createLoop, PROVIDER } from "../loop/index.ts";
 import type { CatalogParts, Catalogs, Connection, Loop } from "../loop/index.ts";
-// The parts of pi, as the page's bundle of pi holds them, and the catalogs of
-// the gateways' models, as the page's files of them hold them.
+// The parts of pi, as the page's bundle of pi holds them, pi's code for each
+// API, and the catalogs of the gateways' models, as the page's files of them
+// hold them.
 // eslint-disable-next-line no-restricted-imports
 import * as pi from "../loop/vendor.ts";
+// eslint-disable-next-line no-restricted-imports
+import * as anthropicMessages from "../loop/vendor-anthropic-messages.ts";
+// eslint-disable-next-line no-restricted-imports
+import * as openaiCompletions from "../loop/vendor-openai-completions.ts";
+// eslint-disable-next-line no-restricted-imports
+import * as openaiResponses from "../loop/vendor-openai-responses.ts";
 // eslint-disable-next-line no-restricted-imports
 import { OPENROUTER_MODELS } from "../loop/vendor-openrouter.ts";
 // eslint-disable-next-line no-restricted-imports
@@ -61,6 +68,14 @@ export const CATALOG_PARTS: CatalogParts = {
 export function testCatalogs(): Promise<Catalogs> {
   return Promise.resolve(createCatalogs(CATALOG_PARTS));
 }
+
+// Pi's code for each of the three APIs that the assistant speaks, by pi's name
+// for each, as the page loads that of the deployment's API.
+export const APIS: Readonly<Record<string, ProviderStreams>> = {
+  "anthropic-messages": anthropicMessages,
+  "openai-completions": openaiCompletions,
+  "openai-responses": openaiResponses,
+};
 export type { Recorded } from "./spans.ts";
 
 // A request as the mock of the APIs and of the lists of models recorded it,

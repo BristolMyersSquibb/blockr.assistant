@@ -24,7 +24,7 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Kept } from "../conversations/index.ts";
 import type { ModelSettings } from "../model-settings/index.ts";
 import type { Message, ThinkingLevel } from "../state/index.ts";
-import { CATALOG_PARTS, FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
+import { APIS, CATALOG_PARTS, FAUX_API, fauxLoop, recordSpans, skillsHolding, startAssistant } from "../testing/index.ts";
 import { readTools } from "../tools/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
 import { PROVIDER } from "./catalogs.ts";
@@ -593,7 +593,7 @@ describe("a turn on the loop", () => {
       { id: "a1", role: "assistant", parts: [{ type: "tool_call", id: "c1", tool: "list_blocks", args: {} }], created: CREATED },
       { id: "t1", role: "tool", parts: [{ type: "tool_result", id: "c1", text: '["a","b"]' }], created: CREATED },
     ];
-    await createLoop(pi, CATALOG_PARTS).run({
+    await createLoop(pi, CATALOG_PARTS, APIS).run({
       connection: { baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions", apiKey: () => Promise.resolve("test-key") },
       model: "anthropic/claude-haiku-5.5",
       tools: [listed],
@@ -1061,7 +1061,7 @@ describe("a failed call's request", () => {
       vi.unstubAllGlobals();
     });
     const calls: Call[] = [];
-    await createLoop(pi, CATALOG_PARTS).run({
+    await createLoop(pi, CATALOG_PARTS, APIS).run({
       connection: { baseUrl: "https://api.invalid/v1", api: "openai-responses", apiKey: () => Promise.resolve("sk-test") },
       model: "gpt-5.4",
       tools: [],
