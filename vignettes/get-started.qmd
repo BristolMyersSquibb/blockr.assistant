@@ -232,7 +232,7 @@ The four ways differ in what the hoster provides, what a visitor needs, who pays
 | The deployment's key | A key, in `assistant_api_key` | Nothing | The hoster | The hoster's key, which works until the hoster revokes it |
 | No key, for a base URL that needs none, such as a company's own proxy | `"none"` in `assistant_api_key` | Nothing | The hoster | Nothing |
 | The visitor's own key | Nothing | A key of their own, which they trust the app with | The visitor | Their own key, and nothing of the hoster's |
-| A login with OpenRouter | OpenRouter's base URL, in `assistant_base_url` | An account with OpenRouter | The visitor | A key on their own account, which expires after a day unless they chose otherwise as they logged in |
+| A login with OpenRouter | OpenRouter's base URL, in `assistant_base_url` | An account with OpenRouter | The visitor | A key on their own account, which expires after a day, or after 30 days where the browser keeps it, unless they chose otherwise as they logged in |
 
 ### The deployment's key
 
@@ -273,8 +273,8 @@ If it allowed every origin, any page that someone on the network opens could cal
 Where the deployment sets no key, the chat asks the visitor for a key of their own, in a field above the message field.
 It sends nothing until the visitor gives one.
 The plugin keeps the key in the page's memory.
-It writes the key to neither the board, R nor the browser's storage.
-So a reload asks for the key again.
+It writes the key to neither the board nor R.
+By default, it writes the key to no browser storage either, so a reload asks for the key again ([Keeping the visitor's key in the browser](#keeping-the-visitors-key-in-the-browser)).
 The browser takes the field for a login.
 So where the visitor lets it, the browser's password manager saves the key and fills it in after a reload.
 Where the base URL refuses the key, the chat asks for a key again.
@@ -285,11 +285,39 @@ Where the base URL is OpenRouter's and the deployment sets no key, the chat offe
 The login gives the page a key on the visitor's own OpenRouter account.
 OpenRouter bills the calls made with that key to the visitor's credits.
 It runs in a window of its own, so the app's page stays as it was.
-OpenRouter labels the key `blockr` and has it expire after a day.
+OpenRouter labels the key `blockr` and has it expire after a day, or after 30 days where the browser keeps the key.
 The visitor can change both as they authorize the app.
 The plugin keeps the key in the page's memory, as it keeps a typed key.
-So a reload asks the visitor to log in again.
+So a reload asks the visitor to log in again, unless the browser keeps the key.
 The chat offers the login only on a page that the browser deems secure, such as one served over HTTPS or from localhost.
+
+### Keeping the visitor's key in the browser
+
+A deployment can have the browser keep the visitor's key, so that a reload or another tab of the app finds it.
+It sets a secret in the blockr option `assistant_key_secret`, as an environment variable, so that every R process of the app hands the page the same secret:
+
+```sh
+BLOCKR_ASSISTANT_KEY_SECRET=<a long random string>
+```
+
+A command such as `openssl rand -base64 32` prints such a string.
+The page encrypts the key with the secret, and keeps it in the browser's local storage.
+R hands the page the secret with the other blockr options, so the key still never reaches R.
+The browser keeps one key for each app and base URL to which the visitor gave a key.
+It keeps a key once the base URL takes it, for a call or for its list of models, and drops the key once the base URL refuses it.
+The key that the login with OpenRouter gives is kept the same way.
+Changing the secret makes every key that the browser kept unreadable, so each visitor then gives their key again.
+The browser keeps the key only on a page that it deems secure, such as one served over HTTPS or from localhost, since it offers the page no means to encrypt the key otherwise.
+
+The option trades some safety for convenience.
+Every page that the same origin serves can read local storage, whoever published that page.
+Posit Connect, for one, serves each content item under a path of one host, as `https://connect.example.com/content/<guid>/` or a vanity URL such as `https://connect.example.com/my-dashboard/`.
+The encryption keeps the key from whatever reads local storage without running the app, such as a script that dumps the storage, or a copy of the browser's files whose holder cannot open the app.
+Keeping one key for each app keeps another blockr app from taking a key that the visitor gave this one.
+Neither keeps out a page of the same origin that sets out to get the key.
+Such a page comes from a malicious app on the origin, or from a hole in another app's page through which an attacker runs script there.
+It can list every key that the browser keeps, and can load the app and get the secret as the app does.
+So a deployment sets the option where the app has an origin of its own, or where it trusts every page of its origin.
 
 ## A deployment's skills
 

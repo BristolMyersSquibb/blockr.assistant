@@ -10,6 +10,7 @@ import { act } from "react";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
+import { storedIn } from "../../testing/index.ts";
 import { reloadPageKey } from "../../visitor-key/index.ts";
 import * as assistant from "./index.tsx";
 
@@ -243,6 +244,38 @@ describe("the start of the assistant's plugin class", () => {
 
     expect(next.core).not.toBe(first.core);
     expect(assistantOf(next.core)?.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+  });
+
+  test("has the browser keep the visitor's key where the app sets assistant_key_secret, so that the board after a reload takes the key", async () => {
+    const asked: (string | null)[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      asked.push(new Headers(init.headers).get("authorization"));
+      return Promise.resolve(Response.json({ object: "list", data: [{ id: "gpt-5.4" }] }));
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+      localStorage.clear();
+    });
+    const kept = { assistant_key_secret: "a-long-random-secret" };
+    const first = await started(undefined, three, kept);
+    await act(() => first.settled());
+    await assistantOf(first.core)?.deployment;
+    expect(assistantOf(first.core)?.key.kept()).toBe(true);
+
+    assistantOf(first.core)?.key.give("sk-visitor");
+    await assistantOf(first.core)?.models.offered();
+    await vi.waitUntil(() => localStorage.length > 0);
+    expect(localStorage.key(0)).toBe(`blockr.assistant-visitor_key ["/","https://api.openai.com/v1"]`);
+    expect(storedIn(localStorage)).not.toContain("sk-visitor");
+
+    reloadPageKey();
+    const next = await started(undefined, three, kept);
+    await act(() => next.settled());
+    await assistantOf(next.core)?.deployment;
+
+    expect(assistantOf(next.core)?.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    await assistantOf(next.core)?.models.offered();
+    expect(asked).toEqual(["Bearer sk-visitor", "Bearer sk-visitor"]);
   });
 
   test("offers the models that the app names in its blockr options, the first being the default", async () => {

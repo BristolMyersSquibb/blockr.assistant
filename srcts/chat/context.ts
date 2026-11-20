@@ -42,11 +42,13 @@ export interface ChatActions {
 }
 
 // What the field for the visitor's key shows: why the chat asks for a key,
-// the host of the base URL that the key is for, such as api.openai.com, and
-// what OpenRouter's login is doing, where the field offers it beside the key.
+// the host of the base URL that the key is for, such as api.openai.com,
+// whether the browser keeps the key, and what OpenRouter's login is doing,
+// where the field offers it beside the key.
 export interface KeyField {
   readonly state: Exclude<KeyState, { readonly kind: "given" }>;
   readonly host: string;
+  readonly kept: boolean;
   readonly openRouterLogin: OpenRouterLoginState | undefined;
 }
 

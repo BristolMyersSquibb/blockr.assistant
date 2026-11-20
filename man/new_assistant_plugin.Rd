@@ -130,9 +130,11 @@ key, or, where the list fails as well, that the connection was lost and
 that the key may be wrong.
 
 The plugin keeps the visitor's own key in the page's memory, and writes it
-to neither the board, R nor the browser's storage.
-So another board that opens in the page keeps the key, and a reload asks
-for it again.
+to neither the board nor R.
+So another board that opens in the page keeps the key.
+Unless the deployment sets the blockr option \code{assistant_key_secret}, the
+plugin writes the key to no browser storage either, so a reload asks for
+the key again.
 The browser takes the field for the key for a login, with the host of the
 base URL as the user name, so that its password manager can save the key,
 where the visitor lets it, and fill it in after a reload.
@@ -141,6 +143,45 @@ Where the base URL refuses the key, for a call or for its list of models,
 the chat asks for a key again.
 Where the connection was lost and the key may be wrong, the chat shows the
 field for the key again, holding the key.
+
+The blockr option \code{assistant_key_secret} has the browser keep the visitor's
+key as well, in its local storage, so that a reload or another tab of the
+app finds the key.
+A deployment sets it as the environment variable
+\code{BLOCKR_ASSISTANT_KEY_SECRET}, so that every R process of the app hands the
+page the same secret.
+The secret is a long random string, such as one that
+\verb{openssl rand -base64 32} prints.
+The page encrypts the key with the secret, which R hands the page with the
+other blockr options, so the key still never reaches R.
+The browser keeps one key for each app and base URL to which the visitor
+gave a key.
+It keeps a key from the time that the base URL takes it, for a call or for
+its list of models, until the base URL refuses it.
+Changing the secret makes every key that the browser kept unreadable, so
+each visitor then gives their key again.
+The browser keeps the key only on a page that it deems secure, such as one
+served over HTTPS or from localhost, since it offers the page no means to
+encrypt the key otherwise.
+
+The option trades some safety for convenience.
+Every page that the same origin serves can read local storage, whoever
+published that page.
+Posit Connect, for one, serves each content item under a path of one host,
+as \verb{https://connect.example.com/content/<guid>/} or a vanity URL such as
+\verb{https://connect.example.com/my-dashboard/}.
+The encryption keeps the key from whatever reads local storage without
+running the app, such as a script that dumps the storage, or a copy of the
+browser's files whose holder cannot open the app.
+Keeping one key for each app keeps another blockr app from taking a key
+that the visitor gave this one.
+Neither keeps out a page of the same origin that sets out to get the key.
+Such a page comes from a malicious app on the origin, or from a hole in
+another app's page through which an attacker runs script there.
+It can list every key that the browser keeps, and can load the app and get
+the secret as the app does.
+So a deployment sets the option where the app has an origin of its own, or
+where it trusts every page of its origin.
 
 Where the base URL is OpenRouter's, \verb{https://openrouter.ai/api/v1}, the
 chat also offers OpenRouter's login beside the field for the key.
@@ -157,7 +198,8 @@ module.
 That page hands the login's code to the app's page, and closes the window.
 The plugin then exchanges the code for the key, and keeps the key as it
 keeps a typed key.
-OpenRouter's page labels the key \code{blockr}, and has it expire after a day.
+OpenRouter's page labels the key \code{blockr}, and has it expire after a day,
+or after 30 days where the browser keeps the key.
 The visitor can change both as they authorize the app.
 The chat offers the login only on a page that the browser deems secure,
 such as one served over HTTPS or from localhost.

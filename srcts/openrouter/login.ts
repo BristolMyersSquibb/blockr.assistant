@@ -15,7 +15,7 @@
 // 4. The login sends the window to OpenRouter's page for the login. The URL
 //    carries the URL of the page that the login calls back, the code
 //    challenge that the login made from the verifier, the state, and a label
-//    and an expiry of a day for the new key.
+//    and an expiry for the new key.
 // 5. The visitor logs in and authorizes the app.
 // 6. OpenRouter sends the window to the page that the login calls back, with
 //    a code and the state in its query.
@@ -48,11 +48,20 @@
 // closes the channel.
 //
 // The key that a login gives is labelled blockr, so that the visitor can tell
-// it apart in their list of keys. It expires after a day. The visitor can
-// change both as they authorize. A reload drops the key, and a login after
-// it makes a new key. So the keys of earlier logins do not pile up on the
-// visitor's account. A key that expires while the page is open fails the
-// next call, and the chat then asks for a key again (../turns).
+// it apart in their list of keys. The visitor can change the label and the
+// expiry as they authorize. The expiry depends on where the key stays:
+// - Where the page keeps the key in its memory alone, the key expires after a
+//   day. A reload drops the key, and a login after it makes a new key. So the
+//   keys of earlier logins expire rather than pile up on the visitor's
+//   account.
+// - Where the browser keeps the key, as the deployment sets the blockr option
+//   assistant_key_secret, the key expires after 30 days. A reload finds the
+//   key, so the visitor logs in about once a month in each browser. A key
+//   that the browser loses, as when the visitor clears its storage, still
+//   expires within a month (../visitor-key).
+// A key that expires fails the next call, and the chat then asks for a key
+// again (../turns). Where the browser kept the key, the plugin removes it
+// from the browser's storage too.
 //
 // The browser makes the code challenge only on a page that it deems secure,
 // such as one served over HTTPS or from localhost. So the chat offers the
@@ -135,9 +144,12 @@ export interface OpenRouterLoginOptions {
 }
 
 // The label and the expiry of the key that a login makes, which OpenRouter's
-// page for the login fills in, and which the visitor can change there.
+// page for the login fills in, and which the visitor can change there. The
+// key expires after a day where the page keeps it in its memory alone, and
+// after 30 days where the browser keeps it.
 const LABEL = "blockr";
 const EXPIRATION = "1-day";
+const KEPT_EXPIRATION = "30-days";
 
 const IDLE: OpenRouterLoginState = { kind: "idle" };
 const EXCHANGING: OpenRouterLoginState = { kind: "exchanging" };
@@ -219,8 +231,9 @@ export function createOpenRouterLogin(options: OpenRouterLoginOptions): OpenRout
         });
       }
       set(IDLE);
+      const expiration = options.key.kept() ? KEPT_EXPIRATION : EXPIRATION;
       void challengeOf(verifier).then((challenge) => {
-        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState));
+        login.location.replace(authUrlOf(urls, callbackUrl, challenge, loginState, expiration));
       });
     },
   };
@@ -242,7 +255,7 @@ export function openRouterLoginOf(key: VisitorKey): OpenRouterLogin {
 
 // The URL of OpenRouter's page for the login, with the parameters that it
 // takes.
-function authUrlOf(urls: OpenRouterUrls, callbackUrl: string, challenge: string, state: string): string {
+function authUrlOf(urls: OpenRouterUrls, callbackUrl: string, challenge: string, state: string, expiration: string): string {
   const url = new URL(urls.authUrl);
   url.search = new URLSearchParams({
     callback_url: callbackUrl,
@@ -250,7 +263,7 @@ function authUrlOf(urls: OpenRouterUrls, callbackUrl: string, challenge: string,
     code_challenge_method: "S256",
     state,
     key_label: LABEL,
-    expiration: EXPIRATION,
+    expiration,
   }).toString();
   return url.href;
 }

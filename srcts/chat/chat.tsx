@@ -158,7 +158,7 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
   const keyField = useMemo<KeyField | undefined>(() => {
     if (deployment === undefined || !visitorAuthenticates || visitorKey.kind === "given") return undefined;
     const offered = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : undefined;
-    return { state: visitorKey, host: new URL(deployment.baseUrl).host, openRouterLogin: offered };
+    return { state: visitorKey, host: new URL(deployment.baseUrl).host, kept: assistant.key.kept(), openRouterLogin: offered };
   }, [assistant, deployment, openRouterLogin, visitorAuthenticates, visitorKey]);
 
   // Assistant-ui keeps what it converted of each item that the chat gives it

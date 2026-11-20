@@ -1,8 +1,9 @@
 // The login with OpenRouter (./login.ts), on happy-dom, with a window and a
 // fetch of the test's own: the window that the login opens and where it sends
-// it, the code that it takes from the channel, the exchange of the code for
-// the key, what the login says where the exchange fails or the browser blocks
-// the window, where the chat offers the login, and the login of each key.
+// it, with the expiry of a key that the page or the browser keeps, the code
+// that it takes from the channel, the exchange of the code for the key, what
+// the login says where the exchange fails or the browser blocks the window,
+// where the chat offers the login, and the login of each key.
 // The page that the login calls back posts on the channel as the test does
 // here (./callback.ts). The browser tests run the whole login in Chromium,
 // against a mock of OpenRouter's (./login.browser.test.ts).
@@ -122,6 +123,17 @@ describe("the login", () => {
     expect(url.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(url.searchParams.get("key_label")).toBe("blockr");
     expect(url.searchParams.get("expiration")).toBe("1-day");
+  });
+
+  test("asks for an expiry of 30 days where the browser keeps the key, so that a reload finds a key that still works", async () => {
+    const key = createVisitorKey();
+    const nothing = () => Promise.resolve(undefined);
+    await key.keepIn({ read: nothing, write: nothing, remove: nothing });
+    const { login, windows } = started({ key });
+
+    login.start();
+
+    expect((await sentTo(windows)).searchParams.get("expiration")).toBe("30-days");
   });
 
   test("exchanges the code of its own state, with the verifier whose SHA-256 is the challenge, and gives the visitor's key the key", async () => {

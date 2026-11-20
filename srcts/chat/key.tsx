@@ -15,7 +15,9 @@
 // form, with the host as the user name and the key as the password, so that
 // its password manager can save the key, where the visitor lets it, and fill
 // it in after a reload or in another tab. The plugin keeps the key in its
-// memory alone, as the visitor gives it (../visitor-key).
+// memory, as the visitor gives it. Where the deployment sets the blockr option
+// assistant_key_secret, the browser keeps the key as well, and the field's
+// note says so (../visitor-key).
 //
 // Where the base URL is OpenRouter's, the field offers OpenRouter's login, in
 // a button above the key (../openrouter):
@@ -94,14 +96,15 @@ function alerts({ state, openRouterLogin }: KeyField): boolean {
 
 // What the field says of why the chat asks for a key, or of why OpenRouter's
 // login failed.
-export function noteOf({ state, host, openRouterLogin }: KeyField): string {
+export function noteOf({ state, host, kept, openRouterLogin }: KeyField): string {
   if (openRouterLogin?.kind === "blocked") return "The browser blocked the login's window. Allow pop-ups for this page, or enter your API key.";
   if (openRouterLogin?.kind === "failed") return `${openRouterLogin.reason} Log in again, or enter your API key.`;
   switch (state.kind) {
     case "missing":
-      return openRouterLogin === undefined
-        ? `Enter your API key for ${host}. The assistant keeps it only until the page reloads.`
-        : `Log in with OpenRouter, or enter your API key for ${host}. The assistant keeps the key only until the page reloads.`;
+      if (openRouterLogin === undefined) {
+        return `Enter your API key for ${host}. ${kept ? "The browser keeps it for this app." : "The assistant keeps it only until the page reloads."}`;
+      }
+      return `Log in with OpenRouter, or enter your API key for ${host}. ${kept ? "The browser keeps the key for this app." : "The assistant keeps the key only until the page reloads."}`;
     case "refused":
       return openRouterLogin === undefined
         ? `The server at ${host} refused your key. Enter another one.`

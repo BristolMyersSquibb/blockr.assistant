@@ -341,6 +341,11 @@ function callBack(sentTo: string | undefined): void {
   channel.postMessage({ code: "code-1", state: new URL(sentTo ?? "").searchParams.get("state") });
 }
 
+// The names of the entries of local storage that keep a visitor's key.
+function keyEntries(): string[] {
+  return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? "").filter((name) => name.startsWith("blockr.assistant-visitor_key"));
+}
+
 // A reply of pi's fake provider that records the key of the call.
 function keyed(into: (string | undefined)[], text = "Hello."): FauxResponseStep {
   return (_context, options) => {
@@ -553,6 +558,49 @@ describe("the chat's field for the visitor's key", () => {
     expect(keys).toEqual(["sk-visitor"]);
     const stored = [storedIn(localStorage), storedIn(sessionStorage), JSON.stringify([core.store.board(), sent])];
     expect(stored.join("\n")).not.toContain("sk-visitor");
+  });
+
+  test("says that the browser keeps the key where the app sets a secret for it, and keeps a key once a call takes it, so that the chat after a reload asks for none", async () => {
+    const keys: (string | undefined)[] = [];
+    const credential: Credential = { kind: "visitor", keySecret: "a-long-random-secret" };
+    const first = await chat({ credential, replies: [keyed(keys)] });
+    await act(() => first.assistant.deployment);
+
+    expect(first.el.querySelector(".blockr-assistant-key-note")?.textContent).toBe("Enter your API key for faux.invalid. The browser keeps it for this app.");
+    giveKey(first.el, "sk-visitor");
+    await settle();
+    expect(keyEntries()).toEqual([]);
+
+    type(first.el, "How many blocks?");
+    press(field(first.el), "Enter");
+    await until(() => keyEntries().length > 0, "the entry of the key");
+    expect(keyEntries()).toEqual([`blockr.assistant-visitor_key ["/","https://faux.invalid/v1"]`]);
+    expect(storedIn(localStorage)).not.toContain("sk-visitor");
+
+    // A reload forgets the page's key, so the next chat finds the key that the
+    // browser kept, which the key has read once the deployment resolves.
+    const next = await chat({ credential, key: createVisitorKey(), replies: [keyed(keys)] });
+    await act(() => next.assistant.deployment);
+    expect(next.assistant.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
+    expect(next.el.querySelector(".blockr-assistant-key")).toBeNull();
+    type(next.el, "How many blocks?");
+    press(field(next.el), "Enter");
+    await until(() => keys.length === 2 && next.assistant.turns.current() === undefined, "the reply after the reload");
+    expect(keys).toEqual(["sk-visitor", "sk-visitor"]);
+  });
+
+  test("says that the browser keeps the key beside OpenRouter's login, whose key then expires after 30 days", async () => {
+    const key = createVisitorKey();
+    const { login: openRouterLogin, sentTo } = fauxOpenRouterLogin(key);
+    const { el, assistant } = await chat({ credential: { kind: "visitor", keySecret: "a-long-random-secret" }, key, openRouterLogin });
+    await act(() => assistant.deployment);
+
+    expect(el.querySelector(".blockr-assistant-key-note")?.textContent).toBe(
+      "Log in with OpenRouter, or enter your API key for faux.invalid. The browser keeps the key for this app.",
+    );
+    click(el.querySelector(".blockr-assistant-openrouter"));
+    await until(() => sentTo.length > 0, "the login's window");
+    expect(new URL(sentTo[0] ?? "").searchParams.get("expiration")).toBe("30-days");
   });
 
   test("asks again, with an empty field, once the base URL refuses the key", async () => {
