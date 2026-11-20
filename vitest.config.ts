@@ -34,6 +34,18 @@ function chromium() {
 
 export default defineConfig({
   test: {
+    // Each run collects the coverage of both projects.
+    // So `npm test` writes coverage/lcov.info, which CI uploads to Codecov.
+    // The lcov reporter writes that file, as the default reporters write none.
+    // With `include` set, a source that no test imports counts as uncovered.
+    // Vitest leaves the test files out by itself, and `exclude` leaves out the
+    // helpers of the tests in srcts/testing.
+    coverage: {
+      enabled: true,
+      reporter: ["text", "lcov"],
+      include: ["srcts/**/*.{ts,tsx}"],
+      exclude: ["srcts/testing/**"],
+    },
     projects: [
       {
         plugins: [markdownText],
