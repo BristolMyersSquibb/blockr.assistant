@@ -37,11 +37,17 @@ export default defineConfig({
     // Each run collects the coverage of both projects.
     // So `npm test` writes coverage/lcov.info, which CI uploads to Codecov.
     // The lcov reporter writes that file, as the default reporters write none.
+    // Istanbul measures the coverage, as in blockr.core,
+    // so that the packages measure it the same way.
+    // Istanbul counts the code of the sources in srcts alone.
+    // V8 counts all the code that runs, the libraries in node_modules included.
+    // That makes the tests slower.
     // With `include` set, a source that no test imports counts as uncovered.
     // Vitest leaves the test files out by itself, and `exclude` leaves out the
     // helpers of the tests in srcts/testing.
     coverage: {
       enabled: true,
+      provider: "istanbul",
       reporter: ["text", "lcov"],
       include: ["srcts/**/*.{ts,tsx}"],
       exclude: ["srcts/testing/**"],
