@@ -37,7 +37,6 @@ import type { KeyboardEvent, ReactElement, RefObject } from "react";
 import { Button, TextField } from "@blockr/core/react";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import { normalizeTitle } from "../titles/index.ts";
-import { withAttributes } from "./attributes.tsx";
 
 export interface DrawerProps {
   readonly onClose: () => void;
@@ -90,7 +89,7 @@ export function Drawer(props: DrawerProps): ReactElement {
       <section className="blockr-assistant-drawer-sheet" role="dialog" aria-labelledby={heading}>
         <div className="blockr-assistant-drawer-top">
           <h2 id={heading}>Conversations</h2>
-          <Button variant="quiet" className="blockr-assistant-drawer-close" aria-label="Close" render={withAttributes({ title: "Close" })} onPress={onClose}>
+          <Button variant="quiet" className="blockr-assistant-drawer-close" aria-label="Close" onPress={onClose}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
@@ -192,7 +191,6 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
           <Button
             variant="quiet"
             aria-label={`Rename “${conversation.title}”`}
-            render={withAttributes({ title: "Rename" })}
             onPress={() => {
               setMode("renaming");
             }}
@@ -204,7 +202,6 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
           <Button
             variant="quiet"
             aria-label={`Delete “${conversation.title}”`}
-            render={withAttributes({ title: "Delete" })}
             onPress={() => {
               setMode("confirming");
             }}
@@ -221,7 +218,6 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
             variant="quiet"
             className="blockr-assistant-drawer-confirm-yes"
             aria-label={`Delete “${conversation.title}”`}
-            render={withAttributes({ title: "Delete" })}
             onPress={() => {
               setMode("deleting");
               onDelete(id).catch(() => {
@@ -238,7 +234,6 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
             className="blockr-assistant-drawer-confirm-no"
             aria-label={`Keep “${conversation.title}”`}
             autoFocus
-            render={withAttributes({ title: "Keep" })}
             onPress={() => {
               setMode("shown");
             }}

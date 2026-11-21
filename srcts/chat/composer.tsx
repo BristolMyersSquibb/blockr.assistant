@@ -59,7 +59,6 @@ import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactElement } from "react";
 import { Button } from "@blockr/core/react";
 import { ACCEPT, PASTE_AS_FILE, pastedFile } from "../attachments/index.ts";
-import { withAttributes } from "./attributes.tsx";
 import { useChat, useChatActions } from "./context.ts";
 import { StagedFiles } from "./files.tsx";
 import { libraries } from "./libraries.ts";
@@ -326,7 +325,6 @@ export function Composer(): ReactElement {
               className="blockr-assistant-stop"
               isPending={running.stopping}
               aria-label={running.stopping ? "Stopping" : "Stop"}
-              render={withAttributes({ title: running.stopping ? "Stopping" : "Stop" })}
               onPress={stop}
             >
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -339,7 +337,6 @@ export function Composer(): ReactElement {
               className="blockr-assistant-send"
               isDisabled={commandWaits}
               aria-label={commandLabel}
-              render={withAttributes({ title: commandLabel })}
               onPress={() => {
                 run(command, text);
               }}

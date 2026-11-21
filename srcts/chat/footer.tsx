@@ -25,7 +25,6 @@
 // clips it (BristolMyersSquibb/blockr.core#684). Neither offers to clear its
 // pick.
 
-import { useMemo } from "react";
 import type { ReactElement, RefObject } from "react";
 import { Button, ComboBox, ComboBoxItem } from "@blockr/core/react";
 import type { Picks } from "../conversations/index.ts";
@@ -33,7 +32,6 @@ import { resolveModel } from "../models/index.ts";
 import type { Offered } from "../models/index.ts";
 import type { ThinkingLevel, Usage } from "../state/index.ts";
 import type { LevelsOf, LevelsOfModel } from "../thinking-levels/index.ts";
-import { withAttributes } from "./attributes.tsx";
 
 export interface FooterProps {
   // The usage of the open conversation, or undefined on the greeting.
@@ -55,10 +53,9 @@ export interface FooterProps {
 
 export function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, opener, onDrawer }: FooterProps): ReactElement {
   const next = offered === undefined ? undefined : resolveModel(offered, picks.model);
-  const drawerButton = useMemo(() => withAttributes({ title: "Conversations", ref: opener }), [opener]);
   return (
     <div className="blockr-assistant-footer">
-      <Button variant="quiet" className="blockr-assistant-footer-button" aria-label="Conversations" render={drawerButton} onPress={onDrawer}>
+      <Button variant="quiet" className="blockr-assistant-footer-button" aria-label="Conversations" ref={opener} onPress={onDrawer}>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 3v3h3" />
           <path d="M2.75 6A5.5 5.5 0 1 1 3 9.6" />

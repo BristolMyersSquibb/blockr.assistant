@@ -26,7 +26,6 @@ import type { Attachment } from "@assistant-ui/react";
 import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
 import { kindOf, PDF } from "../attachments/index.ts";
 import type { KeptFile } from "../conversations/index.ts";
-import { withAttributes } from "./attributes.tsx";
 import { useChatActions } from "./context.ts";
 import { libraries } from "./libraries.ts";
 import type { SentFile } from "./messages.ts";
@@ -98,7 +97,6 @@ function Sent({ file }: { readonly file: SentFile }): ReactElement {
     <Button
       variant="secondary"
       className="blockr-assistant-file"
-      render={withAttributes({ title: `Open ${file.name}` })}
       onPress={() => {
         openFile({ name: file.name, mediaType: file.media_type, content });
       }}
@@ -144,7 +142,7 @@ export const FileDialog = memo(function FileDialog({ file, onClose }: { readonly
           <Heading slot="title" level={2}>
             {file.name}
           </Heading>
-          <Button variant="quiet" className="blockr-assistant-file-view-close" aria-label="Close" render={withAttributes({ title: "Close" })} onPress={onClose}>
+          <Button variant="quiet" className="blockr-assistant-file-view-close" aria-label="Close" onPress={onClose}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
             </svg>
