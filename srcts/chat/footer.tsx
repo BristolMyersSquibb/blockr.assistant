@@ -1,7 +1,7 @@
 // The chat's footer, one row under the message field, as today's footer
 // (R/ext-server.R#L164-L207 at fcbdb27), with four things:
 // - The button that opens the drawer of conversations over the chat
-//   (./drawer.tsx).
+//   (./drawer.tsx), which is a Button of core's React SDK.
 // - The model that the open conversation's next turn talks to, beside the
 //   meter (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model).
 //   It shows where the deployment names several models or names none, as a
@@ -26,7 +26,7 @@
 // pick.
 
 import type { ReactElement, RefObject } from "react";
-import { ComboBox, ComboBoxItem } from "@blockr/core/react";
+import { Button, ComboBox, ComboBoxItem } from "@blockr/core/react";
 import type { Picks } from "../conversations/index.ts";
 import { resolveModel } from "../models/index.ts";
 import type { Offered } from "../models/index.ts";
@@ -55,13 +55,13 @@ export function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, o
   const next = offered === undefined ? undefined : resolveModel(offered, picks.model);
   return (
     <div className="blockr-assistant-footer">
-      <button ref={opener} type="button" className="blockr-assistant-footer-button" title="Conversations" aria-label="Conversations" onClick={onDrawer}>
+      <Button variant="quiet" className="blockr-assistant-footer-button" aria-label="Conversations" ref={opener} onPress={onDrawer}>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 3v3h3" />
           <path d="M2.75 6A5.5 5.5 0 1 1 3 9.6" />
           <path d="M8 5v3.2l2.2 1.3" />
         </svg>
-      </button>
+      </Button>
       {offered === undefined || next === undefined ? null : <Model pick={picks.model} next={next} offered={offered} onPick={onPick} />}
       {next === undefined || levelsOf === undefined ? null : (
         <Level levels={levelsOf(next, picks.thinkingLevel, offered?.settings?.get(next))} onPick={onPickLevel} />

@@ -5179,12 +5179,12 @@ function nextAssistant(core) {
 }
 
 // srcts/chat/panel.tsx
-import { useEffect as useEffect6, useState as useState7 } from "react";
+import { useEffect as useEffect5, useState as useState7 } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // srcts/chat/chat.tsx
-import { useCallback as useCallback2, useMemo as useMemo6, useRef as useRef5, useState as useState6 } from "react";
+import { useCallback as useCallback2, useMemo as useMemo6, useRef as useRef3, useState as useState6 } from "react";
 
 // srcts/chat/attach.ts
 function attachmentAdapter() {
@@ -5245,7 +5245,8 @@ function stagedBytes(field) {
 }
 
 // srcts/chat/composer.tsx
-import { useId, useLayoutEffect, useMemo as useMemo2, useRef as useRef2, useState as useState2 } from "react";
+import { useId, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState2 } from "react";
+import { Button as Button2 } from "@blockr/core/react";
 
 // srcts/chat/context.ts
 import { createContext, useContext } from "react";
@@ -5263,7 +5264,8 @@ function useChat() {
 }
 
 // srcts/chat/files.tsx
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
 
 // srcts/chat/libraries.ts
 var loading2;
@@ -5333,12 +5335,11 @@ function Sent({ file }) {
     );
   }
   return /* @__PURE__ */ jsxs(
-    "button",
+    Button,
     {
-      type: "button",
+      variant: "secondary",
       className: "blockr-assistant-file",
-      title: `Open ${file.name}`,
-      onClick: () => {
+      onPress: () => {
         openFile({ name: file.name, mediaType: file.media_type, content });
       },
       children: [
@@ -5353,28 +5354,21 @@ function FileMark({ name, mediaType, url }) {
   return /* @__PURE__ */ jsx("span", { className: "blockr-assistant-file-badge", children: badgeOf(name, mediaType) });
 }
 var FileDialog = memo(function FileDialog2({ file, onClose }) {
-  const ref = useRef(null);
   const url = useObjectUrl(file === void 0 || kindOf(file.mediaType) === "text" ? void 0 : file.content.blob);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (file !== void 0 && !dialog.open) dialog.showModal();
-    if (file === void 0 && dialog.open) dialog.close();
-  }, [file]);
+  if (file === void 0) return null;
   return /* @__PURE__ */ jsx(
-    "dialog",
+    Modal,
     {
-      ref,
-      className: "blockr-assistant-dialog blockr-assistant-file-dialog",
-      "aria-label": file?.name ?? "File",
-      onClose,
-      onClick: (event) => {
-        if (event.target === event.currentTarget) onClose();
+      isOpen: true,
+      isDismissable: true,
+      onOpenChange: (isOpen) => {
+        if (!isOpen) onClose();
       },
-      children: file === void 0 ? null : /* @__PURE__ */ jsxs("div", { className: "blockr-assistant-file-view", children: [
+      className: "blockr-assistant-overlay blockr-assistant-file-dialog",
+      children: /* @__PURE__ */ jsxs(Dialog, { className: "blockr-assistant-file-view", children: [
         /* @__PURE__ */ jsxs("div", { className: "blockr-assistant-file-view-head", children: [
-          /* @__PURE__ */ jsx("h2", { children: file.name }),
-          /* @__PURE__ */ jsx("button", { type: "button", className: "blockr-assistant-file-view-close", title: "Close", "aria-label": "Close", onClick: onClose, children: /* @__PURE__ */ jsx("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4.5 4.5l7 7M11.5 4.5l-7 7" }) }) })
+          /* @__PURE__ */ jsx(Heading, { slot: "title", level: 2, children: file.name }),
+          /* @__PURE__ */ jsx(Button, { variant: "quiet", className: "blockr-assistant-file-view-close", "aria-label": "Close", onPress: onClose, children: /* @__PURE__ */ jsx("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4.5 4.5l7 7M11.5 4.5l-7 7" }) }) })
         ] }),
         /* @__PURE__ */ jsx("div", { className: "blockr-assistant-file-view-body", children: /* @__PURE__ */ jsx(FileView, { file, url }) })
       ] })
@@ -5474,14 +5468,14 @@ function Composer() {
   const { commandNote, filesNote, history, noKey, running, runsHere, skills, titleOf } = useChat();
   const aui = useAui();
   const text3 = useAuiState(({ composer }) => composer.text);
-  const field = useRef2(null);
-  const picker = useRef2(null);
-  const list = useRef2(null);
+  const field = useRef(null);
+  const picker = useRef(null);
+  const list = useRef(null);
   const [recalled, setRecalled] = useState2(void 0);
   const listId = useId();
   const [highlighted, setHighlighted] = useState2(FIRST);
   const [closedFor, setClosedFor] = useState2(void 0);
-  const commandRuns = useRef2(false);
+  const commandRuns = useRef(false);
   const commands = useMemo2(() => slashCommands(skills), [skills]);
   const command2 = slashCommandOf(text3, skills);
   const showsRecalled = recalled !== void 0 && history[recalled] === text3;
@@ -5683,26 +5677,23 @@ function Composer() {
           }
         ),
         runsHere && running !== void 0 ? /* @__PURE__ */ jsx2(
-          "button",
+          Button2,
           {
-            type: "button",
+            variant: "primary",
             className: "blockr-assistant-stop",
-            "data-stopping": running.stopping ? "" : void 0,
-            disabled: running.stopping,
-            title: running.stopping ? "Stopping" : "Stop",
+            isPending: running.stopping,
             "aria-label": running.stopping ? "Stopping" : "Stop",
-            onClick: stop,
+            onPress: stop,
             children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("rect", { x: "4", y: "4", width: "8", height: "8", rx: "1.5" }) })
           }
         ) : command2 !== void 0 ? /* @__PURE__ */ jsx2(
-          "button",
+          Button2,
           {
-            type: "button",
+            variant: "primary",
             className: "blockr-assistant-send",
-            disabled: commandWaits,
-            title: commandLabel,
+            isDisabled: commandWaits,
             "aria-label": commandLabel,
-            onClick: () => {
+            onPress: () => {
               run(command2, text3);
             },
             children: /* @__PURE__ */ jsx2("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx2("path", { d: "M8 13V3M3.5 7.5 8 3l4.5 4.5" }) })
@@ -5716,12 +5707,13 @@ function Composer() {
 }
 
 // srcts/chat/drawer.tsx
-import { useEffect as useEffect2, useId as useId2, useMemo as useMemo3, useRef as useRef3, useState as useState3 } from "react";
+import { useEffect as useEffect2, useId as useId2, useMemo as useMemo3, useRef as useRef2, useState as useState3 } from "react";
+import { Button as Button3, TextField } from "@blockr/core/react";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var DAY = 24 * 60 * 60 * 1e3;
 function Drawer(props) {
   const { onClose, opener, conversations, open: open2, running } = props;
-  const search = useRef3(null);
+  const search = useRef2(null);
   const heading = useId2();
   const [query, setQuery] = useState3("");
   useEffect2(() => {
@@ -5743,10 +5735,10 @@ function Drawer(props) {
     /* @__PURE__ */ jsxs3("section", { className: "blockr-assistant-drawer-sheet", role: "dialog", "aria-labelledby": heading, children: [
       /* @__PURE__ */ jsxs3("div", { className: "blockr-assistant-drawer-top", children: [
         /* @__PURE__ */ jsx3("h2", { id: heading, children: "Conversations" }),
-        /* @__PURE__ */ jsx3("button", { type: "button", className: "blockr-assistant-drawer-close", title: "Close", "aria-label": "Close", onClick: onClose, children: /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M4 4l8 8M12 4l-8 8" }) }) })
+        /* @__PURE__ */ jsx3(Button3, { variant: "quiet", className: "blockr-assistant-drawer-close", "aria-label": "Close", onPress: onClose, children: /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M4 4l8 8M12 4l-8 8" }) }) })
       ] }),
       /* @__PURE__ */ jsxs3("div", { className: "blockr-assistant-drawer-tools", children: [
-        /* @__PURE__ */ jsxs3("button", { type: "button", className: "blockr-assistant-drawer-new", onClick: props.onNew, children: [
+        /* @__PURE__ */ jsxs3(Button3, { variant: "secondary", className: "blockr-assistant-drawer-new", onPress: props.onNew, children: [
           /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M8 3.5v9M3.5 8h9" }) }),
           "New"
         ] }),
@@ -5789,10 +5781,6 @@ function Drawer(props) {
 }
 function Row({ id, conversation: conversation2, open: open2, running, onSelect, onRename, onDelete }) {
   const [mode, setMode] = useState3("shown");
-  const keep2 = useRef3(null);
-  useEffect2(() => {
-    if (mode === "confirming") keep2.current?.focus();
-  }, [mode]);
   if (mode === "renaming") {
     return /* @__PURE__ */ jsx3("li", { className: "blockr-assistant-drawer-row", "data-open": open2 ? "" : void 0, children: /* @__PURE__ */ jsx3(
       Rename,
@@ -5825,24 +5813,22 @@ function Row({ id, conversation: conversation2, open: open2, running, onSelect, 
     ),
     mode === "shown" ? /* @__PURE__ */ jsxs3("span", { className: "blockr-assistant-drawer-actions", children: [
       /* @__PURE__ */ jsx3(
-        "button",
+        Button3,
         {
-          type: "button",
-          title: "Rename",
+          variant: "quiet",
           "aria-label": `Rename \u201C${conversation2.title}\u201D`,
-          onClick: () => {
+          onPress: () => {
             setMode("renaming");
           },
           children: /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M10.5 3.5l2 2L6 12H4v-2z" }) })
         }
       ),
       /* @__PURE__ */ jsx3(
-        "button",
+        Button3,
         {
-          type: "button",
-          title: "Delete",
+          variant: "quiet",
           "aria-label": `Delete \u201C${conversation2.title}\u201D`,
-          onClick: () => {
+          onPress: () => {
             setMode("confirming");
           },
           children: /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" }) })
@@ -5851,13 +5837,12 @@ function Row({ id, conversation: conversation2, open: open2, running, onSelect, 
     ] }) : mode === "confirming" ? /* @__PURE__ */ jsxs3("span", { className: "blockr-assistant-drawer-confirm", children: [
       "Delete?",
       /* @__PURE__ */ jsx3(
-        "button",
+        Button3,
         {
-          type: "button",
+          variant: "quiet",
           className: "blockr-assistant-drawer-confirm-yes",
-          title: "Delete",
           "aria-label": `Delete \u201C${conversation2.title}\u201D`,
-          onClick: () => {
+          onPress: () => {
             setMode("deleting");
             onDelete(id).catch(() => {
               setMode("shown");
@@ -5867,14 +5852,13 @@ function Row({ id, conversation: conversation2, open: open2, running, onSelect, 
         }
       ),
       /* @__PURE__ */ jsx3(
-        "button",
+        Button3,
         {
-          ref: keep2,
-          type: "button",
+          variant: "quiet",
           className: "blockr-assistant-drawer-confirm-no",
-          title: "Keep",
           "aria-label": `Keep \u201C${conversation2.title}\u201D`,
-          onClick: () => {
+          autoFocus: true,
+          onPress: () => {
             setMode("shown");
           },
           children: /* @__PURE__ */ jsx3("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ jsx3("path", { d: "M4 4l8 8M12 4l-8 8" }) })
@@ -5885,31 +5869,28 @@ function Row({ id, conversation: conversation2, open: open2, running, onSelect, 
 }
 function Rename({ title: title2, onDone }) {
   const [draft, setDraft] = useState3(title2);
-  const field = useRef3(null);
-  useEffect2(() => {
-    field.current?.select();
-  }, []);
-  const keys2 = (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const renamed = normalizeTitle(draft);
-      if (renamed !== void 0) onDone(renamed);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      onDone(void 0);
-    }
-  };
   return /* @__PURE__ */ jsx3(
-    "input",
+    TextField,
     {
-      ref: field,
       className: "blockr-assistant-drawer-rename",
       "aria-label": "Title of the conversation",
       value: draft,
-      onChange: (event) => {
-        setDraft(event.currentTarget.value);
+      onChange: setDraft,
+      autoFocus: true,
+      onFocus: (event) => {
+        event.target.select();
       },
-      onKeyDown: keys2,
+      onKeyDown: (event) => {
+        event.continuePropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const renamed = normalizeTitle(draft);
+          if (renamed !== void 0) onDone(renamed);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          onDone(void 0);
+        }
+      },
       onBlur: () => {
         onDone(void 0);
       }
@@ -5940,12 +5921,12 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
 }
 
 // srcts/chat/footer.tsx
-import { ComboBox, ComboBoxItem } from "@blockr/core/react";
+import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/core/react";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
   const next = offered === void 0 ? void 0 : resolveModel(offered, picks.model);
   return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-footer", children: [
-    /* @__PURE__ */ jsx4("button", { ref: opener, type: "button", className: "blockr-assistant-footer-button", title: "Conversations", "aria-label": "Conversations", onClick: onDrawer, children: /* @__PURE__ */ jsxs4("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsx4(Button4, { variant: "quiet", className: "blockr-assistant-footer-button", "aria-label": "Conversations", ref: opener, onPress: onDrawer, children: /* @__PURE__ */ jsxs4("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
       /* @__PURE__ */ jsx4("path", { d: "M2.5 3v3h3" }),
       /* @__PURE__ */ jsx4("path", { d: "M2.75 6A5.5 5.5 0 1 1 3 9.6" }),
       /* @__PURE__ */ jsx4("path", { d: "M8 5v3.2l2.2 1.3" })
@@ -6086,6 +6067,7 @@ var NO_SKILLS = [];
 
 // srcts/chat/key.tsx
 import { useId as useId3 } from "react";
+import { Button as Button5, TextField as TextField2 } from "@blockr/core/react";
 import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function KeyForm() {
   const { keyField } = useChat();
@@ -6108,8 +6090,9 @@ function Field({ field }) {
     /* @__PURE__ */ jsxs5("div", { className: "blockr-assistant-key-field", children: [
       /* @__PURE__ */ jsx5("input", { type: "text", name: "username", value: field.host, autoComplete: "username", readOnly: true, hidden: true }),
       /* @__PURE__ */ jsx5(
-        "input",
+        TextField2,
         {
+          className: "blockr-assistant-key-input",
           type: "password",
           name: "key",
           defaultValue: state.kind === "lost" ? state.key : "",
@@ -6117,17 +6100,17 @@ function Field({ field }) {
           "aria-label": "Your API key",
           "aria-describedby": note2,
           autoComplete: "current-password",
-          spellCheck: false
+          spellCheck: "false"
         }
       ),
-      /* @__PURE__ */ jsx5("button", { type: "submit", children: "Use key" })
+      /* @__PURE__ */ jsx5(Button5, { type: "submit", variant: "primary", children: "Use key" })
     ] })
   ] });
 }
 function OpenRouterButton({ login }) {
   const { logInWithOpenRouter } = useChatActions();
   const exchanging = login.kind === "exchanging";
-  return /* @__PURE__ */ jsx5("button", { type: "button", className: "blockr-assistant-openrouter", disabled: exchanging, onClick: logInWithOpenRouter, children: exchanging ? "Logging in\u2026" : "Log in with OpenRouter" });
+  return /* @__PURE__ */ jsx5(Button5, { variant: "secondary", className: "blockr-assistant-openrouter", isDisabled: exchanging, onPress: logInWithOpenRouter, children: exchanging ? "Logging in\u2026" : "Log in with OpenRouter" });
 }
 function alerts({ state, openRouterLogin }) {
   return state.kind !== "missing" || openRouterLogin?.kind === "blocked" || openRouterLogin?.kind === "failed";
@@ -6150,7 +6133,7 @@ function keepsOf(kept, appHost, key) {
 }
 
 // srcts/chat/links.tsx
-import { useEffect as useEffect4, useRef as useRef4 } from "react";
+import { Button as Button6, Dialog as Dialog2, Heading as Heading2, Modal as Modal2 } from "@blockr/core/react";
 import { jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var always = false;
 function leavesSite(href, page2) {
@@ -6180,51 +6163,53 @@ function TextLink({ href, title: title2, children }) {
   );
 }
 function LinkDialog({ url, onClose }) {
-  const ref = useRef4(null);
-  useEffect4(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (url !== void 0 && !dialog.open) {
-      dialog.showModal();
-      dialog.querySelector(".blockr-assistant-dialog-open")?.focus();
-    }
-    if (url === void 0 && dialog.open) dialog.close();
-  }, [url]);
+  if (url === void 0) return null;
   const open2 = (remember) => {
     if (remember) always = true;
-    if (url !== void 0) globalThis.open(url, "_blank", "noopener,noreferrer");
+    globalThis.open(url, "_blank", "noopener,noreferrer");
     onClose();
   };
-  return /* @__PURE__ */ jsxs6("dialog", { ref, className: "blockr-assistant-dialog", "aria-labelledby": "blockr-assistant-dialog-title", onClose, children: [
-    /* @__PURE__ */ jsx6("h2", { id: "blockr-assistant-dialog-title", children: "External Link" }),
-    /* @__PURE__ */ jsx6("p", { children: "This link will take you to an external website:" }),
-    /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-dialog-url", children: url }),
-    /* @__PURE__ */ jsxs6("div", { className: "blockr-assistant-dialog-buttons", children: [
-      /* @__PURE__ */ jsx6(
-        "button",
-        {
-          type: "button",
-          className: "blockr-assistant-dialog-always",
-          onClick: () => {
-            open2(true);
-          },
-          children: "Always open external links"
-        }
-      ),
-      /* @__PURE__ */ jsx6(
-        "button",
-        {
-          type: "button",
-          className: "blockr-assistant-dialog-open",
-          onClick: () => {
-            open2(false);
-          },
-          children: "Open Link"
-        }
-      ),
-      /* @__PURE__ */ jsx6("button", { type: "button", className: "blockr-assistant-dialog-cancel", onClick: onClose, children: "Cancel" })
-    ] })
-  ] });
+  return /* @__PURE__ */ jsx6(
+    Modal2,
+    {
+      isOpen: true,
+      onOpenChange: (isOpen) => {
+        if (!isOpen) onClose();
+      },
+      className: "blockr-assistant-overlay blockr-assistant-dialog",
+      children: /* @__PURE__ */ jsxs6(Dialog2, { children: [
+        /* @__PURE__ */ jsx6(Heading2, { slot: "title", level: 2, children: "External Link" }),
+        /* @__PURE__ */ jsx6("p", { children: "This link will take you to an external website:" }),
+        /* @__PURE__ */ jsx6("p", { className: "blockr-assistant-dialog-url", children: url }),
+        /* @__PURE__ */ jsxs6("div", { className: "blockr-assistant-dialog-buttons", children: [
+          /* @__PURE__ */ jsx6(
+            Button6,
+            {
+              variant: "quiet",
+              className: "blockr-assistant-dialog-always",
+              onPress: () => {
+                open2(true);
+              },
+              children: "Always open external links"
+            }
+          ),
+          /* @__PURE__ */ jsx6(
+            Button6,
+            {
+              variant: "primary",
+              className: "blockr-assistant-dialog-open",
+              autoFocus: true,
+              onPress: () => {
+                open2(false);
+              },
+              children: "Open Link"
+            }
+          ),
+          /* @__PURE__ */ jsx6(Button6, { variant: "secondary", className: "blockr-assistant-dialog-cancel", onPress: onClose, children: "Cancel" })
+        ] })
+      ] })
+    }
+  );
 }
 
 // srcts/chat/messages.ts
@@ -6418,6 +6403,7 @@ async function sendMessage(assistant, open2, text3, files, picks, opened2, skill
 
 // srcts/chat/transcript.tsx
 import { useMemo as useMemo5 } from "react";
+import { Button as Button8 } from "@blockr/core/react";
 
 // srcts/chat/greeting.ts
 var EMPTY = {
@@ -6435,7 +6421,8 @@ function greetingOf(board) {
 }
 
 // srcts/chat/markdown.tsx
-import { useEffect as useEffect5, useState as useState5 } from "react";
+import { useEffect as useEffect4, useState as useState5 } from "react";
+import { Button as Button7 } from "@blockr/core/react";
 import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
@@ -6458,7 +6445,7 @@ function Table({ children }) {
 }
 function CodeHeader({ language, code }) {
   const [copied, setCopied] = useState5(false);
-  useEffect5(() => {
+  useEffect4(() => {
     if (!copied) return;
     const timer = setTimeout(() => {
       setCopied(false);
@@ -6470,11 +6457,11 @@ function CodeHeader({ language, code }) {
   return /* @__PURE__ */ jsxs7("div", { className: "blockr-assistant-code-header", children: [
     /* @__PURE__ */ jsx8("span", { children: language ?? "" }),
     /* @__PURE__ */ jsx8(
-      "button",
+      Button7,
       {
-        type: "button",
+        variant: "quiet",
         className: "blockr-assistant-copy",
-        onClick: () => {
+        onPress: () => {
           const clipboard = globalThis.navigator?.clipboard;
           void clipboard?.writeText(code).then(
             () => {
@@ -6732,12 +6719,12 @@ function Greeting() {
     /* @__PURE__ */ jsx10("h3", { children: lead }),
     /* @__PURE__ */ jsx10("p", { children: note2 }),
     /* @__PURE__ */ jsx10("ul", { className: "blockr-assistant-suggestions", children: suggestions.map((suggestion) => /* @__PURE__ */ jsx10("li", { children: /* @__PURE__ */ jsx10(
-      "button",
+      Button8,
       {
-        type: "button",
+        variant: "secondary",
         className: "blockr-assistant-suggestion",
-        disabled: running !== void 0 || noKey,
-        onClick: () => {
+        isDisabled: running !== void 0 || noKey,
+        onPress: () => {
           send(suggestion);
         },
         children: suggestion
@@ -6833,7 +6820,7 @@ function Chat({ core, assistant }) {
   const [chosen, setChosen] = useState6(storedConversation);
   const [nextPicks, setNextPicks] = useNextPicks(assistant);
   const [drawer, setDrawer] = useState6(false);
-  const opener = useRef5(null);
+  const opener = useRef3(null);
   const [link, setLink] = useState6(void 0);
   const [file, setFile] = useState6(void 0);
   const [filesNote, setFilesNote] = useState6(void 0);
@@ -6841,7 +6828,7 @@ function Chat({ core, assistant }) {
   const skills = useSkills(assistant.skills);
   const [dragging, setDragging] = useState6(false);
   const attachments = useMemo6(() => attachmentAdapter(), []);
-  const adding = useRef5(Promise.resolve());
+  const adding = useRef3(Promise.resolve());
   const open2 = chosen !== void 0 && Object.hasOwn(all, chosen) ? chosen : void 0;
   const conversation2 = open2 === void 0 ? void 0 : all[open2];
   const messages = conversation2?.messages ?? NO_MESSAGES;
@@ -7019,7 +7006,6 @@ function Chat({ core, assistant }) {
   }, []);
   const escape = (event) => {
     if (event.key !== "Escape" || event.defaultPrevented || running === void 0) return;
-    if (event.target instanceof Element && event.target.closest("dialog") !== null) return;
     event.preventDefault();
     turns.stop();
   };
@@ -7179,7 +7165,7 @@ function Panel({ core }) {
 }
 function useAssistant(core) {
   const [assistant, setAssistant] = useState7(() => open(assistantOf(core)));
-  useEffect6(() => {
+  useEffect5(() => {
     if (assistant !== void 0 && !assistant.signal.aborted) {
       const closed2 = () => {
         setAssistant(void 0);
@@ -7201,7 +7187,7 @@ function useAssistant(core) {
 }
 function useLibraries(core) {
   const [loaded2, setLoaded] = useState7(librariesLoaded);
-  useEffect6(() => {
+  useEffect5(() => {
     if (loaded2 !== false) return;
     let live = true;
     loadLibraries().then(
@@ -7222,7 +7208,7 @@ function useLibraries(core) {
 function useThinkingLevels2(assistant) {
   const [, setLoaded] = useState7(void 0);
   const done = assistant !== void 0 && levelsLoaded.has(assistant);
-  useEffect6(() => {
+  useEffect5(() => {
     if (assistant === void 0 || done) return;
     let live = true;
     void assistant.thinkingLevels.load().then(() => {
@@ -7237,7 +7223,7 @@ function useThinkingLevels2(assistant) {
 }
 var levelsLoaded = /* @__PURE__ */ new WeakSet();
 function usePreloadedApi(assistant) {
-  useEffect6(() => {
+  useEffect5(() => {
     if (assistant === void 0) return;
     assistant.deployment.then(
       (deployment) => {

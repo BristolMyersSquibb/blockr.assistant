@@ -16,6 +16,8 @@
 //   that the turn is stopping until the turn ends, as where an edit waits in a
 //   command's prepare()
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#stopping-a-turn).
+//   It is a Button of core's React SDK. While the turn stops, the button is
+//   pending, so that it keeps the focus and takes no press.
 // - The button beside the text opens the system's file picker, and the field
 //   shows the files that it stages above the text (./files.tsx). A paste of
 //   files, or of a text longer than 1,000 characters, adds files too
@@ -50,9 +52,12 @@
 // page's body, outside the chat's element. For the same reason, the file
 // input that the button opens sits in the field, where assistant-ui's own
 // button puts one in the page's body.
+// The send button is assistant-ui's, which sends what the field holds. For a
+// slash command, a Button of the SDK takes its place and runs the command.
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactElement } from "react";
+import { Button } from "@blockr/core/react";
 import { ACCEPT, PASTE_AS_FILE, pastedFile } from "../attachments/index.ts";
 import { useChat, useChatActions } from "./context.ts";
 import { StagedFiles } from "./files.tsx";
@@ -315,34 +320,31 @@ export function Composer(): ReactElement {
             <textarea ref={field} rows={1} />
           </ComposerPrimitive.Input>
           {runsHere && running !== undefined ? (
-            <button
-              type="button"
+            <Button
+              variant="primary"
               className="blockr-assistant-stop"
-              data-stopping={running.stopping ? "" : undefined}
-              disabled={running.stopping}
-              title={running.stopping ? "Stopping" : "Stop"}
+              isPending={running.stopping}
               aria-label={running.stopping ? "Stopping" : "Stop"}
-              onClick={stop}
+              onPress={stop}
             >
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="4" y="4" width="8" height="8" rx="1.5" />
               </svg>
-            </button>
+            </Button>
           ) : command !== undefined ? (
-            <button
-              type="button"
+            <Button
+              variant="primary"
               className="blockr-assistant-send"
-              disabled={commandWaits}
-              title={commandLabel}
+              isDisabled={commandWaits}
               aria-label={commandLabel}
-              onClick={() => {
+              onPress={() => {
                 run(command, text);
               }}
             >
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
               </svg>
-            </button>
+            </Button>
           ) : (
             <ComposerPrimitive.Send className="blockr-assistant-send" title={sendLabel} aria-label={sendLabel}>
               <svg viewBox="0 0 16 16" aria-hidden="true">

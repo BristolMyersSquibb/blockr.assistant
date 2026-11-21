@@ -314,6 +314,23 @@ function rows(drawer: HTMLElement): string[] {
   return [...drawer.querySelectorAll(".blockr-assistant-drawer-title")].map((title) => title.textContent);
 }
 
+// The text field of the row that the user renames, or null where no row
+// shows one.
+function renameField(drawer: HTMLElement): HTMLInputElement | null {
+  return drawer.querySelector<HTMLInputElement>(".blockr-assistant-drawer-rename input");
+}
+
+// The modal of the dialog before a link opens another site, and that of a
+// file opened large, which React Aria draws at the end of the page's body, or
+// null where none is open.
+function linkDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".blockr-assistant-dialog");
+}
+
+function fileDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".blockr-assistant-file-dialog");
+}
+
 // The time, as ISO 8601, that lies the days given before now.
 function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -1056,6 +1073,73 @@ describe("the chat while a turn runs", () => {
     expect(el.querySelector(".blockr-assistant-reply")?.textContent).toBe("The reply that streams while no panel shows.");
     act(again);
   });
+
+  test("shows the stop button as pending while the turn stops, until the turn ends", async () => {
+    // A reply that goes on once the turn stops, until the test lets it go, as
+    // an edit that waits in a command's prepare() goes on until it settles.
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reply: FauxResponseStep = async () => {
+      await released;
+      return fauxAssistantMessage("Counted.");
+    };
+    const { el, assistant } = await chat({ replies: [reply] });
+
+    type(el, "Count.");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
+    click(el.querySelector(".blockr-assistant-stop"));
+    await settle();
+
+    const stop = el.querySelector<HTMLButtonElement>(".blockr-assistant-stop");
+    expect(assistant.turns.current()?.stopping).toBe(true);
+    expect(stop?.getAttribute("aria-label")).toBe("Stopping");
+    expect(stop?.getAttribute("aria-disabled")).toBe("true");
+    expect(stop?.hasAttribute("data-pending")).toBe(true);
+    // A pending button keeps the focus, as a disabled one would not.
+    expect(stop?.disabled).toBe(false);
+
+    release();
+    await until(() => assistant.turns.current() === undefined, "the turn to end");
+    expect(el.querySelector(".blockr-assistant-stop")).toBeNull();
+  });
+
+  test("closes the dialog before a link and that of a file on Escape, and leaves the turn that runs to go on", async () => {
+    localStorage.setItem(KEY, "c1");
+    const state: AssistantState = {
+      conversations: {
+        c1: conversation(
+          "Docs",
+          message("u1", "user", text("Where?"), { type: "attachment", name: "notes.md", media_type: "text/markdown" }),
+          message("a1", "assistant", text("See [the docs](https://example.org/docs).")),
+        ),
+      },
+    };
+    const held = heldReply("A reply that the turn holds until it stops.");
+    const { el, assistant } = await chat({ state, replies: [held.reply] });
+    act(() => {
+      assistant.conversations.keep("c1", "u1", { files: [{ blob: new Blob(["# Notes"], { type: "text/markdown" }) }] });
+    });
+    type(el, "And now?");
+    press(field(el), "Enter");
+    await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
+
+    click(el.querySelector(".blockr-assistant-markdown a"));
+    press(linkDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    await settle();
+    expect(linkDialog()).toBeNull();
+
+    click(el.querySelector(".blockr-assistant-user .blockr-assistant-file"));
+    press(fileDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    await settle();
+    expect(fileDialog()).toBeNull();
+
+    expect(assistant.turns.current()?.stopping).toBe(false);
+    held.release();
+    await until(() => assistant.turns.current() === undefined, "the turn to end");
+  });
 });
 
 describe("the chat's footer", () => {
@@ -1270,8 +1354,10 @@ describe("the chat's drawer of conversations", () => {
     const drawer = openDrawer(el);
 
     click(drawer.querySelector('[aria-label="Rename “Sales”"]'));
-    const field = drawer.querySelector<HTMLInputElement>(".blockr-assistant-drawer-rename");
+    const field = renameField(drawer);
     expect(field?.value).toBe("Sales");
+    await until(() => document.activeElement === field, "the focus in the field");
+    expect([field?.selectionStart, field?.selectionEnd]).toEqual([0, "Sales".length]);
     act(() => {
       if (field === null) return;
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "  Sales   by region ");
@@ -1285,10 +1371,32 @@ describe("the chat's drawer of conversations", () => {
     expect(rows(drawer)).toEqual(["Sales by region"]);
 
     click(drawer.querySelector('[aria-label="Rename “Sales by region”"]'));
-    press(drawer.querySelector(".blockr-assistant-drawer-rename") ?? drawer, "Escape");
+    press(renameField(drawer) ?? drawer, "Escape");
     await settle();
     expect(rows(drawer)).toEqual(["Sales by region"]);
     expect(drawerShown(el)).toBe(true);
+  });
+
+  test("keeps a conversation's title once the field that renames it loses the focus", async () => {
+    const { el, assistant } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } } });
+    const drawer = openDrawer(el);
+
+    click(drawer.querySelector('[aria-label="Rename “Sales”"]'));
+    const field = renameField(drawer);
+    await until(() => document.activeElement === field, "the focus in the field");
+    act(() => {
+      if (field === null) return;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "Costs");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      field?.blur();
+    });
+    await settle();
+
+    expect(renameField(drawer)).toBeNull();
+    expect(inState(assistant).c1?.title).toBe("Sales");
+    expect(rows(drawer)).toEqual(["Sales"]);
   });
 
   test("deletes a conversation once the user confirms in its row, and the open one opens the greeting", async () => {
@@ -1298,7 +1406,7 @@ describe("the chat's drawer of conversations", () => {
 
     click(drawer.querySelector('[aria-label="Delete “Sales”"]'));
     expect(drawer.querySelector(".blockr-assistant-drawer-confirm")?.textContent).toBe("Delete?");
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Keep “Sales”");
+    await until(() => document.activeElement?.getAttribute("aria-label") === "Keep “Sales”", "the focus on Keep");
     click(drawer.querySelector('[aria-label="Keep “Sales”"]'));
     expect(Object.keys(inState(assistant))).toEqual(["c1", "c2"]);
 
@@ -1759,15 +1867,51 @@ describe("the chat's text", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
 
     click(link);
-    const dialog = el.querySelector("dialog");
-    expect(dialog?.open).toBe(true);
+    // The dialog opens at the end of the page's body, outside the chat's
+    // element.
+    const dialog = linkDialog();
+    expect(dialog).not.toBeNull();
+    expect(el.contains(dialog)).toBe(false);
+    expect(dialog?.querySelector('[role="dialog"]')?.getAttribute("aria-labelledby")).toBe(dialog?.querySelector("h2")?.id);
+    expect(dialog?.querySelector("h2")?.textContent).toBe("External Link");
     expect(dialog?.querySelector(".blockr-assistant-dialog-url")?.textContent).toBe("https://example.org/docs");
-    expect(document.activeElement?.className).toBe("blockr-assistant-dialog-open");
+    await until(() => document.activeElement?.classList.contains("blockr-assistant-dialog-open") === true, "the focus on Open Link");
     expect(opened).not.toHaveBeenCalled();
 
     click(dialog?.querySelector(".blockr-assistant-dialog-open") ?? null);
     expect(opened).toHaveBeenCalledWith("https://example.org/docs", "_blank", "noopener,noreferrer");
-    expect(dialog?.open).toBe(false);
+    expect(linkDialog()).toBeNull();
+
+    click(link);
+    click(linkDialog()?.querySelector(".blockr-assistant-dialog-cancel") ?? null);
+    expect(linkDialog()).toBeNull();
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+
+  // The choice holds until the page reloads, and so for the tests of this
+  // file that follow, which open no link.
+  test("opens every later link to another site without the dialog, once the user chooses to", async () => {
+    const opened = vi.spyOn(globalThis, "open").mockImplementation(() => null);
+    const { el, assistant } = await chat({ replies: [fauxAssistantMessage("See [the docs](https://example.org/docs) and [the news](https://example.org/news).")] });
+
+    type(el, "Where?");
+    press(field(el), "Enter");
+    await until(() => el.querySelectorAll('.blockr-assistant-markdown[data-status="complete"] a').length === 2 && assistant.turns.current() === undefined, "the links");
+    const [docs, news] = el.querySelectorAll(".blockr-assistant-markdown a");
+
+    click(docs ?? null);
+    click(linkDialog()?.querySelector(".blockr-assistant-dialog-always") ?? null);
+    expect(opened).toHaveBeenCalledWith("https://example.org/docs", "_blank", "noopener,noreferrer");
+    expect(linkDialog()).toBeNull();
+
+    // The chat leaves the next link to the browser, which follows it into a
+    // tab of its own, as the test keeps it from doing here.
+    news?.addEventListener("click", (event) => {
+      event.preventDefault();
+    });
+    click(news ?? null);
+    expect(linkDialog()).toBeNull();
+    expect(opened).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1984,14 +2128,18 @@ describe("the files of a message that the user sent", () => {
       });
     });
     await settle();
-    const dialog = (): HTMLDialogElement | null => el.querySelector(".blockr-assistant-file-dialog");
+    const dialog = fileDialog;
 
     click(files(el)[0] ?? null);
-    expect(dialog()?.open).toBe(true);
+    // The dialog opens at the end of the page's body, outside the chat's
+    // element.
+    expect(dialog()).not.toBeNull();
+    expect(el.contains(dialog())).toBe(false);
+    expect(dialog()?.querySelector('[role="dialog"]')?.getAttribute("aria-labelledby")).toBe(dialog()?.querySelector("h2")?.id);
     expect(dialog()?.querySelector("h2")?.textContent).toBe("plot.png");
     expect(dialog()?.querySelector(".blockr-assistant-file-image")?.getAttribute("src")).toMatch(/^blob:/);
     click(dialog()?.querySelector(".blockr-assistant-file-view-close") ?? null);
-    expect(dialog()?.open).toBe(false);
+    expect(dialog()).toBeNull();
 
     click(files(el)[1] ?? null);
     await settle();
@@ -2001,6 +2149,28 @@ describe("the files of a message that the user sent", () => {
     click(files(el)[2] ?? null);
     await until(() => dialog()?.querySelector(".blockr-assistant-file-text") !== null, "the text");
     expect(dialog()?.querySelector(".blockr-assistant-file-text")?.textContent).toBe("# Notes");
+  });
+
+  test("close the dialog of a file on a press outside it", async () => {
+    const { el, assistant } = await chat({ state: withFiles() });
+    act(() => {
+      assistant.conversations.keep("c1", "u1", { files: [{ blob: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: "image/png" }) }] });
+    });
+    await settle();
+
+    click(files(el)[0] ?? null);
+    // The element around the dialog, which centres it in the window, lies
+    // under the modal's backdrop, outside the dialog.
+    const outside = fileDialog()?.parentElement ?? null;
+    expect(outside).not.toBeNull();
+    // A press is the pointer going down and up, and then the click.
+    act(() => {
+      outside?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+      outside?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, pointerType: "mouse" }));
+      outside?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+    await settle();
+    expect(fileDialog()).toBeNull();
   });
 
   test("show by their names alone, and open nothing, where the memory lacks their content, and say which the provider refused", async () => {

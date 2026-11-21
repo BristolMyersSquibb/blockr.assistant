@@ -257,7 +257,8 @@
   plugin, in React on assistant-ui 0.15.36, in place of shinychat's chat
   (#229).
   The chat draws only in the element that the frontend gives it and in the
-  browser's top layer, and it fits a panel as narrow as a rail.
+  overlays of core's React SDK, and it fits a panel as narrow as a rail.
+  Its dialogs, buttons and fields are those of the SDK (#294).
   It shows the open conversation as the plugin holds it, whichever command
   changed it last, and the browser's local storage keeps which conversation
   is open.

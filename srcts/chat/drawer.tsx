@@ -23,6 +23,9 @@
 //   come back to.
 // - All of it stays open while a turn runs
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs).
+// Its buttons are those of core's React SDK, but for the title of each row,
+// which opens the conversation. The field that renames a conversation is the
+// SDK's too.
 // While it shows, the chat makes the rest of the chat inert, so that the focus
 // stays in the drawer, while the board around the chat stays as it was. The
 // drawer takes the focus to its search as it opens. It closes on Escape, on
@@ -31,6 +34,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement, RefObject } from "react";
+import { Button, TextField } from "@blockr/core/react";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import { normalizeTitle } from "../titles/index.ts";
 
@@ -85,19 +89,19 @@ export function Drawer(props: DrawerProps): ReactElement {
       <section className="blockr-assistant-drawer-sheet" role="dialog" aria-labelledby={heading}>
         <div className="blockr-assistant-drawer-top">
           <h2 id={heading}>Conversations</h2>
-          <button type="button" className="blockr-assistant-drawer-close" title="Close" aria-label="Close" onClick={onClose}>
+          <Button variant="quiet" className="blockr-assistant-drawer-close" aria-label="Close" onPress={onClose}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
-          </button>
+          </Button>
         </div>
         <div className="blockr-assistant-drawer-tools">
-          <button type="button" className="blockr-assistant-drawer-new" onClick={props.onNew}>
+          <Button variant="secondary" className="blockr-assistant-drawer-new" onPress={props.onNew}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M8 3.5v9M3.5 8h9" />
             </svg>
             New
-          </button>
+          </Button>
           <input
             ref={search}
             type="search"
@@ -149,15 +153,9 @@ interface RowProps {
 
 // A conversation's row: its title, which opens it, and its buttons, or the
 // field that renames it, or the question whether to delete it.
+// The question focuses its safe answer, which keeps the conversation.
 function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: RowProps): ReactElement {
   const [mode, setMode] = useState<"shown" | "renaming" | "confirming" | "deleting">("shown");
-  const keep = useRef<HTMLButtonElement>(null);
-
-  // The question whether to delete focuses its safe answer, which keeps the
-  // conversation.
-  useEffect(() => {
-    if (mode === "confirming") keep.current?.focus();
-  }, [mode]);
 
   if (mode === "renaming") {
     return (
@@ -190,40 +188,37 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
       </button>
       {mode === "shown" ? (
         <span className="blockr-assistant-drawer-actions">
-          <button
-            type="button"
-            title="Rename"
+          <Button
+            variant="quiet"
             aria-label={`Rename “${conversation.title}”`}
-            onClick={() => {
+            onPress={() => {
               setMode("renaming");
             }}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M10.5 3.5l2 2L6 12H4v-2z" />
             </svg>
-          </button>
-          <button
-            type="button"
-            title="Delete"
+          </Button>
+          <Button
+            variant="quiet"
             aria-label={`Delete “${conversation.title}”`}
-            onClick={() => {
+            onPress={() => {
               setMode("confirming");
             }}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" />
             </svg>
-          </button>
+          </Button>
         </span>
       ) : mode === "confirming" ? (
         <span className="blockr-assistant-drawer-confirm">
           Delete?
-          <button
-            type="button"
+          <Button
+            variant="quiet"
             className="blockr-assistant-drawer-confirm-yes"
-            title="Delete"
             aria-label={`Delete “${conversation.title}”`}
-            onClick={() => {
+            onPress={() => {
               setMode("deleting");
               onDelete(id).catch(() => {
                 setMode("shown");
@@ -233,21 +228,20 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3.5 8.5l3 3 6-7" />
             </svg>
-          </button>
-          <button
-            ref={keep}
-            type="button"
+          </Button>
+          <Button
+            variant="quiet"
             className="blockr-assistant-drawer-confirm-no"
-            title="Keep"
             aria-label={`Keep “${conversation.title}”`}
-            onClick={() => {
+            autoFocus
+            onPress={() => {
               setMode("shown");
             }}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
-          </button>
+          </Button>
         </span>
       ) : (
         <span className="blockr-assistant-drawer-confirm">Deleting…</span>
@@ -258,36 +252,36 @@ function Row({ id, conversation, open, running, onSelect, onRename, onDelete }: 
 
 // The field that renames a conversation, which gives onDone() the new title
 // on Enter, and nothing on Escape or once it loses the focus.
+// It takes the focus as it shows, with the title selected, so that typing
+// replaces the title.
+// Every key goes on to the drawer and the chat around it, as from a field of
+// the browser's own. The field prevents the default of Enter and Escape, so
+// that Escape neither closes the drawer nor stops the turn.
 function Rename({ title, onDone }: { readonly title: string; readonly onDone: (title: string | undefined) => void }): ReactElement {
   const [draft, setDraft] = useState(title);
-  const field = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    field.current?.select();
-  }, []);
-
-  const keys = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const renamed = normalizeTitle(draft);
-      if (renamed !== undefined) onDone(renamed);
-    } else if (event.key === "Escape") {
-      // Escape leaves the field, and the drawer stays open.
-      event.preventDefault();
-      onDone(undefined);
-    }
-  };
 
   return (
-    <input
-      ref={field}
+    <TextField
       className="blockr-assistant-drawer-rename"
       aria-label="Title of the conversation"
       value={draft}
-      onChange={(event) => {
-        setDraft(event.currentTarget.value);
+      onChange={setDraft}
+      autoFocus
+      onFocus={(event) => {
+        event.target.select();
       }}
-      onKeyDown={keys}
+      onKeyDown={(event) => {
+        event.continuePropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const renamed = normalizeTitle(draft);
+          if (renamed !== undefined) onDone(renamed);
+        } else if (event.key === "Escape") {
+          // Escape leaves the field, and the drawer stays open.
+          event.preventDefault();
+          onDone(undefined);
+        }
+      }}
       onBlur={() => {
         onDone(undefined);
       }}

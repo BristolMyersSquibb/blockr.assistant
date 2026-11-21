@@ -1,5 +1,6 @@
 /* srcts/modules/assistant_plugin/index.css */
-.blockr-assistant {
+.blockr-assistant,
+.blockr-assistant-overlay {
   --blockr-assistant-text: var(--bc-color-text-default, currentColor);
   --blockr-assistant-text-muted: var(--bc-color-text-muted, color-mix(in oklab, currentColor 65%, transparent));
   --blockr-assistant-text-danger: var(--bc-color-text-danger, oklch(50.5% 0.213 27.518));
@@ -21,7 +22,7 @@
   --blockr-assistant-radius-sm: var(--bc-radius-md, 0.375rem);
   --blockr-assistant-transition: var(--bc-default-transition-duration, 150ms) var(--bc-default-transition-timing-function, cubic-bezier(0.4, 0, 0.2, 1));
 }
-[data-bc-theme=dark] .blockr-assistant {
+[data-bc-theme=dark] :is(.blockr-assistant, .blockr-assistant-overlay) {
   --blockr-assistant-link: var(--bc-color-blue-400, oklch(70.7% 0.165 254.624));
 }
 .blockr-assistant {
@@ -34,9 +35,13 @@
   font-size: 14px;
   line-height: 1.5;
 }
-.blockr-assistant *,
-.blockr-assistant *::before,
-.blockr-assistant *::after {
+.blockr-assistant-overlay {
+  font-size: 14px;
+  line-height: 1.5;
+}
+:is(.blockr-assistant, .blockr-assistant-overlay) *,
+:is(.blockr-assistant, .blockr-assistant-overlay) *::before,
+:is(.blockr-assistant, .blockr-assistant-overlay) *::after {
   box-sizing: border-box;
 }
 .blockr-assistant-unloaded {
@@ -98,7 +103,7 @@
 .blockr-assistant-to-bottom:disabled {
   display: none;
 }
-.blockr-assistant svg {
+:is(.blockr-assistant, .blockr-assistant-overlay) svg {
   width: 14px;
   height: 14px;
   fill: none;
@@ -107,7 +112,7 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.blockr-assistant :is(button, summary, select, input):focus-visible {
+:is(.blockr-assistant, .blockr-assistant-overlay) :is(button, summary, select, input):focus-visible {
   outline: 2px solid var(--blockr-assistant-border-accent);
   outline-offset: 1px;
 }
@@ -303,15 +308,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-copy {
   padding: 2px 8px;
-  border: 0;
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: transparent;
   font: inherit;
-  color: var(--blockr-assistant-text-muted);
-  cursor: pointer;
 }
 .blockr-assistant-copy:hover {
-  background: var(--blockr-assistant-bg-subtle);
   color: var(--blockr-assistant-text);
 }
 .blockr-assistant-markdown pre {
@@ -613,26 +612,13 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-suggestion {
   display: flex;
-  align-items: center;
   width: 100%;
   min-height: 30px;
   padding: 2px 10px;
-  border: 1px solid var(--blockr-assistant-border);
   border-radius: var(--blockr-assistant-radius);
-  background: transparent;
-  font: inherit;
   font-size: 13px;
   text-align: left;
-  color: var(--blockr-assistant-text);
-  cursor: pointer;
   transition: background var(--blockr-assistant-transition);
-}
-.blockr-assistant-suggestion:hover:not(:disabled) {
-  background: var(--blockr-assistant-bg-subtle);
-}
-.blockr-assistant-suggestion:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .blockr-assistant-working {
   display: flex;
@@ -813,7 +799,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   fill: var(--blockr-assistant-bg-raised);
   stroke: none;
 }
-.blockr-assistant-stop[data-stopping] {
+.blockr-assistant-stop[data-pending] {
   cursor: default;
   animation: blockr-assistant-pulse 1.2s ease-in-out infinite;
 }
@@ -830,66 +816,39 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   color: var(--blockr-assistant-text-danger);
 }
 .blockr-assistant-openrouter {
-  display: block;
+  display: flex;
+  justify-content: center;
   width: 100%;
   min-height: 30px;
   margin: 0 0 6px;
   padding: 2px 12px;
-  border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: transparent;
-  font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text);
-  cursor: pointer;
   transition: background var(--blockr-assistant-transition);
-}
-.blockr-assistant-openrouter:hover:not(:disabled) {
-  background: var(--blockr-assistant-bg-subtle);
-}
-.blockr-assistant-openrouter:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .blockr-assistant-key-field {
   display: flex;
   gap: 6px;
 }
-.blockr-assistant-key-field input {
+.blockr-assistant-key-input {
   flex: 1 1 auto;
   min-width: 0;
+}
+.blockr-assistant-key-input input {
   min-height: 30px;
-  margin: 0;
-  padding: 3px 10px;
-  border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: var(--blockr-assistant-bg-raised);
-  font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text);
+}
+.blockr-assistant-key-input input::placeholder {
+  color: var(--blockr-assistant-text-muted);
+  opacity: 1;
 }
 .blockr-assistant-key-field input[hidden] {
   display: none;
-}
-.blockr-assistant-key-field input:focus {
-  outline: 2px solid var(--blockr-assistant-border-accent);
-  outline-offset: 1px;
-}
-.blockr-assistant-key-field input::placeholder {
-  color: var(--blockr-assistant-text-muted);
-  opacity: 1;
 }
 .blockr-assistant-key-field button {
   flex-shrink: 0;
   min-height: 30px;
   padding: 2px 12px;
-  border: 1px solid var(--blockr-assistant-border-accent);
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: var(--blockr-assistant-bg-accent);
-  font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text-on-accent);
-  cursor: pointer;
 }
 .blockr-assistant-footer {
   display: flex;
@@ -902,21 +861,14 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   color: var(--blockr-assistant-text-muted);
 }
 .blockr-assistant-footer-button {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 0;
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: none;
   color: inherit;
-  cursor: pointer;
 }
 .blockr-assistant-footer-button:hover {
-  background: var(--blockr-assistant-bg-subtle);
   color: var(--blockr-assistant-text);
 }
 .blockr-assistant-model {
@@ -951,8 +903,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding-top: 0;
   padding-bottom: 0;
 }
+.blockr-assistant-footer .blockr-assistant-pick [role=group]:not(:hover, [data-focus-within], [data-invalid]) {
+  border-color: transparent;
+}
 .blockr-assistant-footer .blockr-assistant-pick input {
   font-size: 12px;
+  text-overflow: ellipsis;
 }
 .blockr-assistant-footer .blockr-assistant-pick input:focus-visible {
   outline: none;
@@ -973,23 +929,6 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-meter svg {
   width: 12px;
   height: 12px;
-}
-.blockr-assistant-dialog {
-  width: min(420px, calc(100vw - 32px));
-  padding: 16px;
-  border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-assistant-radius);
-  background: var(--blockr-assistant-bg-raised);
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  color: var(--blockr-assistant-text);
-}
-.blockr-assistant-dialog::backdrop {
-  overflow: hidden;
-  overscroll-behavior: contain;
-  background: rgb(0 0 0 / 0.4);
-}
-.blockr-assistant-dialog:modal {
-  overscroll-behavior: contain;
 }
 .blockr-assistant-dialog h2 {
   margin: 0 0 8px;
@@ -1014,42 +953,28 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-dialog-buttons button {
   min-height: 30px;
   padding: 2px 12px;
-  border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: transparent;
-  font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text);
-  cursor: pointer;
-}
-.blockr-assistant-dialog-buttons button:hover {
-  background: var(--blockr-assistant-bg-subtle);
 }
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-always {
   margin-right: auto;
   padding-left: 0;
-  border-color: transparent;
   color: var(--blockr-assistant-link);
 }
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-always:hover {
   background: transparent;
   text-decoration: underline;
 }
-.blockr-assistant-dialog-buttons .blockr-assistant-dialog-open {
-  border-color: var(--blockr-assistant-border-accent);
-  background: var(--blockr-assistant-bg-accent);
-  color: var(--blockr-assistant-text-on-accent);
-}
-.blockr-assistant-file-dialog {
+.blockr-assistant-overlay.blockr-assistant-file-dialog {
   width: min(960px, calc(100vw - 32px));
   max-width: none;
-  padding: 0;
+  max-height: calc(100vh - 32px);
   overflow: hidden;
 }
 .blockr-assistant-file-view {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 32px);
+  padding: 0;
 }
 .blockr-assistant-file-view-head {
   display: flex;
@@ -1060,30 +985,23 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding: 6px 6px 6px 16px;
   border-bottom: 1px solid var(--blockr-assistant-border);
 }
-.blockr-assistant-dialog .blockr-assistant-file-view-head h2 {
+.blockr-assistant-file-view-head h2 {
   min-width: 0;
   margin: 0;
   overflow: hidden;
   font-size: 14px;
+  font-weight: var(--bc-font-weight-semibold, 600);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .blockr-assistant-file-view-close {
-  display: inline-flex;
   flex-shrink: 0;
-  align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 0;
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: transparent;
-  color: var(--blockr-assistant-text-muted);
-  cursor: pointer;
 }
 .blockr-assistant-file-view-close:hover {
-  background: var(--blockr-assistant-bg-subtle);
   color: var(--blockr-assistant-text);
 }
 .blockr-assistant-file-view-body {
@@ -1159,23 +1077,16 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-drawer-close,
 .blockr-assistant-drawer-actions button,
 .blockr-assistant-drawer-confirm button {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 0;
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: none;
   color: var(--blockr-assistant-text-muted);
-  cursor: pointer;
 }
 .blockr-assistant-drawer-close:hover,
 .blockr-assistant-drawer-actions button:hover,
 .blockr-assistant-drawer-confirm button:hover {
-  background: var(--blockr-assistant-bg-subtle);
   color: var(--blockr-assistant-text);
 }
 .blockr-assistant-drawer-tools {
@@ -1183,25 +1094,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   gap: 6px;
 }
 .blockr-assistant-drawer-new {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
   min-height: 30px;
   padding: 2px 10px;
-  border: 1px solid var(--blockr-assistant-border);
-  border-radius: var(--blockr-assistant-radius-sm);
-  background: transparent;
-  font: inherit;
   font-size: 13px;
-  color: var(--blockr-assistant-text);
-  cursor: pointer;
 }
-.blockr-assistant-drawer-new:hover {
-  background: var(--blockr-assistant-bg-subtle);
-}
-.blockr-assistant-drawer-search,
-.blockr-assistant-drawer-rename {
+.blockr-assistant-drawer-search {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
@@ -1212,6 +1110,14 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   font: inherit;
   font-size: 13px;
   color: var(--blockr-assistant-text);
+}
+.blockr-assistant-drawer-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.blockr-assistant-drawer-rename input {
+  min-height: 30px;
+  font-size: 13px;
 }
 .blockr-assistant-drawer-list {
   flex: 1 1 auto;
@@ -1359,7 +1265,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   .blockr-assistant-tool-mark[data-state=running],
   .blockr-assistant-working span,
   .blockr-assistant-compacting,
-  .blockr-assistant-stop[data-stopping],
+  .blockr-assistant-stop[data-pending],
   .blockr-assistant-drawer-running {
     animation: none;
   }

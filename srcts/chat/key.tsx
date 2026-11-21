@@ -28,9 +28,13 @@
 // - Where the browser blocked the login's window, or the exchange failed, the
 //   note says why, until the visitor clicks again.
 // - Once the login gives the key, the field goes, as for a typed key.
+// The field and both buttons are those of core's React SDK. The login opens
+// its window within the press, since a browser blocks a window that a page
+// opens after it.
 
 import { useId } from "react";
 import type { ReactElement, SubmitEvent } from "react";
+import { Button, TextField } from "@blockr/core/react";
 import type { KeyScope } from "../deployment/index.ts";
 import type { OpenRouterLoginState } from "../openrouter/index.ts";
 import { useChat, useChatActions } from "./context.ts";
@@ -64,7 +68,8 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
       {openRouterLogin === undefined ? null : <OpenRouterButton login={openRouterLogin} />}
       <div className="blockr-assistant-key-field">
         <input type="text" name="username" value={field.host} autoComplete="username" readOnly hidden />
-        <input
+        <TextField
+          className="blockr-assistant-key-input"
           type="password"
           name="key"
           defaultValue={state.kind === "lost" ? state.key : ""}
@@ -72,9 +77,11 @@ function Field({ field }: { readonly field: KeyField }): ReactElement {
           aria-label="Your API key"
           aria-describedby={note}
           autoComplete="current-password"
-          spellCheck={false}
+          spellCheck="false"
         />
-        <button type="submit">Use key</button>
+        <Button type="submit" variant="primary">
+          Use key
+        </Button>
       </div>
     </form>
   );
@@ -84,9 +91,9 @@ function OpenRouterButton({ login }: { readonly login: OpenRouterLoginState }): 
   const { logInWithOpenRouter } = useChatActions();
   const exchanging = login.kind === "exchanging";
   return (
-    <button type="button" className="blockr-assistant-openrouter" disabled={exchanging} onClick={logInWithOpenRouter}>
+    <Button variant="secondary" className="blockr-assistant-openrouter" isDisabled={exchanging} onPress={logInWithOpenRouter}>
       {exchanging ? "Logging in…" : "Log in with OpenRouter"}
-    </button>
+    </Button>
   );
 }
 
