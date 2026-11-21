@@ -45,5 +45,11 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "@google/genai@2.21.0": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "protobufjs@7.6.6": true
   }
 }
