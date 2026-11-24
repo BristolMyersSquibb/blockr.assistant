@@ -117,7 +117,7 @@ describe("edit", () => {
   test("reviews the changed block first, then the one that feeds it, then those downstream", async () => {
     const { tools, requests } = await started();
 
-    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(Object.keys((result as { blocks: object }).blocks)).toEqual(["b", "a", "c", "e"]);
     expect(described(requests("describe_result"))).toEqual([["b", "a", "c", "e"]]);
@@ -135,8 +135,8 @@ describe("edit", () => {
 
     const called = await callTool(tools, "edit", {
       commands: [
-        { command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } },
-        { command: "blockr.core-set_block", args: { id: "d", state: { select: "Species" } } },
+        { command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } },
+        { command: "blockr.core-change_block", args: { id: "d", state: { select: "Species" } } },
       ],
     });
     const result = parsed(called);
@@ -159,7 +159,7 @@ describe("edit", () => {
     const { core, tools, requests } = await started({ refuse: ["evaluate"] });
 
     const called = await callTool(tools, "edit", {
-      commands: [{ command: "blockr.core-set_block", args: { id: "a", state: { dataset: "mtcars", package: "datasets" } } }],
+      commands: [{ command: "blockr.core-change_block", args: { id: "a", state: { dataset: "mtcars", package: "datasets" } } }],
     });
     const result = parsed(called);
     const unsent = core.scheduler.status("a")?.unsent;
@@ -195,7 +195,7 @@ describe("edit", () => {
   test("gives the warnings of R's reply to its request in its notes, and core raises no notification for them", async () => {
     const { core, tools } = await started({ conditions: { describe_result: [warning("NAs introduced by coercion")] } });
 
-    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(result).toMatchObject({
       blocks: { b: { result: "The result of b." } },
@@ -207,7 +207,7 @@ describe("edit", () => {
   test("cuts the review at assistant_review_max_blocks, and says how many blocks it left out", async () => {
     const { tools, requests } = await started({ blockrOptions: { assistant_review_max_blocks: 2 } });
 
-    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(Object.keys((result as { blocks: object }).blocks)).toEqual(["b", "a"]);
     expect(result).toMatchObject({
@@ -242,7 +242,7 @@ describe("edit", () => {
     const { tools, sent, settled } = await started();
     const before = sent.length;
 
-    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-rename_stack", args: { id: "s1", name: "Data" } }] });
+    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_stack", args: { id: "s1", name: "Data" } }] });
 
     expect(parsed(result)).toEqual({ applied: true, undo_step: true });
     await settled();
@@ -253,7 +253,7 @@ describe("edit", () => {
     const { core, tools } = await started();
     const board = core.store.board();
 
-    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 6 } } }] });
+    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 6 } } }] });
 
     expect(result.isError).toBe(false);
     expect(parsed(result)).toEqual({
@@ -295,7 +295,7 @@ describe("edit", () => {
     core.commands.register({ id: "blockr.test-rename", label: "Rename", undo: false, run: () => ({ name: "Renamed" }) });
 
     const result = await callTool(tools, "edit", {
-      commands: [{ command: "blockr.test-rename" }, { command: "blockr.core-rename_stack", args: { id: "s1", name: "Data" } }],
+      commands: [{ command: "blockr.test-rename" }, { command: "blockr.core-change_stack", args: { id: "s1", name: "Data" } }],
     });
     expect(parsed(result)).toEqual({ applied: true, undo_step: true });
     expect(core.store.canUndo("assistant")).toBe(true);
@@ -379,7 +379,7 @@ describe("edit", () => {
   test("refuses, before it runs anything, a command of the assistant's own, core's command for the assistant's state, and a command that the app lacks", async () => {
     const { core, tools } = await started();
     const board = core.store.board();
-    const head = { command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } };
+    const head = { command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } };
 
     for (const [refused, failure] of [
       [{ command: "blockr.assistant-add_conversation", args: { id: "c1", title: "Hi" } }, 'The app registers no command "blockr.assistant-add_conversation" that you may run. Call list_commands for those that it registers.'],
@@ -409,8 +409,8 @@ describe("edit", () => {
 describe("undo_edit", () => {
   test("takes back the assistant's last undo step, past a step of the user's after it, and reviews what the undo changed", async () => {
     const { core, tools, requests } = await started();
-    await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] });
-    await core.commands.run("blockr.core-rename_block", { id: "d", name: "Subset" });
+    await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] });
+    await core.commands.run("blockr.core-change_block", { id: "d", name: "Subset" });
 
     const result = await callTool(tools, "undo_edit");
 
@@ -489,7 +489,7 @@ describe("edit meanwhile", () => {
       call === 1 ? named("RequestError", "The request did not go to R.", { blocks: [{ block: "c", status }], status: null, conditions: [], inputs: [] }) : undefined,
     );
 
-    const result = parsed(await callTool(editTools(core, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(editTools(core, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(described(stub.requests("describe_result"))).toEqual([["b", "a", "e"]]);
     expect(result).toMatchObject({ blocks: { b: { result: "The result of b." }, c: { status: "ready" }, e: { result: "The result of e." } } });
@@ -501,7 +501,7 @@ describe("edit meanwhile", () => {
     const core = failing(stub.core, () => named("RequestError", "R replied error.", { blocks: [], status: "error", conditions: [], inputs: [] }));
 
     const result = await callTool(editTools(core, new AbortController().signal), "edit", {
-      commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }],
+      commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }],
     });
 
     expect(result.isError).toBe(false);
@@ -519,12 +519,12 @@ describe("edit meanwhile", () => {
     const lost = () => named("SessionEndedError", "The session ended before R replied.");
     const once = failing(stub.core, (call) => (call === 1 ? lost() : undefined));
 
-    expect(parsed(await callTool(editTools(once, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }))).toMatchObject({
+    expect(parsed(await callTool(editTools(once, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }))).toMatchObject({
       blocks: { b: { result: "The result of b." } },
     });
 
     const twice = failing(stub.core, () => lost());
-    expect(parsed(await callTool(editTools(twice, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 4 } } }] }))).toMatchObject({
+    expect(parsed(await callTool(editTools(twice, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 4 } } }] }))).toMatchObject({
       blocks: { b: { summary: "<data.frame> [6 × 5]" } },
       notes: [expect.stringContaining("R's session ended twice before R answered. So it gives")],
     });
@@ -537,14 +537,14 @@ describe("edit meanwhile", () => {
       evaluate: ({ block, recipe }) => {
         if (block === "b" && recipe.state.n === 3 && !edited) {
           edited = true;
-          void late.core?.commands.run("blockr.core-set_block", { id: "b", state: { n: 4 } });
+          void late.core?.commands.run("blockr.core-change_block", { id: "b", state: { n: 4 } });
         }
         return undefined;
       },
     });
     late.core = stub.core;
 
-    const result = await callTool(stub.tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] });
+    const result = await callTool(stub.tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] });
 
     expect(edited).toBe(true);
     expect(stub.core.store.board().blocks.b?.state.n).toBe(4);
@@ -566,7 +566,7 @@ describe("edit meanwhile", () => {
     });
     late.core = stub.core;
 
-    const result = parsed(await callTool(stub.tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(stub.tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(result).toMatchObject({ blocks: { b: { result: "The result of b." }, e: { removed: "The block left the board while the tool waited for its review." } } });
   });
@@ -610,7 +610,7 @@ describe("edit meanwhile", () => {
 
     const called = callTool(tools, "edit", { commands: [{ command: "blockr.test-slow_option" }] });
     await prepared;
-    await core.commands.run("blockr.core-set_block", { id: "d", state: { select: "Species" } });
+    await core.commands.run("blockr.core-change_block", { id: "d", state: { select: "Species" } });
     await core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Rows" }, "assistant");
     await core.commands.run("blockr.core-remove_block", { id: "f" });
     open();
@@ -663,7 +663,7 @@ describe("edit meanwhile", () => {
       },
     });
 
-    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }, turn.signal);
+    const result = await callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }, turn.signal);
 
     const value = parsed(result) as { blocks: Record<string, Json> };
     expect(result.isError).toBe(false);
@@ -687,7 +687,7 @@ describe("edit meanwhile", () => {
     const turn = new AbortController();
     turn.abort(new Error("The user stopped the turn."));
 
-    await expect(callTool(tools, "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }, turn.signal)).rejects.toThrow(
+    await expect(callTool(tools, "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }, turn.signal)).rejects.toThrow(
       "The user stopped the turn.",
     );
     expect(core.store.board()).toBe(board);
@@ -721,7 +721,7 @@ describe("edit meanwhile", () => {
     late.core = stub.core;
     if (probe === undefined) throw new Error("The probe plugin did not start.");
 
-    const result = parsed(await callTool(editTools(stub.core, probe), "edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }));
+    const result = parsed(await callTool(editTools(stub.core, probe), "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
 
     expect(probe.aborted).toBe(true);
     expect(result).toEqual({
@@ -786,7 +786,7 @@ describe("spans", () => {
 
     await context.with(ROOT_CONTEXT.setValue(key, "the tool's span"), () =>
       callTool(tools, "edit", {
-        commands: [{ command: "blockr.test-probe" }, { command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }],
+        commands: [{ command: "blockr.test-probe" }, { command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }],
       }),
     );
 

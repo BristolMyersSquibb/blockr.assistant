@@ -22,8 +22,8 @@ describe("list_commands", () => {
     expect(ids).toContain("blockr.assistant-add_message");
     expect(listed.map(({ id }) => id)).toEqual(ids.filter((id) => !id.startsWith("blockr.assistant-")));
     expect(listed).toContainEqual({
-      id: "blockr.core-set_block",
-      description: core.commands.registered()["blockr.core-set_block"]?.description,
+      id: "blockr.core-change_block",
+      description: core.commands.registered()["blockr.core-change_block"]?.description,
     });
   });
 
@@ -50,10 +50,10 @@ describe("list_commands", () => {
 describe("describe_command", () => {
   test("gives the command's label, its description in full, the schema of its args, and whether it takes an undo step", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_description_max_chars: 10 } });
-    const command = core.commands.registered()["blockr.core-set_block"];
+    const command = core.commands.registered()["blockr.core-change_block"];
 
-    expect(parsed(await callTool(tools, "describe_command", { id: "blockr.core-set_block" }))).toEqual({
-      id: "blockr.core-set_block",
+    expect(parsed(await callTool(tools, "describe_command", { id: "blockr.core-change_block" }))).toEqual({
+      id: "blockr.core-change_block",
       label: command?.label,
       description: command?.description,
       args: command?.args,

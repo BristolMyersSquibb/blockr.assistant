@@ -141,7 +141,7 @@ describe("describe_block", () => {
 
   test("cuts its text at assistant_summary_max_chars, the state first, and marks the cut with get_block_state", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_state_value_max_chars: 5000, assistant_summary_max_chars: "2000" } });
-    await core.commands.run("blockr.core-set_block", { id: "d", state: { subset: "Sepal.Width > 3".repeat(200) } });
+    await core.commands.run("blockr.core-change_block", { id: "d", state: { subset: "Sepal.Width > 3".repeat(200) } });
 
     const { text } = await callTool(tools, "describe_block", { id: "d" });
 

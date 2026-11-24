@@ -95,7 +95,7 @@ function linesOf(note: Message | undefined): string[] {
 describe("the note of what others changed in the board", () => {
   test("is none at a conversation's first call, and none where nothing changed since the conversation's previous call", async () => {
     const { core, notes } = await opened();
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
 
     expect(await notes.take("c1")).toBeUndefined();
     expect(await notes.take("c1")).toBeUndefined();
@@ -107,9 +107,9 @@ describe("the note of what others changed in the board", () => {
 
     await edit(core, "blockr.core-remove_block", { id: "d" });
     await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "g" });
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
-    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block d, with its links ad and de: removed by the user.",
@@ -148,10 +148,10 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 6 } });
-    await edit(core, "blockr.core-set_block", { id: "c", state: { by: ["Sepal.Length"], all_x: true } });
-    await edit(core, "blockr.core-set_block", { id: "f", unset: ["y"] });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
+    await edit(core, "blockr.core-change_block", { id: "c", state: { by: ["Sepal.Length"], all_x: true } });
+    await edit(core, "blockr.core-change_block", { id: "f", unset: ["y"] });
     await edit(core, "blockr.core-add_stack", { id: "s2", name: "Gone" });
     await edit(core, "blockr.core-remove_stack", { id: "s2" });
 
@@ -166,11 +166,11 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
 
     turnIn("c2");
-    await edit(core, "blockr.core-rename_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "f" }, "blockr.session");
-    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" }, TIDY);
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" }, TIDY);
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block a: name changed by the assistant in another conversation.",
@@ -189,9 +189,9 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } }, "assistant");
-    await edit(core, "blockr.core-set_block_lock", { id: "b", locked: true });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "b", locked: true });
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block b: name and lock changed by the user; arg n changed by the assistant in another conversation."]);
   });
@@ -202,9 +202,9 @@ describe("the note of what others changed in the board", () => {
 
     turnIn("c1");
     await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } }, "assistant");
     await edit(core, "blockr.core-remove_block", { id: "adults" });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 6 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block adults: removed by the user.", "- Block b: arg n changed by the user."]);
   });
@@ -213,10 +213,10 @@ describe("the note of what others changed in the board", () => {
     const { core, notes, turnIn } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
     turnIn("c1");
-    await edit(core, "blockr.core-set_block", { id: "b", state: { direction: "tail" } }, "assistant");
-    await edit(core, "blockr.core-rename_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "b", state: { direction: "tail" } }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block b: arg n changed by the user."]);
   });
@@ -227,7 +227,7 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
 
     turnIn("c1");
-    await edit(core, "blockr.core-rename_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
     turnIn(undefined);
     notes.asUser(() => {
       core.store.undo("assistant");
@@ -243,14 +243,14 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
     expect(notes.changed("c1")).toEqual([]);
 
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
     turnIn("c1");
-    await edit(core, "blockr.core-rename_block", { id: "e", name: "Data" }, "assistant");
+    await edit(core, "blockr.core-change_block", { id: "e", name: "Data" }, "assistant");
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 6 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
     await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" });
-    await edit(core, "blockr.core-rename_stack", { id: "s1", name: "Inputs" });
+    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" });
 
     expect(notes.changed("c1")).toEqual([]);
     await notes.take("c1");
@@ -263,7 +263,7 @@ describe("the note of what others changed in the board", () => {
 
   test("gives no changed blocks at a conversation's first call", async () => {
     const { core, notes } = await opened();
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
 
     await notes.take("c1");
 
@@ -286,7 +286,7 @@ describe("the note of what others changed in the board", () => {
   test("goes in a message of the role user that holds one part of the type changes, whose text opens with the preamble that says that the app writes it", async () => {
     const { core, notes } = await opened();
     await notes.take("c1");
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
 
     const note = await notes.take("c1");
 
@@ -301,7 +301,7 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c1");
 
     close();
-    await edit(core, "blockr.core-rename_block", { id: "b", name: "Top" });
+    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
 
     expect(await notes.take("c1")).toBeUndefined();
     expect(notes.changed("c1")).toEqual([]);
@@ -315,7 +315,7 @@ describe("the note of what others changed in the board", () => {
     turnIn(undefined);
     await edit(core, "blockr.core-remove_block", { id: "adults" });
     await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-set_block", { id: "b", state: { n: 10 } });
+    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
     await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" }, "assistant");
 
     await expect(textOf(await notes.take("c1"))).toMatchFileSnapshot("./__snapshots__/note.md");
