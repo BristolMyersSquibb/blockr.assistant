@@ -94,7 +94,7 @@ test("sends each call the system prompt of the open board, and after the convers
     };
   const { opened } = await openedWith("Show three rows.", [
     read(
-      fauxAssistantMessage([fauxToolCall("edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }, { id: "t1" })], {
+      fauxAssistantMessage([fauxToolCall("edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }, { id: "t1" })], {
         stopReason: "toolUse",
       }),
     ),
@@ -119,7 +119,7 @@ test("sends each call the system prompt of the open board, and after the convers
 test("offers the edit tools, so that an edit that the model makes in a turn applies as a step of the assistant", async () => {
   const { core, opened } = await openedWith("Show three rows.", [
     fauxAssistantMessage(
-      [fauxToolCall("edit", { commands: [{ command: "blockr.core-set_block", args: { id: "b", state: { n: 3 } } }] }, { id: "t1" })],
+      [fauxToolCall("edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }, { id: "t1" })],
       { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("The head block shows three rows."),

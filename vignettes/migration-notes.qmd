@@ -629,11 +629,11 @@ Each tool of version 0.1 goes as follows:
 | `read_skill` | The tool of the same name |
 | `add_block` | The command `blockr.core-add_block`. Where the new block has a link to it or from it, the command `blockr.core-add_link` adds the link, after `blockr.core-add_block` in the same call of `edit` |
 | `remove_block` | The command `blockr.core-remove_block` |
-| `modify_block` | The command `blockr.core-set_block` for the block's state, and `blockr.core-rename_block` for its name |
+| `modify_block` | The command `blockr.core-change_block` |
 | `add_link`, `remove_link` and `modify_link` | The commands `blockr.core-add_link`, `blockr.core-remove_link` and `blockr.core-change_link` |
 | `add_stack` and `remove_stack` | The commands `blockr.core-add_stack` and `blockr.core-remove_stack` |
-| `modify_stack` | The command `blockr.core-change_stack` for the stack's blocks, and `blockr.core-rename_stack` for its name |
-| The tools `add_<type>` and `modify_<type>` for each block class | The commands `blockr.core-add_block` and `blockr.core-set_block`, whose `state` follows the JSON Schema that `describe_block_type` gives for the class |
+| `modify_stack` | The command `blockr.core-change_stack` |
+| The tools `add_<type>` and `modify_<type>` for each block class | The commands `blockr.core-add_block` and `blockr.core-change_block`, whose `state` follows the JSON Schema that `describe_block_type` gives for the class |
 | `commit` and `discard` | Nothing, since `edit` applies its commands at once, and nothing is staged |
 | `list_board_options` | The tool of the same name, which gives the value of each board option that the board holds, and no `default` |
 | `set_board_option` | The command `blockr.core-set_option` |

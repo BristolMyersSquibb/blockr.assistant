@@ -1655,7 +1655,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const held = heldReply("Two blocks.");
     const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } };
     const { el, assistant, core, sent } = await withSkills({ state, blocks: BLOCKS, replies: [held.reply] });
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
     let ended = false;
     act(() => {
       void assistant.turns.run("c2").then(() => {
@@ -1702,7 +1702,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const name = (): string | undefined => core.store.board().blocks.a?.name;
     const before = name();
     await noteLines(assistant, "c1");
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
     expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the assistant in another conversation."]);
 
     type(el, "/undo");
@@ -1726,8 +1726,8 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
     const names = () => [core.store.board().blocks.a?.name, core.store.board().blocks.b?.name];
     const before = names();
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "a", name: "Data" }, "assistant"));
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
 
     type(el, "/undo");
     await key(el, "Enter");
@@ -1737,7 +1737,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   test("apply again on /redo what the frontend's Undo took back, whoever made the edit", async () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
     act(() => {
       core.store.undo();
     });
@@ -1751,7 +1751,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   test("say under the field where /undo or /redo finds no step, or the store refuses the step, until the user runs a command or sends a message", async () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
-    await act(() => core.commands.run("blockr.core-rename_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
 
     type(el, "/undo");
     await key(el, "Enter");
