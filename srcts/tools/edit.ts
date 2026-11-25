@@ -222,7 +222,7 @@ function refusedList(core: CoreApi, commands: readonly Listed[], error: unknown,
   if (!isCommandError(error) || error.index === undefined) {
     return refusedResult({ applied: false, failures: failuresOf(error), ...notes });
   }
-  const hint: Record<string, Json> = error.preflight === false ? { hint: core.lock.board ? `${HINT} ${LOCKED_HINT}` : HINT } : {};
+  const hint: Record<string, Json> = error.by === "preflight" ? { hint: core.lock.board ? `${HINT} ${LOCKED_HINT}` : HINT } : {};
   return refusedResult({
     applied: false,
     index: error.index,

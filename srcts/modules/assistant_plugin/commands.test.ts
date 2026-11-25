@@ -106,7 +106,7 @@ describe("the assistant's commands", () => {
     expect(heldIn(core, "c5")).not.toHaveProperty("thinking_level");
     expect(core.commands.preflight("blockr.assistant-add_conversation", { id: "c6", title: "Odd", thinking_level: "extreme" })).toBe(false);
     expect(core.commands.preflight("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).toBe(false);
-    await expect(core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).rejects.toMatchObject({ preflight: false });
+    await expect(core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" })).rejects.toMatchObject({ by: "preflight" });
   });
 
   test("rename_conversation, set_model and add_usage change the conversation that they name", async () => {
