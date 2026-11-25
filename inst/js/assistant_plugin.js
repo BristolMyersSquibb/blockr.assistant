@@ -3743,7 +3743,7 @@ function refusedList(core, commands, error, stopped) {
   if (!isCommandError(error) || error.index === void 0) {
     return refusedResult({ applied: false, failures: failuresOf(error), ...notes });
   }
-  const hint = error.preflight === false ? { hint: core.lock.board ? `${HINT} ${LOCKED_HINT}` : HINT } : {};
+  const hint = error.by === "preflight" ? { hint: core.lock.board ? `${HINT} ${LOCKED_HINT}` : HINT } : {};
   return refusedResult({
     applied: false,
     index: error.index,
