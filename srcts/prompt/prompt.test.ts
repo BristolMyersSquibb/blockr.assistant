@@ -60,7 +60,7 @@ function standIn(given: Given = {}): Core {
   const status = (id: string): BlockStatus | undefined => {
     const set = given.statuses?.[id];
     if (set === undefined) return undefined;
-    return { status: "ready", revision: 1, evaluated: 1, running: false, conditions: [], stdout: "", stderr: "", summary: null, reason: null, unsent: null, ...set };
+    return { status: "ready", revision: 1, evaluated: 1, running: false, conditions: [], stdout: "", stderr: "", summary: null, reason: null, keptWaiting: null, unsent: null, ...set };
   };
   return {
     store: { board: () => board },
