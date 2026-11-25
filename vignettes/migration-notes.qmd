@@ -19,7 +19,6 @@ knitr::opts_chunk$set(
 
 ```{r setup, message = FALSE}
 library(blockr.core)
-library(blockr.dock)
 library(blockr.assistant)
 ```
 
@@ -94,8 +93,10 @@ board <- new_dock_board(
 )
 ```
 
-```{r}
+```{r, eval = FALSE}
 # blockr.assistant 0.2
+library(blockr.dock)
+
 board <- new_board(
   blocks = c(a = new_dataset_block("iris"), b = new_head_block()),
   links = new_link("a", "b"),

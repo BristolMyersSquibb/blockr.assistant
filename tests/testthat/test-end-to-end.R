@@ -253,34 +253,3 @@ test_that("the assistant answers on the empty board", {
 
   expect_length(turn_calls(mock), 1L)
 })
-
-test_that("the dock draws the assistant's panel where the grid places it", {
-
-  skip_if_not_installed("blockr.dock", "0.2.1")
-
-  mock <- local_mock_api(mock_reply(mock_text("Hello.")))
-  app <- local_example_app("layout-control", mock_deployment(mock))
-
-  # The grid of the view Workbench places the assistant's panel beside the
-  # column of the three blocks, and the dock draws the chat there.
-  grid <- app_board(app)[["plugins"]][["blockr.dock-dock_plugin"]][[
-    "views"
-  ]][["Workbench"]][["grid"]]
-
-  expect_identical(
-    grid[["children"]][[2L]][["panels"]],
-    list(list(plugin = assistant_class))
-  )
-  expect_identical(unlst(grid[["sizes"]]), c(0.6, 0.4))
-
-  expect_true(
-    app$get_js(
-      "document.querySelector('.blockr-dock .blockr-assistant-chat') != null"
-    )
-  )
-
-  send_message(app, "Hello?")
-  wait_for_reply(app, "Hello.")
-
-  expect_length(turn_calls(mock), 1L)
-})

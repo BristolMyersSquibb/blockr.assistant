@@ -450,15 +450,17 @@
   It also says how a skill names block classes and plugin classes, and where
   each tool that it names goes.
 
-* The examples in `inst/examples` are back for the new stack (#239).
+* The examples `empty-board` and `populated-board` in `inst/examples` are
+  back for the new stack (#239).
   Each builds its board with `new_board()`, with the plugin that
   `new_assistant_plugin()` makes, and serves it with `serve()`.
   A comment in each names the blockr options that a deployment sets for the
   assistant's calls.
-  The examples `empty-board` and `populated-board` run under the frontend that
-  the app's packages give.
-  The example `layout-control` runs under the dock, whose view Workbench
-  places the assistant's panel with `plg()`.
+  Both run under the frontend that the app's packages give: the dock where
+  blockr.dock is installed, and core's basic frontend otherwise.
+  Under the dock, the model arranges the dock's views with the dock's
+  commands, in either example.
+  The example `layout-control` does not come back (#327).
 
 * Before each call to the model, the assistant tells the model what others
   changed in the board's blocks, links and stacks since the conversation's
