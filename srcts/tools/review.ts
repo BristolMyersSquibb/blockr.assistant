@@ -284,7 +284,7 @@ async function requested(core: CoreApi, reads: readonly BlockId[], signal: Abort
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
-    const named = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
+    const named = new Set(isRequestError(error) ? error.notReady.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named.has(id) && core.scheduler.status(id) !== undefined);
     return rest.length === 0 ? { texts: {}, notifications: [] } : await sent(core, rest, signal, active);
   }

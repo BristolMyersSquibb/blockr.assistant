@@ -486,7 +486,7 @@ describe("edit meanwhile", () => {
     const stub = await started();
     const status = stub.core.scheduler.status("c");
     const core = failing(stub.core, (call) =>
-      call === 1 ? named("RequestError", "The request did not go to R.", { blocks: [{ block: "c", status }], status: null, conditions: [], inputs: [] }) : undefined,
+      call === 1 ? named("RequestError", "The request did not go to R.", { notReady: [{ block: "c", status }], status: null, conditions: [], unlinked: [] }) : undefined,
     );
 
     const result = parsed(await callTool(editTools(core, new AbortController().signal), "edit", { commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }] }));
@@ -498,7 +498,7 @@ describe("edit meanwhile", () => {
 
   test("gives each ready block's summary where the request fails twice", async () => {
     const stub = await started({ evaluate: () => ({ summary: "<data.frame> [150 × 5]" }) });
-    const core = failing(stub.core, () => named("RequestError", "R replied error.", { blocks: [], status: "error", conditions: [], inputs: [] }));
+    const core = failing(stub.core, () => named("RequestError", "R replied error.", { notReady: [], status: "error", conditions: [], unlinked: [] }));
 
     const result = await callTool(editTools(core, new AbortController().signal), "edit", {
       commands: [{ command: "blockr.core-change_block", args: { id: "b", state: { n: 3 } } }],
