@@ -178,7 +178,8 @@ export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockC
 // registry gives it, with what the test gives.
 // Unless the test gives them, the class has the category transform and no
 // data inputs, a block of it starts with no state args, and any state fits
-// the schema of its state.
+// the schema of its state. A new block of the class takes the registry id as
+// its name.
 export function blockClass(id: string, given: Partial<RegistryEntry> = {}): RegistryEntry {
   return {
     id,
@@ -191,6 +192,7 @@ export function blockClass(id: string, given: Partial<RegistryEntry> = {}): Regi
     module: `blockr.test/${id}.js`,
     version: 1,
     schema: { type: "object" },
+    block_name: id,
     state: {},
     requests: {},
     ...given,
