@@ -18,7 +18,7 @@ export function failureText(error: unknown): string {
   if (isSessionEnded(error)) {
     return "R's session ended before R answered, so the request was lost, and core does not send it to the new session. Call the tool again to send it there.";
   }
-  if (isRequestError(error) && error.blocks.length > 0) return notReady(error.blocks);
+  if (isRequestError(error) && error.notReady.length > 0) return notReady(error.notReady);
   return failureMessage(error);
 }
 

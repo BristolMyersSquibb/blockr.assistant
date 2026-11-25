@@ -3353,7 +3353,7 @@ function failureText(error) {
   if (isSessionEnded(error)) {
     return "R's session ended before R answered, so the request was lost, and core does not send it to the new session. Call the tool again to send it there.";
   }
-  if (isRequestError(error) && error.blocks.length > 0) return notReady(error.blocks);
+  if (isRequestError(error) && error.notReady.length > 0) return notReady(error.notReady);
   return failureMessage(error);
 }
 function notReady(blocks) {
@@ -3581,7 +3581,7 @@ async function requested(core, reads, signal, active) {
     return await sent(core, reads, signal, active);
   } catch (error) {
     if (signal.aborted || isSessionEnded(error)) throw error;
-    const named2 = new Set(isRequestError(error) ? error.blocks.map(({ block }) => block) : []);
+    const named2 = new Set(isRequestError(error) ? error.notReady.map(({ block }) => block) : []);
     const rest = reads.filter((id) => !named2.has(id) && core.scheduler.status(id) !== void 0);
     return rest.length === 0 ? { texts: {}, notifications: [] } : await sent(core, rest, signal, active);
   }
