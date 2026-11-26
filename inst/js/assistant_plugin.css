@@ -20,7 +20,7 @@
 }
 .blockr-assistant-unloaded {
   margin: 0;
-  padding: 16px;
+  padding: calc(var(--bk-spacing) * 4);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-chat {
@@ -41,9 +41,9 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 12px;
+  gap: calc(var(--bk-spacing) * 3);
   min-height: 0;
-  padding: 12px 12px 0;
+  padding: calc(var(--bk-spacing) * 3) calc(var(--bk-spacing) * 3) 0;
   overflow-y: auto;
   overflow-wrap: anywhere;
 }
@@ -53,15 +53,15 @@
   display: flex;
   justify-content: center;
   margin-top: auto;
-  padding-bottom: 8px;
+  padding-bottom: calc(var(--bk-spacing) * 2);
   pointer-events: none;
 }
 .blockr-assistant-to-bottom {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: calc(var(--bk-spacing) * 7);
+  height: calc(var(--bk-spacing) * 7);
   padding: 0;
   border: 1px solid var(--bk-color-border);
   border-radius: 50%;
@@ -103,7 +103,7 @@
   white-space: nowrap;
 }
 .blockr-assistant-user {
-  padding: 7px 12px;
+  padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 3);
   border-radius: var(--bk-radius);
   background: var(--bk-color-muted);
   font-size: var(--bk-text-sm);
@@ -122,8 +122,8 @@
 .blockr-assistant-files {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0 0;
+  gap: calc(var(--bk-spacing) * 1);
+  margin: calc(var(--bk-spacing) * 1) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -135,12 +135,12 @@
 .blockr-assistant-file {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
   min-width: 0;
   max-width: 100%;
-  min-height: 30px;
+  min-height: calc(var(--bk-spacing) * 7.5);
   margin: 0;
-  padding: 2px 6px 2px 2px;
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 0.5);
   border: 1px solid var(--bk-color-border);
   border-radius: calc(var(--bk-radius) * 0.8);
   background: var(--bk-color-popover);
@@ -172,7 +172,7 @@ button.blockr-assistant-file:hover {
   justify-content: center;
   min-width: 24px;
   height: 24px;
-  padding: 0 3px;
+  padding: 0 calc(var(--bk-spacing) * 1);
   border-radius: calc(var(--bk-radius) * 0.6);
   background: var(--bk-color-muted);
   font-size: calc(var(--bk-text-xs) * 0.8);
@@ -203,9 +203,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: -2px;
+  width: calc(var(--bk-spacing) * 4);
+  height: calc(var(--bk-spacing) * 4);
+  margin-left: calc(var(--bk-spacing) * -0.5);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -224,7 +224,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-reply {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
   min-width: 0;
 }
 .blockr-assistant-markdown > :first-child {
@@ -234,10 +234,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   margin-bottom: 0;
 }
 .blockr-assistant-markdown :is(p, ul, ol, pre, blockquote, .blockr-assistant-table) {
-  margin: 0 0 8px;
+  margin: 0 0 calc(var(--bk-spacing) * 2);
 }
 .blockr-assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
-  margin: 12px 0 6px;
+  margin: calc(var(--bk-spacing) * 3) 0 calc(var(--bk-spacing) * 1.5);
   font-size: var(--bk-text-base);
   font-weight: 600;
   line-height: 1.35;
@@ -246,20 +246,20 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   font-size: var(--bk-text-lg);
 }
 .blockr-assistant-markdown :is(ul, ol) {
-  padding-left: 20px;
+  padding-left: calc(var(--bk-spacing) * 6);
 }
 .blockr-assistant-markdown li + li {
-  margin-top: 2px;
+  margin-top: calc(var(--bk-spacing) * 0.5);
 }
 .blockr-assistant-markdown a {
   color: var(--bk-color-primary-text);
 }
 .blockr-assistant-markdown blockquote {
-  padding-left: 10px;
+  padding-left: calc(var(--bk-spacing) * 3);
   border-left: 3px solid var(--bk-color-border);
 }
 .blockr-assistant-markdown code {
-  padding: 1px 4px;
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 1);
   border-radius: calc(var(--bk-radius) * 0.6);
   background: var(--bk-color-muted);
   font-family: var(--bk-font-mono);
@@ -269,8 +269,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 2px 4px 2px 10px;
+  gap: calc(var(--bk-spacing) * 2);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 1) calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   border: 1px solid var(--bk-color-border);
   border-bottom: 0;
   border-radius: var(--bk-radius) var(--bk-radius) 0 0;
@@ -281,14 +281,14 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-copy {
-  padding: 2px 8px;
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 2);
   font: inherit;
 }
 .blockr-assistant-copy:hover {
   color: var(--bk-color-accent-foreground);
 }
 .blockr-assistant-markdown pre {
-  padding: 8px 10px;
+  padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 3);
   overflow-x: auto;
   border: 1px solid var(--bk-color-border);
   border-radius: var(--bk-radius);
@@ -312,7 +312,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-table :is(th, td) {
-  padding: 4px 8px;
+  padding: calc(var(--bk-spacing) * 1) calc(var(--bk-spacing) * 2);
   border: 1px solid var(--bk-color-border);
   text-align: left;
   vertical-align: top;
@@ -325,9 +325,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 8px;
-  min-height: 30px;
-  padding: 2px 10px;
+  gap: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 2);
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   border-radius: var(--bk-radius);
   font-size: var(--bk-text-xs);
   list-style: none;
@@ -358,8 +358,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-reasoning-text,
 .blockr-assistant-summary-text {
-  margin: 4px 0 4px 14px;
-  padding-left: 10px;
+  margin: calc(var(--bk-spacing) * 1) 0 calc(var(--bk-spacing) * 1) calc(var(--bk-spacing) * 4);
+  padding-left: calc(var(--bk-spacing) * 3);
   border-left: 2px solid var(--bk-color-border);
   font-size: var(--bk-text-sm);
 }
@@ -376,15 +376,15 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-tools {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 2px 0;
+  gap: calc(var(--bk-spacing) * 0.5);
+  margin: calc(var(--bk-spacing) * 0.5) 0;
 }
 .blockr-assistant-tool-title {
   font-weight: 500;
 }
 .blockr-assistant-tool-count {
   min-width: 18px;
-  padding: 0 5px;
+  padding: 0 calc(var(--bk-spacing) * 1);
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--bk-color-border);
   font-size: var(--bk-text-xs);
@@ -454,13 +454,13 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   flex-basis: 100%;
   flex-wrap: wrap;
-  gap: 2px 10px;
-  padding-left: 20px;
+  gap: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
+  padding-left: calc(var(--bk-spacing) * 6);
 }
 .blockr-assistant-block {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: calc(var(--bk-spacing) * 1);
   min-width: 0;
 }
 .blockr-assistant-block[data-removed] {
@@ -484,31 +484,31 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-edit-refused {
   flex-basis: 100%;
-  padding-left: 20px;
+  padding-left: calc(var(--bk-spacing) * 6);
   color: var(--bk-color-destructive-text);
 }
 .blockr-assistant-tool-calls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 4px 0 6px 14px;
-  padding-left: 10px;
+  gap: calc(var(--bk-spacing) * 2);
+  margin: calc(var(--bk-spacing) * 1) 0 calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 4);
+  padding-left: calc(var(--bk-spacing) * 3);
   border-left: 2px solid var(--bk-color-border);
 }
 .blockr-assistant-call + .blockr-assistant-call {
-  padding-top: 8px;
+  padding-top: calc(var(--bk-spacing) * 2);
   border-top: 1px solid var(--bk-color-border);
 }
 .blockr-assistant-call-label {
-  margin-bottom: 2px;
+  margin-bottom: calc(var(--bk-spacing) * 0.5);
   font-size: var(--bk-text-xs);
   font-weight: 500;
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-call pre {
   max-height: 240px;
-  margin: 0 0 6px;
-  padding: 6px 8px;
+  margin: 0 0 calc(var(--bk-spacing) * 1.5);
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 2);
   overflow: auto;
   border-radius: calc(var(--bk-radius) * 0.8);
   background: var(--bk-color-muted);
@@ -523,19 +523,19 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-call-image {
   display: block;
   max-width: 100%;
-  margin: 0 0 6px;
+  margin: 0 0 calc(var(--bk-spacing) * 1.5);
   border: 1px solid var(--bk-color-border);
   border-radius: calc(var(--bk-radius) * 0.8);
 }
 .blockr-assistant-call-note {
-  margin: 0 0 6px;
+  margin: 0 0 calc(var(--bk-spacing) * 1.5);
   font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-failure,
 .blockr-assistant-notification {
   margin: 0;
-  padding: 6px 10px;
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 3);
   border: 1px solid;
   border-radius: calc(var(--bk-radius) * 0.8);
   font-size: var(--bk-text-sm);
@@ -566,16 +566,16 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-notifications ul {
   display: grid;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
   margin: 0;
-  padding: 8px 12px 0;
+  padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 3) 0;
   list-style: none;
 }
 .blockr-assistant-greeting {
-  padding: 24px 2px 2px;
+  padding: calc(var(--bk-spacing) * 6) calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 0.5);
 }
 .blockr-assistant-greeting h3 {
-  margin: 0 0 2px;
+  margin: 0 0 calc(var(--bk-spacing) * 0.5);
   font-size: var(--bk-text-lg);
   font-weight: 600;
 }
@@ -587,16 +587,16 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-suggestions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 12px 0 0;
+  gap: calc(var(--bk-spacing) * 1.5);
+  margin: calc(var(--bk-spacing) * 3) 0 0;
   padding: 0;
   list-style: none;
 }
 .blockr-assistant-suggestion {
   display: flex;
   width: 100%;
-  min-height: 30px;
-  padding: 2px 10px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   border-radius: var(--bk-radius);
   font-size: var(--bk-text-sm);
   text-align: left;
@@ -604,9 +604,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-working {
   display: flex;
-  gap: 4px;
+  gap: calc(var(--bk-spacing) * 1);
   margin: 0;
-  padding: 6px 2px;
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 0.5);
 }
 .blockr-assistant-working span {
   width: 6px;
@@ -623,7 +623,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-compacting {
   margin: 0;
-  padding: 6px 2px;
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 0.5);
   font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
   animation: blockr-assistant-pulse 1.6s ease-in-out infinite;
@@ -631,10 +631,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-composer {
   position: relative;
   flex: 0 0 auto;
-  padding: 8px 12px 6px;
+  padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 3) calc(var(--bk-spacing) * 1.5);
 }
 .blockr-assistant-composer-note {
-  margin: 0 0 4px;
+  margin: 0 0 calc(var(--bk-spacing) * 1);
   overflow: hidden;
   font-size: var(--bk-text-xs);
   text-overflow: ellipsis;
@@ -644,9 +644,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 42px;
-  padding: 7px;
+  gap: calc(var(--bk-spacing) * 1.5);
+  min-height: calc(var(--bk-spacing) * 10 + 2px);
+  padding: calc(var(--bk-spacing) * 2);
   border: 1px solid var(--bk-color-input);
   border-radius: var(--bk-radius);
   background: var(--bk-color-popover);
@@ -655,12 +655,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-field-row {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
 }
 .blockr-assistant-staged {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: calc(var(--bk-spacing) * 1);
 }
 .blockr-assistant-field:has(textarea:focus) {
   outline: 2px solid var(--bk-color-ring);
@@ -672,19 +672,19 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-files-note,
 .blockr-assistant-command-note {
-  margin: 4px 0 0;
+  margin: calc(var(--bk-spacing) * 1) 0 0;
   font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-commands {
   position: absolute;
-  right: 12px;
+  right: calc(var(--bk-spacing) * 3);
   bottom: 100%;
-  left: 12px;
+  left: calc(var(--bk-spacing) * 3);
   z-index: 1;
-  max-height: 188px;
+  max-height: calc(var(--bk-spacing) * 47 + 2px);
   margin: 0;
-  padding: 4px;
+  padding: calc(var(--bk-spacing) * 1);
   overflow-y: auto;
   border: 1px solid var(--bk-color-border);
   border-radius: var(--bk-radius);
@@ -697,9 +697,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-commands-none {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  min-height: 30px;
-  padding: 6px 8px;
+  gap: calc(var(--bk-spacing) * 2);
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 2);
   border-radius: calc(var(--bk-radius) * 0.8);
   font-size: var(--bk-text-sm);
   line-height: 18px;
@@ -733,7 +733,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-width: 0;
   max-height: 160px;
   margin: 0;
-  padding: 3px 0;
+  padding: calc(var(--bk-spacing) * 0.5) 0;
   border: 0;
   outline: none;
   background: transparent;
@@ -755,8 +755,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: calc(var(--bk-spacing) * 6);
+  height: calc(var(--bk-spacing) * 6);
   padding: 0;
   border: 0;
   border-radius: calc(var(--bk-radius) * 0.8);
@@ -792,10 +792,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-key {
   flex: 0 0 auto;
-  padding: 8px 12px 0;
+  padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 3) 0;
 }
 .blockr-assistant-key-note {
-  margin: 0 0 6px;
+  margin: 0 0 calc(var(--bk-spacing) * 1.5);
   font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
@@ -806,22 +806,22 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   justify-content: center;
   width: 100%;
-  min-height: 30px;
-  margin: 0 0 6px;
-  padding: 2px 12px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  margin: 0 0 calc(var(--bk-spacing) * 1.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   font-size: var(--bk-text-sm);
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .blockr-assistant-key-field {
   display: flex;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
 }
 .blockr-assistant-key-input {
   flex: 1 1 auto;
   min-width: 0;
 }
 .blockr-assistant-key-input input {
-  min-height: 30px;
+  min-height: calc(var(--bk-spacing) * 7.5);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-key-input input::placeholder {
@@ -833,32 +833,32 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-key-field button {
   flex-shrink: 0;
-  min-height: 30px;
-  padding: 2px 12px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-footer {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
   min-width: 0;
-  padding: 0 12px 8px;
+  padding: 0 calc(var(--bk-spacing) * 3) calc(var(--bk-spacing) * 2);
   font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-footer-button {
   flex: 0 0 auto;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: calc(var(--bk-spacing) * 6);
+  height: calc(var(--bk-spacing) * 6);
   padding: 0;
 }
 .blockr-assistant-model {
   display: flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 4px;
+  gap: calc(var(--bk-spacing) * 1);
   min-width: 0;
 }
 .blockr-assistant-model-unoffered,
@@ -882,7 +882,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   width: 7.5rem;
 }
 .blockr-assistant-footer .blockr-assistant-pick [role=group] {
-  min-height: 24px;
+  min-height: calc(var(--bk-spacing) * 6);
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -899,7 +899,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-meter {
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: calc(var(--bk-spacing) * 2);
   margin: 0 0 0 auto;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -907,19 +907,19 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-meter > span {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: calc(var(--bk-spacing) * 0.5);
 }
 .blockr-assistant-meter svg {
   width: 12px;
   height: 12px;
 }
 .blockr-assistant-dialog h2 {
-  margin: 0 0 8px;
+  margin: 0 0 calc(var(--bk-spacing) * 2);
   font-size: var(--bk-text-lg);
   font-weight: 600;
 }
 .blockr-assistant-dialog p {
-  margin: 0 0 8px;
+  margin: 0 0 calc(var(--bk-spacing) * 2);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-dialog-url {
@@ -930,12 +930,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   flex-wrap: wrap-reverse;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
+  gap: calc(var(--bk-spacing) * 2);
+  margin-top: calc(var(--bk-spacing) * 3);
 }
 .blockr-assistant-dialog-buttons button {
-  min-height: 30px;
-  padding: 2px 12px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-always {
@@ -964,8 +964,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 6px 6px 16px;
+  gap: calc(var(--bk-spacing) * 2);
+  padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 4);
   border-bottom: 1px solid var(--bk-color-border);
 }
 .blockr-assistant-file-view-head h2 {
@@ -980,8 +980,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-file-view-close {
   flex-shrink: 0;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: calc(var(--bk-spacing) * 7);
+  height: calc(var(--bk-spacing) * 7);
   padding: 0;
 }
 .blockr-assistant-file-view-close:hover {
@@ -1009,7 +1009,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-file-text {
   width: 100%;
   margin: 0;
-  padding: 12px 16px;
+  padding: calc(var(--bk-spacing) * 3) calc(var(--bk-spacing) * 4);
   font-family: var(--bk-font-mono);
   font-size: var(--bk-text-xs);
   white-space: pre-wrap;
@@ -1032,9 +1032,9 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   inset-inline-start: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(var(--bk-spacing) * 2);
   width: min(20rem, 85%);
-  padding: 12px;
+  padding: calc(var(--bk-spacing) * 3);
   border-inline-end: 1px solid var(--bk-color-border);
   background: var(--bk-color-popover);
   box-shadow: var(--bk-shadow-lg);
@@ -1063,8 +1063,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-drawer-confirm button {
   flex: 0 0 auto;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: calc(var(--bk-spacing) * 6);
+  height: calc(var(--bk-spacing) * 6);
   padding: 0;
   color: var(--bk-color-muted-foreground);
 }
@@ -1075,19 +1075,19 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-drawer-tools {
   display: flex;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
 }
 .blockr-assistant-drawer-new {
   flex: 0 0 auto;
-  min-height: 30px;
-  padding: 2px 10px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 3);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-drawer-search {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 30px;
-  padding: 2px 8px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 2);
   border: 1px solid var(--bk-color-input);
   border-radius: calc(var(--bk-radius) * 0.8);
   background: transparent;
@@ -1100,7 +1100,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-width: 0;
 }
 .blockr-assistant-drawer-rename input {
-  min-height: 30px;
+  min-height: calc(var(--bk-spacing) * 7.5);
   font-size: var(--bk-text-sm);
 }
 .blockr-assistant-drawer-list {
@@ -1110,11 +1110,11 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   overscroll-behavior: contain;
 }
 .blockr-assistant-drawer-empty {
-  margin: 8px 0;
+  margin: calc(var(--bk-spacing) * 2) 0;
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-drawer-group h3 {
-  margin: 8px 0 2px;
+  margin: calc(var(--bk-spacing) * 2) 0 calc(var(--bk-spacing) * 0.5);
   font-size: var(--bk-text-xs);
   font-weight: 500;
   color: var(--bk-color-muted-foreground);
@@ -1127,8 +1127,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-drawer-row {
   display: flex;
   align-items: center;
-  gap: 2px;
-  min-height: 30px;
+  gap: calc(var(--bk-spacing) * 0.5);
+  min-height: calc(var(--bk-spacing) * 7.5);
   border-radius: calc(var(--bk-radius) * 0.8);
 }
 .blockr-assistant-drawer-row:hover,
@@ -1143,10 +1143,10 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--bk-spacing) * 1.5);
   min-width: 0;
-  min-height: 30px;
-  padding: 2px 8px;
+  min-height: calc(var(--bk-spacing) * 7.5);
+  padding: calc(var(--bk-spacing) * 0.5) calc(var(--bk-spacing) * 2);
   border: 0;
   border-radius: calc(var(--bk-radius) * 0.8);
   background: none;
@@ -1188,8 +1188,8 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
-  padding-right: 4px;
+  gap: calc(var(--bk-spacing) * 0.5);
+  padding-right: calc(var(--bk-spacing) * 1);
 }
 .blockr-assistant-drawer-confirm {
   font-size: var(--bk-text-xs);
@@ -1208,22 +1208,22 @@ span.blockr-assistant-file .blockr-assistant-file-name {
     display: none;
   }
   .blockr-assistant-transcript {
-    padding: 8px 8px 0;
+    padding: calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 2) 0;
   }
   .blockr-assistant-composer {
-    padding: 6px 8px 4px;
+    padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 1);
   }
   .blockr-assistant-footer {
-    padding: 0 8px 6px;
+    padding: 0 calc(var(--bk-spacing) * 2) calc(var(--bk-spacing) * 1.5);
   }
   .blockr-assistant-key {
-    padding: 6px 8px 0;
+    padding: calc(var(--bk-spacing) * 1.5) calc(var(--bk-spacing) * 2) 0;
   }
   .blockr-assistant-file-name {
     max-width: 120px;
   }
   .blockr-assistant-greeting {
-    padding-top: 12px;
+    padding-top: calc(var(--bk-spacing) * 3);
   }
 }
 @keyframes blockr-assistant-spin {
