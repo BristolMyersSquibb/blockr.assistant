@@ -899,8 +899,8 @@ function messageOf(error) {
 
 // srcts/models/models.ts
 var NONE = { offered: { models: [], named: false }, again: false };
-function resolveModel(offered, pick) {
-  return pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
+function resolveModel(offered2, pick) {
+  return pick !== null && offered2.models.includes(pick) ? pick : offered2.models[0];
 }
 function createModels(core, signal, options) {
   const modelsFailed = heldError(core, signal, "assistant_models_failed");
@@ -1015,11 +1015,11 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
     return failed(`The assistant cannot call a model: ${messageOf2(error)}`);
   }
   if (deployment.credential.kind === "visitor" && keyOf(options.key.current()) === void 0) return failed(NO_KEY);
-  const offered = await options.models.offered();
+  const offered2 = await options.models.offered();
   if (stopped()) return STOPPED;
   const picks = picked2();
-  const model2 = resolveModel(offered, picks?.model ?? null);
-  if (model2 === void 0) return { kind: "failed", why: offered.failure ?? NO_MODEL, raise: false };
+  const model2 = resolveModel(offered2, picks?.model ?? null);
+  if (model2 === void 0) return { kind: "failed", why: offered2.failure ?? NO_MODEL, raise: false };
   let catalogs;
   let loop;
   try {
@@ -1038,7 +1038,7 @@ async function prepareCall(options, picked2, stopped, carried = () => void 0) {
       connection: connectionOf(deployment, options.key, carried),
       model: model2,
       settings: settings.get(model2),
-      listed: offered.settings?.get(model2),
+      listed: offered2.settings?.get(model2),
       thinkingLevel: picks?.thinking_level
     }
   };
@@ -2971,6 +2971,66 @@ function shown2(value) {
   return JSON.stringify(one(value) ?? value);
 }
 
+// srcts/prompt/describe.ts
+var MODULE = "assistant";
+function createDescribe(core, signal) {
+  const failed2 = /* @__PURE__ */ new Map();
+  const failure = (plugin) => {
+    const held = failed2.get(plugin) ?? heldError(core, signal, "assistant_describe_failed");
+    failed2.set(plugin, held);
+    return held;
+  };
+  return async () => {
+    const plugins2 = Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT);
+    const loaded2 = await Promise.all(plugins2.map(([id]) => offered(core, moduleId(id))));
+    const states = core.store.board().plugins;
+    return plugins2.flatMap(([id, { name }], index) => {
+      const found = loaded2[index];
+      try {
+        const lines = found === void 0 ? [] : linesOf(found, id, Object.hasOwn(states, id) ? states[id] ?? null : null);
+        failed2.get(id)?.withdraw();
+        return lines.length === 0 ? [] : [{ plugin: id, name, lines }];
+      } catch (error) {
+        failure(id).raise(`The Board section leaves out what the plugin ${name} says about its state. ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }
+    });
+  };
+}
+function moduleId(plugin) {
+  return `${plugin.slice(0, plugin.indexOf("-"))}-${MODULE}`;
+}
+async function offered(core, id) {
+  try {
+    return { id, exports: await core.module(id) };
+  } catch (error) {
+    return error instanceof Error && error.name === "ModuleError" ? { id, error } : void 0;
+  }
+}
+function linesOf(found, plugin, state) {
+  if ("error" in found) throw found.error;
+  const given2 = isRecord4(found.exports) ? found.exports.default : void 0;
+  const describe = isRecord4(given2) ? given2.describe : void 0;
+  if (typeof describe !== "function") throw new Error(`The module ${found.id} gives no function describe() in its default export.`);
+  let lines;
+  try {
+    lines = describe.call(given2, plugin, state);
+  } catch (error) {
+    throw new Error(`The describe() of the module ${found.id} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) {
+    throw new Error(`The describe() of the module ${found.id} returned ${shown3(lines)}, where it returns an array of strings.`);
+  }
+  return lines;
+}
+function shown3(value) {
+  const text3 = JSON.stringify(value) ?? String(value);
+  return text3.length > 100 ? `${text3.slice(0, 100)}\u2026` : text3;
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // srcts/tools/caps.ts
 var DEFAULTS = {
   // What describe_block and describe_stack give, and what describe_result()
@@ -3621,9 +3681,9 @@ function blockEntry(core, id, options) {
   };
 }
 function addedState(state, caps) {
-  const shown3 = leaveOutLong(state, caps.value, STATE_HINT);
-  const text3 = json(shown3);
-  return Array.from(text3).length > caps.state ? cutText(text3, caps.state, STATE_HINT) : shown3;
+  const shown4 = leaveOutLong(state, caps.value, STATE_HINT);
+  const text3 = json(shown4);
+  return Array.from(text3).length > caps.state ? cutText(text3, caps.state, STATE_HINT) : shown4;
 }
 function conditionKey({ severity, phase, message: message2 }) {
   return JSON.stringify([severity, phase ?? null, message2]);
@@ -3957,7 +4017,7 @@ function blockTools(context6) {
 // srcts/tools/commands.ts
 var OWN2 = new Set(assistantCommands.map((command2) => command2.id));
 function commandTools({ core }) {
-  const offered = () => Object.values(core.commands.registered()).filter((command2) => !OWN2.has(command2.id));
+  const offered2 = () => Object.values(core.commands.registered()).filter((command2) => !OWN2.has(command2.id));
   return [
     tool({
       name: "list_commands",
@@ -3966,7 +4026,7 @@ function commandTools({ core }) {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          offered().map((command2) => ({
+          offered2().map((command2) => ({
             id: command2.id,
             description: cutText(command2.description ?? command2.label, max, "call describe_command for the full description")
           }))
@@ -4182,64 +4242,75 @@ var MARKED = ["waiting", "invalid", "failed", "unevaluated", "stale"];
 var NO_RESULT = new Set(MARKED);
 var WRONG = /* @__PURE__ */ new Set(["failed", "invalid"]);
 var ICONS = { error: "\u2716", warning: "\u26A0", message: "\u2139" };
-function boardSection(core, max, changed = []) {
+function boardSection(core, max, changed = [], plugins2 = []) {
   const board = core.store.board();
   const blocks = Object.entries(board.blocks);
   const links = Object.entries(board.links);
   const stacks = Object.entries(board.stacks);
   const statuses = new Map(blocks.map(([id]) => [id, core.scheduler.status(id)]));
-  const counts = countsLine(blocks.length, links.length, stacks.length, [...statuses.values()]);
-  if (blocks.length + links.length + stacks.length === 0) return ["## Board", `${counts} (empty board -- no blocks yet)`].join("\n");
+  const empty = blocks.length + links.length + stacks.length === 0;
+  const counts = `${countsLine(blocks.length, links.length, stacks.length, [...statuses.values()])}${empty ? " (empty board -- no blocks yet)" : ""}`;
+  const pluginParts = plugins2.filter(({ lines: lines2 }) => lines2.length > 0).map(pluginPart);
+  if (empty && pluginParts.length === 0) return ["## Board", counts].join("\n");
   const order = blockOrder(core, blocks, statuses, new Set(changed));
   const into = linksInto(links);
   const blockPart = {
     heading: "### Blocks",
     lines: order.map(([id, block]) => blockLine(id, block, statuses.get(id), into.get(id) ?? [])),
-    rest: (shown4) => {
-      const left = order.slice(shown4);
+    rest: (shown5) => {
+      const left = order.slice(shown5);
       if (left.length === 0) return void 0;
       const linked = left.reduce((sum, [id]) => sum + (into.get(id)?.length ?? 0), 0);
       const tail = linked === 0 ? "" : `, with the ${counted(linked, "link")} into ${left.length === 1 ? "it" : "them"}`;
-      return `${more(left.length, shown4, "block")}${tail}: list_blocks gives every block${linked === 0 ? "" : ", list_links every link"}`;
+      return `${more(left.length, shown5, "block")}${tail}: list_blocks gives every block${linked === 0 ? "" : ", list_links every link"}`;
     }
   };
   const stackPart = (listed4) => {
-    const shown4 = stacks.filter(([, { blocks: held }]) => held.length === 0 || held.some((id) => listed4.has(id)));
+    const shown5 = stacks.filter(([, { blocks: held }]) => held.length === 0 || held.some((id) => listed4.has(id)));
     return {
       heading: "### Stacks",
-      lines: shown4.map(([id, stack]) => stackLine(id, stack.name, stack.blocks, listed4)),
+      lines: shown5.map(([id, stack]) => stackLine(id, stack.name, stack.blocks, listed4)),
       rest: (taken2) => taken2 === stacks.length ? void 0 : `${more(stacks.length - taken2, taken2, "stack")}: list_stacks gives every stack`
     };
   };
   const lines = ["## Board", counts, ""];
   let room = max - width(lines.join("\n"));
   const add = (part, kept) => {
-    const { shown: shown4, filled } = fill(part, room - kept);
+    const { shown: shown5, filled } = fill(part, room - kept);
     lines.push(...filled);
     room -= width(["", ...filled].join("\n"));
-    return shown4;
+    return shown5;
   };
+  const forPlugins = (from) => pluginParts.slice(from).reduce((sum, part) => sum + least(part), 0);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(/* @__PURE__ */ new Set()));
-  const shown3 = blocks.length === 0 ? 0 : add(blockPart, forStacks);
-  const listed3 = new Set(order.slice(0, shown3).map(([id]) => id));
-  if (stacks.length > 0) add(stackPart(listed3), 0);
+  const shown4 = blocks.length === 0 ? 0 : add(blockPart, forStacks + forPlugins(0));
+  const listed3 = new Set(order.slice(0, shown4).map(([id]) => id));
+  if (stacks.length > 0) add(stackPart(listed3), forPlugins(0));
+  pluginParts.forEach((part, index) => add(part, forPlugins(index + 1)));
   return lines.join("\n");
+}
+function pluginPart({ plugin, name, lines }) {
+  return {
+    heading: `### ${name} (id: ${plugin})`,
+    lines,
+    rest: (shown4) => shown4 === lines.length ? void 0 : `${more(lines.length - shown4, shown4, "line")}: get_plugin_state("${plugin}") gives the plugin's state`
+  };
 }
 function fill(part, room) {
   let used = width(`
 ${part.heading}`);
-  let shown3 = 0;
+  let shown4 = 0;
   for (const line of part.lines) {
-    const rest2 = part.rest(shown3 + 1);
+    const rest2 = part.rest(shown4 + 1);
     if (used + width(`
 ${line}`) + (rest2 === void 0 ? 0 : width(`
 ${rest2}`)) > room) break;
     used += width(`
 ${line}`);
-    shown3 += 1;
+    shown4 += 1;
   }
-  const rest = part.rest(shown3);
-  return { shown: shown3, filled: [part.heading, ...part.lines.slice(0, shown3), ...rest === void 0 ? [] : [rest]] };
+  const rest = part.rest(shown4);
+  return { shown: shown4, filled: [part.heading, ...part.lines.slice(0, shown4), ...rest === void 0 ? [] : [rest]] };
 }
 function least(part) {
   const rest = part.rest(0);
@@ -4251,8 +4322,8 @@ function width(text3) {
 function counted(count, word) {
   return `${String(count)} ${word}${count === 1 ? "" : "s"}`;
 }
-function more(left, shown3, word) {
-  return shown3 === 0 ? `\u2026 ${counted(left, word)}` : `\u2026 and ${counted(left, `more ${word}`)}`;
+function more(left, shown4, word) {
+  return shown4 === 0 ? `\u2026 ${counted(left, word)}` : `\u2026 and ${counted(left, `more ${word}`)}`;
 }
 function countsLine(blocks, links, stacks, statuses) {
   const marked = MARKED.flatMap((status) => {
@@ -4263,7 +4334,7 @@ function countsLine(blocks, links, stacks, statuses) {
 }
 function blockOrder(core, blocks, statuses, changed) {
   const focused = core.focus.get();
-  const shown3 = new Set(core.onScreen.get()?.blocks ?? []);
+  const shown4 = new Set(core.onScreen.get()?.blocks ?? []);
   const groups = [
     (id) => {
       const status = statuses.get(id)?.status;
@@ -4271,7 +4342,7 @@ function blockOrder(core, blocks, statuses, changed) {
     },
     (id) => id === focused,
     (id) => changed.has(id),
-    (id) => shown3.has(id),
+    (id) => shown4.has(id),
     () => true
   ];
   const order = /* @__PURE__ */ new Map();
@@ -4290,10 +4361,10 @@ function blockLine(id, block, status, into) {
   return `${line} <- ${fed.join(", ")}`;
 }
 function stackLine(id, name, held, listed3) {
-  const shown3 = held.filter((block) => listed3.has(block));
-  const others = held.length - shown3.length;
+  const shown4 = held.filter((block) => listed3.has(block));
+  const others = held.length - shown4.length;
   const tail = others === 0 ? "" : ` and ${counted(others, "more block")}`;
-  return `- ${id} "${name}"${held.length === 0 ? "" : `: ${shown3.join(", ")}${tail}`}`;
+  return `- ${id} "${name}"${held.length === 0 ? "" : `: ${shown4.join(", ")}${tail}`}`;
 }
 function joinNames(names) {
   return names.length === 0 ? "" : ` ${names.join(", ")}`;
@@ -4312,15 +4383,15 @@ function withMarkers(line, status) {
 function focusSection(core) {
   const { blocks } = core.store.board();
   const lines = [];
-  const shown3 = core.onScreen.get();
-  if (shown3 !== null) {
+  const shown4 = core.onScreen.get();
+  if (shown4 !== null) {
     const held = Object.keys(blocks);
-    const seen = [...new Set(shown3.blocks)].filter((id) => Object.hasOwn(blocks, id));
+    const seen = [...new Set(shown4.blocks)].filter((id) => Object.hasOwn(blocks, id));
     if (held.length > 0 && seen.length === 0) lines.push("No block is on screen.");
     else if (held.length > 0 && seen.length === held.length) lines.push("Every block on the board is on screen.");
     else if (seen.length > 0) lines.push("These blocks are on screen:", ...seen.map((id) => `- ${id}`));
     const plugins2 = core.plugins.appPlugins();
-    const named2 = [...new Set(shown3.plugins)].flatMap((id) => {
+    const named2 = [...new Set(shown4.plugins)].flatMap((id) => {
       const plugin = id === ASSISTANT || !Object.hasOwn(plugins2, id) ? void 0 : plugins2[id];
       return plugin === void 0 ? [] : [`- ${plugin.name} (id: ${id})`];
     });
@@ -4351,7 +4422,7 @@ function optionLines(core) {
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, and then the stacks of the blocks listed.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then what the app's plugins say about their state.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
@@ -4368,7 +4439,7 @@ function createPrompt(core, options) {
   let written;
   return {
     system: () => written ??= systemPrompt(core, options),
-    appMessage: (changed) => appMessage2(core, changed)
+    appMessage: (changed) => appMessage2(core, options, changed)
   };
 }
 async function systemPrompt(core, { skills, template }) {
@@ -4382,10 +4453,10 @@ async function systemPrompt(core, { skills, template }) {
   const catalogue = skillsSection(listed3, descriptionMax);
   return [text3, rules_default.trim(), ...app === void 0 ? [] : [app], ...catalogue === void 0 ? [] : [catalogue]].join("\n\n");
 }
-async function appMessage2(core, changed = []) {
-  const max = await readToolCap(core, "assistant_board_section_max_chars");
+async function appMessage2(core, { describe }, changed = []) {
+  const [max, plugins2] = await Promise.all([readToolCap(core, "assistant_board_section_max_chars"), describe()]);
   const focus = focusSection(core);
-  return [app_preamble_default.trim(), boardSection(core, max, changed), ...focus === void 0 ? [] : [focus]].join("\n\n");
+  return [app_preamble_default.trim(), boardSection(core, max, changed, plugins2), ...focus === void 0 ? [] : [focus]].join("\n\n");
 }
 
 // srcts/prompt/build.md
@@ -5054,7 +5125,7 @@ function openAssistant(core, signal, options = {}) {
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
-  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
+  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal), describe: createDescribe(core, signal) });
   const key = options.key ?? pageKey();
   const deployment = (options.deployment ?? readDeployment(core)).then(async (chosen) => {
     await keepKey(core, key, chosen);
@@ -5425,13 +5496,13 @@ function Composer() {
     el.style.height = `${String(el.scrollHeight)}px`;
   }, [text3]);
   useLayoutEffect(() => {
-    const shown3 = list.current;
-    const option = shown3?.querySelector('[aria-selected="true"]');
-    if (shown3 == null || option == null) return;
+    const shown4 = list.current;
+    const option = shown4?.querySelector('[aria-selected="true"]');
+    if (shown4 == null || option == null) return;
     const top = option.offsetTop;
     const bottom = top + option.offsetHeight;
-    if (top < shown3.scrollTop) shown3.scrollTop = top;
-    else if (bottom > shown3.scrollTop + shown3.clientHeight) shown3.scrollTop = bottom - shown3.clientHeight;
+    if (top < shown4.scrollTop) shown4.scrollTop = top;
+    else if (bottom > shown4.scrollTop + shown4.clientHeight) shown4.scrollTop = bottom - shown4.clientHeight;
   }, [picked2]);
   const complete = (chosen) => {
     aui.composer.setText(`/${chosen.name} `);
@@ -5446,22 +5517,22 @@ function Composer() {
       commandRuns.current = false;
     });
   };
-  const listKeys = (event, shown3) => {
+  const listKeys = (event, shown4) => {
     const value = event.currentTarget.value;
     switch (event.key) {
       case "ArrowDown":
       case "ArrowUp": {
         if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false;
         event.preventDefault();
-        if (shown3.length > 0) {
-          const step = event.key === "ArrowDown" ? 1 : shown3.length - 1;
-          setHighlighted({ text: value, index: (index + step) % shown3.length });
+        if (shown4.length > 0) {
+          const step = event.key === "ArrowDown" ? 1 : shown4.length - 1;
+          setHighlighted({ text: value, index: (index + step) % shown4.length });
         }
         return true;
       }
       case "Tab":
       case "Enter": {
-        const chosen = shown3[index];
+        const chosen = shown4[index];
         if (event.shiftKey || chosen === void 0) return false;
         if (event.key === "Enter" && value === `/${chosen.name}`) return false;
         event.preventDefault();
@@ -5858,27 +5929,27 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
 // srcts/chat/footer.tsx
 import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/core/react";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
-function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
-  const next = offered === void 0 ? void 0 : resolveModel(offered, picks.model);
+function Footer({ usage, picks, offered: offered2, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
+  const next = offered2 === void 0 ? void 0 : resolveModel(offered2, picks.model);
   return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-footer", children: [
     /* @__PURE__ */ jsx4(Button4, { variant: "quiet", className: "blockr-assistant-footer-button", "aria-label": "Conversations", ref: opener, onPress: onDrawer, children: /* @__PURE__ */ jsxs4("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: [
       /* @__PURE__ */ jsx4("path", { d: "M2.5 3v3h3" }),
       /* @__PURE__ */ jsx4("path", { d: "M2.75 6A5.5 5.5 0 1 1 3 9.6" }),
       /* @__PURE__ */ jsx4("path", { d: "M8 5v3.2l2.2 1.3" })
     ] }) }),
-    offered === void 0 || next === void 0 ? null : /* @__PURE__ */ jsx4(Model, { pick: picks.model, next, offered, onPick }),
-    next === void 0 || levelsOf === void 0 ? null : /* @__PURE__ */ jsx4(Level, { levels: levelsOf(next, picks.thinkingLevel, offered?.settings?.get(next)), onPick: onPickLevel }),
+    offered2 === void 0 || next === void 0 ? null : /* @__PURE__ */ jsx4(Model, { pick: picks.model, next, offered: offered2, onPick }),
+    next === void 0 || levelsOf === void 0 ? null : /* @__PURE__ */ jsx4(Level, { levels: levelsOf(next, picks.thinkingLevel, offered2?.settings?.get(next)), onPick: onPickLevel }),
     /* @__PURE__ */ jsx4(Meter, { usage })
   ] });
 }
 function Model({
   pick,
   next,
-  offered,
+  offered: offered2,
   onPick
 }) {
   const unoffered = pick !== null && pick !== next ? pick : void 0;
-  const choosable = !offered.named || offered.models.length > 1;
+  const choosable = !offered2.named || offered2.models.length > 1;
   if (!choosable && unoffered === void 0) return null;
   return /* @__PURE__ */ jsxs4("div", { className: "blockr-assistant-model", children: [
     unoffered === void 0 ? null : /* @__PURE__ */ jsxs4("span", { className: "blockr-assistant-model-unoffered", title: `The app does not offer ${unoffered}, so the calls go to ${next}.`, children: [
@@ -5895,7 +5966,7 @@ function Model({
         onChange: (key) => {
           if (key !== null) onPick(String(key));
         },
-        defaultItems: offered.models.map((id) => ({ id })),
+        defaultItems: offered2.models.map((id) => ({ id })),
         children: (option) => /* @__PURE__ */ jsx4(ComboBoxItem, { id: option.id, children: option.id })
       }
     ) : /* @__PURE__ */ jsx4("span", { className: "blockr-assistant-model-name", children: next })
@@ -6153,7 +6224,7 @@ var ATTACHMENT = "attachment";
 var given = /* @__PURE__ */ new WeakMap();
 var sent2 = /* @__PURE__ */ new WeakMap();
 function shownOf(messages, running, kept) {
-  const shown3 = [];
+  const shown4 = [];
   let opener;
   let span = [];
   let failure;
@@ -6161,7 +6232,7 @@ function shownOf(messages, running, kept) {
     const results = last ? running?.results : void 0;
     const reply = last && span.at(-1)?.role !== "assistant" ? running?.reply : void 0;
     if (span.length > 0 || failure !== void 0 || results !== void 0 && Object.keys(results).length > 0 || reply !== void 0) {
-      shown3.push(turnOf(opener, span, span.map((message2) => kept(message2.id)), failure, results, reply));
+      shown4.push(turnOf(opener, span, span.map((message2) => kept(message2.id)), failure, results, reply));
     }
     span = [];
     failure = void 0;
@@ -6172,7 +6243,7 @@ function shownOf(messages, running, kept) {
       failure = held?.failure ?? failure;
     } else if (message2.role === "user" || message2.role === "summary") {
       end2(false);
-      shown3.push(held?.files === void 0 ? message2 : sentOf(message2, held.files));
+      shown4.push(held?.files === void 0 ? message2 : sentOf(message2, held.files));
       opener = message2;
       failure = held?.failure;
     } else {
@@ -6181,11 +6252,11 @@ function shownOf(messages, running, kept) {
     }
   }
   end2(true);
-  return shown3;
+  return shown4;
 }
-function threadMessageOf(shown3) {
-  if ("kind" in shown3 && shown3.kind === "turn") return turnMessage(shown3);
-  const [message2, files] = "kind" in shown3 ? [shown3.message, shown3.files] : [shown3, []];
+function threadMessageOf(shown4) {
+  if ("kind" in shown4 && shown4.kind === "turn") return turnMessage(shown4);
+  const [message2, files] = "kind" in shown4 ? [shown4.message, shown4.files] : [shown4, []];
   const createdAt = new Date(message2.created);
   if (message2.role === "summary") return { role: "system", id: message2.id, createdAt, content: [{ type: "text", text: textOf2(message2.parts) }] };
   return { role: "user", id: message2.id, createdAt, content: userContent2(message2.parts, files) };
@@ -6747,7 +6818,7 @@ function Chat({ core, assistant }) {
   const { conversations, turns, models, compaction } = assistant;
   const all = useConversations(conversations);
   const running = useRunning(turns);
-  const offered = useOffered(models);
+  const offered2 = useOffered(models);
   const levelsOf = useThinkingLevels(assistant.thinkingLevels);
   const deployment = useResolved(assistant.deployment);
   const visitorKey = useVisitorKey(assistant.key);
@@ -6773,10 +6844,10 @@ function Chat({ core, assistant }) {
   const noKey = visitorAuthenticates && keyOf(visitorKey) === void 0;
   const keyField = useMemo6(() => {
     if (deployment === void 0 || !visitorAuthenticates || visitorKey.kind === "given") return void 0;
-    const offered2 = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : void 0;
-    return { state: visitorKey, host: new URL(deployment.baseUrl).host, kept: assistant.key.kept(), appHost: globalThis.location.host, openRouterLogin: offered2 };
+    const offered3 = assistant.openRouterLogin.offers(deployment.baseUrl) ? openRouterLogin : void 0;
+    return { state: visitorKey, host: new URL(deployment.baseUrl).host, kept: assistant.key.kept(), appHost: globalThis.location.host, openRouterLogin: offered3 };
   }, [assistant, deployment, openRouterLogin, visitorAuthenticates, visitorKey]);
-  const shown3 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
+  const shown4 = shownOf(messages, runsHere ? running : void 0, (message2) => open2 === void 0 ? void 0 : conversations.kept(open2, message2));
   const openConversation = useCallback2((id) => {
     storeConversation(id);
     setChosen(id);
@@ -6866,7 +6937,7 @@ function Chat({ core, assistant }) {
     if (wasOpen) setNextPicks(removed === void 0 ? NO_PICKS : picksOf(removed));
   };
   const runtime = useExternalStoreRuntime({
-    messages: shown3,
+    messages: shown4,
     convertMessage: threadMessageOf,
     isRunning: runsHere,
     isSendDisabled: running !== void 0 || noKey,
@@ -6979,7 +7050,7 @@ function Chat({ core, assistant }) {
             {
               usage: conversation2?.usage,
               picks: conversation2 === void 0 ? nextPicks : picksOf(conversation2),
-              offered,
+              offered: offered2,
               levelsOf,
               onPick: pick,
               onPickLevel: pickLevel,

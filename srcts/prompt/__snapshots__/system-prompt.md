@@ -22,7 +22,7 @@ That message shows the board as it is at that moment, in its Board section, and 
 
 The Board section holds the whole board only where the board fits the section's cap.
 Otherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.
-The rest of the blocks follow in the board's order, and then the stacks of the blocks listed.
+The rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then what the app's plugins say about their state.
 Each block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.
 Where the cap cuts a list, its last line counts what the section left out and names the tool that gives it.
 So a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.
@@ -60,7 +60,7 @@ What you see of the board is bounded:
 - A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.
 - A block's description gives its state without the values that are too long to show.
 - A list of block classes, commands or plugins cuts each long description short.
-- The Board section may leave out blocks, and shows no plugin's state.
+- The Board section may leave out blocks, and shows no plugin's state in full.
 
 So never guess at what is left out, and never invent a column or a value to fit a request.
 The moment you need a value, a name or a piece of structure that you have not seen, read it.
