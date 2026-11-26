@@ -1,5 +1,5 @@
-// The status dot of a block, as the design system draws a block's status
-// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.2.7#the-status-dot),
+// The status dot of a block, as core draws a block's status
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.8#the-blocks-mark-and-the-status-dot),
 // which the edit tool's row draws beside each block that the edit's review
 // gives. The dock's client holds the dot's spec as one function and the DAG
 // keeps a copy of it, and so does the chat: this table, which a test checks
@@ -7,38 +7,32 @@
 // The chat draws the status that the review gave, which names no
 // notification, so it has no need of the rule that the dock's dot reads
 // failed while an error about the block's output concerns the block.
-// The colour is core's colour of the status, as --bc-color-status-stale,
-// which core's theme gives the value of the table's token, lighter under the
-// dark theme, with the token's light value as the fallback.
+// The colour is the theme variable of the job that core maps the status onto,
+// as --bk-color-destructive for failed, so that a theme restyles the dot
+// through the jobs, in both modes
+// (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.7.2#the-defaults).
 
 // How the dot of a status looks.
 export interface Dot {
   // Whether the dot is filled, or a ring.
   readonly filled: boolean;
-  // The token of the table whose colour the dot takes.
-  readonly token: Token;
+  // The job whose colour the dot takes.
+  readonly job: Job;
   readonly tooltip: string;
 }
 
-// The tokens of the table that the dots take, each with its light value,
-// which core's theme gives the statuses that take it.
-const LIGHT = {
-  "text-muted": "#6b7280",
-  "border-warning": "#d97706",
-  "border-danger": "#dc2626",
-  "border-success": "#16a34a",
-} as const;
-
-type Token = keyof typeof LIGHT;
+// The jobs that the dots take, by the names of their theme variables without
+// --bk-color-.
+type Job = "muted-foreground" | "warning" | "destructive" | "success";
 
 // The dot of each status that core's scheduler gives a block.
 export const DOTS: Readonly<Record<string, Dot>> = {
-  stale: { filled: true, token: "text-muted", tooltip: "Inputs changed since this block last ran" },
-  waiting: { filled: false, token: "border-warning", tooltip: "Waiting for a data input" },
-  invalid: { filled: true, token: "border-warning", tooltip: "Set this block's inputs" },
-  failed: { filled: true, token: "border-danger", tooltip: "Evaluation failed" },
-  ready: { filled: true, token: "border-success", tooltip: "Up to date" },
-  unevaluated: { filled: false, token: "text-muted", tooltip: "Not evaluated yet" },
+  stale: { filled: true, job: "muted-foreground", tooltip: "Inputs changed since this block last ran" },
+  waiting: { filled: false, job: "warning", tooltip: "Waiting for a data input" },
+  invalid: { filled: true, job: "warning", tooltip: "Set this block's inputs" },
+  failed: { filled: true, job: "destructive", tooltip: "Evaluation failed" },
+  ready: { filled: true, job: "success", tooltip: "Up to date" },
+  unevaluated: { filled: false, job: "muted-foreground", tooltip: "Not evaluated yet" },
 };
 
 // The dot of a status, or undefined for one that the table lacks.
@@ -46,7 +40,7 @@ export function dotOf(status: string): Dot | undefined {
   return Object.hasOwn(DOTS, status) ? DOTS[status] : undefined;
 }
 
-// The colour of a status's dot, as CSS.
-export function dotColor(status: string, dot: Dot): string {
-  return `var(--bc-color-status-${status}, ${LIGHT[dot.token]})`;
+// The colour of a dot, as CSS.
+export function dotColor(dot: Dot): string {
+  return `var(--bk-color-${dot.job})`;
 }

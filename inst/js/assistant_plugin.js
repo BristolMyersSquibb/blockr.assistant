@@ -6574,25 +6574,19 @@ function strings(value) {
 }
 
 // srcts/chat/status.ts
-var LIGHT = {
-  "text-muted": "#6b7280",
-  "border-warning": "#d97706",
-  "border-danger": "#dc2626",
-  "border-success": "#16a34a"
-};
 var DOTS = {
-  stale: { filled: true, token: "text-muted", tooltip: "Inputs changed since this block last ran" },
-  waiting: { filled: false, token: "border-warning", tooltip: "Waiting for a data input" },
-  invalid: { filled: true, token: "border-warning", tooltip: "Set this block's inputs" },
-  failed: { filled: true, token: "border-danger", tooltip: "Evaluation failed" },
-  ready: { filled: true, token: "border-success", tooltip: "Up to date" },
-  unevaluated: { filled: false, token: "text-muted", tooltip: "Not evaluated yet" }
+  stale: { filled: true, job: "muted-foreground", tooltip: "Inputs changed since this block last ran" },
+  waiting: { filled: false, job: "warning", tooltip: "Waiting for a data input" },
+  invalid: { filled: true, job: "warning", tooltip: "Set this block's inputs" },
+  failed: { filled: true, job: "destructive", tooltip: "Evaluation failed" },
+  ready: { filled: true, job: "success", tooltip: "Up to date" },
+  unevaluated: { filled: false, job: "muted-foreground", tooltip: "Not evaluated yet" }
 };
 function dotOf(status) {
   return Object.hasOwn(DOTS, status) ? DOTS[status] : void 0;
 }
-function dotColor(status, dot) {
-  return `var(--bc-color-status-${status}, ${LIGHT[dot.token]})`;
+function dotColor(dot) {
+  return `var(--bk-color-${dot.job})`;
 }
 
 // srcts/chat/tools.tsx
@@ -6635,7 +6629,7 @@ function Edits({ calls }) {
 }
 function Block({ block }) {
   const dot = block.status === void 0 ? void 0 : dotOf(block.status);
-  const style = dot === void 0 || block.status === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(block.status, dot) };
+  const style = dot === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(dot) };
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
     dot === void 0 ? null : /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
     /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-block-name", children: block.name })
