@@ -18,10 +18,9 @@
 //   blocks listed and a count of its others, without the S3 class. A stack
 //   that holds no block has nothing to leave out, so it counts as one that
 //   holds a block listed.
-// - Where the dock is the frontend and has more than one view, its views,
-//   the active one first, each with the panels that it shows (./dock.ts).
 // The app's plugins and the board options are in the system prompt instead
-// (./plugins.ts), since neither changes while the board is open.
+// (./plugins.ts), since neither changes while the board is open. The section
+// gives no plugin's state, which the model reads with get_plugin_state.
 //
 // One cap, assistant_board_section_max_chars, bounds the whole section,
 // rather than each of its parts, so that what a call reads anew stops growing
@@ -39,7 +38,6 @@
 // 4. The blocks on screen.
 // 5. The rest of the blocks.
 // 6. The stacks.
-// 7. The views.
 // Each part takes its lines in order until the next would pass the cap. A
 // part that the cap cuts ends with a line that counts what it leaves out and
 // names the tool that gives it, as in "… and 88 more blocks: list_blocks
@@ -49,10 +47,9 @@
 // out.
 
 import type { Block, BlockStatus, CoreApi, Link } from "@blockr/core";
-import { DOCK, dockViews } from "./dock.ts";
 
 // What of CoreApi the section reads.
-export type Core = Pick<CoreApi, "store" | "scheduler" | "plugins" | "focus" | "onScreen">;
+export type Core = Pick<CoreApi, "store" | "scheduler" | "focus" | "onScreen">;
 
 // The statuses under which a block holds no current result, which its line
 // marks and the line of counts counts, in the order of the rules.
@@ -109,7 +106,6 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
       rest: (taken) => (taken === stacks.length ? undefined : `${more(stacks.length - taken, taken, "stack")}: list_stacks gives every stack`),
     };
   };
-  const viewPart = viewsOf(core);
 
   // The heading and the line of counts, then an empty line, as today's.
   const lines = ["## Board", counts, ""];
@@ -123,12 +119,10 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
     return shown;
   };
 
-  const forViews = least(viewPart);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(new Set()));
-  const shown = blocks.length === 0 ? 0 : add(blockPart, forStacks + forViews);
+  const shown = blocks.length === 0 ? 0 : add(blockPart, forStacks);
   const listed = new Set(order.slice(0, shown).map(([id]) => id));
-  if (stacks.length > 0) add(stackPart(listed), forViews);
-  if (viewPart !== undefined) add(viewPart, 0);
+  if (stacks.length > 0) add(stackPart(listed), 0);
   return lines.join("\n");
 }
 
@@ -151,9 +145,8 @@ function fill(part: Part, room: number): { readonly shown: number; readonly fill
 }
 
 // The room that the part takes where it shows none of its lines: its heading
-// and the line that counts what it leaves out. None where there is no part.
-function least(part: Part | undefined): number {
-  if (part === undefined) return 0;
+// and the line that counts what it leaves out.
+function least(part: Part): number {
   const rest = part.rest(0);
   return width(["", part.heading, ...(rest === undefined ? [] : [rest])].join("\n"));
 }
@@ -254,18 +247,4 @@ function withMarkers(line: string, status: BlockStatus | undefined): string {
   });
   const markers = [...(NO_RESULT.has(status.status) ? [`[${status.status}]`] : []), ...(counts.length === 0 ? [] : [`[${counts.join(", ")}]`])];
   return markers.length === 0 ? line : `${line} ${markers.join(" ")}`;
-}
-
-// The part of the dock's views, the active one first, where the dock is the
-// frontend and has more than one view.
-function viewsOf(core: Core): Part | undefined {
-  const views = dockViews(core);
-  if (views === undefined || views.views.length <= 1) return undefined;
-  const { active } = views;
-  const ordered = active === null ? views.views : [active, ...views.views.filter((view) => view.id !== active.id)];
-  return {
-    heading: "### Views",
-    lines: ordered.map(({ id, name, panels }) => `- ${name} (id: ${id})${active?.id === id ? " (active)" : ""} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`),
-    rest: (shown) => (shown === ordered.length ? undefined : `${more(ordered.length - shown, shown, "view")}: get_plugin_state("${DOCK}") gives every view`),
-  };
 }

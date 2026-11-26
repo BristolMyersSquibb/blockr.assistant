@@ -12,12 +12,8 @@ This message comes from the app, not from the user.
 - joined <blockr.core-merge_block> by, all_x, all_y [waiting]
 ### Stacks
 - s1 "Input": iris, head
-### Views
-- Analysis (id: v1) (active) iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin
-- Overview (id: v2) (empty)
 
 ## Focus
-The active view is Analysis (id: v1).
 These blocks are on screen:
 - iris
 - plot

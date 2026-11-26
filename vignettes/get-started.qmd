@@ -554,7 +554,7 @@ Otherwise, it lists first what a call most likely needs:
 3. The blocks that changed since the conversation's previous call, whoever changed them.
 4. The blocks on screen.
 
-The rest of the blocks follow in the board's order, while they fit, and then the stacks and the views.
+The rest of the blocks follow in the board's order, while they fit, and then the stacks.
 Each list that the cap cuts ends with a line that counts what it left out and names the tool that gives it.
 
 A cap that the plugin reads takes a whole number of 0 or more.

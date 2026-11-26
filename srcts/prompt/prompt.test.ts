@@ -5,11 +5,10 @@
 // what of CoreApi they read, which holds the board, the statuses, the
 // plugins and the screen that each test gives. Two snapshots hold the system
 // prompt and the message of the app's of a board with a block of each status,
-// where the dock is the frontend, in place of today's golden copy
-// (tests/testthat/_snaps/system-prompt.md at fcbdb27), so that a change that
-// nobody meant shows in the diff. Two larger boards check what the Board
-// section holds within its cap: one of 20 blocks, which it holds whole, and
-// one of 100, which it cuts.
+// in place of today's golden copy (tests/testthat/_snaps/system-prompt.md at
+// fcbdb27), so that a change that nobody meant shows in the diff. Two larger
+// boards check what the Board section holds within its cap: one of 20
+// blocks, which it holds whole, and one of 100, which it cuts.
 
 import type { BlockStatus, Board, Condition, Json, Link } from "@blockr/core";
 import { describe, expect, test } from "vitest";
@@ -18,7 +17,6 @@ import { ASSISTANT } from "../state/index.ts";
 import { skill } from "../testing/index.ts";
 import { skillBlurb } from "../tools/index.ts";
 import { boardSection } from "./board.ts";
-import { DOCK } from "./dock.ts";
 import { focusSection } from "./focus.ts";
 import { createPrompt } from "./prompt.ts";
 import type { Core } from "./prompt.ts";
@@ -34,11 +32,9 @@ interface Given {
   // The category of each board option that a loaded package defines.
   readonly categories?: Readonly<Record<string, string>>;
   readonly statuses?: Readonly<Record<string, Partial<BlockStatus>>>;
-  // The app's plugins, each with its name, the description of its state's
-  // schema and whether its class is a frontend.
-  readonly plugins?: Readonly<Record<string, { readonly name: string; readonly description?: string; readonly frontend?: boolean }>>;
-  // The state of each plugin that the board holds.
-  readonly states?: Readonly<Record<string, Json>>;
+  // The app's plugins, each with its name and the description of its state's
+  // schema.
+  readonly plugins?: Readonly<Record<string, { readonly name: string; readonly description?: string }>>;
   readonly focus?: string | null;
   readonly onScreen?: { readonly blocks: readonly string[]; readonly plugins: readonly string[] } | null;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
@@ -54,7 +50,7 @@ function standIn(given: Given = {}): Core {
     links: given.links ?? {},
     stacks: given.stacks ?? {},
     options: given.options ?? {},
-    plugins: given.states ?? {},
+    plugins: {},
   };
   const plugins = { [ASSISTANT]: { name: "Assistant" }, ...given.plugins };
   const status = (id: string): BlockStatus | undefined => {
@@ -73,7 +69,6 @@ function standIn(given: Given = {}): Core {
         return {
           id,
           ...(plugin?.description === undefined ? {} : { state: { schema: { type: "object", description: plugin.description }, default: {} } }),
-          ...(plugin?.frontend === true ? { frontend: { render: () => undefined } } : {}),
         };
       },
     },
@@ -88,7 +83,7 @@ function condition(severity: Condition["severity"], message: string): Condition 
 }
 
 // A board with a block of each status, a link into a positional input, a
-// stack and two board options, where the dock is the frontend with two views.
+// stack and two board options.
 const POPULATED: Given = {
   blocks: {
     iris: { registry_id: "blockr.core-dataset_block", state: { dataset: "iris", package: "datasets" } },
@@ -117,29 +112,8 @@ const POPULATED: Given = {
     joined: { status: "waiting", reason: "The data input x has no link." },
   },
   plugins: {
-    [DOCK]: { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows.", frontend: true },
+    "blockr.dock-dock_plugin": { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows." },
     "blockr.dag-dag_plugin": { name: "DAG" },
-  },
-  states: {
-    [DOCK]: {
-      views: {
-        v1: {
-          name: "Analysis",
-          folder: null,
-          index: "a",
-          grid: {
-            orientation: "horizontal",
-            children: [{ panels: [{ block: "iris" }, { block: "head" }], active: { block: "iris" } }, { children: [{ panels: [{ block: "plot" }], active: { block: "plot" } }], sizes: [1] }],
-            sizes: [0.5, 0.5],
-            rails: { left: { panels: [{ plugin: ASSISTANT }, { plugin: "blockr.dag-dag_plugin" }], active: { plugin: ASSISTANT }, collapsed: false, size: 500 } },
-          },
-        },
-        v2: { name: "Overview", folder: null, index: "b", grid: { orientation: "horizontal", children: [], sizes: [] } },
-      },
-      folders: {},
-      active: "v1",
-      visible: {},
-    },
   },
   focus: "head",
   onScreen: { blocks: ["iris", "plot"], plugins: [ASSISTANT, "blockr.dag-dag_plugin"] },
@@ -166,31 +140,13 @@ function classed(kind: keyof typeof CLASSES): { readonly registry_id: string; re
   return { registry_id: registryId, state: Object.fromEntries(args.map((arg) => [arg, null])) };
 }
 
-// The dock's state with the views given, each by its id with its name and
-// the panels of its one tab group, and the active view.
-function dockState(views: readonly (readonly [string, string, readonly string[]])[], active: string): Json {
-  const panel = (id: string): Json => (id.includes("-") ? { plugin: id } : { block: id });
-  return {
-    views: Object.fromEntries(
-      views.map(([id, name, panels], index) => [
-        id,
-        { name, folder: null, index: String.fromCharCode(97 + index), grid: { orientation: "horizontal", children: [{ panels: panels.map(panel) }], sizes: [1] } },
-      ]),
-    ),
-    folders: {},
-    active,
-    visible: {},
-  };
-}
-
 const PLUGINS: Given["plugins"] = {
-  [DOCK]: { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows.", frontend: true },
+  "blockr.dock-dock_plugin": { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows." },
   "blockr.dag-dag_plugin": { name: "DAG" },
 };
 
-// A board of 20 blocks on the flights of nycflights13, in four stacks, where
-// the dock is the frontend with three views, as a board that the Board
-// section holds whole.
+// A board of 20 blocks on the flights of nycflights13, in four stacks, as a
+// board that the Board section holds whole.
 const TWENTY: Given = (() => {
   const blocks: [string, keyof typeof CLASSES][] = [
     ["flights", "dataset"],
@@ -251,26 +207,16 @@ const TWENTY: Given = (() => {
       speed_plot: { status: "stale" },
     },
     plugins: PLUGINS,
-    states: {
-      [DOCK]: dockState(
-        [
-          ["v1", "Data", ["flights", "airlines", "airports", "weather"]],
-          ["v2", "Analysis", ["sorted", "by_carrier", "by_month", "by_origin", "worst", ASSISTANT, "blockr.dag-dag_plugin"]],
-          ["v3", "Plots", ["delay_plot", "month_plot", "origin_plot", "speed_plot"]],
-        ],
-        "v2",
-      ),
-    },
     focus: "by_carrier",
     onScreen: { blocks: ["sorted", "by_carrier", "by_month", "by_origin", "worst"], plugins: [ASSISTANT, "blockr.dag-dag_plugin"] },
   };
 })();
 
 // A board past the cap, as the page measured one: 100 blocks in ten stacks of
-// ten, each a chain from a dataset block, with 108 links, six board options,
-// five plugins besides the assistant's and six views of the dock. Three
-// blocks failed and two are invalid, all past the first stack, while the
-// focus and the four blocks on screen are in the first stack.
+// ten, each a chain from a dataset block, with 108 links, six board options
+// and five plugins besides the assistant's. Three blocks failed and two are
+// invalid, all past the first stack, while the focus and the four blocks on
+// screen are in the first stack.
 const KINDS: readonly (keyof typeof CLASSES)[] = ["dataset", "filter", "mutate", "join", "select", "arrange", "summarize", "slice", "pivot", "rbind"];
 const HUNDRED: Given = (() => {
   const id = (n: number): string => `${KINDS[(n - 1) % 10] ?? "block"}_${String(n)}`;
@@ -294,7 +240,6 @@ const HUNDRED: Given = (() => {
     [id(64)]: { status: "invalid" },
     [id(95)]: { status: "invalid" },
   };
-  const views = Array.from({ length: 6 }, (_, v): readonly [string, string, readonly string[]] => [`v${String(v + 1)}`, `View ${String(v + 1)}`, ids.slice(v * 10, v * 10 + 5)]);
   return {
     blocks: Object.fromEntries(ids.map((block, i) => [block, classed(KINDS[i % 10] ?? "dataset")])),
     links: Object.fromEntries(links),
@@ -309,7 +254,6 @@ const HUNDRED: Given = (() => {
       "blockr.session-session_plugin": { name: "Session" },
       "blockr.io-export_plugin": { name: "Export" },
     },
-    states: { [DOCK]: dockState(views, "v1") },
     focus: id(3),
     onScreen: { blocks: [id(1), id(2), id(4), id(5)], plugins: [] },
   };
@@ -373,7 +317,7 @@ describe("the system prompt", () => {
     const listed = skills(
       skill("joins", { description }),
       skill("exposure", { blocks: ["blockr.core-dataset_block"] }),
-      skill("layout", { plugins: [DOCK] }),
+      skill("layout", { plugins: ["blockr.dock-dock_plugin"] }),
       skill("review", { modelInvocable: false, userInvocable: true }),
     );
 
@@ -504,29 +448,6 @@ describe("the Board section", () => {
     expect(written).not.toContain("n_rows");
   });
 
-  test("gives the dock's views, the active one first, each with its panels, where the dock is the frontend and has more than one", () => {
-    const dock = POPULATED.states?.[DOCK] as Readonly<Record<string, Json>>;
-
-    const written = boardOf(POPULATED);
-    const second = boardOf({ ...POPULATED, states: { [DOCK]: { ...dock, active: "v2" } } });
-
-    expect(written.slice(written.indexOf("### Views"))).toBe(
-      ["### Views", "- Analysis (id: v1) (active) iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin", "- Overview (id: v2) (empty)"].join("\n"),
-    );
-    expect(second.slice(second.indexOf("### Views"))).toBe(
-      ["### Views", "- Overview (id: v2) (active) (empty)", "- Analysis (id: v1) iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin"].join("\n"),
-    );
-  });
-
-  test("gives no views where the dock has one view, where the dock is not the frontend, or where its state has another shape", () => {
-    const dock = POPULATED.states?.[DOCK] as { views: Record<string, Json> };
-    const one = { ...POPULATED, states: { [DOCK]: { ...dock, views: { v1: dock.views.v1 ?? null } } } };
-    const drawn = { ...POPULATED, plugins: { [DOCK]: { name: "Dock" } } };
-    const other = { ...POPULATED, states: { [DOCK]: { ...dock, views: { v1: { name: "Analysis", layout: [] } } } } };
-
-    for (const given of [one, drawn, other]) expect(boardOf(given)).not.toContain("### Views");
-  });
-
   test("holds the board of the snapshot and a board of 20 blocks whole within the default cap", () => {
     for (const given of [POPULATED, TWENTY]) {
       const written = boardOf(given);
@@ -558,7 +479,6 @@ describe("the Board section", () => {
     expect(lines[1]).toBe("100 block(s) (2 invalid, 3 failed, 59 unevaluated, 26 stale), 108 link(s), 10 stack(s).");
     expect(lines).toContain(`… and ${String(left)} more blocks, with the ${String(linked)} links into them: list_blocks gives every block, list_links every link`);
     expect(written).toContain("### Stacks\n… 10 stacks: list_stacks gives every stack");
-    expect(written).toMatch(/### Views\n- View 1 \(id: v1\) \(active\) dataset_1, filter_2, mutate_3, join_4, select_5\n… and 5 more views: get_plugin_state\("blockr\.dock-dock_plugin"\) gives every view$/);
   });
 
   test("stays within its cap, whatever the cap, while the cap holds the line of counts and the lines that count what it leaves out", () => {
@@ -577,8 +497,6 @@ describe("the Board section", () => {
       "… 100 blocks, with the 108 links into them: list_blocks gives every block, list_links every link",
       "### Stacks",
       "… 10 stacks: list_stacks gives every stack",
-      "### Views",
-      '… 6 views: get_plugin_state("blockr.dock-dock_plugin") gives every view',
     ]);
   });
 
@@ -621,11 +539,10 @@ describe("the Focus section", () => {
     expect(focusSection(standIn({ blocks: POPULATED.blocks }))).toBeUndefined();
   });
 
-  test("gives the active view where the dock is the frontend, the blocks and the plugins on screen but the assistant's own, and the block that has focus, without a preamble, which is a rule", () => {
+  test("gives the blocks and the plugins on screen but the assistant's own, and the block that has focus, without a preamble, which is a rule", () => {
     expect(focusSection(standIn(POPULATED))).toBe(
       [
         "## Focus",
-        "The active view is Analysis (id: v1).",
         "These blocks are on screen:",
         "- iris",
         "- plot",

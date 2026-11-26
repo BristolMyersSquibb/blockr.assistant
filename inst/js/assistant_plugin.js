@@ -4177,54 +4177,6 @@ function readTools(core, skills) {
 // srcts/prompt/app-preamble.md
 var app_preamble_default = "This message comes from the app, not from the user.\n";
 
-// srcts/prompt/dock.ts
-var DOCK = "blockr.dock-dock_plugin";
-function dockViews(core) {
-  if (!Object.hasOwn(core.plugins.appPlugins(), DOCK) || core.plugins.pluginClass(DOCK).frontend === void 0) return void 0;
-  const plugins2 = core.store.board().plugins;
-  return Object.hasOwn(plugins2, DOCK) ? viewsOf(plugins2[DOCK]) : void 0;
-}
-function viewsOf(state) {
-  if (!isRecord4(state) || !isRecord4(state.views)) return void 0;
-  const views = [];
-  for (const [id, view] of Object.entries(state.views)) {
-    if (!isRecord4(view) || typeof view.name !== "string") return void 0;
-    const panels = panelsOf(view.grid);
-    if (panels === void 0) return void 0;
-    views.push({ id, name: view.name, panels });
-  }
-  return { views, active: views.find((view) => view.id === state.active) ?? null };
-}
-function panelsOf(grid) {
-  if (!isRecord4(grid)) return void 0;
-  const panels = [];
-  const take = (panel) => {
-    if (!isRecord4(panel)) return false;
-    const id = typeof panel.block === "string" ? panel.block : panel.plugin;
-    if (typeof id !== "string") return false;
-    panels.push(id);
-    return true;
-  };
-  const walk = (node) => {
-    if (!isRecord4(node)) return false;
-    if (Array.isArray(node.panels)) return node.panels.every(take);
-    if (Array.isArray(node.children)) return node.children.every(walk);
-    return false;
-  };
-  if (!walk(grid)) return void 0;
-  const { rails } = grid;
-  if (rails === void 0) return panels;
-  if (!isRecord4(rails)) return void 0;
-  for (const side of ["left", "right"]) {
-    const rail = rails[side];
-    if (rail !== void 0 && !walk(rail)) return void 0;
-  }
-  return panels;
-}
-function isRecord4(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 // srcts/prompt/board.ts
 var MARKED = ["waiting", "invalid", "failed", "unevaluated", "stale"];
 var NO_RESULT = new Set(MARKED);
@@ -4259,7 +4211,6 @@ function boardSection(core, max, changed = []) {
       rest: (taken2) => taken2 === stacks.length ? void 0 : `${more(stacks.length - taken2, taken2, "stack")}: list_stacks gives every stack`
     };
   };
-  const viewPart = viewsOf2(core);
   const lines = ["## Board", counts, ""];
   let room = max - width(lines.join("\n"));
   const add = (part, kept) => {
@@ -4268,12 +4219,10 @@ function boardSection(core, max, changed = []) {
     room -= width(["", ...filled].join("\n"));
     return shown4;
   };
-  const forViews = least(viewPart);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(/* @__PURE__ */ new Set()));
-  const shown3 = blocks.length === 0 ? 0 : add(blockPart, forStacks + forViews);
+  const shown3 = blocks.length === 0 ? 0 : add(blockPart, forStacks);
   const listed3 = new Set(order.slice(0, shown3).map(([id]) => id));
-  if (stacks.length > 0) add(stackPart(listed3), forViews);
-  if (viewPart !== void 0) add(viewPart, 0);
+  if (stacks.length > 0) add(stackPart(listed3), 0);
   return lines.join("\n");
 }
 function fill(part, room) {
@@ -4293,7 +4242,6 @@ ${line}`);
   return { shown: shown3, filled: [part.heading, ...part.lines.slice(0, shown3), ...rest === void 0 ? [] : [rest]] };
 }
 function least(part) {
-  if (part === void 0) return 0;
   const rest = part.rest(0);
   return width(["", part.heading, ...rest === void 0 ? [] : [rest]].join("\n"));
 }
@@ -4359,24 +4307,11 @@ function withMarkers(line, status) {
   const markers = [...NO_RESULT.has(status.status) ? [`[${status.status}]`] : [], ...counts.length === 0 ? [] : [`[${counts.join(", ")}]`]];
   return markers.length === 0 ? line : `${line} ${markers.join(" ")}`;
 }
-function viewsOf2(core) {
-  const views = dockViews(core);
-  if (views === void 0 || views.views.length <= 1) return void 0;
-  const { active } = views;
-  const ordered = active === null ? views.views : [active, ...views.views.filter((view) => view.id !== active.id)];
-  return {
-    heading: "### Views",
-    lines: ordered.map(({ id, name, panels }) => `- ${name} (id: ${id})${active?.id === id ? " (active)" : ""} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`),
-    rest: (shown3) => shown3 === ordered.length ? void 0 : `${more(ordered.length - shown3, shown3, "view")}: get_plugin_state("${DOCK}") gives every view`
-  };
-}
 
 // srcts/prompt/focus.ts
 function focusSection(core) {
   const { blocks } = core.store.board();
   const lines = [];
-  const active = dockViews(core)?.active;
-  if (active !== void 0 && active !== null) lines.push(`The active view is ${active.name} (id: ${active.id}).`);
   const shown3 = core.onScreen.get();
   if (shown3 !== null) {
     const held = Object.keys(blocks);
@@ -4416,7 +4351,7 @@ function optionLines(core) {
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then the views.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, and then the stacks of the blocks listed.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
