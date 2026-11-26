@@ -153,7 +153,8 @@ export const HELLO_ASSISTANT: typeof HELLO = {
 // of its block registry.
 // Where a board is given, the reply opens that board in place of its own.
 // R writes each block of that board with the version of its class, and each
-// value of a board option with the version of the board option's shape.
+// value of a board option with the version of the board option's shape and
+// the package that lists the board option, or null where no package lists it.
 export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockClasses" | "board">): typeof HELLO {
   const registry = { ...hello.block_registry, ...Object.fromEntries((given.blockClasses ?? []).map((entry) => [entry.id, entry])) };
   if (given.board === undefined) return { ...hello, block_registry: registry };
@@ -168,7 +169,9 @@ export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockC
         blocks: Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id, { ...block, version: registry[block.registry_id]?.version ?? 1 }])),
         links,
         stacks,
-        options: Object.fromEntries(Object.entries(options).map(([id, value]) => [id, { value, version: hello.options[id]?.version ?? 1 }])),
+        options: Object.fromEntries(
+          Object.entries(options).map(([id, value]) => [id, { value, version: hello.options[id]?.version ?? 1, package: hello.options[id]?.package ?? null }]),
+        ),
       },
     },
   };
