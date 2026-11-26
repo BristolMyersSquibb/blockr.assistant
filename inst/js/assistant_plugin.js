@@ -5246,7 +5246,7 @@ function stagedBytes(field) {
 
 // srcts/chat/composer.tsx
 import { useId, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState2 } from "react";
-import { Button as Button2 } from "@blockr/core/react";
+import { Button as Button2 } from "@blockr/ui";
 
 // srcts/chat/context.ts
 import { createContext, useContext } from "react";
@@ -5265,7 +5265,7 @@ function useChat() {
 
 // srcts/chat/files.tsx
 import { memo, useEffect, useMemo, useState } from "react";
-import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
+import { Button, Dialog, Heading, Modal } from "@blockr/ui";
 
 // srcts/chat/libraries.ts
 var loading2;
@@ -5708,7 +5708,7 @@ function Composer() {
 
 // srcts/chat/drawer.tsx
 import { useEffect as useEffect2, useId as useId2, useMemo as useMemo3, useRef as useRef2, useState as useState3 } from "react";
-import { Button as Button3, TextField } from "@blockr/core/react";
+import { Button as Button3, TextField } from "@blockr/ui";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var DAY = 24 * 60 * 60 * 1e3;
 function Drawer(props) {
@@ -5921,7 +5921,7 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
 }
 
 // srcts/chat/footer.tsx
-import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/core/react";
+import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/ui";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function Footer({ usage, picks, offered, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
   const next = offered === void 0 ? void 0 : resolveModel(offered, picks.model);
@@ -6067,7 +6067,7 @@ var NO_SKILLS = [];
 
 // srcts/chat/key.tsx
 import { useId as useId3 } from "react";
-import { Button as Button5, TextField as TextField2 } from "@blockr/core/react";
+import { Button as Button5, TextField as TextField2 } from "@blockr/ui";
 import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function KeyForm() {
   const { keyField } = useChat();
@@ -6133,7 +6133,7 @@ function keepsOf(kept, appHost, key) {
 }
 
 // srcts/chat/links.tsx
-import { Button as Button6, Dialog as Dialog2, Heading as Heading2, Modal as Modal2 } from "@blockr/core/react";
+import { Button as Button6, Dialog as Dialog2, Heading as Heading2, Modal as Modal2 } from "@blockr/ui";
 import { jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var always = false;
 function leavesSite(href, page2) {
@@ -6403,7 +6403,7 @@ async function sendMessage(assistant, open2, text3, files, picks, opened2, skill
 
 // srcts/chat/transcript.tsx
 import { useMemo as useMemo5 } from "react";
-import { Button as Button8 } from "@blockr/core/react";
+import { Button as Button8 } from "@blockr/ui";
 
 // srcts/chat/greeting.ts
 var EMPTY = {
@@ -6422,7 +6422,7 @@ function greetingOf(board) {
 
 // srcts/chat/markdown.tsx
 import { useEffect as useEffect4, useState as useState5 } from "react";
-import { Button as Button7 } from "@blockr/core/react";
+import { Button as Button7 } from "@blockr/ui";
 import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {

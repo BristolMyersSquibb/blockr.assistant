@@ -6,7 +6,7 @@
 // - "Open Link" opens it, and "Cancel" leaves it.
 // - "Always open external links" opens it, and every later one without the
 //   dialog, until the page reloads.
-// The dialog is the modal of core's React SDK, which React Aria draws in a
+// The dialog is the modal of blockr.ui, which React Aria draws in a
 // portal at the end of the page's body, as every overlay of the chat is
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.2.4#a-plugins-panel).
 // It takes the focus to "Open Link" as it opens, as today's dialog does, and
@@ -15,7 +15,7 @@
 // (./chat.tsx).
 
 import type { ReactElement, ReactNode } from "react";
-import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
+import { Button, Dialog, Heading, Modal } from "@blockr/ui";
 import { useChatActions } from "./context.ts";
 
 // Whether the user chose to open every link without the dialog, which holds

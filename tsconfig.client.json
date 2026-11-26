@@ -1,7 +1,8 @@
 {
   // The assistant's client is the TypeScript in srcts/ that esbuild bundles
   // into inst/js for the browser. It is written against the types that
-  // blockr.core ships, which each npm script installs first, as @blockr/core.
+  // blockr.core and blockr.ui ship, which each npm script installs first, as
+  // @blockr/core and @blockr/ui.
   "compilerOptions": {
     "target": "es2022",
     "lib": ["es2022", "dom", "dom.iterable"],

@@ -12,18 +12,18 @@
 //   refused, which says so.
 // The chat shows a file from the copy of its bytes that the memory keeps,
 // through an object URL, which it releases once it no longer shows the file.
-// The dialog is the modal of core's React SDK, in a portal at the end of the
+// The dialog is the modal of blockr.ui, in a portal at the end of the
 // page's body, as the dialog before a link is (./links.tsx). It closes on
 // Escape, on its close button and on a press outside the dialog.
 // It keeps today's size, up to 960 pixels wide and the window's height less
-// 32 pixels, which is larger than the SDK's modal is otherwise.
-// A sent file whose content the chat holds is a Button of the SDK, which
+// 32 pixels, which is larger than blockr.ui's modal is otherwise.
+// A sent file whose content the chat holds is a Button of blockr.ui, which
 // opens the file.
 
 import { memo, useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import type { Attachment } from "@assistant-ui/react";
-import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
+import { Button, Dialog, Heading, Modal } from "@blockr/ui";
 import { kindOf, PDF } from "../attachments/index.ts";
 import type { KeptFile } from "../conversations/index.ts";
 import { useChatActions } from "./context.ts";

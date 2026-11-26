@@ -23,9 +23,9 @@
 //   come back to.
 // - All of it stays open while a turn runs
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#while-a-turn-runs).
-// Its buttons are those of core's React SDK, but for the title of each row,
-// which opens the conversation. The field that renames a conversation is the
-// SDK's too.
+// Its buttons are those of blockr.ui, but for the title of each row, which
+// opens the conversation. The field that renames a conversation is blockr.ui's
+// too.
 // While it shows, the chat makes the rest of the chat inert, so that the focus
 // stays in the drawer, while the board around the chat stays as it was. The
 // drawer takes the focus to its search as it opens. It closes on Escape, on
@@ -34,7 +34,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement, RefObject } from "react";
-import { Button, TextField } from "@blockr/core/react";
+import { Button, TextField } from "@blockr/ui";
 import type { Conversation, ConversationId } from "../state/index.ts";
 import { normalizeTitle } from "../titles/index.ts";
 

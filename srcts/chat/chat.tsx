@@ -362,9 +362,9 @@ export function Chat({ core, assistant }: { readonly core: CoreApi; readonly ass
     if (event.key !== "Escape" || event.defaultPrevented || running === undefined) return;
     // Escape in the drawer closes the drawer alone, which takes it first.
     // Escape in the dialog before a link or in that of a file closes the
-    // dialog alone. The SDK's modal sits in a portal at the end of the page's
-    // body, from which React hands keys on to the chat's element, but the
-    // modal stops the Escape that closes it and prevents its default.
+    // dialog alone. The modal of blockr.ui sits in a portal at the end of the
+    // page's body, from which React hands keys on to the chat's element, but
+    // the modal stops the Escape that closes it and prevents its default.
     // Escape in a pick of the footer closes its list alone, since the pick
     // prevents the default too.
     event.preventDefault();

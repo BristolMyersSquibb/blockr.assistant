@@ -1,7 +1,7 @@
 // Text in the chat as Markdown, with tables, and with code blocks that a button
 // copies, as in today's chat
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn).
-// The button that copies a code block is a Button of core's React SDK.
+// The button that copies a code block is a Button of blockr.ui.
 // A reply's text draws through it, and so do a reply's reasoning and a summary,
 // inside TextMessagePartProvider, which hands assistant-ui's Markdown the text.
 // - The text shows as it streams, as today's does, without assistant-ui's
@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import type { MarkdownTextPrimitiveProps } from "@assistant-ui/react-markdown";
-import { Button } from "@blockr/core/react";
+import { Button } from "@blockr/ui";
 import { libraries } from "./libraries.ts";
 import { TextLink } from "./links.tsx";
 

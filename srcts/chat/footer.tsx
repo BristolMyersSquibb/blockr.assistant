@@ -1,7 +1,7 @@
 // The chat's footer, one row under the message field, as today's footer
 // (R/ext-server.R#L164-L207 at fcbdb27), with four things:
 // - The button that opens the drawer of conversations over the chat
-//   (./drawer.tsx), which is a Button of core's React SDK.
+//   (./drawer.tsx), which is a Button of blockr.ui.
 // - The model that the open conversation's next turn talks to, beside the
 //   meter (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model).
 //   It shows where the deployment names several models or names none, as a
@@ -21,12 +21,12 @@
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-meter).
 //   The usage counts the tokens of the conversation's titles and summaries
 //   too.
-// Both selects are core's, whose list opens over the page, where no panel
-// clips it (BristolMyersSquibb/blockr.core#684). Neither offers to clear its
-// pick.
+// Both selects are blockr.ui's, whose list opens over the page, where no
+// panel clips it (BristolMyersSquibb/blockr.core#684). Neither offers to clear
+// its pick.
 
 import type { ReactElement, RefObject } from "react";
-import { Button, ComboBox, ComboBoxItem } from "@blockr/core/react";
+import { Button, ComboBox, ComboBoxItem } from "@blockr/ui";
 import type { Picks } from "../conversations/index.ts";
 import { resolveModel } from "../models/index.ts";
 import type { Offered } from "../models/index.ts";
