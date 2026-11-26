@@ -6,11 +6,11 @@
   container: blockr-assistant / inline-size;
   color: var(--bk-color-foreground);
   font-family: var(--bk-font-sans);
-  font-size: 14px;
+  font-size: var(--bk-text-base);
   line-height: 1.5;
 }
 .blockr-assistant-overlay {
-  font-size: 14px;
+  font-size: var(--bk-text-base);
   line-height: 1.5;
 }
 :is(.blockr-assistant, .blockr-assistant-overlay) *,
@@ -106,12 +106,12 @@
   padding: 7px 12px;
   border-radius: var(--bk-radius);
   background: var(--bk-color-muted);
-  font-size: 13.5px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-user::before {
   content: "You";
   display: block;
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   font-weight: 500;
   line-height: 1.4;
   color: var(--bk-color-muted-foreground);
@@ -145,7 +145,7 @@
   border-radius: calc(var(--bk-radius) * 0.8);
   background: var(--bk-color-popover);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   line-height: 1.3;
   text-align: left;
   color: var(--bk-color-popover-foreground);
@@ -175,7 +175,7 @@ button.blockr-assistant-file:hover {
   padding: 0 3px;
   border-radius: calc(var(--bk-radius) * 0.6);
   background: var(--bk-color-muted);
-  font-size: 9.5px;
+  font-size: calc(var(--bk-text-xs) * 0.8);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -195,7 +195,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-file-note {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-destructive-text);
 }
 .blockr-assistant-file-remove {
@@ -238,15 +238,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
   margin: 12px 0 6px;
-  font-size: 14px;
+  font-size: var(--bk-text-base);
   font-weight: 600;
   line-height: 1.35;
 }
-.blockr-assistant-markdown h1 {
-  font-size: 16px;
-}
-.blockr-assistant-markdown h2 {
-  font-size: 15px;
+.blockr-assistant-markdown :is(h1, h2) {
+  font-size: var(--bk-text-lg);
 }
 .blockr-assistant-markdown :is(ul, ol) {
   padding-left: 20px;
@@ -266,7 +263,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-radius: calc(var(--bk-radius) * 0.6);
   background: var(--bk-color-muted);
   font-family: var(--bk-font-mono);
-  font-size: 12.5px;
+  font-size: var(--bk-text-xs);
 }
 .blockr-assistant-code-header {
   display: flex;
@@ -278,7 +275,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-bottom: 0;
   border-radius: var(--bk-radius) var(--bk-radius) 0 0;
   background: var(--bk-color-muted);
-  font-size: 11.5px;
+  font-size: var(--bk-text-xs);
 }
 .blockr-assistant-code-header > span {
   color: var(--bk-color-muted-foreground);
@@ -312,7 +309,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-table table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-table :is(th, td) {
   padding: 4px 8px;
@@ -332,7 +329,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-height: 30px;
   padding: 2px 10px;
   border-radius: var(--bk-radius);
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   list-style: none;
   cursor: pointer;
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -364,7 +361,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   margin: 4px 0 4px 14px;
   padding-left: 10px;
   border-left: 2px solid var(--bk-color-border);
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-reasoning-text,
 .blockr-assistant-reasoning-label {
@@ -390,7 +387,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding: 0 5px;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--bk-color-border);
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   text-align: center;
   color: var(--bk-color-muted-foreground);
 }
@@ -504,7 +501,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-call-label {
   margin-bottom: 2px;
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   font-weight: 500;
   color: var(--bk-color-muted-foreground);
 }
@@ -516,7 +513,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-radius: calc(var(--bk-radius) * 0.8);
   background: var(--bk-color-muted);
   font-family: var(--bk-font-mono);
-  font-size: 11.5px;
+  font-size: var(--bk-text-xs);
   white-space: pre-wrap;
 }
 .blockr-assistant-call[data-state=failed] .blockr-assistant-call-result {
@@ -532,7 +529,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-call-note {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-failure,
@@ -541,7 +538,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding: 6px 10px;
   border: 1px solid;
   border-radius: calc(var(--bk-radius) * 0.8);
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -579,12 +576,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-greeting h3 {
   margin: 0 0 2px;
-  font-size: 15px;
+  font-size: var(--bk-text-lg);
   font-weight: 600;
 }
 .blockr-assistant-greeting p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-suggestions {
@@ -601,7 +598,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-height: 30px;
   padding: 2px 10px;
   border-radius: var(--bk-radius);
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   text-align: left;
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -627,7 +624,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-compacting {
   margin: 0;
   padding: 6px 2px;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
   animation: blockr-assistant-pulse 1.6s ease-in-out infinite;
 }
@@ -639,7 +636,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-composer-note {
   margin: 0 0 4px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--bk-color-muted-foreground);
@@ -676,7 +673,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-files-note,
 .blockr-assistant-command-note {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-commands {
@@ -704,7 +701,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-height: 30px;
   padding: 6px 8px;
   border-radius: calc(var(--bk-radius) * 0.8);
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   line-height: 18px;
 }
 .blockr-assistant-command {
@@ -741,7 +738,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   outline: none;
   background: transparent;
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--bk-text-sm);
   line-height: 1.45;
   color: inherit;
   resize: none;
@@ -799,7 +796,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-key-note {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-key:is([data-asks=refused], [data-asks=lost], [data-openrouter=blocked], [data-openrouter=failed]) .blockr-assistant-key-note {
@@ -812,7 +809,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-height: 30px;
   margin: 0 0 6px;
   padding: 2px 12px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .blockr-assistant-key-field {
@@ -825,7 +822,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-key-input input {
   min-height: 30px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-key-input input::placeholder {
   color: var(--bk-color-muted-foreground);
@@ -838,7 +835,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex-shrink: 0;
   min-height: 30px;
   padding: 2px 12px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-footer {
   display: flex;
@@ -847,7 +844,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   gap: 6px;
   min-width: 0;
   padding: 0 12px 8px;
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-footer-button {
@@ -893,7 +890,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-color: transparent;
 }
 .blockr-assistant-footer .blockr-assistant-pick input {
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   text-overflow: ellipsis;
 }
 .blockr-assistant-footer .blockr-assistant-pick input:focus-visible {
@@ -918,12 +915,12 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-dialog h2 {
   margin: 0 0 8px;
-  font-size: 15px;
+  font-size: var(--bk-text-lg);
   font-weight: 600;
 }
 .blockr-assistant-dialog p {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-dialog-url {
   overflow-wrap: anywhere;
@@ -939,7 +936,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 .blockr-assistant-dialog-buttons button {
   min-height: 30px;
   padding: 2px 12px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-dialog-buttons .blockr-assistant-dialog-always {
   margin-right: auto;
@@ -975,7 +972,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--bk-text-base);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1014,7 +1011,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   margin: 0;
   padding: 12px 16px;
   font-family: var(--bk-font-mono);
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1058,7 +1055,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-drawer-top h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--bk-text-lg);
   font-weight: 600;
 }
 .blockr-assistant-drawer-close,
@@ -1084,7 +1081,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   flex: 0 0 auto;
   min-height: 30px;
   padding: 2px 10px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-drawer-search {
   flex: 1 1 auto;
@@ -1095,7 +1092,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-radius: calc(var(--bk-radius) * 0.8);
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   color: inherit;
 }
 .blockr-assistant-drawer-rename {
@@ -1104,7 +1101,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-drawer-rename input {
   min-height: 30px;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
 }
 .blockr-assistant-drawer-list {
   flex: 1 1 auto;
@@ -1118,7 +1115,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-drawer-group h3 {
   margin: 8px 0 2px;
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   font-weight: 500;
   color: var(--bk-color-muted-foreground);
 }
@@ -1154,7 +1151,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   border-radius: calc(var(--bk-radius) * 0.8);
   background: none;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--bk-text-sm);
   text-align: start;
   color: inherit;
   cursor: pointer;
@@ -1175,7 +1172,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
 }
 .blockr-assistant-drawer-time {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-drawer-running {
@@ -1195,7 +1192,7 @@ span.blockr-assistant-file .blockr-assistant-file-name {
   padding-right: 4px;
 }
 .blockr-assistant-drawer-confirm {
-  font-size: 12px;
+  font-size: var(--bk-text-xs);
   color: var(--bk-color-muted-foreground);
 }
 .blockr-assistant-drawer-confirm .blockr-assistant-drawer-confirm-yes {
