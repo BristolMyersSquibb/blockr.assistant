@@ -7,7 +7,7 @@ import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCoreOptions } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import { press, step, type } from "@blockr/ui/stubs";
+import { listed, optionLabels, picked, press, step, type } from "@blockr/ui/stubs";
 import { act } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { openAssistant } from "../assistant/index.ts";
@@ -247,35 +247,20 @@ function pickField(el: HTMLElement, label: string): HTMLInputElement | null {
   return el.querySelector<HTMLInputElement>(`.blockr-assistant-footer input[aria-label="${label}"]`);
 }
 
-// The options of the select's list, which the field names while the list is
-// open, as React Aria draws the list at the end of the page's body.
-function optionsOf(field: HTMLInputElement): HTMLElement[] {
-  const id = field.getAttribute("aria-controls");
-  const list = id === null ? null : document.getElementById(id);
-  return [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
-}
-
-// The texts of the options that the select offers, whose list it opens and
+// The labels of the options that the select offers, whose list it opens and
 // closes again.
 async function offeredBy(field: HTMLInputElement | null): Promise<string[]> {
   if (field === null) throw new Error("The footer offers no such pick.");
-  click(field);
+  const labels = await listed(field, step);
   await settle();
-  const texts = optionsOf(field).map((option) => option.textContent);
-  await step(() => {
-    press(field, "Escape");
-  });
-  await settle();
-  return texts;
+  return labels;
 }
 
-// Opens the select's list and picks the option of the text given, as the user
-// would.
-async function choose(field: HTMLInputElement | null, text: string): Promise<void> {
+// Opens the select's list and picks the option of the label given, as the
+// user would.
+async function choose(field: HTMLInputElement | null, label: string): Promise<void> {
   if (field === null) throw new Error("The footer offers no such pick.");
-  click(field);
-  await settle();
-  click(optionsOf(field).find((option) => option.textContent === text) ?? null);
+  await picked(field, step, label);
   await settle();
 }
 
@@ -1257,13 +1242,13 @@ describe("the chat's footer", () => {
     if (pick === null) throw new Error("The footer offers no pick of the model.");
     click(pick);
     await settle();
-    expect(optionsOf(pick)).toHaveLength(2);
+    expect(optionLabels(pick)).toHaveLength(2);
     await step(() => {
       press(pick, "Escape");
     });
     await settle();
 
-    expect(optionsOf(pick)).toHaveLength(0);
+    expect(optionLabels(pick)).toHaveLength(0);
     expect(assistant.turns.current()).toBeDefined();
     await step(() => {
       press(field(el), "Escape");
@@ -1564,7 +1549,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   // The names of the commands that the list shows, as it writes them, or
   // undefined where the list is closed.
-  function listed(el: HTMLElement): string[] | undefined {
+  function shownCommands(el: HTMLElement): string[] | undefined {
     const list = el.querySelector(".blockr-assistant-commands");
     return list === null ? undefined : [...list.querySelectorAll(".blockr-assistant-command-name")].map((name) => name.textContent);
   }
@@ -1599,7 +1584,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     await step(() => {
       type(field(el), "/");
     });
-    expect(listed(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
+    expect(shownCommands(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
     expect(el.querySelector(".blockr-assistant-command-description")?.textContent).toBe("Summarize the conversation so far, keeping the newest messages as they are.");
     expect(field(el).getAttribute("aria-controls")).toBe(el.querySelector(".blockr-assistant-commands")?.id);
     expect(field(el).getAttribute("aria-autocomplete")).toBe("list");
@@ -1607,19 +1592,19 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     await step(() => {
       type(field(el), "/C");
     });
-    expect(listed(el)).toEqual(["/compact", "/clear"]);
+    expect(shownCommands(el)).toEqual(["/compact", "/clear"]);
 
     await step(() => {
       type(field(el), "/x");
     });
-    expect(listed(el)).toEqual([]);
+    expect(shownCommands(el)).toEqual([]);
     expect(el.querySelector(".blockr-assistant-commands-none")?.textContent).toBe("No matching commands");
 
     for (const text of ["/clear ", "/filters keep the adults", "Undo /undo", ""]) {
       await step(() => {
         type(field(el), text);
       });
-      expect(listed(el)).toBeUndefined();
+      expect(shownCommands(el)).toBeUndefined();
     }
   });
 
@@ -1639,7 +1624,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     expect(highlighted(el)).toBe("/clear");
     await key(el, "Tab");
     expect(field(el).value).toBe("/clear ");
-    expect(listed(el)).toBeUndefined();
+    expect(shownCommands(el)).toBeUndefined();
 
     await step(() => {
       type(field(el), "/un");
@@ -1657,11 +1642,11 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       type(field(el), "/r");
     });
     await key(el, "Escape");
-    expect(listed(el)).toBeUndefined();
+    expect(shownCommands(el)).toBeUndefined();
     await step(() => {
       type(field(el), "/re");
     });
-    expect(listed(el)).toEqual(["/redo"]);
+    expect(shownCommands(el)).toEqual(["/redo"]);
   });
 
   test("run /compact on Enter where the field holds its name, which has the compaction write a summary that alone enters the transcript", async () => {
@@ -1777,7 +1762,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       type(field(el), "/u");
     });
     await key(el, "Escape");
-    expect(listed(el)).toBeUndefined();
+    expect(shownCommands(el)).toBeUndefined();
     expect(assistant.turns.current()?.stopping).toBe(false);
 
     await key(el, "Escape");
@@ -1942,7 +1927,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       await step(() => {
         type(field(el), line);
       });
-      expect(listed(el)).toEqual(line === "/layout" ? [] : undefined);
+      expect(shownCommands(el)).toEqual(line === "/layout" ? [] : undefined);
       await key(el, "Enter");
       await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
