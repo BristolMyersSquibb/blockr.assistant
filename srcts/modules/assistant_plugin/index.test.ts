@@ -6,6 +6,7 @@
 
 import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
+import { expectedErrors } from "@blockr/ui/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
@@ -167,6 +168,7 @@ describe("the start of the assistant's plugin class", () => {
   });
 
   test("logs why the board's conversations cannot open, where chat_save_turns holds a value that the cap does not take", async () => {
+    const taken = expectedErrors(/The blockr option chat_save_turns is null/);
     const { core, settled, logged } = await started(undefined, three, { chat_save_turns: null });
     await act(() => settled());
 
@@ -174,6 +176,7 @@ describe("the start of the assistant's plugin class", () => {
     expect(logged.filter((line) => line.package === "blockr.assistant").map((line) => [line.level, line.message])).toEqual([
       ["error", "The blockr option chat_save_turns is null, where it takes a whole number of 0 or more, or -1 for every message."],
     ]);
+    expect(taken).toHaveLength(1);
   });
 
   test("opens the assistant of the board, which the chat finds through the CoreApi, until the next board opens", async () => {

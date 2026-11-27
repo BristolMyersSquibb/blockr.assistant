@@ -14,6 +14,7 @@ import { openAssistant } from "../assistant/index.ts";
 import type { Assistant } from "../assistant/index.ts";
 import type { Credential } from "../deployment/index.ts";
 import { ENDED, loadCatalogs } from "../loop/index.ts";
+import type { Loop, ModelReply } from "../loop/index.ts";
 // The module of the assistant's class, which core imports as the page does.
 // eslint-disable-next-line no-restricted-imports
 import * as assistantModule from "../modules/assistant_plugin/index.tsx";
@@ -21,6 +22,7 @@ import { CHANNEL, createOpenRouterLogin } from "../openrouter/index.ts";
 import type { OpenRouterLogin, OpenWindow } from "../openrouter/index.ts";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
 import { blockClass, fauxLoop, helloWith, storedIn } from "../testing/index.ts";
+import { TITLE_PROMPT } from "../titles/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
 import { loadLibraries } from "./libraries.ts";
@@ -103,6 +105,32 @@ interface Options {
   readonly conditions?: StubCoreOptions["conditions"];
 }
 
+// The loop given, in which a call for a conversation's title waits until the
+// test ends.
+// Otherwise a call for a title would take the next reply that the test scripts
+// for a turn.
+// Where the test scripts none, the call would fail, and the assistant would log
+// a warning.
+// The chat's tests script the replies of the turns alone, and leave the titles
+// to their own tests (../titles/titles.test.ts).
+function untitled(loop: Loop): Loop {
+  return {
+    run: (turn) => loop.run(turn),
+    callModel: (call) => (call.systemPrompt === TITLE_PROMPT ? stopped(call.signal) : loop.callModel(call)),
+  };
+}
+
+// The reply of a call that the signal stops, once the signal stops it.
+function stopped(signal: AbortSignal): Promise<ModelReply> {
+  return new Promise((resolve) => {
+    const stop = () => {
+      resolve({ usage: { input: 0, output: 0, total: 0 }, failure: "The call was stopped before the model wrote its reply." });
+    };
+    if (signal.aborted) stop();
+    else signal.addEventListener("abort", stop, { once: true });
+  });
+}
+
 // Core on a board that holds the assistant's state given, in an app that runs
 // the plugin Tidy beside the assistant, with the assistant of the board on
 // pi's fake provider at https://faux.invalid/v1, which the class's start would
@@ -138,7 +166,7 @@ async function chat(options: Options = {}) {
   faux.setResponses(options.replies ?? [fauxAssistantMessage("The board holds **no** block.")]);
   const assistant = openAssistant(stubbed.core, controller.signal, {
     deployment: Promise.resolve({ baseUrl: connection.baseUrl, api: connection.api, credential: options.credential ?? { kind: "deployment", key: "test-key" }, models: options.models ?? ["faux-1"] }),
-    load: () => Promise.resolve(loop),
+    load: () => Promise.resolve(untitled(loop)),
     locks: undefined,
     key: options.key ?? createVisitorKey(),
     ...(options.openRouterLogin === undefined ? {} : { openRouterLogin: options.openRouterLogin }),
