@@ -525,6 +525,8 @@
   lines of text.
   The Board section gives each plugin's lines after the stacks, under the
   plugin's name, within the section's cap.
+  The cap keeps room for each plugin's first line ahead of the blocks, where
+  that line fits, so that a board that fills the cap still shows it.
   So the assistant no longer reads the dock's state itself: the dock writes
   its views and the active view this way.
   Where the module fails, the assistant raises the error

@@ -13,7 +13,8 @@
 //    the id of the plugin's class and the plugin's state as the board holds
 //    it, or null where the board holds none.
 // 3. The function returns the lines that tell the model what the state holds
-//    now, the most useful first, since the Board section's cap may cut them.
+//    now, the most useful first: the Board section's cap keeps room for the
+//    first line ahead of the blocks, and may cut the rest (./board.ts).
 //    It returns none for a plugin that it has nothing to say about.
 // Where the module fails to load, gives no describe(), or describe() fails or
 // returns anything but strings, the assistant raises the error

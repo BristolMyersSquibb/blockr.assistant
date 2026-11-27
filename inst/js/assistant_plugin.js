@@ -4281,8 +4281,15 @@ function boardSection(core, max, changed = [], plugins2 = []) {
     room -= width(["", ...filled].join("\n"));
     return shown5;
   };
-  const forPlugins = (from) => pluginParts.slice(from).reduce((sum, part) => sum + least(part), 0);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(/* @__PURE__ */ new Set()));
+  let spare = room - (blocks.length === 0 ? 0 : least(blockPart)) - forStacks - pluginParts.reduce((sum, part) => sum + least(part), 0);
+  const keeps = pluginParts.map((part) => {
+    const extra = least(part, 1) - least(part);
+    if (extra > spare) return least(part);
+    spare -= extra;
+    return least(part, 1);
+  });
+  const forPlugins = (from) => keeps.slice(from).reduce((sum, kept) => sum + kept, 0);
   const shown4 = blocks.length === 0 ? 0 : add(blockPart, forStacks + forPlugins(0));
   const listed3 = new Set(order.slice(0, shown4).map(([id]) => id));
   if (stacks.length > 0) add(stackPart(listed3), forPlugins(0));
@@ -4312,9 +4319,9 @@ ${line}`);
   const rest = part.rest(shown4);
   return { shown: shown4, filled: [part.heading, ...part.lines.slice(0, shown4), ...rest === void 0 ? [] : [rest]] };
 }
-function least(part) {
-  const rest = part.rest(0);
-  return width(["", part.heading, ...rest === void 0 ? [] : [rest]].join("\n"));
+function least(part, shown4 = 0) {
+  const rest = part.rest(shown4);
+  return width(["", part.heading, ...part.lines.slice(0, shown4), ...rest === void 0 ? [] : [rest]].join("\n"));
 }
 function width(text3) {
   return Array.from(text3).length;

@@ -317,6 +317,14 @@ const SIX_VIEWS: PluginLines = {
   lines: ["The active view is View 1 (id: v1).", ...Array.from({ length: 6 }, (_, v) => `- View ${String(v + 1)} (id: v${String(v + 1)}): five blocks of stack ${String(v + 1)}`)],
 };
 
+// The first line of a plugin that is longer than the line of any block of the
+// board past the cap, so that what the blocks leave of the cap would not hold
+// it.
+const LONG_FIRST = "The document holds 12 sections, of which the user edits the third, Results by treatment arm, which shows the blocks join_74, filter_12 and mutate_43 beside its text.";
+
+// The lines of a plugin whose first line is long.
+const SECTIONS: PluginLines = { plugin: "blockr.md-md_plugin", name: "Document", lines: [LONG_FIRST, "- Section 1 shows iris."] };
+
 // The ids of the blocks that the Board section lists, in its order.
 function listedBlocks(written: string): string[] {
   const lines = written.split("\n");
@@ -575,6 +583,26 @@ describe("the Board section", () => {
       expect(Array.from(boardOf(HUNDRED, max, [], [SIX_VIEWS])).length).toBeLessThanOrEqual(max);
     }
     expect(boardOf(HUNDRED, 100_000, [], [SIX_VIEWS])).not.toContain("…");
+  });
+
+  test("on a board past its cap, keeps room for the first line of each plugin's lines ahead of the blocks, whatever the cap, while the cap holds that line beside what each part says at least", () => {
+    for (const max of [800, 1200, 1600, 2400, 3000, 4000]) {
+      const written = boardOf(HUNDRED, max, [], [SECTIONS, SIX_VIEWS]);
+
+      expect(Array.from(written).length).toBeLessThanOrEqual(max);
+      expect(written).toContain(`### Document (id: blockr.md-md_plugin)\n${LONG_FIRST}\n`);
+      expect(written).toContain("### Dock (id: blockr.dock-dock_plugin)\nThe active view is View 1 (id: v1).\n");
+    }
+  });
+
+  test("keeps no room for a plugin's first line that does not fit beside what each part says at least, and keeps it for the first lines of the plugins after it", () => {
+    const long: PluginLines = { ...SECTIONS, lines: [`The document's sections: ${Array.from({ length: 200 }, (_, s) => `Section ${String(s + 1)}`).join(", ")}.`, "- Section 1 shows iris."] };
+    const written = boardOf(HUNDRED, 1200, [], [long, SIX_VIEWS]);
+
+    expect(Array.from(written).length).toBeLessThanOrEqual(1200);
+    expect(listedBlocks(written).length).toBeGreaterThan(0);
+    expect(written).toContain('### Document (id: blockr.md-md_plugin)\n… 2 lines: get_plugin_state("blockr.md-md_plugin") gives the plugin\'s state\n');
+    expect(written).toContain("### Dock (id: blockr.dock-dock_plugin)\nThe active view is View 1 (id: v1).\n");
   });
 
   test("gives the line of counts and the lines that count what it leaves out where the cap is too small even for those", () => {

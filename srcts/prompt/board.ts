@@ -31,16 +31,20 @@
 // The section fills the cap in this order, each group of blocks in the
 // board's order, so that what the cap leaves out is what a call is least
 // likely to need:
-// 1. The blocks that failed or are invalid, since a request about what went
+// 1. The first line of each plugin's lines, in the order of the app's
+//    plugins, since a plugin writes its most useful line first
+//    (./describe.ts).
+// 2. The blocks that failed or are invalid, since a request about what went
 //    wrong needs them.
-// 2. The block that has focus.
-// 3. The blocks that the store's deltas touched since the conversation's
+// 3. The block that has focus.
+// 4. The blocks that the store's deltas touched since the conversation's
 //    previous call: those of the note of what others changed, and those of
 //    the conversation's own edits (../notes).
-// 4. The blocks on screen.
-// 5. The rest of the blocks.
-// 6. The stacks.
-// 7. The plugins' lines, each plugin's in the order in which it wrote them.
+// 5. The blocks on screen.
+// 6. The rest of the blocks.
+// 7. The stacks.
+// 8. The rest of the plugins' lines, each plugin's in the order in which it
+//    wrote them.
 // Each part takes its lines in order until the next would pass the cap. A
 // part that the cap cuts ends with a line that counts what it leaves out and
 // names the tool that gives it, as in "… and 88 more blocks: list_blocks
@@ -126,9 +130,20 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
     return shown;
   };
 
-  // The room that the plugins' parts from the one given on take at least.
-  const forPlugins = (from: number): number => pluginParts.slice(from).reduce((sum, part) => sum + least(part), 0);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(new Set()));
+  // The room that each plugin's part keeps from the parts that the section
+  // fills before it: room for its first line too, in the order of the app's
+  // plugins, where that line fits beside what each part says at least, and
+  // otherwise the least that the part takes.
+  let spare = room - (blocks.length === 0 ? 0 : least(blockPart)) - forStacks - pluginParts.reduce((sum, part) => sum + least(part), 0);
+  const keeps = pluginParts.map((part) => {
+    const extra = least(part, 1) - least(part);
+    if (extra > spare) return least(part);
+    spare -= extra;
+    return least(part, 1);
+  });
+  // The room that the plugins' parts from the one given on keep.
+  const forPlugins = (from: number): number => keeps.slice(from).reduce((sum, kept) => sum + kept, 0);
   const shown = blocks.length === 0 ? 0 : add(blockPart, forStacks + forPlugins(0));
   const listed = new Set(order.slice(0, shown).map(([id]) => id));
   if (stacks.length > 0) add(stackPart(listed), forPlugins(0));
@@ -164,11 +179,12 @@ function fill(part: Part, room: number): { readonly shown: number; readonly fill
   return { shown, filled: [part.heading, ...part.lines.slice(0, shown), ...(rest === undefined ? [] : [rest])] };
 }
 
-// The room that the part takes where it shows none of its lines: its heading
-// and the line that counts what it leaves out.
-function least(part: Part): number {
-  const rest = part.rest(0);
-  return width(["", part.heading, ...(rest === undefined ? [] : [rest])].join("\n"));
+// The room that the part takes where it shows its first `shown` lines, none
+// by default: its heading, those lines and the line that counts what it
+// leaves out.
+function least(part: Part, shown = 0): number {
+  const rest = part.rest(shown);
+  return width(["", part.heading, ...part.lines.slice(0, shown), ...(rest === undefined ? [] : [rest])].join("\n"));
 }
 
 // The characters that the text takes, as R counts them.
