@@ -71,7 +71,7 @@ import type { Notes } from "../notes/index.ts";
 import { heldError } from "../notifications/index.ts";
 import { openRouterLoginOf } from "../openrouter/index.ts";
 import type { OpenRouterLogin } from "../openrouter/index.ts";
-import { createPrompt, createTemplate } from "../prompt/index.ts";
+import { createDescribe, createPrompt, createTemplate } from "../prompt/index.ts";
 import { createSkills } from "../skills/index.ts";
 import type { Skills } from "../skills/index.ts";
 import { createThinkingLevels } from "../thinking-levels/index.ts";
@@ -141,7 +141,7 @@ export function openAssistant(core: CoreApi, signal: AbortSignal, options: Assis
     core.log("blockr.assistant").error(error instanceof Error ? error : new Error(String(error)));
   });
   const skills = createSkills(core, signal);
-  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal) });
+  const prompt = createPrompt(core, { skills, template: createTemplate(core, signal), describe: createDescribe(core, signal) });
   const key = options.key ?? pageKey();
   // What the deployment chose, once the key has read what the browser kept.
   const deployment = (options.deployment ?? readDeployment(core)).then(async (chosen) => {

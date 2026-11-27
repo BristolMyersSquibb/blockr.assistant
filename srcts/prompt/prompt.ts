@@ -12,10 +12,11 @@
 //    (../notes).
 // 4. The message of the app's, which the loop adds after the conversation's
 //    last message, for the call alone: its preamble, one sentence that says
-//    that the app writes it, then the Board section (./board.ts) and the
-//    Focus section (./focus.ts), as they are when the call goes out. The
-//    conversation never keeps it. What else the model needs to read them is
-//    in the rules, which the cache serves.
+//    that the app writes it, then the Board section (./board.ts), with the
+//    lines that the app's plugins write about their state (./describe.ts),
+//    and the Focus section (./focus.ts), as they are when the call goes out.
+//    The conversation never keeps it. What else the model needs to read them
+//    is in the rules, which the cache serves.
 // So a provider's prompt cache serves the tools, the system prompt and the
 // conversation so far, and only the message of the app's and the newest
 // messages are read anew.
@@ -35,6 +36,7 @@ import type { Skills } from "../skills/index.ts";
 import { readToolCap } from "../tools/index.ts";
 import preamble from "./app-preamble.md" with { type: "text" };
 import { boardSection } from "./board.ts";
+import type { PluginLines } from "./describe.ts";
 import { focusSection } from "./focus.ts";
 import { pluginsSection } from "./plugins.ts";
 import rules from "./rules.md" with { type: "text" };
@@ -60,13 +62,16 @@ export interface PromptOptions {
   readonly skills: Pick<Skills, "list">;
   // The template of the open board.
   readonly template: Template;
+  // Resolves, as each call goes out, with the lines that the app's plugins
+  // write about their state (./describe.ts).
+  readonly describe: () => Promise<readonly PluginLines[]>;
 }
 
 export function createPrompt(core: Core, options: PromptOptions): Prompt {
   let written: Promise<string> | undefined;
   return {
     system: () => (written ??= systemPrompt(core, options)),
-    appMessage: (changed) => appMessage(core, changed),
+    appMessage: (changed) => appMessage(core, options, changed),
   };
 }
 
@@ -83,9 +88,10 @@ async function systemPrompt(core: Core, { skills, template }: PromptOptions): Pr
   return [text, rules.trim(), ...(app === undefined ? [] : [app]), ...(catalogue === undefined ? [] : [catalogue])].join("\n\n");
 }
 
-async function appMessage(core: Core, changed: Iterable<string> = []): Promise<string> {
-  const max = await readToolCap(core, "assistant_board_section_max_chars");
-  // The board and the screen as they are once the cap is read.
+async function appMessage(core: Core, { describe }: PromptOptions, changed: Iterable<string> = []): Promise<string> {
+  const [max, plugins] = await Promise.all([readToolCap(core, "assistant_board_section_max_chars"), describe()]);
+  // The board and the screen as they are once the cap and the plugins' lines
+  // are read.
   const focus = focusSection(core);
-  return [preamble.trim(), boardSection(core, max, changed), ...(focus === undefined ? [] : [focus])].join("\n\n");
+  return [preamble.trim(), boardSection(core, max, changed, plugins), ...(focus === undefined ? [] : [focus])].join("\n\n");
 }

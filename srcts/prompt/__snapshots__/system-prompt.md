@@ -22,7 +22,7 @@ That message shows the board as it is at that moment, in its Board section, and 
 
 The Board section holds the whole board only where the board fits the section's cap.
 Otherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.
-The rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then the views.
+The rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then what the app's plugins say about their state.
 Each block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.
 Where the cap cuts a list, its last line counts what the section left out and names the tool that gives it.
 So a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.

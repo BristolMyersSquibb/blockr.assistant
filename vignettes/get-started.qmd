@@ -554,7 +554,8 @@ Otherwise, it lists first what a call most likely needs:
 3. The blocks that changed since the conversation's previous call, whoever changed them.
 4. The blocks on screen.
 
-The rest of the blocks follow in the board's order, while they fit, and then the stacks and the views.
+The rest of the blocks follow in the board's order, while they fit, then the stacks, and then what the app's plugins say about their state.
+Ahead of the blocks, the cap keeps room for the first line that each plugin writes, where that line fits.
 Each list that the cap cuts ends with a line that counts what it left out and names the tool that gives it.
 
 A cap that the plugin reads takes a whole number of 0 or more.
@@ -595,6 +596,41 @@ The tool `list_plugins` gives each of the app's plugins with the description at 
 The tool `get_plugin_state` gives one plugin's state, with the schema.
 The `description` keywords of the schema say what each part of the state holds.
 So the model changes the state as the schema has it, through the command `blockr.core-set_plugin_state` or through a command of the plugin's class.
+
+A package also tells the model what its plugins' state holds now, as each call goes out, through a module named `assistant`.
+The package offers the module in the `modules` part of its `._BLOCKR_MODULES_`, so that the module's id is `{pkg}-assistant`:
+
+```{r, eval = FALSE}
+._BLOCKR_MODULES_ <- list(
+  plugins = list(
+    new_notes_plugin = list(
+      id = "notes_plugin",
+      name = "Notes",
+      module = "js/notes.js"
+    )
+  ),
+  modules = list(assistant = "js/assistant.js")
+)
+```
+
+The module's default export gives the function `describe(plugin, state)`:
+
+```js
+export default {
+  describe(plugin, state) {
+    if (plugin !== "mypkg-notes_plugin") return [];
+    return [`The notes hold ${state.notes.length} entries.`];
+  },
+};
+```
+
+As each call goes out, the assistant calls `describe()` for each plugin of the package that the app runs.
+It passes the id of the plugin's class and the plugin's state, or `null` where the board holds none.
+The function returns the lines of text that the model reads, the most useful first: the cap of the Board section keeps room for the first line ahead of the blocks, and may cut the rest.
+It returns no lines for a plugin that it has nothing to say about.
+The Board section gives the lines after the stacks, under the plugin's name, as the dock gives its views and the active view.
+Where the module fails to load, gives no `describe()`, or `describe()` fails or returns anything but strings, the assistant raises the error `assistant_describe_failed` and leaves the lines out.
+The package needs no dependency on blockr.assistant for the module, as for its skills.
 
 ### Commands
 

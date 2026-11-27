@@ -1,27 +1,29 @@
 // What the plugin tells the model with each call (./prompt.ts): the system
 // prompt, with the template, the rules, the section on the plugins and board
 // options and the Skills section, and the message of the app's, with the
-// Board section and the Focus section. The tests write them on a stand-in for
-// what of CoreApi they read, which holds the board, the statuses, the
-// plugins and the screen that each test gives. Two snapshots hold the system
+// Board section, which gives the lines that the app's plugins write about
+// their state (./describe.ts), and the Focus section. The tests write them on
+// a stand-in for what of CoreApi they read, which holds the board, the
+// statuses, the plugins, the modules that packages offer and the screen that
+// each test gives. Two snapshots hold the system
 // prompt and the message of the app's of a board with a block of each status,
-// where the dock is the frontend, in place of today's golden copy
-// (tests/testthat/_snaps/system-prompt.md at fcbdb27), so that a change that
-// nobody meant shows in the diff. Two larger boards check what the Board
-// section holds within its cap: one of 20 blocks, which it holds whole, and
-// one of 100, which it cuts.
+// in place of today's golden copy (tests/testthat/_snaps/system-prompt.md at
+// fcbdb27), so that a change that nobody meant shows in the diff. Two larger
+// boards check what the Board section holds within its cap: one of 20
+// blocks, which it holds whole, and one of 100, which it cuts.
 
-import type { BlockStatus, Board, Condition, Json, Link } from "@blockr/core";
+import type { BlockStatus, Board, Condition, Json, Link, Raised } from "@blockr/core";
 import { describe, expect, test } from "vitest";
 import type { Skill } from "../skills/index.ts";
 import { ASSISTANT } from "../state/index.ts";
 import { skill } from "../testing/index.ts";
 import { skillBlurb } from "../tools/index.ts";
 import { boardSection } from "./board.ts";
-import { DOCK } from "./dock.ts";
+import { createDescribe } from "./describe.ts";
+import type { Core as DescribeCore, PluginLines } from "./describe.ts";
 import { focusSection } from "./focus.ts";
 import { createPrompt } from "./prompt.ts";
-import type { Core } from "./prompt.ts";
+import type { Core, Prompt, PromptOptions } from "./prompt.ts";
 import { fillTemplate, TEMPLATE } from "./template.ts";
 import type { Template } from "./template.ts";
 
@@ -34,19 +36,26 @@ interface Given {
   // The category of each board option that a loaded package defines.
   readonly categories?: Readonly<Record<string, string>>;
   readonly statuses?: Readonly<Record<string, Partial<BlockStatus>>>;
-  // The app's plugins, each with its name, the description of its state's
-  // schema and whether its class is a frontend.
-  readonly plugins?: Readonly<Record<string, { readonly name: string; readonly description?: string; readonly frontend?: boolean }>>;
+  // The app's plugins, each with its name and the description of its state's
+  // schema.
+  readonly plugins?: Readonly<Record<string, { readonly name: string; readonly description?: string }>>;
   // The state of each plugin that the board holds.
   readonly states?: Readonly<Record<string, Json>>;
+  // What each module that a package offers exports, by the module's id, or
+  // the error with which it fails to load.
+  readonly modules?: Readonly<Record<string, unknown>>;
   readonly focus?: string | null;
   readonly onScreen?: { readonly blocks: readonly string[]; readonly plugins: readonly string[] } | null;
   readonly blockrOptions?: Readonly<Record<string, Json>>;
 }
 
+// What of CoreApi the prompt and the plugins' lines read.
+type StandIn = Core & DescribeCore;
+
 // What of CoreApi the prompt reads, holding what the test gives, and where the
-// app runs the assistant beside the plugins given.
-function standIn(given: Given = {}): Core {
+// app runs the assistant beside the plugins given. It keeps each notification
+// that is raised, until it is withdrawn, in `raised`.
+function standIn(given: Given = {}, raised: Raised[] = []): StandIn {
   const board: Board = {
     id: "board",
     name: "Board",
@@ -73,14 +82,38 @@ function standIn(given: Given = {}): Core {
         return {
           id,
           ...(plugin?.description === undefined ? {} : { state: { schema: { type: "object", description: plugin.description }, default: {} } }),
-          ...(plugin?.frontend === true ? { frontend: { render: () => undefined } } : {}),
         };
       },
     },
     focus: { get: () => given.focus ?? null },
     onScreen: { get: () => given.onScreen ?? null },
     blockrOption: (name: string) => Promise.resolve(given.blockrOptions?.[name]),
-  } as unknown as Core;
+    module: (id: string) => {
+      const exported = given.modules === undefined || !Object.hasOwn(given.modules, id) ? new Error(`No package offers a module "${id}".`) : given.modules[id];
+      return exported instanceof Error ? Promise.reject(exported) : Promise.resolve(exported);
+    },
+    notifications: {
+      notify: (_plugin: string, notification: Raised) => {
+        raised.push(notification);
+        return () => {
+          raised.splice(raised.indexOf(notification), 1);
+        };
+      },
+    },
+  } as unknown as StandIn;
+}
+
+// A module `assistant` whose describe() writes the lines given for the plugin
+// of the class given, and none for any other.
+function offering(plugin: string, lines: readonly string[]): unknown {
+  return { default: { describe: (id: string) => (id === plugin ? lines : []) } };
+}
+
+// The error with which core rejects where a module fails to load.
+function moduleError(message: string): Error {
+  const error = new Error(message);
+  error.name = "ModuleError";
+  return error;
 }
 
 function condition(severity: Condition["severity"], message: string): Condition {
@@ -88,7 +121,8 @@ function condition(severity: Condition["severity"], message: string): Condition 
 }
 
 // A board with a block of each status, a link into a positional input, a
-// stack and two board options, where the dock is the frontend with two views.
+// stack and two board options, in an app whose dock writes three lines about
+// its state, as the dock's module might.
 const POPULATED: Given = {
   blocks: {
     iris: { registry_id: "blockr.core-dataset_block", state: { dataset: "iris", package: "datasets" } },
@@ -117,29 +151,15 @@ const POPULATED: Given = {
     joined: { status: "waiting", reason: "The data input x has no link." },
   },
   plugins: {
-    [DOCK]: { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows.", frontend: true },
+    "blockr.dock-dock_plugin": { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows." },
     "blockr.dag-dag_plugin": { name: "DAG" },
   },
-  states: {
-    [DOCK]: {
-      views: {
-        v1: {
-          name: "Analysis",
-          folder: null,
-          index: "a",
-          grid: {
-            orientation: "horizontal",
-            children: [{ panels: [{ block: "iris" }, { block: "head" }], active: { block: "iris" } }, { children: [{ panels: [{ block: "plot" }], active: { block: "plot" } }], sizes: [1] }],
-            sizes: [0.5, 0.5],
-            rails: { left: { panels: [{ plugin: ASSISTANT }, { plugin: "blockr.dag-dag_plugin" }], active: { plugin: ASSISTANT }, collapsed: false, size: 500 } },
-          },
-        },
-        v2: { name: "Overview", folder: null, index: "b", grid: { orientation: "horizontal", children: [], sizes: [] } },
-      },
-      folders: {},
-      active: "v1",
-      visible: {},
-    },
+  modules: {
+    "blockr.dock-assistant": offering("blockr.dock-dock_plugin", [
+      "The active view is Analysis (id: v1).",
+      "- Analysis (id: v1): iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin",
+      "- Overview (id: v2): empty",
+    ]),
   },
   focus: "head",
   onScreen: { blocks: ["iris", "plot"], plugins: [ASSISTANT, "blockr.dag-dag_plugin"] },
@@ -166,31 +186,13 @@ function classed(kind: keyof typeof CLASSES): { readonly registry_id: string; re
   return { registry_id: registryId, state: Object.fromEntries(args.map((arg) => [arg, null])) };
 }
 
-// The dock's state with the views given, each by its id with its name and
-// the panels of its one tab group, and the active view.
-function dockState(views: readonly (readonly [string, string, readonly string[]])[], active: string): Json {
-  const panel = (id: string): Json => (id.includes("-") ? { plugin: id } : { block: id });
-  return {
-    views: Object.fromEntries(
-      views.map(([id, name, panels], index) => [
-        id,
-        { name, folder: null, index: String.fromCharCode(97 + index), grid: { orientation: "horizontal", children: [{ panels: panels.map(panel) }], sizes: [1] } },
-      ]),
-    ),
-    folders: {},
-    active,
-    visible: {},
-  };
-}
-
 const PLUGINS: Given["plugins"] = {
-  [DOCK]: { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows.", frontend: true },
+  "blockr.dock-dock_plugin": { name: "Dock", description: "The dock's views, the folders that group them, the active view and the sections that each block's card shows." },
   "blockr.dag-dag_plugin": { name: "DAG" },
 };
 
-// A board of 20 blocks on the flights of nycflights13, in four stacks, where
-// the dock is the frontend with three views, as a board that the Board
-// section holds whole.
+// A board of 20 blocks on the flights of nycflights13, in four stacks, as a
+// board that the Board section holds whole.
 const TWENTY: Given = (() => {
   const blocks: [string, keyof typeof CLASSES][] = [
     ["flights", "dataset"],
@@ -251,26 +253,16 @@ const TWENTY: Given = (() => {
       speed_plot: { status: "stale" },
     },
     plugins: PLUGINS,
-    states: {
-      [DOCK]: dockState(
-        [
-          ["v1", "Data", ["flights", "airlines", "airports", "weather"]],
-          ["v2", "Analysis", ["sorted", "by_carrier", "by_month", "by_origin", "worst", ASSISTANT, "blockr.dag-dag_plugin"]],
-          ["v3", "Plots", ["delay_plot", "month_plot", "origin_plot", "speed_plot"]],
-        ],
-        "v2",
-      ),
-    },
     focus: "by_carrier",
     onScreen: { blocks: ["sorted", "by_carrier", "by_month", "by_origin", "worst"], plugins: [ASSISTANT, "blockr.dag-dag_plugin"] },
   };
 })();
 
 // A board past the cap, as the page measured one: 100 blocks in ten stacks of
-// ten, each a chain from a dataset block, with 108 links, six board options,
-// five plugins besides the assistant's and six views of the dock. Three
-// blocks failed and two are invalid, all past the first stack, while the
-// focus and the four blocks on screen are in the first stack.
+// ten, each a chain from a dataset block, with 108 links, six board options
+// and five plugins besides the assistant's. Three blocks failed and two are
+// invalid, all past the first stack, while the focus and the four blocks on
+// screen are in the first stack.
 const KINDS: readonly (keyof typeof CLASSES)[] = ["dataset", "filter", "mutate", "join", "select", "arrange", "summarize", "slice", "pivot", "rbind"];
 const HUNDRED: Given = (() => {
   const id = (n: number): string => `${KINDS[(n - 1) % 10] ?? "block"}_${String(n)}`;
@@ -294,7 +286,6 @@ const HUNDRED: Given = (() => {
     [id(64)]: { status: "invalid" },
     [id(95)]: { status: "invalid" },
   };
-  const views = Array.from({ length: 6 }, (_, v): readonly [string, string, readonly string[]] => [`v${String(v + 1)}`, `View ${String(v + 1)}`, ids.slice(v * 10, v * 10 + 5)]);
   return {
     blocks: Object.fromEntries(ids.map((block, i) => [block, classed(KINDS[i % 10] ?? "dataset")])),
     links: Object.fromEntries(links),
@@ -309,15 +300,30 @@ const HUNDRED: Given = (() => {
       "blockr.session-session_plugin": { name: "Session" },
       "blockr.io-export_plugin": { name: "Export" },
     },
-    states: { [DOCK]: dockState(views, "v1") },
     focus: id(3),
     onScreen: { blocks: [id(1), id(2), id(4), id(5)], plugins: [] },
   };
 })();
 
-function boardOf(given: Given, max = 3000, changed: readonly string[] = []): string {
-  return boardSection(standIn(given), max, changed);
+function boardOf(given: Given, max = 3000, changed: readonly string[] = [], plugins: readonly PluginLines[] = []): string {
+  return boardSection(standIn(given), max, changed, plugins);
 }
+
+// The lines of a plugin that tells of six views, the first one active, as the
+// dock might write them, for the board past the cap.
+const SIX_VIEWS: PluginLines = {
+  plugin: "blockr.dock-dock_plugin",
+  name: "Dock",
+  lines: ["The active view is View 1 (id: v1).", ...Array.from({ length: 6 }, (_, v) => `- View ${String(v + 1)} (id: v${String(v + 1)}): five blocks of stack ${String(v + 1)}`)],
+};
+
+// The first line of a plugin that is longer than the line of any block of the
+// board past the cap, so that what the blocks leave of the cap would not hold
+// it.
+const LONG_FIRST = "The document holds 12 sections, of which the user edits the third, Results by treatment arm, which shows the blocks join_74, filter_12 and mutate_43 beside its text.";
+
+// The lines of a plugin whose first line is long.
+const SECTIONS: PluginLines = { plugin: "blockr.md-md_plugin", name: "Document", lines: [LONG_FIRST, "- Section 1 shows iris."] };
 
 // The ids of the blocks that the Board section lists, in its order.
 function listedBlocks(written: string): string[] {
@@ -337,9 +343,15 @@ function skills(...listed: Skill[]) {
   return { list: () => Promise.resolve(listed) };
 }
 
+// The prompt of the stand-in given, with the lines that the modules of its
+// packages write.
+function promptOf(core: StandIn, options: Omit<PromptOptions, "describe">): Prompt {
+  return createPrompt(core, { ...options, describe: createDescribe(core, new AbortController().signal) });
+}
+
 describe("the system prompt", () => {
   test("holds the template, then the rules, then the section on the plugins and board options, then the Skills section", async () => {
-    const written = await createPrompt(standIn(POPULATED), { skills: skills(skill("joins")), template: OWN }).system();
+    const written = await promptOf(standIn(POPULATED), { skills: skills(skill("joins")), template: OWN }).system();
 
     const at = [
       "You are an assistant",
@@ -360,7 +372,7 @@ describe("the system prompt", () => {
   test("holds the rules and the Skills section under a deployment's template that names no section", async () => {
     const template: Template = { text: () => Promise.resolve("You help with study boards.") };
 
-    const written = await createPrompt(standIn(), { skills: skills(skill("joins")), template }).system();
+    const written = await promptOf(standIn(), { skills: skills(skill("joins")), template }).system();
 
     expect(written.startsWith("You help with study boards.\n\n## What the app sends you\n")).toBe(true);
     expect(written).toContain("## Edits");
@@ -373,12 +385,12 @@ describe("the system prompt", () => {
     const listed = skills(
       skill("joins", { description }),
       skill("exposure", { blocks: ["blockr.core-dataset_block"] }),
-      skill("layout", { plugins: [DOCK] }),
+      skill("layout", { plugins: ["blockr.dock-dock_plugin"] }),
       skill("review", { modelInvocable: false, userInvocable: true }),
     );
 
-    const written = await createPrompt(standIn({ blockrOptions: { assistant_skill_description_max_chars: 120 } }), { skills: listed, template: OWN }).system();
-    const none = await createPrompt(standIn(), { skills: skills(skill("exposure", { blocks: ["blockr.core-dataset_block"] })), template: OWN }).system();
+    const written = await promptOf(standIn({ blockrOptions: { assistant_skill_description_max_chars: 120 } }), { skills: listed, template: OWN }).system();
+    const none = await promptOf(standIn(), { skills: skills(skill("exposure", { blocks: ["blockr.core-dataset_block"] })), template: OWN }).system();
 
     expect(written.slice(written.indexOf("## Skills"))).toBe(
       [
@@ -398,7 +410,7 @@ describe("the system prompt", () => {
     const plugins = { ...POPULATED.plugins, "blockr.md-md_plugin": { name: "Document", description: "The   document's\nsections." } };
     const given = { plugins, categories: { n_rows: "Table options", dark_mode: "Theme options" }, options: { n_rows: 50, legacy: 1 } };
 
-    const written = await createPrompt(standIn(given), { skills: skills(skill("joins")), template: OWN }).system();
+    const written = await promptOf(standIn(given), { skills: skills(skill("joins")), template: OWN }).system();
 
     expect(written.slice(written.indexOf("## Plugins and board options"), written.indexOf("\n\n## Skills"))).toBe(
       [
@@ -421,7 +433,7 @@ describe("the system prompt", () => {
   test("cuts each part of the section on the plugins and board options at assistant_board_section_max_chars, with the tool that lists the rest", async () => {
     const categories = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`option_${String(i)}`, "Table options"]));
 
-    const written = await createPrompt(standIn({ plugins: POPULATED.plugins, categories, blockrOptions: { assistant_board_section_max_chars: 200 } }), { skills: skills(), template: OWN }).system();
+    const written = await promptOf(standIn({ plugins: POPULATED.plugins, categories, blockrOptions: { assistant_board_section_max_chars: 200 } }), { skills: skills(), template: OWN }).system();
 
     const options = written.slice(written.indexOf("### Options"));
     expect(options).toMatch(/chars truncated -- call list_board_options for the full list\]$/);
@@ -430,7 +442,7 @@ describe("the system prompt", () => {
   });
 
   test("has no section on the plugins and board options where the app runs no other plugin and its packages define no board option", async () => {
-    const written = await createPrompt(standIn({ blocks: POPULATED.blocks, options: { legacy: 1 } }), { skills: skills(skill("joins")), template: OWN }).system();
+    const written = await promptOf(standIn({ blocks: POPULATED.blocks, options: { legacy: 1 } }), { skills: skills(skill("joins")), template: OWN }).system();
 
     expect(written).not.toContain("## Plugins and board options");
     expect(written).toContain("## Edits");
@@ -444,26 +456,26 @@ describe("the system prompt", () => {
         return Promise.resolve("<<role>>");
       },
     };
-    const prompt = createPrompt(standIn(), { skills: skills(), template });
+    const prompt = promptOf(standIn(), { skills: skills(), template });
 
     expect(await prompt.system()).toBe(await prompt.system());
     expect(read).toBe(1);
   });
 
   test("fails where assistant_skill_description_max_chars holds a value that it does not take", async () => {
-    const prompt = createPrompt(standIn({ blockrOptions: { assistant_skill_description_max_chars: "many" } }), { skills: skills(), template: OWN });
+    const prompt = promptOf(standIn({ blockrOptions: { assistant_skill_description_max_chars: "many" } }), { skills: skills(), template: OWN });
 
     await expect(prompt.system()).rejects.toThrow('The blockr option assistant_skill_description_max_chars is "many", where it takes a whole number of 0 or more.');
   });
 
   test("fails where assistant_board_section_max_chars holds a value that it does not take", async () => {
-    const prompt = createPrompt(standIn({ blockrOptions: { assistant_board_section_max_chars: 1.5 } }), { skills: skills(), template: OWN });
+    const prompt = promptOf(standIn({ blockrOptions: { assistant_board_section_max_chars: 1.5 } }), { skills: skills(), template: OWN });
 
     await expect(prompt.system()).rejects.toThrow("The blockr option assistant_board_section_max_chars is 1.5, where it takes a whole number of 0 or more.");
   });
 
   test("matches its snapshot", async () => {
-    const written = await createPrompt(standIn(POPULATED), { skills: skills(skill("joins"), skill("exposure", { blocks: ["blockr.core-dataset_block"] })), template: OWN }).system();
+    const written = await promptOf(standIn(POPULATED), { skills: skills(skill("joins"), skill("exposure", { blocks: ["blockr.core-dataset_block"] })), template: OWN }).system();
 
     await expect(written).toMatchFileSnapshot("./__snapshots__/system-prompt.md");
   });
@@ -504,27 +516,30 @@ describe("the Board section", () => {
     expect(written).not.toContain("n_rows");
   });
 
-  test("gives the dock's views, the active one first, each with its panels, where the dock is the frontend and has more than one", () => {
-    const dock = POPULATED.states?.[DOCK] as Readonly<Record<string, Json>>;
+  test("gives the lines that the app's plugins write about their state after the stacks, each plugin's under its name and the id of its class, and nothing for a plugin that writes no line", () => {
+    const written = boardOf(POPULATED, 3000, [], [
+      { plugin: "blockr.dock-dock_plugin", name: "Dock", lines: ["The active view is Analysis (id: v1).", "- Analysis (id: v1): iris, head"] },
+      { plugin: "blockr.dag-dag_plugin", name: "DAG", lines: [] },
+      { plugin: "blockr.md-md_plugin", name: "Document", lines: ["- Section Intro shows iris."] },
+    ]);
 
-    const written = boardOf(POPULATED);
-    const second = boardOf({ ...POPULATED, states: { [DOCK]: { ...dock, active: "v2" } } });
-
-    expect(written.slice(written.indexOf("### Views"))).toBe(
-      ["### Views", "- Analysis (id: v1) (active) iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin", "- Overview (id: v2) (empty)"].join("\n"),
-    );
-    expect(second.slice(second.indexOf("### Views"))).toBe(
-      ["### Views", "- Overview (id: v2) (active) (empty)", "- Analysis (id: v1) iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin"].join("\n"),
+    expect(written.slice(written.indexOf("### Stacks"))).toBe(
+      [
+        "### Stacks",
+        '- s1 "Input": iris, head',
+        "### Dock (id: blockr.dock-dock_plugin)",
+        "The active view is Analysis (id: v1).",
+        "- Analysis (id: v1): iris, head",
+        "### Document (id: blockr.md-md_plugin)",
+        "- Section Intro shows iris.",
+      ].join("\n"),
     );
   });
 
-  test("gives no views where the dock has one view, where the dock is not the frontend, or where its state has another shape", () => {
-    const dock = POPULATED.states?.[DOCK] as { views: Record<string, Json> };
-    const one = { ...POPULATED, states: { [DOCK]: { ...dock, views: { v1: dock.views.v1 ?? null } } } };
-    const drawn = { ...POPULATED, plugins: { [DOCK]: { name: "Dock" } } };
-    const other = { ...POPULATED, states: { [DOCK]: { ...dock, views: { v1: { name: "Analysis", layout: [] } } } } };
-
-    for (const given of [one, drawn, other]) expect(boardOf(given)).not.toContain("### Views");
+  test("gives the lines that the app's plugins write on an empty board, after the line of counts", () => {
+    expect(boardOf({}, 3000, [], [{ plugin: "blockr.dock-dock_plugin", name: "Dock", lines: ["The active view is View 1 (id: v1)."] }])).toBe(
+      ["## Board", "0 block(s), 0 link(s), 0 stack(s). (empty board -- no blocks yet)", "", "### Dock (id: blockr.dock-dock_plugin)", "The active view is View 1 (id: v1)."].join("\n"),
+    );
   });
 
   test("holds the board of the snapshot and a board of 20 blocks whole within the default cap", () => {
@@ -549,7 +564,7 @@ describe("the Board section", () => {
   });
 
   test("on a board past its cap, ends each part that the cap cuts with a line that counts what it leaves out and names the tool that gives it", () => {
-    const written = boardOf(HUNDRED, 3000, ["join_74", "filter_12", "mutate_43"]);
+    const written = boardOf(HUNDRED, 3000, ["join_74", "filter_12", "mutate_43"], [SIX_VIEWS]);
 
     const listed = new Set(listedBlocks(written));
     const left = Object.keys(HUNDRED.blocks ?? {}).length - listed.size;
@@ -558,18 +573,40 @@ describe("the Board section", () => {
     expect(lines[1]).toBe("100 block(s) (2 invalid, 3 failed, 59 unevaluated, 26 stale), 108 link(s), 10 stack(s).");
     expect(lines).toContain(`… and ${String(left)} more blocks, with the ${String(linked)} links into them: list_blocks gives every block, list_links every link`);
     expect(written).toContain("### Stacks\n… 10 stacks: list_stacks gives every stack");
-    expect(written).toMatch(/### Views\n- View 1 \(id: v1\) \(active\) dataset_1, filter_2, mutate_3, join_4, select_5\n… and 5 more views: get_plugin_state\("blockr\.dock-dock_plugin"\) gives every view$/);
+    expect(written).toMatch(
+      /### Dock \(id: blockr\.dock-dock_plugin\)\nThe active view is View 1 \(id: v1\)\.\n(?:- View \d \(id: v\d\): five blocks of stack \d\n)*… and \d more lines: get_plugin_state\("blockr\.dock-dock_plugin"\) gives the plugin's state$/,
+    );
   });
 
   test("stays within its cap, whatever the cap, while the cap holds the line of counts and the lines that count what it leaves out", () => {
     for (const max of [400, 800, 1200, 1600, 2400, 3000, 4000, 8000, 16000]) {
-      expect(Array.from(boardOf(HUNDRED, max)).length).toBeLessThanOrEqual(max);
+      expect(Array.from(boardOf(HUNDRED, max, [], [SIX_VIEWS])).length).toBeLessThanOrEqual(max);
     }
-    expect(boardOf(HUNDRED, 100_000)).not.toContain("…");
+    expect(boardOf(HUNDRED, 100_000, [], [SIX_VIEWS])).not.toContain("…");
+  });
+
+  test("on a board past its cap, keeps room for the first line of each plugin's lines ahead of the blocks, whatever the cap, while the cap holds that line beside what each part says at least", () => {
+    for (const max of [800, 1200, 1600, 2400, 3000, 4000]) {
+      const written = boardOf(HUNDRED, max, [], [SECTIONS, SIX_VIEWS]);
+
+      expect(Array.from(written).length).toBeLessThanOrEqual(max);
+      expect(written).toContain(`### Document (id: blockr.md-md_plugin)\n${LONG_FIRST}\n`);
+      expect(written).toContain("### Dock (id: blockr.dock-dock_plugin)\nThe active view is View 1 (id: v1).\n");
+    }
+  });
+
+  test("keeps no room for a plugin's first line that does not fit beside what each part says at least, and keeps it for the first lines of the plugins after it", () => {
+    const long: PluginLines = { ...SECTIONS, lines: [`The document's sections: ${Array.from({ length: 200 }, (_, s) => `Section ${String(s + 1)}`).join(", ")}.`, "- Section 1 shows iris."] };
+    const written = boardOf(HUNDRED, 1200, [], [long, SIX_VIEWS]);
+
+    expect(Array.from(written).length).toBeLessThanOrEqual(1200);
+    expect(listedBlocks(written).length).toBeGreaterThan(0);
+    expect(written).toContain('### Document (id: blockr.md-md_plugin)\n… 2 lines: get_plugin_state("blockr.md-md_plugin") gives the plugin\'s state\n');
+    expect(written).toContain("### Dock (id: blockr.dock-dock_plugin)\nThe active view is View 1 (id: v1).\n");
   });
 
   test("gives the line of counts and the lines that count what it leaves out where the cap is too small even for those", () => {
-    expect(boardOf(HUNDRED, 0).split("\n")).toEqual([
+    expect(boardOf(HUNDRED, 0, [], [SIX_VIEWS]).split("\n")).toEqual([
       "## Board",
       "100 block(s) (2 invalid, 3 failed, 59 unevaluated, 26 stale), 108 link(s), 10 stack(s).",
       "",
@@ -577,8 +614,8 @@ describe("the Board section", () => {
       "… 100 blocks, with the 108 links into them: list_blocks gives every block, list_links every link",
       "### Stacks",
       "… 10 stacks: list_stacks gives every stack",
-      "### Views",
-      '… 6 views: get_plugin_state("blockr.dock-dock_plugin") gives every view',
+      "### Dock (id: blockr.dock-dock_plugin)",
+      '… 7 lines: get_plugin_state("blockr.dock-dock_plugin") gives the plugin\'s state',
     ]);
   });
 
@@ -616,16 +653,135 @@ describe("the Board section", () => {
   });
 });
 
+describe("the lines of the app's plugins", () => {
+  const DOCK = "blockr.dock-dock_plugin";
+  const MD = "blockr.md-md_plugin";
+  const PLUGINS_WITH_STATE: Given["plugins"] = { [DOCK]: { name: "Dock" }, "blockr.dag-dag_plugin": { name: "DAG" }, [MD]: { name: "Document" } };
+
+  function linesOf(given: Given, raised: Raised[] = []): Promise<readonly PluginLines[]> {
+    return createDescribe(standIn(given, raised), new AbortController().signal)();
+  }
+
+  test("calls describe() of the module assistant of each plugin's package with the id of the plugin's class and the plugin's state, in the order of the app's plugins, but for the assistant's own", async () => {
+    const calls: [string, Json][] = [];
+    const recording = (lines: readonly string[]) => ({
+      default: {
+        describe: (plugin: string, state: Json) => {
+          calls.push([plugin, state]);
+          return lines;
+        },
+      },
+    });
+    const given: Given = {
+      plugins: PLUGINS_WITH_STATE,
+      states: { [DOCK]: { active: "v1" }, [MD]: { sections: ["Intro"] }, [ASSISTANT]: { conversations: {} } },
+      modules: { "blockr.dock-assistant": recording(["The active view is v1."]), "blockr.md-assistant": recording(["One section."]), "blockr.assistant-assistant": recording(["Never."]) },
+    };
+
+    expect(await linesOf(given)).toEqual([
+      { plugin: DOCK, name: "Dock", lines: ["The active view is v1."] },
+      { plugin: MD, name: "Document", lines: ["One section."] },
+    ]);
+    expect(calls).toEqual([
+      [DOCK, { active: "v1" }],
+      [MD, { sections: ["Intro"] }],
+    ]);
+  });
+
+  test("passes null as the state of a plugin whose state the board does not hold, and gives nothing for a plugin whose package offers no module or that writes no line", async () => {
+    const calls: Json[] = [];
+    const given: Given = {
+      plugins: PLUGINS_WITH_STATE,
+      modules: {
+        "blockr.dock-assistant": {
+          default: {
+            describe: (_plugin: string, state: Json) => {
+              calls.push(state);
+              return [];
+            },
+          },
+        },
+      },
+    };
+    const raised: Raised[] = [];
+
+    expect(await linesOf(given, raised)).toEqual([]);
+    expect(calls).toEqual([null]);
+    expect(raised).toEqual([]);
+  });
+
+  test("raises assistant_describe_failed about each plugin whose module fails to load, gives no describe(), or whose describe() fails or returns anything but strings, and leaves out that plugin's lines alone", async () => {
+    const raised: Raised[] = [];
+    const given: Given = {
+      plugins: {
+        [DOCK]: { name: "Dock" },
+        "blockr.dag-dag_plugin": { name: "DAG" },
+        [MD]: { name: "Document" },
+        "blockr.io-export_plugin": { name: "Export" },
+        "blockr.session-session_plugin": { name: "Session" },
+      },
+      modules: {
+        "blockr.dock-assistant": moduleError("The module js/assistant.js of blockr.dock failed to load: Unexpected token."),
+        "blockr.dag-assistant": { default: {} },
+        "blockr.md-assistant": {
+          default: {
+            describe: () => {
+              throw new Error("No sections.");
+            },
+          },
+        },
+        "blockr.io-assistant": { default: { describe: () => [1] } },
+        "blockr.session-assistant": offering("blockr.session-session_plugin", ["Saved."]),
+      },
+    };
+
+    expect(await linesOf(given, raised)).toEqual([{ plugin: "blockr.session-session_plugin", name: "Session", lines: ["Saved."] }]);
+    expect(raised).toEqual(
+      [
+        "Dock says about its state. The module js/assistant.js of blockr.dock failed to load: Unexpected token.",
+        "DAG says about its state. The module blockr.dag-assistant gives no function describe() in its default export.",
+        "Document says about its state. The describe() of the module blockr.md-assistant failed: No sections.",
+        "Export says about its state. The describe() of the module blockr.io-assistant returned [1], where it returns an array of strings.",
+      ].map((rest) => ({ severity: "error", code: "assistant_describe_failed", message: `The Board section leaves out what the plugin ${rest}` })),
+    );
+  });
+
+  test("withdraws the error about a plugin once a call reads the plugin's lines again", async () => {
+    const raised: Raised[] = [];
+    let fails = true;
+    const given: Given = {
+      plugins: { [DOCK]: { name: "Dock" } },
+      modules: {
+        "blockr.dock-assistant": {
+          default: {
+            describe: () => {
+              if (fails) throw new Error("Not yet.");
+              return ["The active view is v1."];
+            },
+          },
+        },
+      },
+    };
+    const describe = createDescribe(standIn(given, raised), new AbortController().signal);
+
+    expect(await describe()).toEqual([]);
+    expect(await describe()).toEqual([]);
+    expect(raised).toHaveLength(1);
+    fails = false;
+    expect(await describe()).toEqual([{ plugin: DOCK, name: "Dock", lines: ["The active view is v1."] }]);
+    expect(raised).toEqual([]);
+  });
+});
+
 describe("the Focus section", () => {
   test("is left out where nothing is known of the user's screen", () => {
     expect(focusSection(standIn({ blocks: POPULATED.blocks }))).toBeUndefined();
   });
 
-  test("gives the active view where the dock is the frontend, the blocks and the plugins on screen but the assistant's own, and the block that has focus, without a preamble, which is a rule", () => {
+  test("gives the blocks and the plugins on screen but the assistant's own, and the block that has focus, without a preamble, which is a rule", () => {
     expect(focusSection(standIn(POPULATED))).toBe(
       [
         "## Focus",
-        "The active view is Analysis (id: v1).",
         "These blocks are on screen:",
         "- iris",
         "- plot",
@@ -655,21 +811,36 @@ describe("the Focus section", () => {
 
 describe("the message of the app's", () => {
   test("holds its preamble, one sentence that says that the app writes it, then the Board section, then the Focus section", async () => {
-    const written = await createPrompt(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage();
+    const written = await promptOf(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage();
 
     expect(written.startsWith("This message comes from the app, not from the user.\n\n## Board\n")).toBe(true);
     expect(written.indexOf("## Board")).toBeLessThan(written.indexOf("## Focus"));
   });
 
+  test("gives in its Board section the lines that the modules of the app's packages write about the plugins' state", async () => {
+    const written = await promptOf(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage();
+
+    expect(written).toContain(
+      [
+        "### Dock (id: blockr.dock-dock_plugin)",
+        "The active view is Analysis (id: v1).",
+        "- Analysis (id: v1): iris, head, plot, blockr.assistant-assistant_plugin, blockr.dag-dag_plugin",
+        "- Overview (id: v2): empty",
+        "",
+        "## Focus",
+      ].join("\n"),
+    );
+  });
+
   test("lists the blocks that changed since the conversation's previous call after the block that has focus", async () => {
-    const written = await createPrompt(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage(["joined", "gone"]);
+    const written = await promptOf(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage(["joined", "gone"]);
 
     expect(listedBlocks(written)).toEqual(["wide", "plot", "head", "joined", "iris", "bind"]);
   });
 
   test("is written anew for each call, from the board as it is then", async () => {
     let held = standIn({ blocks: { a: { registry_id: "blockr.core-head_block" } } });
-    const prompt = createPrompt({ ...held, store: { board: () => held.store.board() } } as Core, { skills: skills(), template: OWN });
+    const prompt = promptOf({ ...held, store: { board: () => held.store.board() } } as StandIn, { skills: skills(), template: OWN });
 
     const first = await prompt.appMessage();
     held = standIn({ blocks: { a: { registry_id: "blockr.core-head_block" }, b: { registry_id: "blockr.core-head_block" } } });
@@ -680,13 +851,13 @@ describe("the message of the app's", () => {
   });
 
   test("fails where assistant_board_section_max_chars holds a value that it does not take", async () => {
-    const prompt = createPrompt(standIn({ blockrOptions: { assistant_board_section_max_chars: -1 } }), { skills: skills(), template: OWN });
+    const prompt = promptOf(standIn({ blockrOptions: { assistant_board_section_max_chars: -1 } }), { skills: skills(), template: OWN });
 
     await expect(prompt.appMessage()).rejects.toThrow("The blockr option assistant_board_section_max_chars is -1, where it takes a whole number of 0 or more.");
   });
 
   test("matches its snapshot", async () => {
-    const written = await createPrompt(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage();
+    const written = await promptOf(standIn(POPULATED), { skills: skills(), template: OWN }).appMessage();
 
     await expect(written).toMatchFileSnapshot("./__snapshots__/app-message.md");
   });
