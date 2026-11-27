@@ -6,7 +6,6 @@
 // reads the block that has focus in place of the block last clicked, and the
 // blocks and plugins on screen in place of the blocks in the current view
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.5#today).
-// - Where the dock is the frontend, the active view (./dock.ts).
 // - The blocks and the plugins on screen, from CoreApi.onScreen, where the
 //   frontend sets it, but for the assistant's own plugin, which the Board
 //   section leaves out too
@@ -21,7 +20,6 @@
 
 import type { CoreApi } from "@blockr/core";
 import { ASSISTANT } from "../state/index.ts";
-import { dockViews } from "./dock.ts";
 
 // What of CoreApi the section reads.
 export type Core = Pick<CoreApi, "store" | "plugins" | "focus" | "onScreen">;
@@ -31,9 +29,6 @@ export type Core = Pick<CoreApi, "store" | "plugins" | "focus" | "onScreen">;
 export function focusSection(core: Core): string | undefined {
   const { blocks } = core.store.board();
   const lines: string[] = [];
-
-  const active = dockViews(core)?.active;
-  if (active !== undefined && active !== null) lines.push(`The active view is ${active.name} (id: ${active.id}).`);
 
   const shown = core.onScreen.get();
   if (shown !== null) {

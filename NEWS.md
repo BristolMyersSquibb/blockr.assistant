@@ -507,8 +507,8 @@
   or are invalid, the block that has focus, the blocks that changed since the
   conversation's previous call and those on screen, then the rest in the
   board's order.
-  Each block's line ends with the links into it, and the stacks and the dock's
-  views follow the blocks.
+  Each block's line ends with the links into it, and the stacks and what the
+  app's plugins say about their state follow the blocks.
   Each list that the cap cuts ends with a line that counts what it left out
   and names the tool that gives it.
   The line of counts gives the blocks by each status that marks one.
@@ -517,6 +517,20 @@
   open.
   The preamble of the Focus section becomes a rule, and the message of the
   app's opens with one sentence that says that the app writes it.
+
+* A package tells the model what the state of its plugins holds now through a
+  module named `assistant`, which it offers in the `modules` of its
+  `._BLOCKR_MODULES_` (#331).
+  The module's default export gives `describe(plugin, state)`, which returns
+  lines of text.
+  The Board section gives each plugin's lines after the stacks, under the
+  plugin's name, within the section's cap.
+  The cap keeps room for each plugin's first line ahead of the blocks, where
+  that line fits, so that a board that fills the cap still shows it.
+  So the assistant no longer reads the dock's state itself: the dock writes
+  its views and the active view this way.
+  Where the module fails, the assistant raises the error
+  `assistant_describe_failed` and leaves the lines out.
 
 * The chat shows every notification about the plugin above the message field,
   so that the user reads why the assistant fails where they would send (#284).

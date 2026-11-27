@@ -5,8 +5,8 @@
 // It keeps today's headings, lines and markers (R/describe-board.R at
 // fcbdb27), with the client's names in place of R's:
 // - A line of counts of the blocks, the links and the stacks, with the blocks
-//   by each status that marks one. An empty board has the line of counts
-//   alone, marked as empty, as today's has.
+//   by each status that marks one. An empty board has the line of counts,
+//   marked as empty, as today's has, and then only the plugins' lines.
 // - The blocks, each with its id, the registry id of its class in place of
 //   its S3 class, and the names of its state args, none marked with *, since
 //   every block's state is open to external control on a board that is not
@@ -18,8 +18,9 @@
 //   blocks listed and a count of its others, without the S3 class. A stack
 //   that holds no block has nothing to leave out, so it counts as one that
 //   holds a block listed.
-// - Where the dock is the frontend and has more than one view, its views,
-//   the active one first, each with the panels that it shows (./dock.ts).
+// - The lines that the app's plugins write about their state (./describe.ts),
+//   each plugin's under its name and the id of its class, in the order of the
+//   app's plugins. The section knows no plugin's state itself.
 // The app's plugins and the board options are in the system prompt instead
 // (./plugins.ts), since neither changes while the board is open.
 //
@@ -30,16 +31,20 @@
 // The section fills the cap in this order, each group of blocks in the
 // board's order, so that what the cap leaves out is what a call is least
 // likely to need:
-// 1. The blocks that failed or are invalid, since a request about what went
+// 1. The first line of each plugin's lines, in the order of the app's
+//    plugins, since a plugin writes its most useful line first
+//    (./describe.ts).
+// 2. The blocks that failed or are invalid, since a request about what went
 //    wrong needs them.
-// 2. The block that has focus.
-// 3. The blocks that the store's deltas touched since the conversation's
+// 3. The block that has focus.
+// 4. The blocks that the store's deltas touched since the conversation's
 //    previous call: those of the note of what others changed, and those of
 //    the conversation's own edits (../notes).
-// 4. The blocks on screen.
-// 5. The rest of the blocks.
-// 6. The stacks.
-// 7. The views.
+// 5. The blocks on screen.
+// 6. The rest of the blocks.
+// 7. The stacks.
+// 8. The rest of the plugins' lines, each plugin's in the order in which it
+//    wrote them.
 // Each part takes its lines in order until the next would pass the cap. A
 // part that the cap cuts ends with a line that counts what it leaves out and
 // names the tool that gives it, as in "… and 88 more blocks: list_blocks
@@ -49,10 +54,10 @@
 // out.
 
 import type { Block, BlockStatus, CoreApi, Link } from "@blockr/core";
-import { DOCK, dockViews } from "./dock.ts";
+import type { PluginLines } from "./describe.ts";
 
 // What of CoreApi the section reads.
-export type Core = Pick<CoreApi, "store" | "scheduler" | "plugins" | "focus" | "onScreen">;
+export type Core = Pick<CoreApi, "store" | "scheduler" | "focus" | "onScreen">;
 
 // The statuses under which a block holds no current result, which its line
 // marks and the line of counts counts, in the order of the rules.
@@ -77,15 +82,18 @@ interface Part {
 
 // The Board section of the board as it is now, within `max` characters, with
 // the blocks that the store's deltas touched since the conversation's
-// previous call among those that it lists first.
-export function boardSection(core: Core, max: number, changed: Iterable<string> = []): string {
+// previous call among those that it lists first, and the lines that the
+// app's plugins wrote about their state.
+export function boardSection(core: Core, max: number, changed: Iterable<string> = [], plugins: readonly PluginLines[] = []): string {
   const board = core.store.board();
   const blocks = Object.entries(board.blocks);
   const links = Object.entries(board.links);
   const stacks = Object.entries(board.stacks);
   const statuses = new Map(blocks.map(([id]) => [id, core.scheduler.status(id)]));
-  const counts = countsLine(blocks.length, links.length, stacks.length, [...statuses.values()]);
-  if (blocks.length + links.length + stacks.length === 0) return ["## Board", `${counts} (empty board -- no blocks yet)`].join("\n");
+  const empty = blocks.length + links.length + stacks.length === 0;
+  const counts = `${countsLine(blocks.length, links.length, stacks.length, [...statuses.values()])}${empty ? " (empty board -- no blocks yet)" : ""}`;
+  const pluginParts = plugins.filter(({ lines }) => lines.length > 0).map(pluginPart);
+  if (empty && pluginParts.length === 0) return ["## Board", counts].join("\n");
 
   const order = blockOrder(core, blocks, statuses, new Set(changed));
   const into = linksInto(links);
@@ -109,7 +117,6 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
       rest: (taken) => (taken === stacks.length ? undefined : `${more(stacks.length - taken, taken, "stack")}: list_stacks gives every stack`),
     };
   };
-  const viewPart = viewsOf(core);
 
   // The heading and the line of counts, then an empty line, as today's.
   const lines = ["## Board", counts, ""];
@@ -123,13 +130,35 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
     return shown;
   };
 
-  const forViews = least(viewPart);
   const forStacks = stacks.length === 0 ? 0 : least(stackPart(new Set()));
-  const shown = blocks.length === 0 ? 0 : add(blockPart, forStacks + forViews);
+  // The room that each plugin's part keeps from the parts that the section
+  // fills before it: room for its first line too, in the order of the app's
+  // plugins, where that line fits beside what each part says at least, and
+  // otherwise the least that the part takes.
+  let spare = room - (blocks.length === 0 ? 0 : least(blockPart)) - forStacks - pluginParts.reduce((sum, part) => sum + least(part), 0);
+  const keeps = pluginParts.map((part) => {
+    const extra = least(part, 1) - least(part);
+    if (extra > spare) return least(part);
+    spare -= extra;
+    return least(part, 1);
+  });
+  // The room that the plugins' parts from the one given on keep.
+  const forPlugins = (from: number): number => keeps.slice(from).reduce((sum, kept) => sum + kept, 0);
+  const shown = blocks.length === 0 ? 0 : add(blockPart, forStacks + forPlugins(0));
   const listed = new Set(order.slice(0, shown).map(([id]) => id));
-  if (stacks.length > 0) add(stackPart(listed), forViews);
-  if (viewPart !== undefined) add(viewPart, 0);
+  if (stacks.length > 0) add(stackPart(listed), forPlugins(0));
+  pluginParts.forEach((part, index) => add(part, forPlugins(index + 1)));
   return lines.join("\n");
+}
+
+// The part of the lines that a plugin wrote about its state, under the
+// plugin's name and the id of its class.
+function pluginPart({ plugin, name, lines }: PluginLines): Part {
+  return {
+    heading: `### ${name} (id: ${plugin})`,
+    lines,
+    rest: (shown) => (shown === lines.length ? undefined : `${more(lines.length - shown, shown, "line")}: get_plugin_state("${plugin}") gives the plugin's state`),
+  };
 }
 
 // The lines of the part that fit in `room` characters, each after a line
@@ -150,12 +179,12 @@ function fill(part: Part, room: number): { readonly shown: number; readonly fill
   return { shown, filled: [part.heading, ...part.lines.slice(0, shown), ...(rest === undefined ? [] : [rest])] };
 }
 
-// The room that the part takes where it shows none of its lines: its heading
-// and the line that counts what it leaves out. None where there is no part.
-function least(part: Part | undefined): number {
-  if (part === undefined) return 0;
-  const rest = part.rest(0);
-  return width(["", part.heading, ...(rest === undefined ? [] : [rest])].join("\n"));
+// The room that the part takes where it shows its first `shown` lines, none
+// by default: its heading, those lines and the line that counts what it
+// leaves out.
+function least(part: Part, shown = 0): number {
+  const rest = part.rest(shown);
+  return width(["", part.heading, ...part.lines.slice(0, shown), ...(rest === undefined ? [] : [rest])].join("\n"));
 }
 
 // The characters that the text takes, as R counts them.
@@ -254,18 +283,4 @@ function withMarkers(line: string, status: BlockStatus | undefined): string {
   });
   const markers = [...(NO_RESULT.has(status.status) ? [`[${status.status}]`] : []), ...(counts.length === 0 ? [] : [`[${counts.join(", ")}]`])];
   return markers.length === 0 ? line : `${line} ${markers.join(" ")}`;
-}
-
-// The part of the dock's views, the active one first, where the dock is the
-// frontend and has more than one view.
-function viewsOf(core: Core): Part | undefined {
-  const views = dockViews(core);
-  if (views === undefined || views.views.length <= 1) return undefined;
-  const { active } = views;
-  const ordered = active === null ? views.views : [active, ...views.views.filter((view) => view.id !== active.id)];
-  return {
-    heading: "### Views",
-    lines: ordered.map(({ id, name, panels }) => `- ${name} (id: ${id})${active?.id === id ? " (active)" : ""} ${panels.length === 0 ? "(empty)" : panels.join(", ")}`),
-    rest: (shown) => (shown === ordered.length ? undefined : `${more(ordered.length - shown, shown, "view")}: get_plugin_state("${DOCK}") gives every view`),
-  };
 }
