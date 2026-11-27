@@ -8,6 +8,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
+import { expectedWarnings } from "@blockr/ui/stubs";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
@@ -213,11 +214,7 @@ describe("the titles of the conversations", () => {
   });
 
   test("leave the title as it was where the call fails, raise no notification, and ask no more while the board stays open", async () => {
-    // The failed call sets off a warning, which the spy takes off the console.
-    const warned = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    onTestFinished(() => {
-      warned.mockRestore();
-    });
+    const taken = expectedWarnings(/The model is overloaded\./);
     const failed = fauxAssistantMessage("", { stopReason: "error", errorMessage: "The model is overloaded." });
     const { core, turns, faux, conversations, logged } = await opened([fauxAssistantMessage("The board holds no block."), failed, fauxAssistantMessage("Still none.")]);
 
@@ -232,7 +229,7 @@ describe("the titles of the conversations", () => {
     expect(inState(core, "c1")?.title).toBe("New conversation");
     expect(faux.state.callCount).toBe(3);
     expect(core.notifications.get().filter((notification) => notification.source.kind === "module")).toEqual([]);
-    expect(warned).toHaveBeenCalledOnce();
+    expect(taken).toHaveLength(1);
   });
 });
 

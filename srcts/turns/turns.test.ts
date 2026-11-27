@@ -11,6 +11,7 @@
 
 import type { CoreApi, Json } from "@blockr/core";
 import { HELLO, stubCore } from "@blockr/core/stubs";
+import { expectedWarnings } from "@blockr/ui/stubs";
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -580,12 +581,7 @@ describe("a turn that stops", () => {
   });
 
   test("stops at its next message where another plugin removes its conversation", async () => {
-    // The turn that stops sets off a warning, which the spy takes off the
-    // console.
-    const warned = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    onTestFinished(() => {
-      warned.mockRestore();
-    });
+    const taken = expectedWarnings(/its conversation took no more messages/);
     const { core, turns, logged } = await opened({ tokensPerSecond: 400 });
     let removed = false;
     turns.subscribe(() => {
@@ -599,7 +595,7 @@ describe("a turn that stops", () => {
 
     expect(inState(core, "c1")).toBeUndefined();
     expect(logged.some((line) => line.level === "warn" && line.message.includes("its conversation took no more messages"))).toBe(true);
-    expect(warned).toHaveBeenCalledOnce();
+    expect(taken).toHaveLength(1);
     expect(raised(core)).toEqual([]);
   });
 });
