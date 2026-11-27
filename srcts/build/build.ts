@@ -6,12 +6,14 @@
 //   assistant_plugin.js, which blockr.assistant lists in R as the class's
 //   module.
 // - It takes the build preset that blockr.core ships as `@blockr/core/build`,
-//   which leaves its imports of React and of core's React SDK, its binding and
-//   its controls to the page that R serves, which resolves them through its
-//   import map. So the bundle holds none of them.
+//   which extends the preset of blockr.ui, `@blockr/ui/build`. The preset
+//   leaves the module's imports of React, of blockr.ui's components and of
+//   core's React SDK, its binding and its controls to the page that R serves,
+//   which resolves them through its import map. So the bundle holds none of
+//   them.
 // - The bundle is not minified, since it holds the assistant's own code alone.
-// - The build of the module takes the vendor check that blockr.core ships
-//   beside the preset. It fails the build where the module's bundle would
+// - The build of the module takes the vendor check that blockr.ui ships in
+//   `@blockr/ui/build`. It fails the build where the module's bundle would
 //   hold code from node_modules, as where a file of the assistant imports pi
 //   other than through srcts/loop/vendor.ts or the files of the APIs and of
 //   the gateways' catalogs beside it.
@@ -54,6 +56,14 @@
 // - The stylesheet of the module, srcts/modules/assistant_plugin/index.css,
 //   is bundled, unminified, into assistant_plugin.css, beside the module,
 //   where core finds it and puts it on the page with the module.
+// - The build runs the check of blockr.ui's theme, themeCheck() of
+//   `@blockr/ui/build`, on that stylesheet and on the assistant's code, the
+//   TypeScript in srcts. The check fails the build where the stylesheet reads
+//   a variable of blockr.ui's that the list of theme variables lacks, or sets
+//   a variable under --bk-, which blockr.ui's stylesheet alone sets. It fails
+//   the build too where the code names a class under bk:, which blockr.ui
+//   alone writes, or a class of a colour of Tailwind's palette
+//   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.7.4#prefixes).
 // - The page that OpenRouter's login calls back,
 //   srcts/openrouter/openrouter.html, goes into openrouter.html beside the
 //   module, where core serves it with the module (srcts/openrouter). Its
@@ -85,7 +95,7 @@
 //   imports the file as the schema of its class's state, so the build writes
 //   it before it bundles.
 // - What each file that the build writes imports up front goes into
-//   preload.json beside them, by `staticImports()` from `@blockr/core/build`,
+//   preload.json beside them, by `staticImports()` from `@blockr/ui/build`,
 //   as core's build writes its own (BristolMyersSquibb/blockr.core#652).
 //   R names those files in the head of the page that it serves, so that the
 //   browser fetches them at once, rather than each once the file that
@@ -102,7 +112,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { preset, staticImports, vendorCheck } from "@blockr/core/build";
+import { preset } from "@blockr/core/build";
+import { staticImports, themeCheck, vendorCheck } from "@blockr/ui/build";
 import * as esbuild from "esbuild";
 import { createGenerator } from "ts-json-schema-generator";
 
@@ -143,6 +154,7 @@ export async function build(root: string): Promise<string[]> {
   if (results.some((result) => result.warnings.length > 0)) {
     throw new Error("esbuild warned, as printed above");
   }
+  await themeCheck({ stylesheets: [join(out, "assistant_plugin.css")], code: await sources(root) });
   const openRouter = await openRouterPage(root, out);
 
   return [
@@ -153,6 +165,16 @@ export async function build(root: string): Promise<string[]> {
     licensed,
     await preloadList(root, out, results.map((result) => result.metafile), vendored.values()),
   ].sort();
+}
+
+// The paths of the assistant's code, the TypeScript in srcts, in order.
+async function sources(root: string): Promise<string[]> {
+  const src = join(root, "srcts");
+  const files = await readdir(src, { recursive: true });
+  return files
+    .filter((file) => /\.tsx?$/.test(file))
+    .map((file) => join(src, file))
+    .sort();
 }
 
 // Writes what the files in `out` import up front into `out`, as preload.json,

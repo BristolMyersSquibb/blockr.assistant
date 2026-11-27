@@ -101,7 +101,7 @@ function Edits({ calls }: { readonly calls: readonly Call[] }): ReactElement {
 // A block of an edit's review, with its status dot.
 function Block({ block }: { readonly block: EditView["blocks"][number] }): ReactElement {
   const dot = block.status === undefined ? undefined : dotOf(block.status);
-  const style = dot === undefined || block.status === undefined ? undefined : ({ "--blockr-assistant-dot": dotColor(block.status, dot) } as CSSProperties);
+  const style = dot === undefined ? undefined : ({ "--blockr-assistant-dot": dotColor(dot) } as CSSProperties);
   return (
     <span className="blockr-assistant-block" data-removed={block.removed ? "" : undefined} title={block.removed ? `${block.name} left the board` : dot?.tooltip}>
       {dot === undefined ? null : <span className="blockr-assistant-dot" data-filled={dot.filled ? "" : undefined} style={style} />}

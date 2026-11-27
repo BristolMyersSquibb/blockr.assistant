@@ -5259,7 +5259,7 @@ function stagedBytes(field) {
 
 // srcts/chat/composer.tsx
 import { useId, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState2 } from "react";
-import { Button as Button2 } from "@blockr/core/react";
+import { Button as Button2 } from "@blockr/ui";
 
 // srcts/chat/context.ts
 import { createContext, useContext } from "react";
@@ -5278,7 +5278,7 @@ function useChat() {
 
 // srcts/chat/files.tsx
 import { memo, useEffect, useMemo, useState } from "react";
-import { Button, Dialog, Heading, Modal } from "@blockr/core/react";
+import { Button, Dialog, Heading, Modal } from "@blockr/ui";
 
 // srcts/chat/libraries.ts
 var loading2;
@@ -5721,7 +5721,7 @@ function Composer() {
 
 // srcts/chat/drawer.tsx
 import { useEffect as useEffect2, useId as useId2, useMemo as useMemo3, useRef as useRef2, useState as useState3 } from "react";
-import { Button as Button3, TextField } from "@blockr/core/react";
+import { Button as Button3, TextField } from "@blockr/ui";
 import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var DAY = 24 * 60 * 60 * 1e3;
 function Drawer(props) {
@@ -5934,7 +5934,7 @@ function formatUpdated(updated, now = /* @__PURE__ */ new Date()) {
 }
 
 // srcts/chat/footer.tsx
-import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/core/react";
+import { Button as Button4, ComboBox, ComboBoxItem } from "@blockr/ui";
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 function Footer({ usage, picks, offered: offered2, levelsOf, onPick, onPickLevel, opener, onDrawer }) {
   const next = offered2 === void 0 ? void 0 : resolveModel(offered2, picks.model);
@@ -6080,7 +6080,7 @@ var NO_SKILLS = [];
 
 // srcts/chat/key.tsx
 import { useId as useId3 } from "react";
-import { Button as Button5, TextField as TextField2 } from "@blockr/core/react";
+import { Button as Button5, TextField as TextField2 } from "@blockr/ui";
 import { jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 function KeyForm() {
   const { keyField } = useChat();
@@ -6146,7 +6146,7 @@ function keepsOf(kept, appHost, key) {
 }
 
 // srcts/chat/links.tsx
-import { Button as Button6, Dialog as Dialog2, Heading as Heading2, Modal as Modal2 } from "@blockr/core/react";
+import { Button as Button6, Dialog as Dialog2, Heading as Heading2, Modal as Modal2 } from "@blockr/ui";
 import { jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var always = false;
 function leavesSite(href, page2) {
@@ -6416,7 +6416,7 @@ async function sendMessage(assistant, open2, text3, files, picks, opened2, skill
 
 // srcts/chat/transcript.tsx
 import { useMemo as useMemo5 } from "react";
-import { Button as Button8 } from "@blockr/core/react";
+import { Button as Button8 } from "@blockr/ui";
 
 // srcts/chat/greeting.ts
 var EMPTY = {
@@ -6435,7 +6435,7 @@ function greetingOf(board) {
 
 // srcts/chat/markdown.tsx
 import { useEffect as useEffect4, useState as useState5 } from "react";
-import { Button as Button7 } from "@blockr/core/react";
+import { Button as Button7 } from "@blockr/ui";
 import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
 var COPIED_MS = 2e3;
 var COMPONENTS = {
@@ -6587,25 +6587,19 @@ function strings(value) {
 }
 
 // srcts/chat/status.ts
-var LIGHT = {
-  "text-muted": "#6b7280",
-  "border-warning": "#d97706",
-  "border-danger": "#dc2626",
-  "border-success": "#16a34a"
-};
 var DOTS = {
-  stale: { filled: true, token: "text-muted", tooltip: "Inputs changed since this block last ran" },
-  waiting: { filled: false, token: "border-warning", tooltip: "Waiting for a data input" },
-  invalid: { filled: true, token: "border-warning", tooltip: "Set this block's inputs" },
-  failed: { filled: true, token: "border-danger", tooltip: "Evaluation failed" },
-  ready: { filled: true, token: "border-success", tooltip: "Up to date" },
-  unevaluated: { filled: false, token: "text-muted", tooltip: "Not evaluated yet" }
+  stale: { filled: true, job: "muted-foreground", tooltip: "Inputs changed since this block last ran" },
+  waiting: { filled: false, job: "warning", tooltip: "Waiting for a data input" },
+  invalid: { filled: true, job: "warning", tooltip: "Set this block's inputs" },
+  failed: { filled: true, job: "destructive", tooltip: "Evaluation failed" },
+  ready: { filled: true, job: "success", tooltip: "Up to date" },
+  unevaluated: { filled: false, job: "muted-foreground", tooltip: "Not evaluated yet" }
 };
 function dotOf(status) {
   return Object.hasOwn(DOTS, status) ? DOTS[status] : void 0;
 }
-function dotColor(status, dot) {
-  return `var(--bc-color-status-${status}, ${LIGHT[dot.token]})`;
+function dotColor(dot) {
+  return `var(--bk-color-${dot.job})`;
 }
 
 // srcts/chat/tools.tsx
@@ -6648,7 +6642,7 @@ function Edits({ calls }) {
 }
 function Block({ block }) {
   const dot = block.status === void 0 ? void 0 : dotOf(block.status);
-  const style = dot === void 0 || block.status === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(block.status, dot) };
+  const style = dot === void 0 ? void 0 : { "--blockr-assistant-dot": dotColor(dot) };
   return /* @__PURE__ */ jsxs8("span", { className: "blockr-assistant-block", "data-removed": block.removed ? "" : void 0, title: block.removed ? `${block.name} left the board` : dot?.tooltip, children: [
     dot === void 0 ? null : /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-dot", "data-filled": dot.filled ? "" : void 0, style }),
     /* @__PURE__ */ jsx9("span", { className: "blockr-assistant-block-name", children: block.name })

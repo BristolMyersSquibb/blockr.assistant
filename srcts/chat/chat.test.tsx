@@ -7,6 +7,7 @@ import { HELLO, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCoreOptions } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
+import { listed, optionLabels, picked, press, step, type } from "@blockr/ui/stubs";
 import { act } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { openAssistant } from "../assistant/index.ts";
@@ -217,24 +218,10 @@ function heldReply(text: string): { readonly reply: FauxResponseStep; readonly r
 // Presses the key in the message field, and waits for the field to show what
 // the key did, as the message field's store gives it a moment later.
 async function key(el: HTMLElement, name: string): Promise<void> {
-  press(field(el), name);
+  await step(() => {
+    press(field(el), name);
+  });
   await settle();
-}
-
-// Types the text into the message field, as the user would.
-function type(el: HTMLElement, value: string): void {
-  const field = el.querySelector("textarea");
-  if (field === null) throw new Error("The chat draws no message field.");
-  act(() => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(field, value);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-function press(target: Element, key: string, init: KeyboardEventInit = {}): void {
-  act(() => {
-    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }));
-  });
 }
 
 function click(target: Element | null): void {
@@ -260,33 +247,20 @@ function pickField(el: HTMLElement, label: string): HTMLInputElement | null {
   return el.querySelector<HTMLInputElement>(`.blockr-assistant-footer input[aria-label="${label}"]`);
 }
 
-// The options of the select's list, which the field names while the list is
-// open, as React Aria draws the list at the end of the page's body.
-function optionsOf(field: HTMLInputElement): HTMLElement[] {
-  const id = field.getAttribute("aria-controls");
-  const list = id === null ? null : document.getElementById(id);
-  return [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
-}
-
-// The texts of the options that the select offers, whose list it opens and
+// The labels of the options that the select offers, whose list it opens and
 // closes again.
 async function offeredBy(field: HTMLInputElement | null): Promise<string[]> {
   if (field === null) throw new Error("The footer offers no such pick.");
-  click(field);
+  const labels = await listed(field, step);
   await settle();
-  const texts = optionsOf(field).map((option) => option.textContent);
-  press(field, "Escape");
-  await settle();
-  return texts;
+  return labels;
 }
 
-// Opens the select's list and picks the option of the text given, as the user
-// would.
-async function choose(field: HTMLInputElement | null, text: string): Promise<void> {
+// Opens the select's list and picks the option of the label given, as the
+// user would.
+async function choose(field: HTMLInputElement | null, label: string): Promise<void> {
   if (field === null) throw new Error("The footer offers no such pick.");
-  click(field);
-  await settle();
-  click(optionsOf(field).find((option) => option.textContent === text) ?? null);
+  await picked(field, step, label);
   await settle();
 }
 
@@ -342,8 +316,7 @@ function giveKey(el: HTMLElement, key: string): void {
   const input = el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]");
   if (input === null) throw new Error("The chat draws no field for the key.");
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, key);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    type(input, key);
   });
   click(el.querySelector(".blockr-assistant-key-field button"));
 }
@@ -416,8 +389,10 @@ describe("the assistant's chat", () => {
   test("sends a message into a conversation that it adds, and streams the reply as Markdown", async () => {
     const { el, assistant } = await chat();
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply strong") !== null, "the reply");
 
     const [id, added] = Object.entries(inState(assistant))[0] ?? [];
@@ -473,8 +448,10 @@ describe("the assistant's chat", () => {
   test("shows the conversations of the plugin's memory alone where chat_save_turns is 0", async () => {
     const { el, assistant, core } = await chat({ blockrOptions: { chat_save_turns: 0 } });
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
     expect((core.store.board().plugins[ASSISTANT] as AssistantState).conversations).toEqual({});
@@ -526,11 +503,15 @@ describe("the assistant's chat", () => {
     await until(() => el.querySelector(".blockr-assistant-compacting") !== null, "the line that says that the model writes a summary");
     expect(el.querySelector(".blockr-assistant-compacting")?.textContent).toBe("Writing a summary of the earlier messages");
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => assistant.turns.current() !== undefined, "the turn");
     expect(el.querySelector(".blockr-assistant-working")).toBeNull();
-    press(field(el), "Escape");
+    await step(() => {
+      press(field(el), "Escape");
+    });
     await until(() => assistant.turns.current() === undefined, "the turn's stop");
     expect(el.querySelector(".blockr-assistant-compacting")).not.toBeNull();
 
@@ -547,8 +528,10 @@ describe("the assistant's chat", () => {
   test("shows the model's reasoning as a row that folds, while the board stays open", async () => {
     const { el } = await chat({ replies: [fauxAssistantMessage([fauxThinking("Counting the **blocks**."), fauxText("None.")])] });
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply .blockr-assistant-markdown") !== null && el.querySelector(".blockr-assistant-working") === null, "the reply");
 
     const row = el.querySelector(".blockr-assistant-reasoning");
@@ -560,8 +543,10 @@ describe("the assistant's chat", () => {
   test("shows a failure that ended a turn at that turn", async () => {
     const { el } = await chat({ replies: [fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" })] });
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-failure") !== null, "the failure");
 
     expect(el.querySelector(".blockr-assistant-failure")?.textContent).toBe("The assistant's call to the model failed: 401 Unauthorized");
@@ -686,13 +671,17 @@ describe("the chat's notifications", () => {
       replies: [fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 Unauthorized" }), fauxAssistantMessage("Two blocks.")],
     });
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-failure") !== null && assistant.turns.current() === undefined, "the failure");
     expect(shown(el)).toEqual([["error", "The assistant's call to the model failed: 401 Unauthorized"]]);
 
-    type(el, "And now?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "And now?");
+      press(field(el), "Enter");
+    });
     await until(() => el.textContent.includes("Two blocks.") && assistant.turns.current() === undefined, "the reply");
     expect(shown(el)).toEqual([]);
   });
@@ -716,8 +705,10 @@ describe("the chat's field for the visitor's key", () => {
     expect([...el.querySelectorAll<HTMLButtonElement>(".blockr-assistant-suggestion")].every((button) => button.disabled)).toBe(true);
     expect(el.querySelector(".blockr-assistant-send")?.getAttribute("aria-label")).toBe("Sends once you enter your key");
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await settle();
     expect(inState(assistant)).toEqual({});
     expect(field(el).value).toBe("How many blocks?");
@@ -727,7 +718,9 @@ describe("the chat's field for the visitor's key", () => {
     expect(assistant.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
     expect(el.querySelector(".blockr-assistant-key")).toBeNull();
 
-    press(field(el), "Enter");
+    await step(() => {
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
     expect(keys).toEqual(["sk-visitor"]);
     const stored = [storedIn(localStorage), storedIn(sessionStorage), JSON.stringify([core.store.board(), sent])];
@@ -745,8 +738,10 @@ describe("the chat's field for the visitor's key", () => {
     await settle();
     expect(keyEntries()).toEqual([]);
 
-    type(first.el, "How many blocks?");
-    press(field(first.el), "Enter");
+    await step(() => {
+      type(field(first.el), "How many blocks?");
+      press(field(first.el), "Enter");
+    });
     await until(() => keyEntries().length > 0, "the entry of the key");
     expect(keyEntries()).toEqual([`blockr.assistant-visitor_key ["/","https://faux.invalid/v1"]`]);
     expect(storedIn(localStorage)).not.toContain("sk-visitor");
@@ -757,8 +752,10 @@ describe("the chat's field for the visitor's key", () => {
     await act(() => next.assistant.deployment);
     expect(next.assistant.key.current()).toEqual({ kind: "given", key: "sk-visitor" });
     expect(next.el.querySelector(".blockr-assistant-key")).toBeNull();
-    type(next.el, "How many blocks?");
-    press(field(next.el), "Enter");
+    await step(() => {
+      type(field(next.el), "How many blocks?");
+      press(field(next.el), "Enter");
+    });
     await until(() => keys.length === 2 && next.assistant.turns.current() === undefined, "the reply after the reload");
     expect(keys).toEqual(["sk-visitor", "sk-visitor"]);
   });
@@ -813,8 +810,10 @@ describe("the chat's field for the visitor's key", () => {
     );
     expect(el.querySelector<HTMLInputElement>(".blockr-assistant-key input[name=key]")?.value).toBe("sk-visitor");
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
     expect(keys).toEqual(["sk-visitor"]);
@@ -842,8 +841,10 @@ describe("the chat's field for the visitor's key", () => {
     await until(() => el.querySelector(".blockr-assistant-key") === null, "the key");
     expect(assistant.key.current()).toEqual({ kind: "given", key: "sk-or-login" });
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
     expect(keys).toEqual(["sk-or-login"]);
   });
@@ -920,8 +921,10 @@ describe("the chat's tool calls", () => {
       ],
     });
 
-    type(el, "What is on the board?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "What is on the board?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply")?.textContent.includes("Done.") === true, "the reply");
 
     const rows = [...el.querySelectorAll(".blockr-assistant-tool")];
@@ -980,8 +983,10 @@ describe("the chat's tool calls", () => {
     const commands = [{ command: "blockr.core-add_block", args: { registry_id: DATA.id, id: "d", name: "Cars" } }];
     const { el, assistant, core } = await chat({ replies: [fauxAssistantMessage([fauxToolCall("edit", { commands }, { id: "e-1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Added.")] });
 
-    type(el, "Add a dataset.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Add a dataset.");
+      press(field(el), "Enter");
+    });
     await until(() => assistant.turns.current() === undefined && el.querySelector(".blockr-assistant-tool") !== null, "the edit");
 
     const row = el.querySelector(".blockr-assistant-tool");
@@ -1010,18 +1015,24 @@ describe("the chat while a turn runs", () => {
     const replies = [heldReply("One two three four five six seven eight nine ten."), heldReply("Again, slowly, word by word.")];
     const { el, assistant } = await chat({ replies: replies.map((held) => held.reply) });
 
-    type(el, "Count.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Count.");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
     click(el.querySelector(".blockr-assistant-stop"));
     await until(() => assistant.turns.current() === undefined, "the turn to end");
     expect(el.querySelector(".blockr-assistant-stop")).toBeNull();
     expect(el.querySelector(".blockr-assistant-send")).not.toBeNull();
 
-    type(el, "Again.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Again.");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
-    press(el.querySelector(".blockr-assistant-transcript") ?? el, "Escape");
+    await step(() => {
+      press(el.querySelector(".blockr-assistant-transcript") ?? el, "Escape");
+    });
     await until(() => assistant.turns.current() === undefined, "the turn to end");
   });
 
@@ -1039,8 +1050,10 @@ describe("the chat while a turn runs", () => {
       });
     });
     await until(() => assistant.turns.current()?.conversation === "c2", "the turn in c2");
-    type(el, "And the costs?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "And the costs?");
+      press(field(el), "Enter");
+    });
     await settle();
 
     expect(field(el).value).toBe("And the costs?");
@@ -1050,7 +1063,9 @@ describe("the chat while a turn runs", () => {
     expect(assistant.conversations.get("c1")?.messages).toHaveLength(1);
 
     // Escape in the chat stops the turn, whichever conversation shows.
-    press(field(el), "Escape");
+    await step(() => {
+      press(field(el), "Escape");
+    });
     await until(() => ended, "the turn to end");
   });
 
@@ -1058,8 +1073,10 @@ describe("the chat while a turn runs", () => {
     const held = heldReply("The reply that streams while no panel shows.");
     const { el, assistant, core, remove } = await chat({ tokensPerSecond: 50, replies: [held.reply] });
 
-    type(el, "Count.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Count.");
+      press(field(el), "Enter");
+    });
     await until(() => assistant.turns.current() !== undefined, "the turn");
     remove();
     held.release();
@@ -1087,8 +1104,10 @@ describe("the chat while a turn runs", () => {
     };
     const { el, assistant } = await chat({ replies: [reply] });
 
-    type(el, "Count.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Count.");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
     click(el.querySelector(".blockr-assistant-stop"));
     await settle();
@@ -1122,17 +1141,23 @@ describe("the chat while a turn runs", () => {
     act(() => {
       assistant.conversations.keep("c1", "u1", { files: [{ blob: new Blob(["# Notes"], { type: "text/markdown" }) }] });
     });
-    type(el, "And now?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "And now?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
 
     click(el.querySelector(".blockr-assistant-markdown a"));
-    press(linkDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    await step(() => {
+      press(linkDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    });
     await settle();
     expect(linkDialog()).toBeNull();
 
     click(el.querySelector(".blockr-assistant-user .blockr-assistant-file"));
-    press(fileDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    await step(() => {
+      press(fileDialog()?.querySelector('[role="dialog"]') ?? document.body, "Escape");
+    });
     await settle();
     expect(fileDialog()).toBeNull();
 
@@ -1184,8 +1209,10 @@ describe("the chat's footer", () => {
     const { el, assistant } = await chat({ models: ["faux-1", "faux-2"] });
 
     await choose(pickField(el, "Model"), "faux-2");
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => Object.keys(inState(assistant)).length === 1, "the conversation");
 
     expect(Object.values(inState(assistant))[0]?.model).toBe("faux-2");
@@ -1205,21 +1232,27 @@ describe("the chat's footer", () => {
   // than the five seconds that a test gets by default.
   test("closes a pick's list on Escape, and leaves the turn that runs to go on, which Escape in the message field stops", { timeout: 15_000 }, async () => {
     const { el, assistant } = await chat({ models: ["faux-1", "faux-2"], replies: [heldReply("Two blocks.").reply] });
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => assistant.turns.current() !== undefined, "the turn");
 
     const pick = pickField(el, "Model");
     if (pick === null) throw new Error("The footer offers no pick of the model.");
     click(pick);
     await settle();
-    expect(optionsOf(pick)).toHaveLength(2);
-    press(pick, "Escape");
+    expect(optionLabels(pick)).toHaveLength(2);
+    await step(() => {
+      press(pick, "Escape");
+    });
     await settle();
 
-    expect(optionsOf(pick)).toHaveLength(0);
+    expect(optionLabels(pick)).toHaveLength(0);
     expect(assistant.turns.current()).toBeDefined();
-    press(field(el), "Escape");
+    await step(() => {
+      press(field(el), "Escape");
+    });
     await until(() => assistant.turns.current() === undefined, "the turn to end");
   });
 
@@ -1264,8 +1297,10 @@ describe("the chat's footer", () => {
     const { el, assistant } = await chat({ models: ["gpt-5.4"] });
 
     await choose(pickField(el, "Thinking level"), "low");
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => Object.keys(inState(assistant)).length === 1, "the conversation");
 
     expect(Object.values(inState(assistant))[0]).toMatchObject({ model: null, thinking_level: "low" });
@@ -1288,8 +1323,7 @@ describe("the chat's drawer of conversations", () => {
     const search = drawer.querySelector<HTMLInputElement>(".blockr-assistant-drawer-search");
     act(() => {
       if (search === null) return;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "SALES");
-      search.dispatchEvent(new Event("input", { bubbles: true }));
+      type(search, "SALES");
     });
     expect(rows(drawer)).toEqual(["Sales today", "Old sales"]);
   });
@@ -1302,7 +1336,9 @@ describe("the chat's drawer of conversations", () => {
     expect(drawer.parentElement?.className).toBe("blockr-assistant-chat");
     expect(drawer.querySelector('[role="dialog"]')?.getAttribute("aria-labelledby")).toBe(drawer.querySelector("h2")?.id);
     expect(main?.hasAttribute("inert")).toBe(true);
-    press(drawer.querySelector(".blockr-assistant-drawer-search") ?? drawer, "Escape");
+    await step(() => {
+      press(drawer.querySelector(".blockr-assistant-drawer-search") ?? drawer, "Escape");
+    });
     await settle();
     expect(drawerShown(el)).toBe(false);
     expect(main?.hasAttribute("inert")).toBe(false);
@@ -1342,8 +1378,10 @@ describe("the chat's drawer of conversations", () => {
     expect(Object.keys(inState(assistant))).toEqual(["c1"]);
     expect(pickField(el, "Model")?.value).toBe("faux-2");
 
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => Object.keys(inState(assistant)).length === 2, "the new conversation");
     const added = Object.entries(inState(assistant)).find(([id]) => id !== "c1")?.[1];
     expect(added).toMatchObject({ title: "New conversation", model: "faux-2", thinking_level: "high" });
@@ -1360,10 +1398,11 @@ describe("the chat's drawer of conversations", () => {
     expect([field?.selectionStart, field?.selectionEnd]).toEqual([0, "Sales".length]);
     act(() => {
       if (field === null) return;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "  Sales   by region ");
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      type(field, "  Sales   by region ");
     });
-    press(field ?? drawer, "Enter");
+    await step(() => {
+      press(field ?? drawer, "Enter");
+    });
     await settle();
 
     expect(inState(assistant).c1?.title).toBe("Sales by region");
@@ -1371,7 +1410,9 @@ describe("the chat's drawer of conversations", () => {
     expect(rows(drawer)).toEqual(["Sales by region"]);
 
     click(drawer.querySelector('[aria-label="Rename “Sales by region”"]'));
-    press(renameField(drawer) ?? drawer, "Escape");
+    await step(() => {
+      press(renameField(drawer) ?? drawer, "Escape");
+    });
     await settle();
     expect(rows(drawer)).toEqual(["Sales by region"]);
     expect(drawerShown(el)).toBe(true);
@@ -1386,8 +1427,7 @@ describe("the chat's drawer of conversations", () => {
     await until(() => document.activeElement === field, "the focus in the field");
     act(() => {
       if (field === null) return;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "Costs");
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      type(field, "Costs");
     });
     act(() => {
       field?.blur();
@@ -1462,8 +1502,10 @@ describe("the chat's message field", () => {
   test("starts a new line on Shift+Enter, rather than sending", async () => {
     const { el, assistant } = await chat();
 
-    type(el, "Two");
-    press(field(el), "Enter", { shiftKey: true });
+    await step(() => {
+      type(field(el), "Two");
+      press(field(el), "Enter", { shiftKey: true });
+    });
     await settle();
 
     expect(Object.keys(assistant.conversations.all())).toEqual([]);
@@ -1507,7 +1549,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   // The names of the commands that the list shows, as it writes them, or
   // undefined where the list is closed.
-  function listed(el: HTMLElement): string[] | undefined {
+  function shownCommands(el: HTMLElement): string[] | undefined {
     const list = el.querySelector(".blockr-assistant-commands");
     return list === null ? undefined : [...list.querySelectorAll(".blockr-assistant-command-name")].map((name) => name.textContent);
   }
@@ -1539,29 +1581,39 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
   test("are listed as the user types / at the start of the field: the built-in commands, then the skills that the user may call", async () => {
     const { el } = await withSkills();
 
-    type(el, "/");
-    expect(listed(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
+    await step(() => {
+      type(field(el), "/");
+    });
+    expect(shownCommands(el)).toEqual(["/compact", "/clear", "/undo", "/redo", "/filters"]);
     expect(el.querySelector(".blockr-assistant-command-description")?.textContent).toBe("Summarize the conversation so far, keeping the newest messages as they are.");
     expect(field(el).getAttribute("aria-controls")).toBe(el.querySelector(".blockr-assistant-commands")?.id);
     expect(field(el).getAttribute("aria-autocomplete")).toBe("list");
 
-    type(el, "/C");
-    expect(listed(el)).toEqual(["/compact", "/clear"]);
+    await step(() => {
+      type(field(el), "/C");
+    });
+    expect(shownCommands(el)).toEqual(["/compact", "/clear"]);
 
-    type(el, "/x");
-    expect(listed(el)).toEqual([]);
+    await step(() => {
+      type(field(el), "/x");
+    });
+    expect(shownCommands(el)).toEqual([]);
     expect(el.querySelector(".blockr-assistant-commands-none")?.textContent).toBe("No matching commands");
 
     for (const text of ["/clear ", "/filters keep the adults", "Undo /undo", ""]) {
-      type(el, text);
-      expect(listed(el)).toBeUndefined();
+      await step(() => {
+        type(field(el), text);
+      });
+      expect(shownCommands(el)).toBeUndefined();
     }
   });
 
   test("move in the list with Up and Down, and go into the field with Tab, Enter or a click, while Escape closes the list until the text changes", async () => {
     const { el } = await withSkills();
 
-    type(el, "/c");
+    await step(() => {
+      type(field(el), "/c");
+    });
     expect(highlighted(el)).toBe("/compact");
     await key(el, "ArrowDown");
     expect(highlighted(el)).toBe("/clear");
@@ -1572,21 +1624,29 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     expect(highlighted(el)).toBe("/clear");
     await key(el, "Tab");
     expect(field(el).value).toBe("/clear ");
-    expect(listed(el)).toBeUndefined();
+    expect(shownCommands(el)).toBeUndefined();
 
-    type(el, "/un");
+    await step(() => {
+      type(field(el), "/un");
+    });
     await key(el, "Enter");
     expect(field(el).value).toBe("/undo ");
 
-    type(el, "/f");
+    await step(() => {
+      type(field(el), "/f");
+    });
     click(el.querySelector(".blockr-assistant-command"));
     expect(field(el).value).toBe("/filters ");
 
-    type(el, "/r");
+    await step(() => {
+      type(field(el), "/r");
+    });
     await key(el, "Escape");
-    expect(listed(el)).toBeUndefined();
-    type(el, "/re");
-    expect(listed(el)).toEqual(["/redo"]);
+    expect(shownCommands(el)).toBeUndefined();
+    await step(() => {
+      type(field(el), "/re");
+    });
+    expect(shownCommands(el)).toEqual(["/redo"]);
   });
 
   test("run /compact on Enter where the field holds its name, which has the compaction write a summary that alone enters the transcript", async () => {
@@ -1604,7 +1664,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       replies: [summary.reply],
     });
 
-    type(el, "/compact");
+    await step(() => {
+      type(field(el), "/compact");
+    });
     await key(el, "Enter");
     expect(field(el).value).toBe("");
     await until(() => el.querySelector(".blockr-assistant-compacting") !== null, "the line that says that the model writes a summary");
@@ -1632,7 +1694,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     });
     await until(() => assistant.turns.current()?.conversation === "c1", "the turn in c1");
 
-    type(el, "/clear");
+    await step(() => {
+      type(field(el), "/clear");
+    });
     await key(el, "Enter");
 
     expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
@@ -1644,8 +1708,10 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
     held.release();
     await until(() => ended, "the turn to end");
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => Object.keys(inState(assistant)).length === 2, "the new conversation");
     expect(Object.entries(inState(assistant)).find(([id]) => id !== "c1")?.[1]).toMatchObject({ title: "New conversation", model: "faux-2", thinking_level: "high" });
   });
@@ -1665,7 +1731,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     await until(() => assistant.turns.current()?.conversation === "c2", "the turn in c2");
 
     for (const line of ["/undo", "/redo", "/compact", "/filters keep the adults"]) {
-      type(el, line);
+      await step(() => {
+        type(field(el), line);
+      });
       const send = el.querySelector(".blockr-assistant-send");
       expect(send?.getAttribute("aria-label")).toBe("Sends once the turn in “Costs” ends");
       expect(send?.hasAttribute("disabled")).toBe(true);
@@ -1684,13 +1752,17 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
   test("close the list on Escape without stopping the turn, which the next Escape stops", async () => {
     const held = heldReply("Two blocks.");
     const { el, assistant } = await withSkills({ replies: [held.reply] });
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-stop") !== null, "the stop button");
 
-    type(el, "/u");
+    await step(() => {
+      type(field(el), "/u");
+    });
     await key(el, "Escape");
-    expect(listed(el)).toBeUndefined();
+    expect(shownCommands(el)).toBeUndefined();
     expect(assistant.turns.current()?.stopping).toBe(false);
 
     await key(el, "Escape");
@@ -1705,7 +1777,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
     expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the assistant in another conversation."]);
 
-    type(el, "/undo");
+    await step(() => {
+      type(field(el), "/undo");
+    });
     await key(el, "Enter");
 
     expect(name()).toBe(before);
@@ -1713,7 +1787,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     expect(commandNote(el)).toBeUndefined();
     expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the user."]);
 
-    type(el, "/redo");
+    await step(() => {
+      type(field(el), "/redo");
+    });
     await key(el, "Enter");
 
     expect(name()).toBe("Data");
@@ -1729,7 +1805,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
     await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
 
-    type(el, "/undo");
+    await step(() => {
+      type(field(el), "/undo");
+    });
     await key(el, "Enter");
 
     expect(names()).toEqual([before[0], "Top"]);
@@ -1743,7 +1821,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     });
     expect(core.store.board().blocks.b?.name).not.toBe("Top");
 
-    type(el, "/redo");
+    await step(() => {
+      type(field(el), "/redo");
+    });
     await key(el, "Enter");
 
     expect(core.store.board().blocks.b?.name).toBe("Top");
@@ -1753,13 +1833,17 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
     await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
 
-    type(el, "/undo");
+    await step(() => {
+      type(field(el), "/undo");
+    });
     await key(el, "Enter");
     expect(commandNote(el)).toBe("The assistant has no edit left to take back.");
     expect(field(el).value).toBe("");
     expect(core.store.board().blocks.b?.name).toBe("Top");
 
-    type(el, "/redo");
+    await step(() => {
+      type(field(el), "/redo");
+    });
     await key(el, "Enter");
     expect(commandNote(el)).toBe("No undo has taken back an edit to apply again.");
 
@@ -1767,19 +1851,27 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     vi.spyOn(core.store, "undo").mockImplementation(() => {
       throw Object.assign(new Error("The store refused to undo the step\n- The board is locked."), { name: "StoreError", failures: ["The board is locked."] });
     });
-    type(el, "/undo");
+    await step(() => {
+      type(field(el), "/undo");
+    });
     await key(el, "Enter");
     expect(commandNote(el)).toBe("The board refused to take back the assistant's last edit: The board is locked.");
 
-    type(el, "/clear");
+    await step(() => {
+      type(field(el), "/clear");
+    });
     await key(el, "Enter");
     expect(commandNote(el)).toBeUndefined();
 
-    type(el, "/redo");
+    await step(() => {
+      type(field(el), "/redo");
+    });
     await key(el, "Enter");
     expect(commandNote(el)).toBe("No undo has taken back an edit to apply again.");
-    type(el, "How many blocks?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "How many blocks?");
+      press(field(el), "Enter");
+    });
     await settle();
     expect(commandNote(el)).toBeUndefined();
   });
@@ -1796,7 +1888,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       ],
     });
 
-    type(el, "/filters keep the adults");
+    await step(() => {
+      type(field(el), "/filters keep the adults");
+    });
     await key(el, "Enter");
     await until(() => el.querySelector(".blockr-assistant-reply")?.textContent === "Filtered." && assistant.turns.current() === undefined, "the reply");
 
@@ -1815,7 +1909,9 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
       }),
     });
 
-    type(el, "/filters keep the adults");
+    await step(() => {
+      type(field(el), "/filters keep the adults");
+    });
     await key(el, "Enter");
     await until(() => core.notifications.get().some(({ source }) => source.kind === "module" && "code" in source && source.code === "assistant_skills_failed"), "the error");
 
@@ -1828,8 +1924,10 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     for (const line of ["/layout", "/srv/data/sales.csv holds the sales"]) {
       const { el, assistant } = await withSkills();
 
-      type(el, line);
-      expect(listed(el)).toEqual(line === "/layout" ? [] : undefined);
+      await step(() => {
+        type(field(el), line);
+      });
+      expect(shownCommands(el)).toEqual(line === "/layout" ? [] : undefined);
       await key(el, "Enter");
       await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
@@ -1843,8 +1941,10 @@ describe("the chat's text", () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(() => Promise.resolve());
     const { el, assistant } = await chat({ replies: [fauxAssistantMessage("| a | b |\n|---|---|\n| 1 | 2 |\n\n```r\nhead(x)\n```")] });
 
-    type(el, "Show me.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Show me.");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector('.blockr-assistant-markdown[data-status="complete"] .blockr-assistant-copy') !== null && assistant.turns.current() === undefined, "the code block");
 
     expect(el.querySelector(".blockr-assistant-table td")?.textContent).toBe("1");
@@ -1860,8 +1960,10 @@ describe("the chat's text", () => {
     const opened = vi.spyOn(globalThis, "open").mockImplementation(() => null);
     const { el, assistant } = await chat({ replies: [fauxAssistantMessage("See [the docs](https://example.org/docs).")] });
 
-    type(el, "Where?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Where?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector('.blockr-assistant-markdown[data-status="complete"] a') !== null && assistant.turns.current() === undefined, "the link");
     const link = el.querySelector(".blockr-assistant-markdown a");
     expect(link?.getAttribute("target")).toBe("_blank");
@@ -1894,8 +1996,10 @@ describe("the chat's text", () => {
     const opened = vi.spyOn(globalThis, "open").mockImplementation(() => null);
     const { el, assistant } = await chat({ replies: [fauxAssistantMessage("See [the docs](https://example.org/docs) and [the news](https://example.org/news).")] });
 
-    type(el, "Where?");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Where?");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelectorAll('.blockr-assistant-markdown[data-status="complete"] a').length === 2 && assistant.turns.current() === undefined, "the links");
     const [docs, news] = el.querySelectorAll(".blockr-assistant-markdown a");
 
@@ -1959,8 +2063,10 @@ describe("the chat's attachments", () => {
     await until(() => staged(el).length === 3, "the staged files");
     expect(staged(el)).toEqual(["plot.png", "report.pdf", "sales.csv"]);
 
-    type(el, "Read these.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Read these.");
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply")?.textContent === "Read them." && assistant.turns.current() === undefined, "the reply");
 
     const [id, added] = Object.entries(inState(assistant))[0] ?? [];
@@ -1998,7 +2104,9 @@ describe("the chat's attachments", () => {
 
     pick(el, csv());
     await until(() => staged(el).length === 1, "the staged file");
-    press(field(el), "Enter");
+    await step(() => {
+      press(field(el), "Enter");
+    });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
     expect(Object.values(inState(assistant))[0]?.messages[0]?.parts).toEqual([{ type: "attachment", name: "sales.csv", media_type: "text/csv" }]);
@@ -2076,8 +2184,10 @@ describe("the chat's attachments", () => {
 
     pick(el, csv());
     await until(() => staged(el).length === 1, "the staged file");
-    type(el, "Read this.");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "Read this.");
+      press(field(el), "Enter");
+    });
     await until(() => staged(el).length === 1 && field(el).value === "Read this." && el.querySelector(".blockr-assistant-send") !== null, "the draft to come back");
     await settle(20);
 
@@ -2091,8 +2201,10 @@ describe("the chat's attachments", () => {
 
     pick(el, png());
     await until(() => staged(el).length === 1, "the staged file");
-    type(el, "/undo");
-    press(field(el), "Enter");
+    await step(() => {
+      type(field(el), "/undo");
+      press(field(el), "Enter");
+    });
     await settle();
 
     expect(field(el).value).toBe("");

@@ -257,8 +257,10 @@
   plugin, in React on assistant-ui 0.15.36, in place of shinychat's chat
   (#229).
   The chat draws only in the element that the frontend gives it and in the
-  overlays of core's React SDK, and it fits a panel as narrow as a rail.
-  Its dialogs, buttons and fields are those of the SDK (#294).
+  overlays of blockr.ui, and it fits a panel as narrow as a rail.
+  Its dialogs, buttons and fields are blockr.ui's components (#294, #319).
+  It draws with the theme variables of blockr.ui, in light mode and in dark
+  mode, so that a frontend's theme and an app's theme restyle it (#319).
   It shows the open conversation as the plugin holds it, whichever command
   changed it last, and the browser's local storage keeps which conversation
   is open.

@@ -16,7 +16,7 @@
 //   that the turn is stopping until the turn ends, as where an edit waits in a
 //   command's prepare()
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#stopping-a-turn).
-//   It is a Button of core's React SDK. While the turn stops, the button is
+//   It is a Button of blockr.ui. While the turn stops, the button is
 //   pending, so that it keeps the focus and takes no press.
 // - The button beside the text opens the system's file picker, and the field
 //   shows the files that it stages above the text (./files.tsx). A paste of
@@ -57,7 +57,7 @@
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactElement } from "react";
-import { Button } from "@blockr/core/react";
+import { Button } from "@blockr/ui";
 import { ACCEPT, PASTE_AS_FILE, pastedFile } from "../attachments/index.ts";
 import { useChat, useChatActions } from "./context.ts";
 import { StagedFiles } from "./files.tsx";
