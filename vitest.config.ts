@@ -5,6 +5,10 @@ import { configDefaults, defineConfig } from "vitest/config";
 // - The tests in srcts/**/*.test.{ts,tsx} run on happy-dom. They import
 //   blockr.core's CoreApi for tests from @blockr/core, which `npm test`
 //   installs first, and React from the package's own node_modules.
+//   A test fails on an error or a warning that it prints and does not set off
+//   on purpose.
+//   The setup of blockr.ui's stubs fails it, and the assistant's own setup
+//   allows one error of core's for now (srcts/testing/setup.ts).
 // - The tests in srcts/**/*.browser.test.ts run in headless Chromium, through
 //   Playwright, against the mock of the APIs and of the lists of models that
 //   srcts/testing/mock-apis.ts serves from another origin, so that their
@@ -12,6 +16,8 @@ import { configDefaults, defineConfig } from "vitest/config";
 //   Chrome. Elsewhere it starts the Chromium that PUPPETEER_EXECUTABLE_PATH
 //   names, as a workspace may set it, or else its own, which
 //   `npx playwright install chromium` downloads.
+//   These tests run without the setup of blockr.ui's stubs, since that setup
+//   runs in Node alone.
 const BROWSER = "srcts/**/*.browser.test.ts";
 
 // Gives a Markdown file that a module imports with { type: "text" }, as the
@@ -60,6 +66,7 @@ export default defineConfig({
           environment: "happy-dom",
           include: ["srcts/**/*.test.{ts,tsx}"],
           exclude: [...configDefaults.exclude, BROWSER],
+          setupFiles: ["@blockr/ui/stubs/setup", "./srcts/testing/setup.ts"],
         },
       },
       {
