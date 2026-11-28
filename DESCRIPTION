@@ -36,7 +36,7 @@ Suggests:
     webfakes,
     withr
 Remotes:
-    BristolMyersSquibb/blockr.core@js-state
+    BristolMyersSquibb/blockr.core@883-package-ids
 Config/testthat/edition: 3
 URL: https://bristolmyerssquibb.github.io/blockr.assistant/
 VignetteBuilder: quarto
