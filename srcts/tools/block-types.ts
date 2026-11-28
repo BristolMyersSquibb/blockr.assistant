@@ -10,11 +10,17 @@
 // - The tool describe_block_type cuts nothing. It gives the guidance in full,
 //   where a class writes its worked examples, and no worked examples of its
 //   own.
+// - They give each class's registry id as JSON holds it, a record of the
+//   package that defines the class and the class's id within it, and
+//   describe_block_type takes the id in that form. The package is null for a
+//   class that the app's script defines.
 
 import type { Json } from "@blockr/core";
 import { object } from "../commands/index.ts";
+import { idOf, idRecord, idSchema } from "../ids/index.ts";
+import type { IdRecord } from "../ids/index.ts";
 import { readToolCap } from "./caps.ts";
-import { own, skillsNaming } from "./context.ts";
+import { skillsNaming } from "./context.ts";
 import type { ToolContext } from "./context.ts";
 import { cutText } from "./cut.ts";
 import { noBlockType } from "./failures.ts";
@@ -33,8 +39,8 @@ export function blockTypeTools(context: ToolContext): Tool[] {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          Object.values(core.blockRegistry()).map((entry) => ({
-            id: entry.id,
+          [...core.blockRegistry()].map(([id, entry]) => ({
+            id: idRecord(id),
             name: entry.name,
             category: entry.category,
             inputs: [...entry.inputs],
@@ -44,18 +50,19 @@ export function blockTypeTools(context: ToolContext): Tool[] {
       },
     }),
 
-    tool<{ readonly id: string }>({
+    tool<{ readonly id: IdRecord<string | null> }>({
       name: "describe_block_type",
       description:
         "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
-      parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
-      run: async ({ id }) => {
-        if (own(core.blockRegistry(), id) === undefined) throw new Error(noBlockType(id));
+      parameters: object({ id: idSchema("The registry id of the block class, as list_block_types gives it.", true) }, ["id"]),
+      run: async ({ id: given }) => {
+        const id = idOf(core, given);
+        if (id === undefined || !core.blockRegistry().has(id)) throw new Error(noBlockType(given));
         const skills = await skillsNaming(context, "blocks", id);
-        const entry = own(core.blockRegistry(), id);
-        if (entry === undefined) throw new Error(noBlockType(id));
+        const entry = core.blockRegistry().get(id);
+        if (entry === undefined) throw new Error(noBlockType(given));
         const described: Record<string, Json> = {
-          id,
+          id: idRecord(id),
           name: entry.name,
           category: entry.category,
           description: entry.description,

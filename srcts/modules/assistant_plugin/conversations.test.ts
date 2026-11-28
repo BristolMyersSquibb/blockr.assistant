@@ -5,13 +5,12 @@
 // without its start, which would make the board's own.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import { HELLO, id, stubCore } from "@blockr/core/stubs";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { createConversations, readCap } from "../../conversations/index.ts";
 import type { AssistantState, Conversation, Message, Role } from "../../state/index.ts";
+import { HELLO_ASSISTANT } from "../../testing/index.ts";
 import * as assistant from "./index.tsx";
-
-const ASSISTANT = "blockr.assistant-assistant_plugin";
 
 function message(id: string, role: Role): Message {
   return { id, role, parts: [{ type: "text", text: id }], created: "2026-11-16T08:00:00.000Z" };
@@ -35,20 +34,15 @@ const three = conversation(
 // no block and holds the assistant's state given.
 function helloWith(state: AssistantState): typeof HELLO {
   return {
-    ...HELLO,
-    packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-    plugins: {
-      ...HELLO.plugins,
-      [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-    },
+    ...HELLO_ASSISTANT,
     board: {
-      ...HELLO.board,
+      ...HELLO_ASSISTANT.board,
       board: {
-        ...HELLO.board.board,
+        ...HELLO_ASSISTANT.board.board,
         blocks: {},
         links: {},
         stacks: {},
-        plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
+        plugins: { ...HELLO_ASSISTANT.board.board.plugins, "blockr.assistant": { assistant_plugin: { state, version: 1 } } },
       },
     },
   };
@@ -60,7 +54,7 @@ function helloWith(state: AssistantState): typeof HELLO {
 async function opened(state: AssistantState, cap?: Json) {
   const stubbed = await stubCore({
     hello: helloWith(state),
-    modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
+    offered: { "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistant.default, start: undefined } } } },
     ...(cap === undefined ? {} : { blockrOptions: { chat_save_turns: cap } }),
   });
   const controller = new AbortController();
@@ -73,7 +67,7 @@ async function opened(state: AssistantState, cap?: Json) {
 }
 
 function stateIn(core: CoreApi): AssistantState {
-  return core.store.board().plugins[ASSISTANT] as AssistantState;
+  return core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState;
 }
 
 const ids = (held: Conversation | undefined): string[] => held?.messages.map((m) => m.id) ?? [];
@@ -151,7 +145,7 @@ describe("the conversations under a cap above 0", () => {
     const { core, conversations } = await opened({ conversations: { c1: three } }, 2);
     await conversations.opened;
 
-    await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" });
+    await core.commands.run(id("blockr.assistant", "remove_conversation"), { conversation: "c1" });
     await conversations.addConversation("c1", "New conversation");
 
     expect(ids(conversations.get("c1"))).toEqual([]);
@@ -271,8 +265,10 @@ describe("what the memory keeps of a message", () => {
     const { core, conversations } = await opened({ conversations: { c1: conversation(message("u1", "user")) } });
     await conversations.addMessage("c1", message("a1", "assistant"), reasoning);
 
-    await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant");
-    await core.commands.run("blockr.assistant-add_conversation", { id: "c1", title: "Again" }, "assistant");
+    // The assistant's steps have the id of its plugin class as their origin.
+    const origin = id("blockr.assistant", "assistant_plugin");
+    await core.commands.run(id("blockr.assistant", "remove_conversation"), { conversation: "c1" }, origin);
+    await core.commands.run(id("blockr.assistant", "add_conversation"), { id: "c1", title: "Again" }, origin);
     await conversations.addMessage("c1", message("a1", "assistant"));
 
     expect(conversations.kept("c1", "a1")).toBeUndefined();
@@ -341,7 +337,7 @@ describe("whoever follows the conversations", () => {
     const before = conversations.all();
 
     expect(conversations.all()).toBe(before);
-    await core.commands.run("blockr.core-add_stack", { name: "Unrelated" }, "user");
+    await core.commands.run(id("blockr.core", "add_stack"), { name: "Unrelated" }, "user");
     expect(conversations.all()).toBe(before);
 
     await conversations.addMessage("c1", message("u4", "user"));

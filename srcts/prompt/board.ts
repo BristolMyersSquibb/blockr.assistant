@@ -8,19 +8,21 @@
 //   by each status that marks one. An empty board has the line of counts,
 //   marked as empty, as today's has, and then only the plugins' lines.
 // - The blocks, each with its id, the registry id of its class in place of
-//   its S3 class, and the names of its state args, none marked with *, since
-//   every block's state is open to external control on a board that is not
-//   locked. Its markers follow: its status, where it holds no current result,
-//   and the counts of its conditions by severity. Then come the links into
-//   the block, each with the input that it feeds, the block that it comes
-//   from and its id, in place of a part of their own.
+//   its S3 class, as `package::id`, and the names of its state args, none
+//   marked with *, since every block's state is open to external control on
+//   a board that is not locked. Its markers follow: its status, where it
+//   holds no current result, and the counts of its conditions by severity.
+//   Then come the links into the block, each with the input that it feeds,
+//   the block that it comes from and its id, in place of a part of their
+//   own.
 // - The stacks that hold a block listed, each by its id and name, with the
 //   blocks listed and a count of its others, without the S3 class. A stack
 //   that holds no block has nothing to leave out, so it counts as one that
 //   holds a block listed.
 // - The lines that the app's plugins write about their state (./describe.ts),
-//   each plugin's under its name and the id of its class, in the order of the
-//   app's plugins. The section knows no plugin's state itself.
+//   each plugin's under its name and the id of its class, as
+//   `package::id`, in the order of the app's plugins. The section knows no
+//   plugin's state itself.
 // The app's plugins and the board options are in the system prompt instead
 // (./plugins.ts), since neither changes while the board is open.
 //
@@ -54,6 +56,7 @@
 // out.
 
 import type { Block, BlockStatus, CoreApi, Link } from "@blockr/core";
+import { idForModel } from "../ids/index.ts";
 import type { PluginLines } from "./describe.ts";
 
 // What of CoreApi the section reads.
@@ -154,10 +157,11 @@ export function boardSection(core: Core, max: number, changed: Iterable<string> 
 // The part of the lines that a plugin wrote about its state, under the
 // plugin's name and the id of its class.
 function pluginPart({ plugin, name, lines }: PluginLines): Part {
+  const id = idForModel(plugin);
   return {
-    heading: `### ${name} (id: ${plugin})`,
+    heading: `### ${name} (id: ${id})`,
     lines,
-    rest: (shown) => (shown === lines.length ? undefined : `${more(lines.length - shown, shown, "line")}: get_plugin_state("${plugin}") gives the plugin's state`),
+    rest: (shown) => (shown === lines.length ? undefined : `${more(lines.length - shown, shown, "line")}: get_plugin_state(${id}) gives the plugin's state`),
   };
 }
 
@@ -252,7 +256,7 @@ function linksInto(links: readonly (readonly [string, Link])[]): Map<string, (re
 // `<- x: flights (keen_finch)`. A link into a variadic block feeds no input
 // by name, as in `<- head (l3)`.
 function blockLine(id: string, block: Block, status: BlockStatus | undefined, into: readonly (readonly [string, Link])[]): string {
-  const line = withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, status);
+  const line = withMarkers(`- ${id} <${idForModel(block.registry_id)}>${joinNames(Object.keys(block.state))}`, status);
   if (into.length === 0) return line;
   const fed = into.map(([link, { from, input }]) => `${input === "" ? "" : `${input}: `}${from} (${link})`);
   return `${line} <- ${fed.join(", ")}`;

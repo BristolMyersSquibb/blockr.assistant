@@ -19,10 +19,11 @@
 // section, as today's prompt has none.
 
 import type { CoreApi } from "@blockr/core";
-import { ASSISTANT } from "../state/index.ts";
+import { idForModel } from "../ids/index.ts";
+import { assistantClassId } from "../state/index.ts";
 
 // What of CoreApi the section reads.
-export type Core = Pick<CoreApi, "store" | "plugins" | "focus" | "onScreen">;
+export type Core = Pick<CoreApi, "store" | "plugins" | "focus" | "onScreen" | "id">;
 
 // The Focus section as the user's screen is now, or undefined where it has
 // nothing to say.
@@ -39,9 +40,10 @@ export function focusSection(core: Core): string | undefined {
     else if (seen.length > 0) lines.push("These blocks are on screen:", ...seen.map((id) => `- ${id}`));
 
     const plugins = core.plugins.appPlugins();
+    const assistant = assistantClassId(core);
     const named = [...new Set(shown.plugins)].flatMap((id) => {
-      const plugin = id === ASSISTANT || !Object.hasOwn(plugins, id) ? undefined : plugins[id];
-      return plugin === undefined ? [] : [`- ${plugin.name} (id: ${id})`];
+      const plugin = id === assistant ? undefined : plugins.get(id);
+      return plugin === undefined ? [] : [`- ${plugin.name} (id: ${idForModel(id)})`];
     });
     if (named.length > 0) lines.push("These plugins are on screen:", ...named);
   }

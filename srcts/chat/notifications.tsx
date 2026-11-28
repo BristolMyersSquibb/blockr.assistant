@@ -20,10 +20,12 @@
 import type { CoreApi } from "@blockr/core";
 import { useNotified } from "@blockr/core/react";
 import type { ReactElement } from "react";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
 
 export function Notifications({ core }: { readonly core: CoreApi }): ReactElement {
-  const notifications = useNotified(core, { plugin: ASSISTANT });
+  // Core gives the same id of the class each time, which useNotified()
+  // compares by ===.
+  const notifications = useNotified(core, { plugin: assistantClassId(core) });
   // The region stays in the page while no notification holds, so that a
   // screen reader hears the first one that comes.
   return (

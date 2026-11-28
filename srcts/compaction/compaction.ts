@@ -21,10 +21,10 @@
 //    exchanges, on the model that the turn talks to, with the earlier summary
 //    to update. Where the cut falls inside an exchange, a second call writes
 //    a summary of that exchange's start, at the same time (./prompt.ts).
-// 3. It adds the calls' tokens through blockr.assistant-add_usage, so that
-//    the meter counts them.
+// 3. It adds the calls' tokens through the command add_usage, so that the
+//    meter counts them.
 // 4. It puts the summary in place of the older messages through the
-//    conversations, which run blockr.assistant-compact_conversation, or change
+//    conversations, which run the command compact_conversation, or change
 //    the memory alone under a cap of 0 (../conversations). It names the first
 //    message that it keeps in `from`, so that a message that the user sent
 //    meanwhile, as a turn starts, stays after it.

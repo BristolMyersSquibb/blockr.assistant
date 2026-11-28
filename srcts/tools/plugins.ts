@@ -10,10 +10,16 @@
 // - The tool get_plugin_state gives a plugin's state, bounded at
 //   assistant_state_max_chars as get_block_state bounds a block's, with the
 //   schema in full.
+// - They give the id of each plugin's class as JSON holds it, a record of the
+//   class's package and the class's id within it, and get_plugin_state takes
+//   the id in that form. The board holds a plugin's state under the package
+//   and then under the class's id.
 
-import type { Json } from "@blockr/core";
+import type { Json, PluginClassId } from "@blockr/core";
 import { object } from "../commands/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { idOf, idRecord, idSchema } from "../ids/index.ts";
+import type { IdRecord } from "../ids/index.ts";
+import { assistantClassId } from "../state/index.ts";
 import { readToolCap } from "./caps.ts";
 import { own, skillsNaming } from "./context.ts";
 import type { ToolContext } from "./context.ts";
@@ -24,16 +30,19 @@ import type { Tool } from "./tool.ts";
 
 export function pluginTools(context: ToolContext): Tool[] {
   const { core } = context;
+  const assistant = assistantClassId(core);
 
-  // The name of the plugin, where the app runs it and the model may read it.
-  const named = (id: string): string => {
-    const plugin = id === ASSISTANT ? undefined : own(core.plugins.appPlugins(), id);
-    if (plugin === undefined) throw new Error(noPlugin(id));
-    return plugin.name;
+  // The id of the plugin's class, as core gives it, and the plugin's name,
+  // where the app runs the plugin and the model may read it.
+  const named = (given: IdRecord): { readonly id: PluginClassId; readonly name: string } => {
+    const id = idOf(core, given);
+    const plugin = id === undefined || id === assistant ? undefined : core.plugins.appPlugins().get(id);
+    if (id === undefined || plugin === undefined) throw new Error(noPlugin(given));
+    return { id, name: plugin.name };
   };
 
   // The schema of the state of the plugin's class, which the class may lack.
-  const schema = (id: string): Json => core.plugins.pluginClass(id).state?.schema ?? null;
+  const schema = (id: PluginClassId): Json => core.plugins.pluginClass(id).state?.schema ?? null;
 
   return [
     tool<Record<string, never>>({
@@ -44,12 +53,12 @@ export function pluginTools(context: ToolContext): Tool[] {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          Object.entries(core.plugins.appPlugins())
-            .filter(([id]) => id !== ASSISTANT)
+          [...core.plugins.appPlugins()]
+            .filter(([id]) => id !== assistant)
             .map(([id, { name }]) => {
               const described = core.plugins.pluginClass(id).state?.schema.description;
               return {
-                id,
+                id: idRecord(id),
                 name,
                 ...(typeof described === "string"
                   ? { description: cutText(described, max, "call get_plugin_state for the full description") }
@@ -60,20 +69,20 @@ export function pluginTools(context: ToolContext): Tool[] {
       },
     }),
 
-    tool<{ readonly id: string }>({
+    tool<{ readonly id: IdRecord }>({
       name: "get_plugin_state",
       description:
-        "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
-      parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
-      run: async ({ id }) => {
-        named(id);
+        "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core::set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
+      parameters: object({ id: idSchema("The id of the plugin's class, as list_plugins gives it.") }, ["id"]),
+      run: async ({ id: given }) => {
+        const { id } = named(given);
         const [skills, max] = await Promise.all([skillsNaming(context, "plugins", id), readToolCap(core, "assistant_state_max_chars")]);
         // The plugin as it is once the skills and the cap are read.
-        const name = named(id);
+        const { name } = named(given);
         const described: Record<string, Json> = {
-          id,
+          id: idRecord(id),
           name,
-          state: bounded(own(core.store.board().plugins, id) ?? null, max),
+          state: bounded(own(own(core.store.board().plugins, id.package) ?? {}, id.id) ?? null, max),
           schema: schema(id),
           ...(skills.length === 0 ? {} : { skills }),
         };

@@ -9,8 +9,8 @@
 // The tests make the conversations and the turns themselves, on the
 // assistant's class without its start, which would open the board's own.
 
-import type { CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import type { CommandId, CoreApi, Json, Origin } from "@blockr/core";
+import { id, stubCore } from "@blockr/core/stubs";
 import { expectedWarnings } from "@blockr/ui/stubs";
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -28,7 +28,7 @@ import type { Prompt } from "../prompt/index.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { blockClass, FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
+import { blockClass, FAUX_API, fauxLoop, HELLO_ASSISTANT, testCatalogs } from "../testing/index.ts";
 import type { Tool } from "../tools/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
@@ -36,7 +36,6 @@ import { createTurns } from "./turns.ts";
 import type { TurnsOptions } from "./turns.ts";
 import type { Locks } from "./lock.ts";
 
-const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
 
 function asked(id: string, text = "How many blocks?"): Message {
@@ -48,28 +47,23 @@ function conversation(model: string | null, ...messages: Message[]): Conversatio
 }
 
 // A block class of a test package, which a tool adds a block of.
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
 
 // R's reply to hello in an app that runs the assistant and offers the block
 // class HEAD, on a board that holds no block and holds the assistant's state
 // given.
-function helloWith(state: AssistantState): typeof HELLO {
+function helloWith(state: AssistantState): typeof HELLO_ASSISTANT {
   return {
-    ...HELLO,
-    block_registry: { ...HELLO.block_registry, [HEAD.id]: HEAD },
-    packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-    plugins: {
-      ...HELLO.plugins,
-      [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-    },
+    ...HELLO_ASSISTANT,
+    block_registry: [...HELLO_ASSISTANT.block_registry, HEAD],
     board: {
-      ...HELLO.board,
+      ...HELLO_ASSISTANT.board,
       board: {
-        ...HELLO.board.board,
+        ...HELLO_ASSISTANT.board.board,
         blocks: {},
         links: {},
         stacks: {},
-        plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
+        plugins: { ...HELLO_ASSISTANT.board.board.plugins, "blockr.assistant": { assistant_plugin: { state, version: 1 } } },
       },
     },
   };
@@ -143,7 +137,7 @@ async function opened(options: OpenOptions = {}) {
   };
   const stubbed = await stubCore({
     hello: helloWith(state),
-    modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
+    offered: { "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistant.default, start: undefined } } } },
     ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
   });
   const controller = new AbortController();
@@ -208,7 +202,7 @@ function modelOfCall(into: Model<Api>[]): FauxResponseStep {
 }
 
 function inState(core: CoreApi, id: string): Conversation | undefined {
-  return (core.store.board().plugins[ASSISTANT] as AssistantState).conversations[id];
+  return (core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState).conversations[id];
 }
 
 function raised(core: CoreApi, code = "assistant_call_failed"): string[] {
@@ -219,7 +213,7 @@ function raised(core: CoreApi, code = "assistant_call_failed"): string[] {
 }
 
 describe("a turn of the assistant", () => {
-  test("enters its reply in the state through blockr.assistant-add_message, and its tokens through blockr.assistant-add_usage", async () => {
+  test("enters its reply in the state through the command add_message, and its tokens through the command add_usage", async () => {
     const { core, turns } = await opened();
 
     await turns.run("c1");
@@ -434,7 +428,7 @@ describe("a turn of the assistant", () => {
 // A tool that runs the command given on the board that `at` holds by then,
 // with the origin given, as the user's edit while the tool runs, or as the
 // assistant's edit tool.
-function running(at: { core?: CoreApi }, id: string, args: Json, origin: string): Tool {
+function running(at: { core?: CoreApi }, command: CommandId, args: Json, origin: Origin): Tool {
   return {
     name: "touch_board",
     description: "Change the board.",
@@ -442,7 +436,7 @@ function running(at: { core?: CoreApi }, id: string, args: Json, origin: string)
     executionMode: "parallel",
     execute: async () => {
       if (at.core === undefined) throw new Error("No board is open.");
-      await at.core.commands.run(id, args, origin);
+      await at.core.commands.run(command, args, origin);
       return { text: "Done.", isError: false, images: [] };
     },
   };
@@ -461,7 +455,7 @@ describe("the note of what others changed in the board", () => {
       return step;
     };
     const at: { core?: CoreApi } = {};
-    const tool = running(at, "blockr.core-add_stack", { id: "s9", name: "Charts" }, "user");
+    const tool = running(at, id("blockr.core", "add_stack"), { id: "s9", name: "Charts" }, "user");
     const [first, second] = touching("t-1") as [ReturnType<typeof fauxAssistantMessage>, ReturnType<typeof fauxAssistantMessage>];
     const open = await opened({ tools: [tool], replies: [read(first), read(second)] });
     at.core = open.core;
@@ -482,7 +476,7 @@ describe("the note of what others changed in the board", () => {
 
   test("takes the conversation's own edits for its own, and those of another conversation's turn for the assistant's in another conversation", async () => {
     const at: { core?: CoreApi } = {};
-    const tool = running(at, "blockr.core-add_stack", { id: "s9", name: "Charts" }, "assistant");
+    const tool = running(at, id("blockr.core", "add_stack"), { id: "s9", name: "Charts" }, id("blockr.assistant", "assistant_plugin"));
     const open = await opened({ tools: [tool], replies: [fauxAssistantMessage("Hello."), ...touching("t-1"), fauxAssistantMessage("Hello again.")] });
     at.core = open.core;
 
@@ -501,7 +495,7 @@ describe("the note of what others changed in the board", () => {
 
   test("gives the message of the app's the blocks that changes touched since the conversation's previous call, the conversation's own edits included", async () => {
     const at: { core?: CoreApi } = {};
-    const tool = running(at, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
+    const tool = running(at, id("blockr.core", "add_block"), { registry_id: { package: HEAD.package, id: HEAD.id }, id: "adults" }, id("blockr.assistant", "assistant_plugin"));
     const changed: (readonly string[])[] = [];
     const appMessage = (blocks: Iterable<string> = []) => {
       changed.push([...blocks]);
@@ -519,7 +513,7 @@ describe("the note of what others changed in the board", () => {
   test("goes to no conversation's first call, and to no call where nothing changed since the conversation's previous call", async () => {
     const tool: Tool = { ...listBlocks, name: "touch_board" };
     const { core, turns } = await opened({ tools: [tool], replies: touching("t-1") });
-    await core.commands.run("blockr.core-add_stack", { id: "s8", name: "Before" }, "user");
+    await core.commands.run(core.id("blockr.core", "add_stack"), { id: "s8", name: "Before" }, "user");
 
     await turns.run("c1");
 
@@ -587,7 +581,7 @@ describe("a turn that stops", () => {
     turns.subscribe(() => {
       if (!removed && (turns.current()?.reply?.parts.length ?? 0) > 0) {
         removed = true;
-        void core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant");
+        void core.commands.run(core.id("blockr.assistant", "remove_conversation"), { conversation: "c1" }, core.id("blockr.assistant", "assistant_plugin"));
       }
     });
 

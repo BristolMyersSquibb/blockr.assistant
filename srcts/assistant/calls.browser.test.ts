@@ -20,6 +20,7 @@
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#attachments).
 
 import type { Board, CoreApi, Json } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { afterEach, beforeEach, describe, expect, inject, test, vi } from "vitest";
 import type { KeptFile } from "../conversations/index.ts";
 import type { Message } from "../state/index.ts";
@@ -30,13 +31,13 @@ import { assistantOf } from "./index.ts";
 
 const mock = inject("mockApis");
 
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
 
 const BOARD = {
   blocks: {
-    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
-    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
+    a: { registry_id: id(DATA.package, DATA.id), state: {}, name: "Iris", locked: null },
+    b: { registry_id: id(HEAD.package, HEAD.id), state: {}, name: "Head", locked: null },
   },
   links: { ab: { from: "a", to: "b", input: "data" } },
 } satisfies Partial<Board>;

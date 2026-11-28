@@ -66,6 +66,7 @@ export interface ModelSettingsFile {
 interface Core {
   readonly request: CoreApi["request"];
   readonly notifications: Pick<CoreApi["notifications"], "notify">;
+  readonly id: CoreApi["id"];
 }
 
 const NONE: ReadonlyMap<string, ModelSettings> = new Map();

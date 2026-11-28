@@ -86,7 +86,7 @@ describe("canCompact()", () => {
 describe("at()", () => {
   test("points into the assistant's state, escaping each segment", () => {
     expect(at("conversations", "a/b~c", "messages", "-")).toBe(
-      "/plugins/blockr.assistant-assistant_plugin/conversations/a~1b~0c/messages/-",
+      "/plugins/blockr.assistant/assistant_plugin/conversations/a~1b~0c/messages/-",
     );
   });
 });

@@ -3,7 +3,8 @@
 // asks for the list again, which error each failed list raises, the list for
 // the visitor's own key, and the list that checks a key.
 
-import type { Raised } from "@blockr/core";
+import type { PluginClassId, Raised } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test, vi } from "vitest";
 import type { Deployment } from "../deployment/index.ts";
 import { heldError } from "../notifications/index.ts";
@@ -12,18 +13,20 @@ import type { VisitorKey } from "../visitor-key/index.ts";
 import type { Fetch } from "./list.ts";
 import { createModels, resolveModel } from "./models.ts";
 
-// A core that holds the notifications that the assistant raises.
+// A core that holds the notifications that the assistant raises, and whose
+// ids are those that the stubs give, which are core's.
 function holding() {
   const held = new Set<Raised>();
   const core = {
     notifications: {
-      notify: (_plugin: string, notification: Raised) => {
+      notify: (_plugin: PluginClassId, notification: Raised) => {
         held.add(notification);
         return () => {
           held.delete(notification);
         };
       },
     },
+    id,
   };
   const raised = (code: string): string[] => [...held].filter((notification) => notification.code === code).map(({ message }) => message);
   return { core, raised };

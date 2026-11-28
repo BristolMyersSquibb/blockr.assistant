@@ -4,20 +4,21 @@
 // with the stack s1 of a and b.
 
 import type { Board } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test } from "vitest";
 import { blockClass, callTool, parsed, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
-const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
+const BIND = blockClass("bind_block", { inputs: ["..."] });
 
 const BOARD = {
   blocks: {
-    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
-    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
-    c: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
+    a: { registry_id: id("blockr.test", "data_block"), state: {}, name: "Iris", locked: null },
+    b: { registry_id: id("blockr.test", "head_block"), state: {}, name: "Head", locked: null },
+    c: { registry_id: id("blockr.test", "bind_block"), state: {}, name: "Bind", locked: null },
   },
   links: {
     ab: { from: "a", to: "b", input: "data" },

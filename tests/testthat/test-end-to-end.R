@@ -14,15 +14,15 @@
 add_top <- list(
   commands = list(
     list(
-      command = "blockr.core-add_block",
+      command = list(package = "blockr.core", id = "add_block"),
       args = list(
-        registry_id = "blockr.core-head_block",
+        registry_id = list(package = "blockr.core", id = "head_block"),
         id = "top",
         state = list(n = 3L)
       )
     ),
     list(
-      command = "blockr.core-add_link",
+      command = list(package = "blockr.core", id = "add_link"),
       args = list(from = "filt", to = "top", input = "data")
     )
   )
@@ -54,8 +54,8 @@ test_that("a turn reads the board, and its reply enters the conversation", {
 
   expect_identical(chr_xtr(listed, "id"), names(blocks))
   expect_identical(
-    chr_xtr(listed, "registry_id"),
-    unname(chr_xtr(blocks, "registry_id"))
+    lst_xtr(listed, "registry_id"),
+    unname(lst_xtr(blocks, "registry_id"))
   )
 
   # The conversation holds the user's message, the model's call of the tool,
@@ -95,7 +95,7 @@ test_that("an edit adds a block and links it, and returns its review", {
 
   expect_identical(
     board[["blocks"]][["top"]][["registry_id"]],
-    "blockr.core-head_block"
+    list(package = "blockr.core", id = "head_block")
   )
 
   links <- Filter(

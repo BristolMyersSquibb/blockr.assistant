@@ -2,7 +2,9 @@
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#how-failures-reach-the-model):
 // - A block, a stack, a block class, a command, a plugin or a skill that the
 //   tool names and the board or the app lacks is not there, and the result
-//   names the tool that lists those that are.
+//   names the tool that lists those that are. It names a block class, a
+//   command or a plugin by the id that the tool was given, as the model
+//   reads an id in text.
 // - A request whose blocks are not ready gives the status with which core
 //   rejected it, of each block that is not.
 // - A request that R lost to a new session says so, since core sends it no
@@ -11,6 +13,8 @@
 //   followed by the warnings and messages of R's reply (./conditions.ts).
 
 import type { BlockStatus } from "@blockr/core";
+import { idForModel } from "../ids/index.ts";
+import type { IdRecord } from "../ids/index.ts";
 import { failureMessage, isRequestError, isSessionEnded } from "../requests/index.ts";
 
 // The text of the result of a tool that failed with `error`.
@@ -50,16 +54,16 @@ export function noStack(id: string): string {
   return `The board holds no stack "${id}". Call list_stacks for the stacks that it holds.`;
 }
 
-export function noBlockType(id: string): string {
-  return `The app offers no block class "${id}". Call list_block_types for those that it offers.`;
+export function noBlockType(id: IdRecord<string | null>): string {
+  return `The app offers no block class "${idForModel(id)}". Call list_block_types for those that it offers.`;
 }
 
-export function noCommand(id: string): string {
-  return `The app registers no command "${id}" that you may run. Call list_commands for those that it registers.`;
+export function noCommand(id: IdRecord): string {
+  return `The app registers no command "${idForModel(id)}" that you may run. Call list_commands for those that it registers.`;
 }
 
-export function noPlugin(id: string): string {
-  return `The app runs no plugin "${id}" that you may read. Call list_plugins for those that it runs.`;
+export function noPlugin(id: IdRecord): string {
+  return `The app runs no plugin "${idForModel(id)}" that you may read. Call list_plugins for those that it runs.`;
 }
 
 export function noSkill(name: string): string {

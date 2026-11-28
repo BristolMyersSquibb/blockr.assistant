@@ -55,7 +55,7 @@ export interface Prompt {
 }
 
 // What of CoreApi the prompt reads.
-export type Core = Pick<CoreApi, "store" | "scheduler" | "options" | "plugins" | "focus" | "onScreen" | "blockrOption">;
+export type Core = Pick<CoreApi, "store" | "scheduler" | "options" | "plugins" | "focus" | "onScreen" | "blockrOption" | "id">;
 
 export interface PromptOptions {
   // The skills that R listed for the open board.

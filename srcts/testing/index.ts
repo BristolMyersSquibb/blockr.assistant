@@ -7,7 +7,8 @@
 // Core opens the board that the test gives, or else the board of core's
 // fixture hello.
 // A test may give block classes and board options of the package
-// blockr.test, which the app offers beside core's.
+// blockr.test, which the app offers beside core's, and plugin classes of any
+// package, which the app runs beside the assistant's and core's own.
 // A test that asserts on what the board holds, or on what a package defines,
 // gives what it asserts on.
 // The test then fails where the assistant breaks, and not where core changes
@@ -54,7 +55,7 @@ import { VERCEL_AI_GATEWAY_MODELS } from "../loop/vendor-vercel.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { Skill, Skills } from "../skills/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { CLASS, PACKAGE } from "../state/index.ts";
 import type { Tool, ToolResult } from "../tools/index.ts";
 import { reloadPageKey } from "../visitor-key/index.ts";
 
@@ -118,8 +119,9 @@ export interface StartOptions {
   // Whether the app sets the board lock.
   readonly locked?: boolean;
   // Plugin classes that the app runs beside the assistant and core's own, by
-  // id, each with its name and its module's default export.
-  readonly plugins?: Readonly<Record<string, { readonly name: string; readonly definition: unknown }>>;
+  // package and then by the class's id, each with its name and its module's
+  // default export.
+  readonly plugins?: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly definition: unknown }>>>>;
   // Board options that the package blockr.test defines beside core's, by id,
   // each the default export of its module.
   readonly options?: Readonly<Record<string, unknown>>;
@@ -139,26 +141,27 @@ export interface Started extends StubCore {
 }
 
 // R's reply to hello in an app that runs the assistant beside core's plugins,
-// with where R serves the module of the assistant's class.
+// with where R serves the module of the assistant's class. A test gives the
+// module itself, in the stub's `offered`, under the class's package and id.
 export const HELLO_ASSISTANT: typeof HELLO = {
   ...HELLO,
   packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-  plugins: {
-    ...HELLO.plugins,
-    [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-  },
+  plugins: [...HELLO.plugins, { package: PACKAGE, id: CLASS, name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" }],
 };
 
-// R's reply to hello given, with the block classes given beside the classes
-// of its block registry.
+// R's reply to hello given, with the block classes given after the classes of
+// its block registry.
 // Where a board is given, the reply opens that board in place of its own.
-// R writes each block of that board with the version of its class, and each
-// value of a board option with the version of the board option's shape and
-// the package that lists the board option, or null where none does.
+// R writes each block of that board with the version of its class, which the
+// class's entry gives under the block's registry id, and each value of a
+// board option with the version of the board option's shape and the package
+// that lists the board option, or null where none does.
 export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockClasses" | "board">): typeof HELLO {
-  const registry = { ...hello.block_registry, ...Object.fromEntries((given.blockClasses ?? []).map((entry) => [entry.id, entry])) };
+  const registry = [...hello.block_registry, ...(given.blockClasses ?? [])];
   if (given.board === undefined) return { ...hello, block_registry: registry };
   const { blocks = {}, links = {}, stacks = {}, options = {} } = given.board;
+  const version = ({ package: pkg, id }: Board["blocks"][string]["registry_id"]): number =>
+    registry.find((entry) => entry.package === pkg && entry.id === id)?.version ?? 1;
   return {
     ...hello,
     block_registry: registry,
@@ -166,7 +169,7 @@ export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockC
       ...hello.board,
       board: {
         ...hello.board.board,
-        blocks: Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id, { ...block, version: registry[block.registry_id]?.version ?? 1 }])),
+        blocks: Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id, { ...block, version: version(block.registry_id) }])),
         links,
         stacks,
         options: Object.fromEntries(Object.entries(options).map(([id, value]) => [id, { value, version: hello.options[id]?.version ?? 1, package: hello.options[id]?.package ?? null }])),
@@ -175,14 +178,15 @@ export function helloWith(hello: typeof HELLO, given: Pick<StartOptions, "blockC
   };
 }
 
-// A block class under the registry id given, as its entry in the block
-// registry gives it, with what the test gives.
+// A block class of blockr.test, under its id within the package, as its entry
+// in the block registry gives it, with what the test gives.
 // Unless the test gives them, the class has the category transform and no
 // data inputs, a block of it starts with no state args, and any state fits
-// the schema of its state. A new block of the class takes the registry id as
+// the schema of its state. A new block of the class takes the class's id as
 // its name.
 export function blockClass(id: string, given: Partial<RegistryEntry> = {}): RegistryEntry {
   return {
+    package: "blockr.test",
     id,
     name: id,
     description: `What ${id} does.`,
@@ -218,10 +222,10 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
       {
         ...HELLO_ASSISTANT,
         lock: { ...HELLO_ASSISTANT.lock, board: options.locked === true },
-        plugins: {
+        plugins: [
           ...HELLO_ASSISTANT.plugins,
-          ...Object.fromEntries(plugins.map(([id, { name }]) => [id, { name, version: 1, module: `app/${id}.js` }])),
-        },
+          ...plugins.flatMap(([pkg, byId]) => Object.entries(byId).map(([id, { name }]) => ({ package: pkg, id, name, version: 1, module: `${pkg}/${id}.js` }))),
+        ],
         options: {
           ...HELLO_ASSISTANT.options,
           ...Object.fromEntries(boardOptions.map(([id]) => [id, { package: "blockr.test", module: `blockr.test/${id}.js`, version: 1 }])),
@@ -229,10 +233,12 @@ export async function startAssistant(options: StartOptions = {}): Promise<Starte
       },
       options,
     ),
-    modules: {
-      [ASSISTANT]: assistant,
-      ...Object.fromEntries(plugins.map(([id, { definition }]) => [id, { api: 1, default: definition }])),
-      ...Object.fromEntries(boardOptions.map(([id, definition]) => [id, { api: 1, default: definition }])),
+    modules: Object.fromEntries(boardOptions.map(([id, definition]) => [id, { api: 1, default: definition }])),
+    offered: {
+      ...Object.fromEntries(
+        plugins.map(([pkg, byId]) => [pkg, Object.fromEntries(Object.entries(byId).map(([id, { definition }]) => [id, { api: 1, default: definition }]))]),
+      ),
+      [PACKAGE]: { [CLASS]: assistant },
     },
     answer,
     conditions,
@@ -302,9 +308,10 @@ export function skill(name: string, given: Partial<Skill> = {}): Skill {
   return { name, description: `What ${name} covers.`, blocks: [], plugins: [], userInvocable: false, modelInvocable: true, ...given };
 }
 
-// The request as a request of the assistant's, or undefined for another.
+// The request as a request of the assistant's, or undefined for another. It
+// names the plugin by the package and the id of its class.
 function assistantRequest(request: Parameters<Answer>[0]): AssistantRequest | undefined {
-  if (request.kind !== "request" || request.type !== "plugin" || request.plugin !== ASSISTANT) return undefined;
+  if (request.kind !== "request" || request.type !== "plugin" || request.plugin.package !== PACKAGE || request.plugin.id !== CLASS) return undefined;
   return { name: request.name, args: request.args, reads: request.reads };
 }
 

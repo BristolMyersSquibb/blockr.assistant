@@ -2,8 +2,8 @@
 // pi's fake provider, drawn by React on happy-dom, so that the tests need
 // neither R, a browser nor a model.
 
-import type { Board, Condition, CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import type { Board, CommandId, Condition, CoreApi, Json } from "@blockr/core";
+import { HELLO, id, stubCore } from "@blockr/core/stubs";
 import type { Answer, StubCoreOptions } from "@blockr/core/stubs";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -21,7 +21,7 @@ import * as assistantModule from "../modules/assistant_plugin/index.tsx";
 import { CHANNEL, createOpenRouterLogin } from "../openrouter/index.ts";
 import type { OpenRouterLogin, OpenWindow } from "../openrouter/index.ts";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { blockClass, fauxLoop, helloWith, storedIn } from "../testing/index.ts";
+import { blockClass, fauxLoop, HELLO_ASSISTANT, helloWith, storedIn } from "../testing/index.ts";
 import { TITLE_PROMPT } from "../titles/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import type { VisitorKey } from "../visitor-key/index.ts";
@@ -31,7 +31,9 @@ import { renderChat } from "./panel.tsx";
 // React warns where an update in a test runs outside act().
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ASSISTANT = "blockr.assistant-assistant_plugin";
+// The id of the assistant's plugin class, which names the plugin to core.
+// It is the origin of the assistant's steps too.
+const ASSISTANT = id("blockr.assistant", "assistant_plugin");
 const CREATED = "2026-11-16T08:00:00.000Z";
 const KEY = "blockr.assistant-open_conversation";
 
@@ -59,20 +61,20 @@ function text(value: string): Part {
 
 // The block classes of a test package that the app offers beside core's, and
 // two blocks of them: the data block a, named Iris, and the head block b.
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
 const BLOCKS = {
-  a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
-  b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
+  a: { registry_id: id(DATA.package, DATA.id), state: {}, name: "Iris", locked: null },
+  b: { registry_id: id(HEAD.package, HEAD.id), state: {}, name: "Head", locked: null },
 } satisfies Board["blocks"];
 
 // A plugin of a test package that the app runs beside the assistant, whose
 // class keeps no state.
-const TIDY = "blockr.test-tidy_plugin";
+const TIDY = id("blockr.test", "tidy_plugin");
 
 // The label of core's command, as core's command registry gives it.
-function labelOf(core: CoreApi, id: string): string {
-  const label = core.commands.registered()[id]?.label;
+function labelOf(core: CoreApi, command: CommandId): string {
+  const label = core.commands.registered().get(command)?.label;
   expect(label).toEqual(expect.any(String));
   return label ?? "";
 }
@@ -138,24 +140,22 @@ function stopped(signal: AbortSignal): Promise<ModelReply> {
 // loaded.
 // Core stops as the test finishes.
 async function chat(options: Options = {}) {
-  const hello = helloWith(HELLO, { blockClasses: [DATA, HEAD], board: { blocks: options.blocks ?? {} } });
+  const hello = helloWith(HELLO_ASSISTANT, { blockClasses: [DATA, HEAD], board: { blocks: options.blocks ?? {} } });
   const { board } = hello.board;
   const stubbed = await act(() =>
     stubCore({
       hello: {
         ...hello,
-        packages: { ...hello.packages, "blockr.assistant": "0.2.0" },
-        plugins: {
-          ...hello.plugins,
-          [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-          [TIDY]: { name: "Tidy", version: 1, module: `app/${TIDY}.js` },
-        },
+        plugins: [...hello.plugins, { package: TIDY.package, id: TIDY.id, name: "Tidy", version: 1, module: "blockr.test/tidy_plugin.js" }],
         board: {
           ...hello.board,
-          board: { ...board, plugins: { ...board.plugins, [ASSISTANT]: { state: options.state ?? { conversations: {} }, version: 1 } } },
+          board: { ...board, plugins: { ...board.plugins, "blockr.assistant": { assistant_plugin: { state: options.state ?? { conversations: {} }, version: 1 } } } },
         },
       },
-      modules: { [ASSISTANT]: { api: 1, default: { ...assistantModule.default, start: undefined } }, [TIDY]: { api: 1, default: {} } },
+      offered: {
+        "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistantModule.default, start: undefined } } },
+        "blockr.test": { tidy_plugin: { api: 1, default: {} } },
+      },
       ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
       ...(options.answer === undefined ? {} : { answer: options.answer }),
       ...(options.conditions === undefined ? {} : { conditions: options.conditions }),
@@ -466,10 +466,10 @@ describe("the assistant's chat", () => {
     localStorage.setItem(KEY, "c1");
     const { el, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user")) } } });
 
-    await act(() => core.commands.run("blockr.assistant-add_message", { conversation: "c1", message: message("a1", "assistant", text("From another tab.")) }, "assistant"));
+    await act(() => core.commands.run(core.id("blockr.assistant", "add_message"), { conversation: "c1", message: message("a1", "assistant", text("From another tab.")) }, ASSISTANT));
     expect(el.querySelector(".blockr-assistant-reply")?.textContent).toBe("From another tab.");
 
-    await act(() => core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant"));
+    await act(() => core.commands.run(core.id("blockr.assistant", "remove_conversation"), { conversation: "c1" }, ASSISTANT));
     expect(el.querySelector(".blockr-assistant-greeting")).not.toBeNull();
   });
 
@@ -482,7 +482,7 @@ describe("the assistant's chat", () => {
     });
     await until(() => el.querySelector(".blockr-assistant-reply") !== null && assistant.turns.current() === undefined, "the reply");
 
-    expect((core.store.board().plugins[ASSISTANT] as AssistantState).conversations).toEqual({});
+    expect((core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState).conversations).toEqual({});
     expect(Object.values(assistant.conversations.all())[0]?.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
@@ -991,14 +991,14 @@ describe("the chat's tool calls", () => {
 
   test("name the edit's commands by their labels, and each block of its review with the status that the review gave", async () => {
     localStorage.setItem(KEY, "c1");
-    const args = { commands: [{ command: "blockr.core-add_block", args: {} }, { command: "acme-unknown", args: {} }] };
+    const args = { commands: [{ command: { package: "blockr.core", id: "add_block" }, args: {} }, { command: { package: "acme", id: "unknown" }, args: {} }] };
     const review = { applied: true, undo_step: true, blocks: { a: { status: "ready", conditions: [] }, gone: { removed: "The block left the board." } } };
     const reply = message("a1", "assistant", { type: "tool_call", id: "t1", tool: "edit", args });
     const results = message("r1", "tool", { type: "tool_result", id: "t1", text: JSON.stringify(review) });
     const { el, core } = await chat({ blocks: BLOCKS, state: { conversations: { c1: conversation("Sales", message("u1", "user"), reply, results) } } });
 
     const row = el.querySelector(".blockr-assistant-tool");
-    expect(row?.querySelector(".blockr-assistant-edit-commands")?.textContent).toBe(`${labelOf(core, "blockr.core-add_block")}, acme-unknown`);
+    expect(row?.querySelector(".blockr-assistant-edit-commands")?.textContent).toBe(`${labelOf(core, core.id("blockr.core", "add_block"))}, unknown of acme`);
     const blocks = [...(row?.querySelectorAll(".blockr-assistant-block") ?? [])];
     // The board names block a Iris, and block gone has left it.
     expect(blocks.map((block) => block.textContent)).toEqual(["Iris", "gone"]);
@@ -1008,7 +1008,7 @@ describe("the chat's tool calls", () => {
   });
 
   test("show what the edit tool did, from its own result, as a turn runs it", async () => {
-    const commands = [{ command: "blockr.core-add_block", args: { registry_id: DATA.id, id: "d", name: "Cars" } }];
+    const commands = [{ command: { package: "blockr.core", id: "add_block" }, args: { registry_id: { package: DATA.package, id: DATA.id }, id: "d", name: "Cars" } }];
     const { el, assistant, core } = await chat({ replies: [fauxAssistantMessage([fauxToolCall("edit", { commands }, { id: "e-1" })], { stopReason: "toolUse" }), fauxAssistantMessage("Added.")] });
 
     await step(() => {
@@ -1019,7 +1019,7 @@ describe("the chat's tool calls", () => {
 
     const row = el.querySelector(".blockr-assistant-tool");
     expect(row?.querySelector(".blockr-assistant-tool-title")?.textContent).toBe("Edit");
-    expect(row?.querySelector(".blockr-assistant-edit-commands")?.textContent).toBe(labelOf(core, "blockr.core-add_block"));
+    expect(row?.querySelector(".blockr-assistant-edit-commands")?.textContent).toBe(labelOf(core, core.id("blockr.core", "add_block")));
     const block = row?.querySelector(".blockr-assistant-block");
     expect(block?.textContent).toBe("Cars");
     expect(block?.querySelector(".blockr-assistant-dot")).not.toBeNull();
@@ -1027,13 +1027,13 @@ describe("the chat's tool calls", () => {
 
   test("show the command that refused an edit, and why", async () => {
     localStorage.setItem(KEY, "c1");
-    const args = { commands: [{ command: "blockr.core-add_link", args: {} }] };
-    const refusal = { applied: false, index: 0, command: "blockr.core-add_link", failures: ["Block z is not on the board."] };
+    const args = { commands: [{ command: { package: "blockr.core", id: "add_link" }, args: {} }] };
+    const refusal = { applied: false, index: 0, command: { package: "blockr.core", id: "add_link" }, failures: ["Block z is not on the board."] };
     const reply = message("a1", "assistant", { type: "tool_call", id: "t1", tool: "edit", args });
     const results = message("r1", "tool", { type: "tool_result", id: "t1", text: JSON.stringify(refusal), error: true });
     const { el, core } = await chat({ state: { conversations: { c1: conversation("Sales", message("u1", "user"), reply, results) } } });
 
-    expect(el.querySelector(".blockr-assistant-edit-refused")?.textContent).toBe(`Refused by ${labelOf(core, "blockr.core-add_link")}: Block z is not on the board.`);
+    expect(el.querySelector(".blockr-assistant-edit-refused")?.textContent).toBe(`Refused by ${labelOf(core, core.id("blockr.core", "add_link"))}: Block z is not on the board.`);
     expect(el.querySelector(".blockr-assistant-tool")?.getAttribute("data-state")).toBe("failed");
   });
 });
@@ -1749,7 +1749,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const held = heldReply("Two blocks.");
     const state: AssistantState = { conversations: { c1: conversation("Sales", message("u1", "user")), c2: conversation("Costs", message("u2", "user")) } };
     const { el, assistant, core, sent } = await withSkills({ state, blocks: BLOCKS, replies: [held.reply] });
-    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "a", name: "Data" }, ASSISTANT));
     let ended = false;
     act(() => {
       void assistant.turns.run("c2").then(() => {
@@ -1802,7 +1802,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const name = (): string | undefined => core.store.board().blocks.a?.name;
     const before = name();
     await noteLines(assistant, "c1");
-    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "a", name: "Data" }, ASSISTANT));
     expect(await noteLines(assistant, "c1")).toEqual(["- Block a: name changed by the assistant in another conversation."]);
 
     await step(() => {
@@ -1830,8 +1830,8 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
     const names = () => [core.store.board().blocks.a?.name, core.store.board().blocks.b?.name];
     const before = names();
-    await act(() => core.commands.run("blockr.core-change_block", { id: "a", name: "Data" }, "assistant"));
-    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "a", name: "Data" }, ASSISTANT));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "b", name: "Top" }, "user"));
 
     await step(() => {
       type(field(el), "/undo");
@@ -1843,7 +1843,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   test("apply again on /redo what the frontend's Undo took back, whoever made the edit", async () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
-    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "b", name: "Top" }, "user"));
     act(() => {
       core.store.undo();
     });
@@ -1859,7 +1859,7 @@ describe("the chat's slash commands", { timeout: 20_000 }, () => {
 
   test("say under the field where /undo or /redo finds no step, or the store refuses the step, until the user runs a command or sends a message", async () => {
     const { el, core } = await withSkills({ blocks: BLOCKS });
-    await act(() => core.commands.run("blockr.core-change_block", { id: "b", name: "Top" }, "user"));
+    await act(() => core.commands.run(core.id("blockr.core", "change_block"), { id: "b", name: "Top" }, "user"));
 
     await step(() => {
       type(field(el), "/undo");

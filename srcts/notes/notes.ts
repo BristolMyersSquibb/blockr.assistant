@@ -22,14 +22,16 @@
 //
 // They follow the store, and tell who made each change by its origin:
 // - The origin "user" is the user.
-// - The origin "assistant" is the conversation whose turn runs, since one turn
-//   runs at a time. For every other conversation, it is the assistant in
-//   another conversation.
+// - The assistant's origin, the id of its plugin class, is the conversation
+//   whose turn runs, since one turn runs at a time. For every other
+//   conversation, it is the assistant in another conversation.
 // - Any other origin is a plugin, by the name of the app's plugin whose class
-//   has that id, or else by the origin.
+//   has that id, or else by the origin. A plugin names its own steps by the
+//   id of its class, which core gives, so appPlugins() finds the plugin by
+//   ===. An origin that is a string names no plugin of the app's.
 // - A change that the store announces while asUser() runs is the user's.
 //   That is for the undo that the chat's /undo asks for (../chat), which
-//   takes back the assistant's step with the origin "assistant"
+//   takes back the assistant's step with the assistant's origin
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#slash-commands).
 //
 // Before each call of a conversation, take() gives the conversation's note:
@@ -62,8 +64,9 @@
 // changed before the edit, of the same block, still reads as theirs.
 
 import type { Block, Board, CoreApi, Delta, Json, Link, Origin, Stack } from "@blockr/core";
+import { idForModel, idRecord } from "../ids/index.ts";
 import { listed } from "../prompt/index.ts";
-import { newId } from "../state/index.ts";
+import { assistantClassId, newId } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
 import { cutText, own, readToolCap } from "../tools/index.ts";
 import preamble from "./preamble.md" with { type: "text" };
@@ -94,7 +97,7 @@ export interface NotesOptions {
 }
 
 // What of CoreApi the notes read.
-export type Core = Pick<CoreApi, "store" | "plugins" | "blockrOption">;
+export type Core = Pick<CoreApi, "store" | "plugins" | "blockrOption" | "id">;
 
 // Who a note names for the changes of the user, and for those of the
 // assistant that no turn of the conversation made.
@@ -156,10 +159,13 @@ export function createNotes(core: Core, signal: AbortSignal, options: NotesOptio
   // How many calls of asUser() run.
   let asUser = 0;
 
+  const assistant = assistantClassId(core);
+
   function makerOf(origin: Origin): Maker {
     if (asUser > 0 || origin === "user") return { who: USER };
-    if (origin === "assistant") return { who: ANOTHER_CONVERSATION, conversation: options.running() };
-    return { who: `the plugin ${own(core.plugins.appPlugins(), origin)?.name ?? origin}` };
+    if (origin === assistant) return { who: ANOTHER_CONVERSATION, conversation: options.running() };
+    if (typeof origin === "string") return { who: `the plugin ${origin}` };
+    return { who: `the plugin ${core.plugins.appPlugins().get(origin)?.name ?? idForModel(origin)}` };
   }
 
   const stop = core.store.subscribe((change, board) => {
@@ -340,7 +346,7 @@ interface Shape<T> {
 const BLOCK: Shape<Block> = {
   label: "Block",
   properties: [
-    { key: "registry_id", word: "class", read: (block) => block.registry_id },
+    { key: "registry_id", word: "class", read: (block) => idRecord(block.registry_id) },
     { key: "name", word: "name", read: (block) => block.name },
     { key: "locked", word: "lock", read: (block) => block.locked },
   ],

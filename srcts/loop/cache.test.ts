@@ -77,7 +77,7 @@ describe("the mark of Anthropic's cache", () => {
   });
 
   test("finds the message of the app's whose text pi sent without the halves of a surrogate pair that stand alone", () => {
-    const text = `${BOARD}\n- a\uD800 <blockr.core-head_block>`;
+    const text = `${BOARD}\n- a\uD800 <blockr.core::head_block>`;
     const sent = { role: "user", content: [{ type: "text", text: text.replace("\uD800", ""), cache_control: MARK }] };
 
     expect(markBeforeAppMessage(request(asked, sent), text, "anthropic-messages")).not.toBeUndefined();

@@ -9,7 +9,7 @@
 // own.
 
 import type { CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import { stubCore } from "@blockr/core/stubs";
 import type { Context, SystemMessage, UserMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -23,13 +23,12 @@ import type { Offered } from "../models/index.ts";
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import { heldError } from "../notifications/index.ts";
 import type { AssistantState, Conversation, Message, Role } from "../state/index.ts";
-import { FAUX_API, fauxLoop, recordSpans, testCatalogs } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, HELLO_ASSISTANT, recordSpans, testCatalogs } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import { createCompaction } from "./compaction.ts";
 import { historyPrompt, mergedSummary, SUMMARY_SYSTEM_PROMPT, turnStartPrompt } from "./prompt.ts";
 
-const ASSISTANT = "blockr.assistant-assistant_plugin";
 const EARLY = "2026-11-16T08:00:00.000Z";
 const SUMMARY = "## Goal\nA sales chart from the block b1.";
 const OVERFLOW = "prompt is too long: 213462 tokens > 200000 maximum";
@@ -60,22 +59,17 @@ const past = conversation(30_000, ...exchanges);
 
 // R's reply to hello in an app that runs the assistant, on a board that holds
 // no block and holds the assistant's state given.
-function helloWith(state: AssistantState): typeof HELLO {
+function helloWith(state: AssistantState): typeof HELLO_ASSISTANT {
   return {
-    ...HELLO,
-    packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-    plugins: {
-      ...HELLO.plugins,
-      [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-    },
+    ...HELLO_ASSISTANT,
     board: {
-      ...HELLO.board,
+      ...HELLO_ASSISTANT.board,
       board: {
-        ...HELLO.board.board,
+        ...HELLO_ASSISTANT.board.board,
         blocks: {},
         links: {},
         stacks: {},
-        plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
+        plugins: { ...HELLO_ASSISTANT.board.board.plugins, "blockr.assistant": { assistant_plugin: { state, version: 1 } } },
       },
     },
   };
@@ -94,7 +88,7 @@ interface OpenOptions {
 async function opened(options: OpenOptions) {
   const stubbed = await stubCore({
     hello: helloWith({ conversations: options.conversations }),
-    modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
+    offered: { "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistant.default, start: undefined } } } },
     ...(options.blockrOptions === undefined ? {} : { blockrOptions: options.blockrOptions }),
   });
   const controller = new AbortController();
@@ -172,7 +166,7 @@ function asked(id: string): Message {
 }
 
 function inState(core: CoreApi, id: string): Conversation | undefined {
-  return (core.store.board().plugins[ASSISTANT] as AssistantState).conversations[id];
+  return (core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState).conversations[id];
 }
 
 // The ids of the conversation's messages as the test gave them, its summary
@@ -363,7 +357,7 @@ describe("a summary", () => {
     await compaction.compact("c1");
 
     expect(shape(conversations.get("c1"))).toEqual(["summary", "u2", "a2", "u3", "a3"]);
-    expect((core.store.board().plugins[ASSISTANT] as AssistantState).conversations).toEqual({});
+    expect((core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState).conversations).toEqual({});
   });
 
   test("that fails raises the warning assistant_compaction_failed, which a later summary withdraws, and the turn's call goes out as it was", async () => {
@@ -392,7 +386,7 @@ describe("a summary", () => {
     await compaction.compact("c1");
     expect(noticed(core, "assistant_compaction_failed")).toHaveLength(1);
 
-    await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant");
+    await core.commands.run(core.id("blockr.assistant", "remove_conversation"), { conversation: "c1" }, core.id("blockr.assistant", "assistant_plugin"));
 
     expect(noticed(core, "assistant_compaction_failed")).toEqual([]);
   });
@@ -406,7 +400,7 @@ describe("a summary", () => {
     await vi.waitFor(() => {
       expect(sent).toHaveLength(1);
     });
-    await core.commands.run("blockr.assistant-remove_conversation", { conversation: "c1" }, "assistant");
+    await core.commands.run(core.id("blockr.assistant", "remove_conversation"), { conversation: "c1" }, core.id("blockr.assistant", "assistant_plugin"));
     held.open();
 
     expect(await compacted).toBe(false);

@@ -9,7 +9,7 @@
 // error raises nothing more.
 
 import type { CoreApi } from "@blockr/core";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
 
 export interface HeldError {
   // Raises the error with the message given, in place of the one that it
@@ -20,7 +20,7 @@ export interface HeldError {
 }
 
 export function heldError(
-  core: { readonly notifications: Pick<CoreApi["notifications"], "notify"> },
+  core: { readonly notifications: Pick<CoreApi["notifications"], "notify">; readonly id: CoreApi["id"] },
   signal: AbortSignal,
   code: string,
   severity: "error" | "warning" = "error",
@@ -38,7 +38,7 @@ export function heldError(
     raise(message) {
       if (signal.aborted) return;
       withdraw?.();
-      withdraw = core.notifications.notify(ASSISTANT, { severity, code, message });
+      withdraw = core.notifications.notify(assistantClassId(core), { severity, code, message });
     },
     withdraw() {
       withdraw?.();

@@ -3,10 +3,11 @@
 
 export {
   addedUsage,
-  ASSISTANT,
+  assistantClassId,
   assistantState,
   at,
   canCompact,
+  CLASS,
   findConversation,
   holdsMessage,
   isNote,
@@ -16,6 +17,7 @@ export {
   newConversation,
   newId,
   opensExchange,
+  PACKAGE,
   THINKING_LEVELS,
   withThinkingLevel,
 } from "./state.ts";

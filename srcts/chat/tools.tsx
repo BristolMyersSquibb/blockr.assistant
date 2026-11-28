@@ -72,7 +72,7 @@ function Edits({ calls }: { readonly calls: readonly Call[] }): ReactElement {
   // The row names each block by its name on the board, and by its id once it
   // has left, so it follows the board.
   const board = useBoard(core);
-  const views = calls.map((call) => editView(call.args, call.result?.text, call.error, core.commands.registered(), board));
+  const views = calls.map((call) => editView(call.args, call.result?.text, call.error, core, board));
   const commands = views.flatMap((view) => view.commands);
   const blocks = new Map<string, ReviewedBlock>();
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);

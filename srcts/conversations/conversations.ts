@@ -6,11 +6,11 @@
 //
 // They read the cap, the blockr option chat_save_turns (./cap.ts), and open
 // in one of three ways:
-// - Under a cap above 0, they cut every conversation to the cap through
-//   blockr.assistant-trim_conversations, so that a board saved under a higher
-//   cap keeps no more than this one allows.
+// - Under a cap above 0, they cut every conversation to the cap through the
+//   command trim_conversations, so that a board saved under a higher cap
+//   keeps no more than this one allows.
 // - Under a cap of 0, they move every conversation into the memory, removing
-//   each from the state through blockr.assistant-remove_conversation.
+//   each from the state through the command remove_conversation.
 // - Under -1, for every message, they change nothing.
 //
 // Then each function changes a conversation in one of two ways, so that
@@ -52,19 +52,18 @@
 import type { CoreApi, Json } from "@blockr/core";
 import {
   addedUsage,
+  assistantClassId,
   assistantState,
   canCompact,
   findConversation,
   holdsMessage,
   messagesToDrop,
   newConversation,
+  PACKAGE,
   withThinkingLevel,
 } from "../state/index.ts";
 import type { AssistantState, Conversation, ConversationId, Message, MessageId, ThinkingLevel } from "../state/index.ts";
 import { readCap } from "./cap.ts";
-
-// The origin of the steps that the conversations take through the commands.
-const ORIGIN = "assistant";
 
 // What the memory keeps of a message, which the state leaves out of it.
 export interface Kept {
@@ -204,10 +203,12 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     return read;
   });
 
-  // Runs the command, as the assistant's. Core resolves with whether the step
-  // took an undo step, which none of the assistant's commands takes.
+  // Runs the assistant's command of the id given, its id within the package,
+  // as a step of the assistant, whose origin is the id of its plugin class.
+  // Core resolves with whether the step took an undo step, which none of the
+  // assistant's commands takes.
   async function run(id: string, args: Json): Promise<void> {
-    await core.commands.run(id, args, ORIGIN);
+    await core.commands.run(core.id(PACKAGE, id), args, assistantClassId(core));
   }
 
   async function open(read: number): Promise<void> {
@@ -215,11 +216,11 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
     if (read === 0) {
       for (const [id, conversation] of Object.entries(conversations)) memory.set(id, conversation);
       changed();
-      await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
+      await Promise.all(Object.keys(conversations).map((id) => run("remove_conversation", { conversation: id })));
       return;
     }
     if (!Object.values(conversations).some((conversation) => messagesToDrop(conversation.messages, read) > 0)) return;
-    const done = run("blockr.assistant-trim_conversations", { keep: read });
+    const done = run("trim_conversations", { keep: read });
     for (const [id, conversation] of Object.entries(conversations)) keepCut(id, conversation.messages);
     await done;
   }
@@ -317,7 +318,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async addConversation(id, title, { model, thinkingLevel } = { model: null }) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-add_conversation", { id, title, model, ...(thinkingLevel === undefined ? {} : { thinking_level: thinkingLevel }) });
+        await run("add_conversation", { id, title, model, ...(thinkingLevel === undefined ? {} : { thinking_level: thinkingLevel }) });
         return;
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
@@ -327,7 +328,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async renameConversation(conversation, title) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-rename_conversation", { conversation, title });
+        await run("rename_conversation", { conversation, title });
         return;
       }
       change(conversation, (held) => ({ ...held, title }));
@@ -335,7 +336,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async removeConversation(conversation) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-remove_conversation", { conversation });
+        await run("remove_conversation", { conversation });
         return;
       }
       if (!memory.delete(conversation)) throw new Error(`The plugin's memory holds no conversation "${conversation}".`);
@@ -351,7 +352,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
       try {
         if (read !== 0) {
           const before = findConversation(core.store.board(), conversation)?.messages ?? [];
-          const done = run("blockr.assistant-add_message", { conversation, message, ...(read === Infinity ? {} : { keep: read }) });
+          const done = run("add_message", { conversation, message, ...(read === Infinity ? {} : { keep: read }) });
           keepCut(conversation, before);
           await done;
         } else {
@@ -377,7 +378,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
         // The memory holds only messages before `from`, which the summary
         // replaces. Where the state lacks the conversation, the command
         // refuses.
-        await run("blockr.assistant-compact_conversation", { conversation, summary, from });
+        await run("compact_conversation", { conversation, summary, from });
         if (older.delete(conversation)) changed();
       } else {
         // The cap has cut the conversation past `from`, so the state keeps
@@ -393,7 +394,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async addUsage(conversation, input, output, total) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-add_usage", { conversation, input, output, ...(total === undefined ? {} : { total }) });
+        await run("add_usage", { conversation, input, output, ...(total === undefined ? {} : { total }) });
         return;
       }
       change(conversation, (held) => ({ ...held, usage: addedUsage(held.usage, input, output, total) }));
@@ -401,7 +402,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async setModel(conversation, model) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-set_model", { conversation, model });
+        await run("set_model", { conversation, model });
         return;
       }
       change(conversation, (held) => ({ ...held, model }));
@@ -409,7 +410,7 @@ export function createConversations(core: CoreApi, signal: AbortSignal): Convers
 
     async setThinkingLevel(conversation, level) {
       if ((await capped) !== 0) {
-        await run("blockr.assistant-set_thinking_level", { conversation, thinking_level: level });
+        await run("set_thinking_level", { conversation, thinking_level: level });
         return;
       }
       change(conversation, (held) => withThinkingLevel(held, level));

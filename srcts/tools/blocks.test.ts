@@ -4,6 +4,7 @@
 // and d.
 
 import type { Board, Condition } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test } from "vitest";
 import { blockClass, callTool, parsed, skill, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
@@ -13,19 +14,19 @@ import { readTools } from "./index.ts";
 const ERROR: Condition = { severity: "error", class: ["simpleError", "error", "condition"], phase: "expr", message: "object 'Sepal.Width' not found" };
 const WARNING: Condition = { severity: "warning", class: ["simpleWarning", "warning", "condition"], phase: "expr", message: "NaNs produced" };
 
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
-const MERGE = blockClass("blockr.test-merge_block", { inputs: ["x", "y"] });
-const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
-const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
+const MERGE = blockClass("merge_block", { inputs: ["x", "y"] });
+const SUBSET = blockClass("subset_block", { inputs: ["data"] });
+const BIND = blockClass("bind_block", { inputs: ["..."] });
 
 const BOARD = {
   blocks: {
-    a: { registry_id: DATA.id, state: { dataset: "iris" }, name: "Iris", locked: null },
-    b: { registry_id: HEAD.id, state: { n: 6 }, name: "Head", locked: null },
-    c: { registry_id: MERGE.id, state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
-    d: { registry_id: SUBSET.id, state: { subset: "log(Sepal.Width - 3) > 0", select: "" }, name: "Wide sepals", locked: null },
-    e: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
+    a: { registry_id: id("blockr.test", "data_block"), state: { dataset: "iris" }, name: "Iris", locked: null },
+    b: { registry_id: id("blockr.test", "head_block"), state: { n: 6 }, name: "Head", locked: null },
+    c: { registry_id: id("blockr.test", "merge_block"), state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
+    d: { registry_id: id("blockr.test", "subset_block"), state: { subset: "log(Sepal.Width - 3) > 0", select: "" }, name: "Wide sepals", locked: null },
+    e: { registry_id: id("blockr.test", "bind_block"), state: {}, name: "Bind", locked: null },
   },
   links: {
     ab: { from: "a", to: "b", input: "data" },
@@ -43,7 +44,7 @@ async function started(options: StartOptions = {}, skills: readonly Skill[] = []
 }
 
 describe("list_blocks", () => {
-  test("gives each block's id, name, registry id and status, as the board holds them now", async () => {
+  test("gives each block's id, name, registry id, as a record of the class's package and its id, and status, as the board holds them now", async () => {
     const { core, tools } = await started();
     await core.scheduler.evaluate(["b"]);
 
@@ -51,11 +52,11 @@ describe("list_blocks", () => {
 
     expect(result.isError).toBe(false);
     expect(parsed(result)).toEqual([
-      { id: "a", name: "Iris", registry_id: "blockr.test-data_block", status: "ready" },
-      { id: "b", name: "Head", registry_id: "blockr.test-head_block", status: "ready" },
-      { id: "c", name: "Merge", registry_id: "blockr.test-merge_block", status: "unevaluated" },
-      { id: "d", name: "Wide sepals", registry_id: "blockr.test-subset_block", status: "unevaluated" },
-      { id: "e", name: "Bind", registry_id: "blockr.test-bind_block", status: "unevaluated" },
+      { id: "a", name: "Iris", registry_id: { package: "blockr.test", id: "data_block" }, status: "ready" },
+      { id: "b", name: "Head", registry_id: { package: "blockr.test", id: "head_block" }, status: "ready" },
+      { id: "c", name: "Merge", registry_id: { package: "blockr.test", id: "merge_block" }, status: "unevaluated" },
+      { id: "d", name: "Wide sepals", registry_id: { package: "blockr.test", id: "subset_block" }, status: "unevaluated" },
+      { id: "e", name: "Bind", registry_id: { package: "blockr.test", id: "bind_block" }, status: "unevaluated" },
     ]);
   });
 });
@@ -68,7 +69,7 @@ describe("describe_block", () => {
     expect(parsed(await callTool(tools, "describe_block", { id: "c" }))).toEqual({
       id: "c",
       name: "Merge",
-      registry_id: "blockr.test-merge_block",
+      registry_id: { package: "blockr.test", id: "merge_block" },
       status: "ready",
       summary: "<data.frame> [150 × 5]",
       conditions: [],
@@ -141,7 +142,7 @@ describe("describe_block", () => {
 
   test("cuts its text at assistant_summary_max_chars, the state first, and marks the cut with get_block_state", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_state_value_max_chars: 5000, assistant_summary_max_chars: "2000" } });
-    await core.commands.run("blockr.core-change_block", { id: "d", state: { subset: "Sepal.Width > 3".repeat(200) } });
+    await core.commands.run(core.id("blockr.core", "change_block"), { id: "d", state: { subset: "Sepal.Width > 3".repeat(200) } });
 
     const { text } = await callTool(tools, "describe_block", { id: "d" });
 
@@ -152,9 +153,9 @@ describe("describe_block", () => {
 
   test("lists the skills that the model may read and that name the block's class, each description on one line and cut", async () => {
     const skills = [
-      skill("subsets", { blocks: ["blockr.test-subset_block"], description: `How this site\n  writes   its subsets: ${"a".repeat(150)}` }),
-      skill("hidden", { blocks: ["blockr.test-subset_block"], modelInvocable: false }),
-      skill("heads", { blocks: ["blockr.test-head_block"] }),
+      skill("subsets", { blocks: [id("blockr.test", "subset_block")], description: `How this site\n  writes   its subsets: ${"a".repeat(150)}` }),
+      skill("hidden", { blocks: [id("blockr.test", "subset_block")], modelInvocable: false }),
+      skill("heads", { blocks: [id("blockr.test", "head_block")] }),
     ];
     const { tools } = await started({ blockrOptions: { assistant_skill_description_max_chars: 100 } }, skills);
 
