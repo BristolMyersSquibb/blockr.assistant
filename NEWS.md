@@ -15,8 +15,9 @@
   shinychat, ellmer, bsicons, htmltools, shinyWidgets, later, promises, R6,
   glue, typedjson, jsonlite, blockr.ui or blockr.dock.
 
-* The assistant is a plugin of the class `blockr.assistant-assistant_plugin`,
-  named Assistant, which `new_assistant_plugin()` makes (#220).
+* The assistant is a plugin of the class `assistant_plugin` of
+  blockr.assistant, named Assistant, which `new_assistant_plugin()` makes
+  (#220).
   The package lists the class in the `._BLOCKR_MODULES_` that it exports.
   So `blockr.core::serve()` runs the assistant in every app that does not
   narrow its plugins.
@@ -58,8 +59,10 @@
   R lists the skills of each of the app's packages, in the order of their
   names, and then those of the directory that the blockr option
   `assistant_skills` names.
-  A skill names block classes by their registry ids in `blocks:`, and plugin
-  classes by their ids in `plugins:`, in place of `extensions:`.
+  A skill names block classes in `blocks:`, and plugin classes in `plugins:`,
+  in place of `extensions:`, each by a mapping of its package and its id, as
+  `{package: blockr.core, id: subset_block}`.
+  R skips a skill with an entry that is no such mapping, with a warning.
 
 * The assistant's read tools run in the browser, on core's `CoreApi` (#223).
   Those that carry over keep their names: `list_blocks`, `describe_block`,
@@ -186,8 +189,8 @@
   A pick replaces the level of the model settings file and the default for
   every call of the conversation, but on OpenAI's Chat Completions API for a
   model of pi's catalog of OpenAI's models.
-  The command `blockr.assistant-set_thinking_level` sets the pick, and
-  `blockr.assistant-add_conversation` takes one in `thinking_level`.
+  The command `set_thinking_level` sets the pick, and the command
+  `add_conversation` takes one in `thinking_level`.
   A level that the file gives a model that does not take it, such as `off`
   for `gpt-5`, counts as none, so that the model takes the default.
   The footer draws both picks with the select of blockr.core, whose list no
@@ -225,7 +228,9 @@
   `assistant_skills_failed` alone, without R's error beside it.
 
 * The model edits the board through the tool `edit`, which runs a list of
-  commands as one step of the origin `assistant`, all or none (#224).
+  commands as one step of the assistant, all or none (#224).
+  The step's origin is the id of the assistant's plugin class, as a plugin
+  names its own steps.
   Where a command refuses, the tool returns the command's index, its id and its
   failures, with a hint where it fails its preflight, and the board stays as
   it was.
@@ -439,7 +444,7 @@
   The call runs beside the turns, and the meter counts its tokens.
   A title that the user gave meanwhile stands, and a title that fails leaves
   "New conversation" for the user to rename.
-  The command `blockr.assistant-add_usage` takes no `total` for such a call,
+  The command `add_usage` takes no `total` for such a call,
   and leaves the conversation's `last` as it was.
 
 * The vignette "Migration notes for app scripts and skills" lists each change
@@ -543,6 +548,15 @@
   warning its amber ones.
   A failure that ended a turn still shows at that turn too, now in the same
   style.
+
+* The model names block classes, plugin classes and commands by their package
+  and their id within the package, as blockr.core does (#338).
+  It reads and writes each id as a JSON object of the two, as
+  `{"package": "blockr.core", "id": "add_block"}`, in the args and the results
+  of the tools.
+  The system prompt, the message of the app's and the messages of the tools'
+  failures write an id as the package and the id joined by `::`, as
+  `blockr.core::add_block`.
 
 # blockr.assistant 0.1.0.9000
 

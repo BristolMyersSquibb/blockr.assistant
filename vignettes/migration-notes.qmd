@@ -42,7 +42,7 @@ A script follows the migration notes of blockr.core and blockr.dock too, and tho
 ## The assistant's plugin
 
 In version 0.1, a script puts the assistant on a dock board with `new_assistant_extension()`, in the `extensions` of `new_dock_board()`.
-In version 0.2, the assistant is a plugin of the class `blockr.assistant-assistant_plugin`, which `new_assistant_plugin()` makes.
+In version 0.2, the assistant is a plugin of the class `assistant_plugin` of blockr.assistant, which `new_assistant_plugin()` makes.
 A script puts that plugin in the `plugins` of `new_board()`, under the name that the extension had:
 
 ```{r, eval = FALSE}
@@ -119,7 +119,7 @@ board <- new_board(
 In version 0.1, an assistant without a name in `extensions` has the name `assistant`.
 So a script gives the plugin of such an assistant that name too, as `assistant = new_assistant_plugin()` above.
 A grid that placed its panel with `ext("assistant")` then places it with `plg("assistant")`.
-A grid may also name the panel by the id of the plugin's class, as `plg("blockr.assistant-assistant_plugin")`.
+A grid may also name the panel by the plugin's class, its id and its package, as `plg("assistant_plugin", package = "blockr.assistant")`.
 Core's `new_board()` refuses a `plg()` whose id is neither a name in `plugins` nor the id of a plugin class.
 
 The function `new_assistant_plugin(conversations = list())` takes the conversations of a board that a script builds.
@@ -560,8 +560,8 @@ Three things change: the classes that a skill names, the tools that its text nam
 
 In version 0.1, a skill names block classes in `blocks:` by the ids under which their packages register them, such as `filter_block`.
 It names extensions in `extensions:` by their classes, such as `dag_extension`.
-In version 0.2, `blocks:` names each block class by its registry id in full: the name of its package, a hyphen and its id, such as `blockr.dplyr-filter_block`.
-The key `plugins:` takes the place of `extensions:`, and names each plugin class by its id in full, such as `blockr.dag-dag_plugin`:
+In version 0.2, `blocks:` names each block class by a mapping of its package and its id, such as `{package: blockr.dplyr, id: filter_block}`.
+The key `plugins:` takes the place of `extensions:`, and names each plugin class by the same mapping, such as `{package: blockr.dag, id: dag_plugin}`:
 
 ```yaml
 ---
@@ -578,26 +578,25 @@ extensions: [dag_extension]
 # blockr.assistant 0.2
 name: filtering
 description: How to filter the rows of a study's tables.
-blocks: [blockr.dplyr-filter_block]
-plugins: [blockr.dag-dag_plugin]
+blocks: [{package: blockr.dplyr, id: filter_block}]
+plugins: [{package: blockr.dag, id: dag_plugin}]
 ---
 ```
 
 The functions `available_blocks()` and `available_plugins()` of blockr.core list the classes of the available packages.
-Each row gives a class's package and its id, which make up the class's id in full:
+Each row gives a class's package and its id, the two keys of the mapping that names the class:
 
 ```{r}
 # blockr.assistant 0.2
-blocks <- subset(available_blocks(), package == "blockr.core")
-paste(blocks$package, blocks$id, sep = "-")
+subset(available_blocks(), package == "blockr.core")
 ```
 
-A block class that a script defines has its id alone as its registry id, as the notes of blockr.core say, so `blocks:` names it by that id.
+A block class that a script defines has no package, as the notes of blockr.core say, so `blocks:` names it with a package of `null`, as `{package: null, id: my_block}`.
 
 A skill that keeps a key of version 0.1 raises no error, but the model no longer finds the skill where it should:
 
-- A skill whose `blocks:` names `filter_block` names no class that the app offers, so no tool lists the skill.
-  The catalogue of the system prompt leaves it out as well, since it names a class.
+- R skips a skill whose `blocks:` names a class by a string, such as `filter_block`, and logs a warning.
+  So no tool lists the skill, and neither does the catalogue of the system prompt.
 - Nothing reads the key `extensions:`, so a skill that names classes only there names none.
   The catalogue then lists it as a skill for every task.
 
@@ -605,7 +604,9 @@ A skill that keeps a key of version 0.1 raises no error, but the model no longer
 
 In version 0.1, the tools that change the board stage each change, and the tool `commit` applies what is staged.
 In version 0.2, the tool `edit` applies a list of commands at once, as one step that the user's undo can take back.
-Each command is one that the app registers, by its id, such as `blockr.core-add_block`, with its args.
+Each command is one that the app registers, by its id, with its args.
+The id is an object of the package that registered the command and the command's id within the package, such as `{"package": "blockr.core", "id": "add_block"}`.
+A text that the model reads, a skill's among them, writes the same id as `blockr.core::add_block`, as the system prompt does.
 The tool `list_commands` lists the commands, and `describe_command` gives the args of one.
 Once the blocks that the step changed are current, `edit` returns its review of them, of those that feed them and of those downstream.
 So nothing is staged.
@@ -617,7 +618,7 @@ In version 0.1, a skill may say this:
 
 In version 0.2, the skill says this instead:
 
-> Call `edit` with the commands `blockr.core-add_block` and `blockr.core-add_link`, and read its review.
+> Call `edit` with the commands `blockr.core::add_block` and `blockr.core::add_link`, and read its review.
 
 Each tool of version 0.1 goes as follows:
 
@@ -628,26 +629,26 @@ Each tool of version 0.1 goes as follows:
 | `get_block_result` | The tool of the same name |
 | `inspect_results` | The tool of the same name, which binds the results of only the blocks that its `blocks` names, by their ids, where version 0.1 bound the result of every block. The result of a block that draws a plot is a `captured_plot` or a ggplot, which draws as it is printed, so the code `chart` draws the block `chart`, in place of `evaluate::replay(chart)` |
 | `read_skill` | The tool of the same name |
-| `add_block` | The command `blockr.core-add_block`. Where the new block has a link to it or from it, the command `blockr.core-add_link` adds the link, after `blockr.core-add_block` in the same call of `edit` |
-| `remove_block` | The command `blockr.core-remove_block` |
-| `modify_block` | The command `blockr.core-change_block` |
-| `add_link`, `remove_link` and `modify_link` | The commands `blockr.core-add_link`, `blockr.core-remove_link` and `blockr.core-change_link` |
-| `add_stack` and `remove_stack` | The commands `blockr.core-add_stack` and `blockr.core-remove_stack` |
-| `modify_stack` | The command `blockr.core-change_stack` |
-| The tools `add_<type>` and `modify_<type>` for each block class | The commands `blockr.core-add_block` and `blockr.core-change_block`, whose `state` follows the JSON Schema that `describe_block_type` gives for the class |
+| `add_block` | The command `blockr.core::add_block`. Where the new block has a link to it or from it, the command `blockr.core::add_link` adds the link, after `blockr.core::add_block` in the same call of `edit` |
+| `remove_block` | The command `blockr.core::remove_block` |
+| `modify_block` | The command `blockr.core::change_block` |
+| `add_link`, `remove_link` and `modify_link` | The commands `blockr.core::add_link`, `blockr.core::remove_link` and `blockr.core::change_link` |
+| `add_stack` and `remove_stack` | The commands `blockr.core::add_stack` and `blockr.core::remove_stack` |
+| `modify_stack` | The command `blockr.core::change_stack` |
+| The tools `add_<type>` and `modify_<type>` for each block class | The commands `blockr.core::add_block` and `blockr.core::change_block`, whose `state` follows the JSON Schema that `describe_block_type` gives for the class |
 | `commit` and `discard` | Nothing, since `edit` applies its commands at once, and nothing is staged |
 | `list_board_options` | The tool of the same name, which gives the value of each board option that the board holds, and no `default` |
-| `set_board_option` | The command `blockr.core-set_option` |
+| `set_board_option` | The command `blockr.core::set_option` |
 | `list_extensions` | The tool `list_plugins` |
 | `describe_extension` | The tool `get_plugin_state` |
-| `modify_extension` | The command `blockr.core-set_plugin_state`, or a command of the plugin's class |
-| `list_views` | The tool `get_plugin_state`, for the plugin `blockr.dock-dock_plugin` |
+| `modify_extension` | The command `blockr.core::set_plugin_state`, or a command of the plugin's class |
+| `list_views` | The tool `get_plugin_state`, for the plugin `blockr.dock::dock_plugin` |
 | `validate_layout` | Nothing, since each command checks its args |
-| `add_view` | The command `blockr.dock-add_view`, which takes the view's `grid` in place of its `layout`, and makes the new view active. Where the active view should stay, `blockr.dock-activate_view` follows it, for the view that was active |
-| `remove_view`, `rename_view` and `set_active_view` | The commands `blockr.dock-remove_view`, `blockr.dock-rename_view` and `blockr.dock-activate_view` |
-| `add_panel_to_view` | The command `blockr.dock-add_panel`, which takes no `size` |
-| `remove_panel_from_view`, `move_panel` and `resize_panel` | The commands `blockr.dock-remove_panel`, `blockr.dock-move_panel` and `blockr.dock-resize_panel` |
-| `focus_panel` | The command `blockr.dock-activate_panel`, after `blockr.dock-activate_view` where the panel's view is not the active one |
+| `add_view` | The command `blockr.dock::add_view`, which takes the view's `grid` in place of its `layout`, and makes the new view active. Where the active view should stay, `blockr.dock::activate_view` follows it, for the view that was active |
+| `remove_view`, `rename_view` and `set_active_view` | The commands `blockr.dock::remove_view`, `blockr.dock::rename_view` and `blockr.dock::activate_view` |
+| `add_panel_to_view` | The command `blockr.dock::add_panel`, which takes no `size` |
+| `remove_panel_from_view`, `move_panel` and `resize_panel` | The commands `blockr.dock::remove_panel`, `blockr.dock::move_panel` and `blockr.dock::resize_panel` |
+| `focus_panel` | The command `blockr.dock::activate_panel`, after `blockr.dock::activate_view` where the panel's view is not the active one |
 
 The tools `list_commands`, `describe_command`, `list_plugins`, `get_plugin_state`, `edit` and `undo_edit` are new.
 The tool `undo_edit` takes back the assistant's last edit.
@@ -656,7 +657,7 @@ A skill that shows a call of `inspect_results` gives it the blocks that the code
 
 > Call `inspect_results` with the code `unique(data$Species)` and the blocks `["data"]`.
 
-The commands of blockr.dock name a panel as `{ "block": id }` for a block's card, or as `{ "plugin": id }` for the UI of a plugin, by the id of the plugin's class.
+The commands of blockr.dock name a panel as `{ "block": id }` for a block's card, or as `{ "plugin": { "package": …, "id": … } }` for the UI of a plugin, by the id of the plugin's class.
 In version 0.1, the view tools named a block's panel by the block's id, and an extension's panel by the extension's name, such as `slides`.
 
 The Board section changes with the tools, and a message of the app's after the conversation's last message holds it, in place of the system prompt.

@@ -54,7 +54,7 @@ board <- new_board(
 serve(board)
 ```
 
-The plugin is of the class `blockr.assistant-assistant_plugin`.
+The plugin is of the class `assistant_plugin` of blockr.assistant.
 Its state holds the board's conversations ([What the assistant keeps and returns](#what-the-assistant-keeps-and-returns)).
 
 The argument `plugins` of `serve()` defaults to every plugin class that `available_plugins()` lists.
@@ -362,7 +362,7 @@ name: exposure-tables
 description: >-
   How the tables of exposure data are filtered here. Read before you
   filter such a table.
-blocks: [blockr.core-subset_block]
+blocks: [{package: blockr.core, id: subset_block}]
 requires:
   - blockr.core (>= 0.2.0)
 ---
@@ -377,8 +377,8 @@ The frontmatter takes these keys:
 |---|---|
 | `name` | The skill's name, which is the name of its directory, in lowercase letters, digits and hyphens |
 | `description` | What the skill covers and when to read it |
-| `blocks` | The block classes that the skill bears on, by their registry ids, such as `blockr.core-subset_block` |
-| `plugins` | The plugin classes that the skill bears on, by their ids, such as `blockr.dock-dock_plugin` |
+| `blocks` | The block classes that the skill bears on, each by its package and its id, such as `{package: blockr.core, id: subset_block}` |
+| `plugins` | The plugin classes that the skill bears on, each by its package and its id, such as `{package: blockr.dock, id: dock_plugin}` |
 | `requires` | The packages that the skill needs, each as a dependency in `DESCRIPTION`, such as `blockr.core (>= 0.2.0)` |
 | `user-invocable` | Whether the user may call the skill by its name |
 | `disable-model-invocation` | Whether the model may not read the skill |
@@ -388,8 +388,10 @@ R skips a skill that lacks either, and logs a warning.
 R also leaves out a skill whose `requires` names a package that is not installed, or not at the version given.
 R ignores any other key.
 Of those, it warns only of `allowed-tools`, which the assistant does not honour.
-The functions `available_blocks()` and `available_plugins()` list each class with its package and its id.
-The two make up the id in full, `{pkg}-{id}`, which `blocks` and `plugins` take.
+The functions `available_blocks()` and `available_plugins()` list each class with its package and its id, the two keys that `blocks` and `plugins` take for the class.
+A block class that an app script defines has the package `null`, as in `{package: null, id: my_block}`.
+R skips a skill whose `blocks` or `plugins` hold anything but such mappings, and logs a warning.
+The text of a skill names a class or a command as the system prompt does, by its package and its id joined by `::`, as `blockr.core::add_block`.
 
 A skill that names no class goes into the system prompt, in its Skills section, with its description.
 A skill that names a class is listed where the model reads that class.
@@ -595,10 +597,10 @@ The model reads a plugin through the JSON Schema of its class's state.
 The tool `list_plugins` gives each of the app's plugins with the description at the top of that schema.
 The tool `get_plugin_state` gives one plugin's state, with the schema.
 The `description` keywords of the schema say what each part of the state holds.
-So the model changes the state as the schema has it, through the command `blockr.core-set_plugin_state` or through a command of the plugin's class.
+So the model changes the state as the schema has it, through the command `blockr.core::set_plugin_state` or through a command of the plugin's class.
 
 A package also tells the model what its plugins' state holds now, as each call goes out, through a module named `assistant`.
-The package offers the module in the `modules` part of its `._BLOCKR_MODULES_`, so that the module's id is `{pkg}-assistant`:
+The package offers the module in the `modules` part of its `._BLOCKR_MODULES_`, so that the module's id is `assistant` within the package:
 
 ```{r, eval = FALSE}
 ._BLOCKR_MODULES_ <- list(
@@ -618,15 +620,17 @@ The module's default export gives the function `describe(plugin, state)`:
 ```js
 export default {
   describe(plugin, state) {
-    if (plugin !== "mypkg-notes_plugin") return [];
+    if (plugin.package !== "mypkg" || plugin.id !== "notes_plugin") return [];
     return [`The notes hold ${state.notes.length} entries.`];
   },
 };
 ```
 
 As each call goes out, the assistant calls `describe()` for each plugin of the package that the app runs.
-It passes the id of the plugin's class and the plugin's state, or `null` where the board holds none.
+It passes the id of the plugin's class, as core gives it, and the plugin's state, or `null` where the board holds none.
+The id is an object of the class's `package` and its `id` within the package, which the function compares, as above.
 The function returns the lines of text that the model reads, the most useful first: the cap of the Board section keeps room for the first line ahead of the blocks, and may cut the rest.
+A line that names an id, such as that of a block class, writes it as the Board section does, as `blockr.core::head_block`.
 It returns no lines for a plugin that it has nothing to say about.
 The Board section gives the lines after the stacks, under the plugin's name, as the dock gives its views and the active view.
 Where the module fails to load, gives no `describe()`, or `describe()` fails or returns anything but strings, the assistant raises the error `assistant_describe_failed` and leaves the lines out.
@@ -636,6 +640,7 @@ The package needs no dependency on blockr.assistant for the module, as for its s
 
 The model changes the board through the tool `edit`, which runs a list of the commands that the app registers.
 The tool `list_commands` gives each command's id and description.
+The id is an object of the package that registered the command and the command's id within the package, as `{"package": "blockr.core", "id": "add_block"}`, and the model names the command so in its call of `edit`.
 The tool `describe_command` gives one command's description in full, with the JSON Schema of its args.
 So a command that a package registers with `core.commands.register()` reaches the model through its `description`, which says what the command does and when to use it.
 It reaches the model through the `description` keywords of its `args` too.
