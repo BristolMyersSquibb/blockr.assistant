@@ -1,7 +1,7 @@
 // What the edit tool and undo_edit hear of their step: the changes of the
-// origin "assistant" that the store announces while the tool runs its
-// commands or its undo, one for each delta of the step, each with the board
-// before and after it
+// assistant's origin, the id of its plugin class, that the store announces
+// while the tool runs its commands or its undo, one for each delta of the
+// step, each with the board before and after it
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#the-edit-tool).
 // - The tool subscribes to the store before it runs the commands, and ends the
 //   subscription once their call settles.
@@ -9,17 +9,15 @@
 //   takes none of their changes for its own. An undo through the frontend's
 //   Undo carries the origin "user", even where it takes back a step of the
 //   assistant's.
-// - The assistant's chat and loop change its conversations with the origin
-//   "assistant" too, through patches inside the assistant's state alone. The
-//   edit tool refuses a list that would change that state, so the tool takes
-//   no change that only patches the assistant's state for its own.
+// - The assistant's chat and loop change its conversations with the
+//   assistant's origin too, through patches inside the assistant's state
+//   alone. The edit tool refuses a list that would change that state, so the
+//   tool takes no change that only patches the assistant's state for its
+//   own.
 
 import type { BlockId, Board, CoreApi, Delta } from "@blockr/core";
-import { at } from "../state/index.ts";
+import { assistantClassId, at } from "../state/index.ts";
 import { own } from "./context.ts";
-
-// The origin of the assistant's steps.
-export const ORIGIN = "assistant";
 
 // The path of the assistant's state in the board.
 const OWN_STATE = at();
@@ -40,15 +38,16 @@ export interface Hearing {
 }
 
 // Subscribes to the store, and keeps each change of the step from now on.
-export function hear(core: Pick<CoreApi, "store">): Hearing {
+export function hear(core: Pick<CoreApi, "store" | "id">): Hearing {
   const heard: Heard[] = [];
+  const origin = assistantClassId(core);
   // The board after the last change of any origin, which is the board before
   // the next.
   let last = core.store.board();
   const stop = core.store.subscribe((change, board) => {
     const before = last;
     last = board;
-    if (!("delta" in change) || change.origin !== ORIGIN || ownStateOnly(change.delta)) return;
+    if (!("delta" in change) || change.origin !== origin || ownStateOnly(change.delta)) return;
     heard.push({ delta: change.delta, before, after: board });
   });
   return { heard: () => heard, stop };

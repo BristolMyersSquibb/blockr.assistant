@@ -1,14 +1,14 @@
 // Sending the user's message, which starts a turn
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-message-field-and-a-turn):
 // 1. Where no conversation is open, the chat adds one with an id that it
-//    mints, through blockr.assistant-add_conversation, and opens it. The
+//    mints, through the command add_conversation, and opens it. The
 //    conversation is titled "New conversation" until a model call titles it
 //    or the user renames it, and starts on the picks of the model and of the
 //    thinking level that the chat gives, which the footer shows while no
 //    conversation is open
 //    (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.4#the-model).
-// 2. The chat adds the user's message to the conversation, through
-//    blockr.assistant-add_message. The message holds the text that the user
+// 2. The chat adds the user's message to the conversation, through the
+//    command add_message. The message holds the text that the user
 //    typed, if any, and then a part of the type attachment for each file that
 //    the user attached, which names the file and its media type. The files'
 //    content goes into the plugin's memory with the message

@@ -29,7 +29,7 @@
 //    tool calls as a message of the role tool. The memory keeps each reply's
 //    reasoning, by message.
 // 5. After each call, it adds the call's input and output tokens, and every
-//    token of the call as the total, through blockr.assistant-add_usage.
+//    token of the call as the total, through the command add_usage.
 // 6. Where a call failed since the conversation outgrew the model's context
 //    window, compaction puts a summary in place, and the turn tries the call
 //    once more, as pi's own CLI does. The turn raises the call's failure only

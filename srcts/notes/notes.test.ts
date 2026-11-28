@@ -6,8 +6,8 @@
 // /undo asks for, the cap, and the message that holds the note, and the blocks
 // that changes touched, which the Board section lists early.
 
-import type { Board, CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import type { Board, CoreApi, Json, Origin } from "@blockr/core";
+import { HELLO, id, stubCore } from "@blockr/core/stubs";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { isNote } from "../state/index.ts";
 import type { ConversationId, Message } from "../state/index.ts";
@@ -15,24 +15,24 @@ import { blockClass, helloWith } from "../testing/index.ts";
 import { createNotes } from "./notes.ts";
 
 // The block classes of a test package that the board's blocks are of.
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
-const MERGE = blockClass("blockr.test-merge_block", { inputs: ["x", "y"] });
-const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
-const BIND = blockClass("blockr.test-bind_block", { inputs: ["..."] });
-const SCATTER = blockClass("blockr.test-scatter_block", { inputs: ["data"] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
+const MERGE = blockClass("merge_block", { inputs: ["x", "y"] });
+const SUBSET = blockClass("subset_block", { inputs: ["data"] });
+const BIND = blockClass("bind_block", { inputs: ["..."] });
+const SCATTER = blockClass("scatter_block", { inputs: ["data"] });
 
 // The board: the data block a, which feeds the head block b, the merge block c
 // of a and b, the subset block d and the scatter block f, and the bind block
 // e of b and d, with the stack s1 of a and b.
 const BOARD = {
   blocks: {
-    a: { registry_id: DATA.id, state: { dataset: "iris" }, name: "Iris", locked: null },
-    b: { registry_id: HEAD.id, state: { n: 6, direction: "head" }, name: "Head", locked: null },
-    c: { registry_id: MERGE.id, state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
-    d: { registry_id: SUBSET.id, state: { subset: "Sepal.Width > 3" }, name: "Wide sepals", locked: null },
-    e: { registry_id: BIND.id, state: {}, name: "Bind", locked: null },
-    f: { registry_id: SCATTER.id, state: { x: "Sepal.Length", y: "Sepal.Width" }, name: "Scatter", locked: null },
+    a: { registry_id: id(DATA.package, DATA.id), state: { dataset: "iris" }, name: "Iris", locked: null },
+    b: { registry_id: id(HEAD.package, HEAD.id), state: { n: 6, direction: "head" }, name: "Head", locked: null },
+    c: { registry_id: id(MERGE.package, MERGE.id), state: { by: ["Species"], all_x: false, all_y: false }, name: "Merge", locked: null },
+    d: { registry_id: id(SUBSET.package, SUBSET.id), state: { subset: "Sepal.Width > 3" }, name: "Wide sepals", locked: null },
+    e: { registry_id: id(BIND.package, BIND.id), state: {}, name: "Bind", locked: null },
+    f: { registry_id: id(SCATTER.package, SCATTER.id), state: { x: "Sepal.Length", y: "Sepal.Width" }, name: "Scatter", locked: null },
   },
   links: {
     ab: { from: "a", to: "b", input: "data" },
@@ -47,7 +47,15 @@ const BOARD = {
 } satisfies Partial<Board>;
 
 // A plugin of the app's that tidies the board, whose class keeps no state.
-const TIDY = "blockr.test-tidy_plugin";
+// It names its own steps by the id of its class.
+const TIDY = id("blockr.test", "tidy_plugin");
+
+// The id of the assistant's plugin class, which the assistant's steps have as
+// their origin.
+const ASSISTANT = id("blockr.assistant", "assistant_plugin");
+
+// The registry id of the head block's class, as the args of a command hold it.
+const HEAD_RECORD = { package: HEAD.package, id: HEAD.id };
 
 // Core on that board, in an app that runs core's plugins and the plugin
 // Tidy, with the notes of that board.
@@ -55,8 +63,8 @@ const TIDY = "blockr.test-tidy_plugin";
 async function opened(blockrOptions?: Readonly<Record<string, Json>>) {
   const hello = helloWith(HELLO, { blockClasses: [DATA, HEAD, MERGE, SUBSET, BIND, SCATTER], board: BOARD });
   const stubbed = await stubCore({
-    hello: { ...hello, plugins: { ...hello.plugins, [TIDY]: { name: "Tidy", version: 1, module: `app/${TIDY}.js` } } },
-    modules: { [TIDY]: { api: 1, default: {} } },
+    hello: { ...hello, plugins: [...hello.plugins, { package: TIDY.package, id: TIDY.id, name: "Tidy", version: 1, module: "blockr.test/tidy_plugin.js" }] },
+    offered: { "blockr.test": { tidy_plugin: { api: 1, default: {} } } },
     ...(blockrOptions === undefined ? {} : { blockrOptions }),
   });
   const controller = new AbortController();
@@ -76,10 +84,10 @@ async function opened(blockrOptions?: Readonly<Record<string, Json>>) {
   return { ...stubbed, notes, turnIn, close };
 }
 
-// Runs a command of core's on the board, as the user's unless the origin is
-// given.
-async function edit(core: CoreApi, id: string, args: Json, origin = "user"): Promise<void> {
-  await core.commands.run(id, args, origin);
+// Runs a command of core's on the board, by its id within core's package, as
+// the user's unless the origin is given.
+async function edit(core: CoreApi, command: string, args: Json, origin: Origin = "user"): Promise<void> {
+  await core.commands.run(core.id("blockr.core", command), args, origin);
 }
 
 // The text of the note, or undefined for none.
@@ -95,7 +103,7 @@ function linesOf(note: Message | undefined): string[] {
 describe("the note of what others changed in the board", () => {
   test("is none at a conversation's first call, and none where nothing changed since the conversation's previous call", async () => {
     const { core, notes } = await opened();
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", name: "Top" });
 
     expect(await notes.take("c1")).toBeUndefined();
     expect(await notes.take("c1")).toBeUndefined();
@@ -105,11 +113,11 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "g" });
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
-    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" });
+    await edit(core, "remove_block", { id: "d" });
+    await edit(core, "add_block", { registry_id: HEAD_RECORD, id: "g" });
+    await edit(core, "change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "change_stack", { id: "s1", name: "Inputs" });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block d, with its links ad and de: removed by the user.",
@@ -124,16 +132,16 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-remove_block", { id: "e" });
-    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "g" });
-    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "h" });
-    await edit(core, "blockr.core-add_link", { from: "a", to: "g", id: "ag" });
-    await edit(core, "blockr.core-remove_link", { id: "ab" });
-    await edit(core, "blockr.core-remove_link", { id: "ac" });
-    await edit(core, "blockr.core-remove_link", { id: "bc" }, "assistant");
-    await edit(core, "blockr.core-add_stack", { id: "s2", name: "Outputs" });
-    await edit(core, "blockr.core-add_stack", { id: "s3", name: "Checks" });
+    await edit(core, "remove_block", { id: "d" });
+    await edit(core, "remove_block", { id: "e" });
+    await edit(core, "add_block", { registry_id: HEAD_RECORD, id: "g" });
+    await edit(core, "add_block", { registry_id: HEAD_RECORD, id: "h" });
+    await edit(core, "add_link", { from: "a", to: "g", id: "ag" });
+    await edit(core, "remove_link", { id: "ab" });
+    await edit(core, "remove_link", { id: "ac" });
+    await edit(core, "remove_link", { id: "bc" }, ASSISTANT);
+    await edit(core, "add_stack", { id: "s2", name: "Outputs" });
+    await edit(core, "add_stack", { id: "s3", name: "Checks" });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Blocks d and e, with their links ad, de and be: removed by the user.",
@@ -148,12 +156,12 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
-    await edit(core, "blockr.core-change_block", { id: "c", state: { by: ["Sepal.Length"], all_x: true } });
-    await edit(core, "blockr.core-change_block", { id: "f", unset: ["y"] });
-    await edit(core, "blockr.core-add_stack", { id: "s2", name: "Gone" });
-    await edit(core, "blockr.core-remove_stack", { id: "s2" });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "change_block", { id: "b", state: { n: 6 } });
+    await edit(core, "change_block", { id: "c", state: { by: ["Sepal.Length"], all_x: true } });
+    await edit(core, "change_block", { id: "f", unset: ["y"] });
+    await edit(core, "add_stack", { id: "s2", name: "Gone" });
+    await edit(core, "remove_stack", { id: "s2" });
 
     const note = await notes.take("c1");
     expect(linesOf(note)).toEqual(["- Block c: args by, all_x changed by the user.", "- Block f: arg y changed by the user."]);
@@ -166,20 +174,23 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
 
     turnIn("c2");
-    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "change_block", { id: "a", name: "Data" }, ASSISTANT);
     turnIn(undefined);
-    await edit(core, "blockr.core-remove_block", { id: "f" }, "blockr.session");
-    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" }, TIDY);
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "remove_block", { id: "f" }, "blockr.session");
+    await edit(core, "change_block", { id: "c", name: "Joined" }, id("blockr.dag", "dag_plugin"));
+    await edit(core, "change_stack", { id: "s1", name: "Inputs" }, TIDY);
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
 
     expect(linesOf(await notes.take("c1"))).toEqual([
       "- Block a: name changed by the assistant in another conversation.",
       "- Block f, with its link af: removed by the plugin blockr.session.",
+      "- Block c: name changed by the plugin blockr.dag::dag_plugin.",
       "- Block b: arg n changed by the user.",
       "- Stack s1: name changed by the plugin Tidy.",
     ]);
     expect(linesOf(await notes.take("c2"))).toEqual([
       "- Block f, with its link af: removed by the plugin blockr.session.",
+      "- Block c: name changed by the plugin blockr.dag::dag_plugin.",
       "- Block b: arg n changed by the user.",
       "- Stack s1: name changed by the plugin Tidy.",
     ]);
@@ -189,9 +200,9 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } }, "assistant");
-    await edit(core, "blockr.core-change_block", { id: "b", locked: true });
+    await edit(core, "change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } }, ASSISTANT);
+    await edit(core, "change_block", { id: "b", locked: true });
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block b: name and lock changed by the user; arg n changed by the assistant in another conversation."]);
   });
@@ -201,10 +212,10 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c1");
 
     turnIn("c1");
-    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } }, "assistant");
-    await edit(core, "blockr.core-remove_block", { id: "adults" });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
+    await edit(core, "add_block", { registry_id: HEAD_RECORD, id: "adults" }, ASSISTANT);
+    await edit(core, "change_block", { id: "b", state: { n: 10 } }, ASSISTANT);
+    await edit(core, "remove_block", { id: "adults" });
+    await edit(core, "change_block", { id: "b", state: { n: 6 } });
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block adults: removed by the user.", "- Block b: arg n changed by the user."]);
   });
@@ -213,10 +224,10 @@ describe("the note of what others changed in the board", () => {
     const { core, notes, turnIn } = await opened();
     await notes.take("c1");
 
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
     turnIn("c1");
-    await edit(core, "blockr.core-change_block", { id: "b", state: { direction: "tail" } }, "assistant");
-    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "change_block", { id: "b", state: { direction: "tail" } }, ASSISTANT);
+    await edit(core, "change_block", { id: "a", name: "Data" }, ASSISTANT);
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block b: arg n changed by the user."]);
   });
@@ -227,10 +238,10 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
 
     turnIn("c1");
-    await edit(core, "blockr.core-change_block", { id: "a", name: "Data" }, "assistant");
+    await edit(core, "change_block", { id: "a", name: "Data" }, ASSISTANT);
     turnIn(undefined);
     notes.asUser(() => {
-      core.store.undo("assistant");
+      core.store.undo(ASSISTANT);
     });
 
     expect(linesOf(await notes.take("c1"))).toEqual(["- Block a: name changed by the user."]);
@@ -243,14 +254,14 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c2");
     expect(notes.changed("c1")).toEqual([]);
 
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
     turnIn("c1");
-    await edit(core, "blockr.core-change_block", { id: "e", name: "Data" }, "assistant");
+    await edit(core, "change_block", { id: "e", name: "Data" }, ASSISTANT);
     turnIn(undefined);
-    await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 6 } });
-    await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" });
-    await edit(core, "blockr.core-change_stack", { id: "s1", name: "Inputs" });
+    await edit(core, "remove_block", { id: "d" });
+    await edit(core, "change_block", { id: "b", state: { n: 6 } });
+    await edit(core, "add_link", { from: "c", to: "e", id: "l3" });
+    await edit(core, "change_stack", { id: "s1", name: "Inputs" });
 
     expect(notes.changed("c1")).toEqual([]);
     await notes.take("c1");
@@ -263,7 +274,7 @@ describe("the note of what others changed in the board", () => {
 
   test("gives no changed blocks at a conversation's first call", async () => {
     const { core, notes } = await opened();
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", name: "Top" });
 
     await notes.take("c1");
 
@@ -275,7 +286,7 @@ describe("the note of what others changed in the board", () => {
     const { core, notes } = await opened({ assistant_board_section_max_chars: 120 });
     await notes.take("c1");
 
-    for (const id of ["a", "b", "c", "d", "e", "f"]) await edit(core, "blockr.core-remove_block", { id });
+    for (const id of ["a", "b", "c", "d", "e", "f"]) await edit(core, "remove_block", { id });
 
     const text = textOf(await notes.take("c1")) ?? "";
     const list = text.slice(text.indexOf("## Changes"));
@@ -286,7 +297,7 @@ describe("the note of what others changed in the board", () => {
   test("goes in a message of the role user that holds one part of the type changes, whose text opens with the preamble that says that the app writes it", async () => {
     const { core, notes } = await opened();
     await notes.take("c1");
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", name: "Top" });
 
     const note = await notes.take("c1");
 
@@ -301,7 +312,7 @@ describe("the note of what others changed in the board", () => {
     await notes.take("c1");
 
     close();
-    await edit(core, "blockr.core-change_block", { id: "b", name: "Top" });
+    await edit(core, "change_block", { id: "b", name: "Top" });
 
     expect(await notes.take("c1")).toBeUndefined();
     expect(notes.changed("c1")).toEqual([]);
@@ -311,12 +322,12 @@ describe("the note of what others changed in the board", () => {
     const { core, notes, turnIn } = await opened();
     await notes.take("c1");
     turnIn("c1");
-    await edit(core, "blockr.core-add_block", { registry_id: HEAD.id, id: "adults" }, "assistant");
+    await edit(core, "add_block", { registry_id: HEAD_RECORD, id: "adults" }, ASSISTANT);
     turnIn(undefined);
-    await edit(core, "blockr.core-remove_block", { id: "adults" });
-    await edit(core, "blockr.core-remove_block", { id: "d" });
-    await edit(core, "blockr.core-change_block", { id: "b", state: { n: 10 } });
-    await edit(core, "blockr.core-add_link", { from: "c", to: "e", id: "l3" }, "assistant");
+    await edit(core, "remove_block", { id: "adults" });
+    await edit(core, "remove_block", { id: "d" });
+    await edit(core, "change_block", { id: "b", state: { n: 10 } });
+    await edit(core, "add_link", { from: "c", to: "e", id: "l3" }, ASSISTANT);
 
     await expect(textOf(await notes.take("c1"))).toMatchFileSnapshot("./__snapshots__/note.md");
   });

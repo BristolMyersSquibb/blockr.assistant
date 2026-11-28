@@ -22,10 +22,9 @@
 // 4. The plugin adds the call's input and output tokens to the conversation's
 //    usage, so that the meter counts them. It leaves the usage's last as it
 //    was, since compaction reads the last as the size of the conversation.
-// 5. It gives the conversation the title through
-//    blockr.assistant-rename_conversation only where the title is still
-//    "New conversation", so that a rename that the user made meanwhile
-//    stands.
+// 5. It gives the conversation the title through the command
+//    rename_conversation only where the title is still "New conversation",
+//    so that a rename that the user made meanwhile stands.
 //
 // A title that fails, as where the call fails or the model gives no text,
 // leaves the conversation's title as it was, for the user to rename, with no

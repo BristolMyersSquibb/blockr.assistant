@@ -5,7 +5,7 @@ test_that("new_assistant_plugin() makes a plugin of the assistant's class", {
   expect_s3_class(plugin, c("assistant_plugin", "plugin"), exact = TRUE)
   expect_identical(
     plugin_class_id(plugin),
-    "blockr.assistant-assistant_plugin"
+    list(package = "blockr.assistant", id = "assistant_plugin")
   )
   expect_identical(plugin_state(plugin), list(conversations = list()))
   expect_identical(plugin_version(plugin), 1L)
@@ -39,7 +39,7 @@ test_that("R writes the conversations by the schema beside the module", {
   written <- function(plugin) {
     board <- blockr_ser(new_board(plugins = list(plugin)))
     plugins <- board[["board"]][["plugins"]]
-    plugins[["blockr.assistant-assistant_plugin"]][["state"]]
+    plugins[["blockr.assistant"]][["assistant_plugin"]][["state"]]
   }
 
   expect_identical(
@@ -95,7 +95,7 @@ test_that("the plugin prints a line for each conversation", {
 
   expect_identical(
     format(new_assistant_plugin()),
-    "<assistant_plugin> blockr.assistant-assistant_plugin"
+    "<assistant_plugin> assistant_plugin of blockr.assistant"
   )
 })
 

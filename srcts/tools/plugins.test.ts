@@ -3,15 +3,17 @@
 // class keeps the notes in its state, and a plugin that tidies the board,
 // whose class keeps no state.
 
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test } from "vitest";
 import { callTool, parsed, skill, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import type { Skill } from "../skills/index.ts";
-import { ASSISTANT } from "../state/index.ts";
 import { readTools } from "./index.ts";
 
-const NOTES = "blockr.test-notes_plugin";
-const TIDY = "blockr.test-tidy_plugin";
+// The ids of the classes of the plugins of notes and of tidying, as JSON
+// holds them.
+const NOTES = { package: "blockr.test", id: "notes_plugin" };
+const TIDY = { package: "blockr.test", id: "tidy_plugin" };
 
 const TEXT = "Look at the outliers first, then at the groups that hold fewer than ten rows.";
 
@@ -27,8 +29,10 @@ const SCHEMA = {
 async function started(options: StartOptions = {}, skills: readonly Skill[] = []) {
   const stub = await startAssistant({
     plugins: {
-      [NOTES]: { name: "Notes", definition: { state: { schema: SCHEMA, default: { text: TEXT } } } },
-      [TIDY]: { name: "Tidy", definition: {} },
+      "blockr.test": {
+        notes_plugin: { name: "Notes", definition: { state: { schema: SCHEMA, default: { text: TEXT } } } },
+        tidy_plugin: { name: "Tidy", definition: {} },
+      },
     },
     ...options,
   });
@@ -36,13 +40,15 @@ async function started(options: StartOptions = {}, skills: readonly Skill[] = []
 }
 
 describe("list_plugins", () => {
-  test("gives each of the app's plugins by its class's id and name, with the description of its state, and leaves out the assistant", async () => {
+  test("gives each of the app's plugins by its class's id, as a record of its package and its id, and its name, with the description of its state, and leaves out the assistant", async () => {
     const { core, tools } = await started();
+    const assistant = core.id("blockr.assistant", "assistant_plugin");
+    const ids = [...core.plugins.appPlugins().keys()];
 
-    const listed = parsed(await callTool(tools, "list_plugins")) as { id: string }[];
+    const listed = parsed(await callTool(tools, "list_plugins")) as { id: { package: string; id: string } }[];
 
-    expect(Object.keys(core.plugins.appPlugins())).toContain(ASSISTANT);
-    expect(listed.map(({ id }) => id)).toEqual(Object.keys(core.plugins.appPlugins()).filter((id) => id !== ASSISTANT));
+    expect(ids).toContain(assistant);
+    expect(listed.map(({ id }) => id)).toEqual(ids.filter((key) => key !== assistant).map((key) => ({ package: key.package, id: key.id })));
     expect(listed).toContainEqual({ id: NOTES, name: "Notes", description: SCHEMA.description });
     expect(listed).toContainEqual({ id: TIDY, name: "Tidy" });
   });
@@ -60,7 +66,7 @@ describe("list_plugins", () => {
 
 describe("get_plugin_state", () => {
   test("gives the plugin's state, with the schema that describes it and the skills that name its class", async () => {
-    const skills = [skill("notes", { plugins: [NOTES] }), skill("blocks", { blocks: ["blockr.core-head_block"] })];
+    const skills = [skill("notes", { plugins: [id("blockr.test", "notes_plugin")] }), skill("blocks", { blocks: [id("blockr.core", "head_block")] })];
     const { tools } = await started({}, skills);
 
     expect(parsed(await callTool(tools, "get_plugin_state", { id: NOTES }))).toEqual({
@@ -91,12 +97,16 @@ describe("get_plugin_state", () => {
     });
   });
 
-  test("answers the assistant's own plugin, as one that the app does not run, with the tool that lists the plugins", async () => {
+  test("answers the assistant's own plugin, as one that the app does not run or whose id core refuses, with the tool that lists the plugins", async () => {
     const { tools } = await started();
 
-    for (const id of [ASSISTANT, "blockr.dock-dock_plugin"]) {
-      await expect(callTool(tools, "get_plugin_state", { id })).resolves.toEqual({
-        text: `The app runs no plugin "${id}" that you may read. Call list_plugins for those that it runs.`,
+    for (const given of [
+      { package: "blockr.assistant", id: "assistant_plugin" },
+      { package: "blockr.dock", id: "dock_plugin" },
+      { package: "not a package", id: "dock_plugin" },
+    ]) {
+      await expect(callTool(tools, "get_plugin_state", { id: given })).resolves.toEqual({
+        text: `The app runs no plugin "${given.package}::${given.id}" that you may read. Call list_plugins for those that it runs.`,
         isError: true,
         images: [],
       });

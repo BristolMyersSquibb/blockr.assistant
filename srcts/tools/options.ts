@@ -19,7 +19,7 @@ export function optionTools({ core }: ToolContext): Tool[] {
     tool<Record<string, never>>({
       name: "list_board_options",
       description:
-        "List every board option that the app's packages define, such as the rows that a table shows, each with its id, its label, its category and the JSON Schema of its value, and the value that the board holds, where it holds one. The board holds the value of each board option that something on the page uses, its default where nobody set one, and blockr.core-set_option sets any board option, on a locked board too.",
+        "List every board option that the app's packages define, such as the rows that a table shows, each with its id, its label, its category and the JSON Schema of its value, and the value that the board holds, where it holds one. The board holds the value of each board option that something on the page uses, its default where nobody set one, and blockr.core::set_option sets any board option, on a locked board too.",
       parameters: object({}, []),
       run: () =>
         Promise.resolve(

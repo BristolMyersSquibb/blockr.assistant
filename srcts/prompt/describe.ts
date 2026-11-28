@@ -4,14 +4,17 @@
 // The assistant knows no other plugin's state. A plugin's package tells the
 // model what the state holds now, through a module named `assistant` that
 // the package offers in the `modules` of its `._BLOCKR_MODULES_`, so that the
-// module's id is `{pkg}-assistant`. The package needs no dependency on
-// blockr.assistant for it, as for its skills. As each call goes out:
+// module's id is `assistant` within the package, as
+// core.id("blockr.dock", "assistant") names it. The package needs no
+// dependency on blockr.assistant for it, as for its skills. As each call goes
+// out:
 // 1. For each of the app's plugins but the assistant's own, the assistant
-//    loads the module `assistant` of the plugin's package through
-//    CoreApi.module(), where the package offers one.
+//    loads the module `assistant` of the package of the plugin's class
+//    through CoreApi.module(), where the package offers one.
 // 2. It calls describe(plugin, state) of the module's default export, with
-//    the id of the plugin's class and the plugin's state as the board holds
-//    it, or null where the board holds none.
+//    the id of the plugin's class, as core gives it, and the plugin's state
+//    as the board holds it, under the package and then under the class's id,
+//    or null where the board holds none.
 // 3. The function returns the lines that tell the model what the state holds
 //    now, the most useful first: the Board section's cap keeps room for the
 //    first line ahead of the blocks, and may cut the rest (./board.ts).
@@ -21,13 +24,15 @@
 // assistant_describe_failed about the plugin and leaves its lines out, until
 // a call reads them again.
 
-import type { CoreApi, Json, PluginClassId } from "@blockr/core";
+import type { CoreApi, Json, ModuleId, PluginClassId } from "@blockr/core";
+import { idText } from "../ids/index.ts";
 import { heldError } from "../notifications/index.ts";
 import type { HeldError } from "../notifications/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
+import { own } from "../tools/index.ts";
 
 // What of CoreApi the lines read.
-export type Core = Pick<CoreApi, "store" | "plugins" | "module" | "notifications">;
+export type Core = Pick<CoreApi, "store" | "plugins" | "module" | "notifications" | "id">;
 
 // The lines that a plugin wrote about its state, with the plugin's name and
 // the id of its class.
@@ -54,15 +59,16 @@ export function createDescribe(core: Core, signal: AbortSignal): () => Promise<r
   };
 
   return async () => {
-    const plugins = Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT);
-    const loaded = await Promise.all(plugins.map(([id]) => offered(core, moduleId(id))));
+    const assistant = assistantClassId(core);
+    const plugins = [...core.plugins.appPlugins()].filter(([id]) => id !== assistant);
+    const loaded = await Promise.all(plugins.map(([id]) => offered(core, core.id(id.package, MODULE))));
     // The board as the modules have loaded, so that the lines are of the
     // board that the Board section gives.
     const states = core.store.board().plugins;
     return plugins.flatMap(([id, { name }], index) => {
       const found = loaded[index];
       try {
-        const lines = found === undefined ? [] : linesOf(found, id, Object.hasOwn(states, id) ? (states[id] ?? null) : null);
+        const lines = found === undefined ? [] : linesOf(found, id, own(own(states, id.package) ?? {}, id.id) ?? null);
         failed.get(id)?.withdraw();
         return lines.length === 0 ? [] : [{ plugin: id, name, lines }];
       } catch (error) {
@@ -73,16 +79,9 @@ export function createDescribe(core: Core, signal: AbortSignal): () => Promise<r
   };
 }
 
-// The id of the module `assistant` of the package of a plugin's class, whose
-// id names the package before its first dash, as in "blockr.dock-assistant"
-// for "blockr.dock-dock_plugin".
-function moduleId(plugin: PluginClassId): string {
-  return `${plugin.slice(0, plugin.indexOf("-"))}-${MODULE}`;
-}
-
 // The exports of the module given, or undefined where no package offers it.
 // Where the module fails to load, it gives the error, which describe() raises.
-async function offered(core: Pick<Core, "module">, id: string): Promise<Loaded | undefined> {
+async function offered(core: Pick<Core, "module">, id: ModuleId): Promise<Loaded | undefined> {
   try {
     return { id, exports: await core.module(id) };
   } catch (error) {
@@ -92,24 +91,26 @@ async function offered(core: Pick<Core, "module">, id: string): Promise<Loaded |
   }
 }
 
-type Loaded = { readonly id: string; readonly exports: unknown } | { readonly id: string; readonly error: Error };
+type Loaded = { readonly id: ModuleId; readonly exports: unknown } | { readonly id: ModuleId; readonly error: Error };
 
 // The lines that the module's describe() returns for the plugin's state. It
 // throws where the module failed to load, gives no describe(), or where
-// describe() fails or returns anything but strings.
+// describe() fails or returns anything but strings. Its messages name the
+// module as the user reads an id, as "assistant of blockr.dock".
 function linesOf(found: Loaded, plugin: PluginClassId, state: Json): readonly string[] {
   if ("error" in found) throw found.error;
+  const named = idText(found.id);
   const given = isRecord(found.exports) ? found.exports.default : undefined;
   const describe = isRecord(given) ? given.describe : undefined;
-  if (typeof describe !== "function") throw new Error(`The module ${found.id} gives no function describe() in its default export.`);
+  if (typeof describe !== "function") throw new Error(`The module ${named} gives no function describe() in its default export.`);
   let lines: unknown;
   try {
     lines = describe.call(given, plugin, state);
   } catch (error) {
-    throw new Error(`The describe() of the module ${found.id} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new Error(`The describe() of the module ${named} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) {
-    throw new Error(`The describe() of the module ${found.id} returned ${shown(lines)}, where it returns an array of strings.`);
+    throw new Error(`The describe() of the module ${named} returned ${shown(lines)}, where it returns an array of strings.`);
   }
   return lines;
 }

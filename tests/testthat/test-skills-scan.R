@@ -8,9 +8,10 @@ test_that("a well-formed skill is parsed into the catalogue", {
       "name: adam-exposure",
       "description: Site convention for exposure tables.",
       "blocks:",
-      "  - blockr.core-dataset_block",
+      "  - package: blockr.core",
+      "    id: dataset_block",
       "plugins:",
-      "  - blockr.dock-dock_plugin"
+      "  - {id: dock_plugin, package: blockr.dock}"
     ),
     body = "Always filter to SAFFL."
   )
@@ -19,8 +20,14 @@ test_that("a well-formed skill is parsed into the catalogue", {
 
   expect_type(skill, "list")
   expect_identical(skill$description, "Site convention for exposure tables.")
-  expect_identical(skill$blocks, "blockr.core-dataset_block")
-  expect_identical(skill$plugins, "blockr.dock-dock_plugin")
+  expect_identical(
+    skill$blocks,
+    list(list(package = "blockr.core", id = "dataset_block"))
+  )
+  expect_identical(
+    skill$plugins,
+    list(list(package = "blockr.dock", id = "dock_plugin"))
+  )
   expect_false(skill$user_invocable)
   expect_true(skill$model_invocable)
   expect_identical(skill_body(skill), "Always filter to SAFFL.")
@@ -231,6 +238,52 @@ test_that("an unparseable requirement skips the skill with a warning", {
   expect_false("garbled" %in% names(skills))
 })
 
+test_that("a block class of an app script is named by a null package", {
+
+  root <- local_skills_dir()
+
+  write_skill(
+    root, "local",
+    c(
+      "name: local",
+      "description: A class of the app's script.",
+      "blocks: [{package: null, id: my_block}]"
+    )
+  )
+
+  expect_identical(
+    skill_catalogue(character())[["local"]]$blocks,
+    list(list(package = NULL, id = "my_block"))
+  )
+})
+
+test_that("a class that is no mapping of a package and an id skips the skill", {
+
+  root <- local_skills_dir()
+
+  entries <- list(
+    joined = c("blocks:", "  - blockr.core-dataset_block"),
+    unpackaged = c("blocks:", "  - {id: dataset_block}"),
+    extra = c("blocks:", "  - {package: blockr.core, id: a, name: b}"),
+    misnamed = c("blocks:", "  - {package: blockr core, id: dataset_block}"),
+    empty = c("plugins:", "  - {package: blockr.dock, id: ''}"),
+    plugin = c("plugins:", "  - {package: null, id: dock_plugin}"),
+    mapping = c("plugins:", "  package: blockr.dock", "  id: dock_plugin")
+  )
+
+  for (nme in names(entries)) {
+    write_skill(
+      root, nme,
+      c(sprintf("name: %s", nme), "description: Bad classes.", entries[[nme]])
+    )
+  }
+
+  logs <- capture_logs(skills <- skill_catalogue(character()))
+
+  expect_match(logs, "not mappings of a `package` and an `id`; skipped")
+  expect_length(intersect(names(entries), names(skills)), 0L)
+})
+
 test_that("a configured skills directory that is missing errors", {
 
   withr::local_options(
@@ -321,7 +374,7 @@ test_that("scoped skills do not count against the always-on budget", {
         sprintf("name: %s", nme),
         paste("description:", strrep("word ", 30L)),
         "blocks:",
-        "  - head_block"
+        "  - {package: blockr.core, id: head_block}"
       )
     )
   }
@@ -342,7 +395,7 @@ test_that("a skill that names plugin classes is not global", {
         sprintf("name: %s", nme),
         paste("description:", strrep("word ", 30L)),
         "plugins:",
-        "  - blockr.dock-dock_plugin"
+        "  - {package: blockr.dock, id: dock_plugin}"
       )
     )
   }
@@ -361,6 +414,6 @@ test_that("a skill that names only extensions is global", {
 
   skill <- skill_catalogue(character())[["views"]]
 
-  expect_identical(skill$plugins, character())
+  expect_identical(skill$plugins, list())
   expect_true(is_global_skill(skill))
 })

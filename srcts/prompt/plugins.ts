@@ -7,8 +7,8 @@
 // lines (R/describe-board.R at fcbdb27):
 // - The app's plugins in place of the extensions, but for the assistant's
 //   own, which list_plugins leaves out too. Each comes by its name and the id
-//   of its class, with the description of the schema of its class's state,
-//   where the schema gives one.
+//   of its class, as `package::id`, with the description of the schema of its
+//   class's state, where the schema gives one.
 // - The board options that the app's packages define, from
 //   options.registered(), rather than those that the board holds, each with
 //   its category, and how to read and set their values.
@@ -17,11 +17,12 @@
 // no board option, the system prompt has no such section.
 
 import type { CoreApi } from "@blockr/core";
-import { ASSISTANT } from "../state/index.ts";
+import { idForModel } from "../ids/index.ts";
+import { assistantClassId } from "../state/index.ts";
 import { cutText } from "../tools/index.ts";
 
 // What of CoreApi the section reads.
-export type Core = Pick<CoreApi, "options" | "plugins">;
+export type Core = Pick<CoreApi, "options" | "plugins" | "id">;
 
 // The section as the app's plugins and board options are now, each part cut
 // at `max` characters, or undefined where it has neither.
@@ -35,11 +36,12 @@ export function pluginsSection(core: Core, max: number): string | undefined {
 // The app's plugins but for the assistant's own, each with the description of
 // the schema of its class's state, on a line of its own.
 function pluginLines(core: Core): string[] {
-  return Object.entries(core.plugins.appPlugins())
-    .filter(([id]) => id !== ASSISTANT)
+  const assistant = assistantClassId(core);
+  return [...core.plugins.appPlugins()]
+    .filter(([id]) => id !== assistant)
     .flatMap(([id, { name }]) => {
       const described = core.plugins.pluginClass(id).state?.schema.description;
-      const line = `- ${name} (id: ${id})`;
+      const line = `- ${name} (id: ${idForModel(id)})`;
       return typeof described === "string" && described.trim() !== "" ? [line, `  ${described.replace(/\s+/g, " ").trim()}`] : [line];
     });
 }
@@ -49,5 +51,5 @@ function pluginLines(core: Core): string[] {
 function optionLines(core: Core): string[] {
   const options = Object.values(core.options.registered());
   if (options.length === 0) return [];
-  return [...options.map(({ id, category }) => `- ${id} (${category})`), "Current values via list_board_options; change with blockr.core-set_option."];
+  return [...options.map(({ id, category }) => `- ${id} (${category})`), "Current values via list_board_options; change with blockr.core::set_option."];
 }

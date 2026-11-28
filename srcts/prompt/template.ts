@@ -37,7 +37,7 @@
 
 import type { CoreApi } from "@blockr/core";
 import { answeredText, failureMessage, sendUntilReplied } from "../requests/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
 import build from "./build.md" with { type: "text" };
 import role from "./role.md" with { type: "text" };
 import style from "./style.md" with { type: "text" };
@@ -71,6 +71,7 @@ export interface Template {
 interface Core {
   readonly request: CoreApi["request"];
   readonly notifications: Pick<CoreApi["notifications"], "notify">;
+  readonly id: CoreApi["id"];
 }
 
 export function createTemplate(core: Core, signal: AbortSignal): Template {
@@ -95,7 +96,7 @@ async function readTemplate(core: Core, signal: AbortSignal): Promise<string> {
     return answer === null ? own : fillTemplate(answeredText(answer, "read_template"));
   } catch (error) {
     if (signal.aborted) return own;
-    core.notifications.notify(ASSISTANT, {
+    core.notifications.notify(assistantClassId(core), {
       severity: "error",
       code: "assistant_template_failed",
       message: `The assistant uses its own template: ${failureMessage(error)}`,

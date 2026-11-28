@@ -2,16 +2,20 @@
 // step of the assistant, and undo_edit, which takes back the assistant's last
 // undo step. Each returns the review of its step (./review.ts)
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.2#the-edit-tool).
+// - The model names each command of the list by its id as JSON holds it, a
+//   record of the package that registered the command and the command's id
+//   within it. The tool hands core the id that core.id() gives for the record.
 // - The edit tool refuses a list that holds a command of the assistant's own,
-//   or blockr.core-set_plugin_state for the assistant's plugin, since only the
-//   assistant's chat and loop change its conversations. It refuses a command
-//   that the app does not register as well, with the tool that lists those
-//   that it registers.
-// - It runs the list with core.commands.run(list, "assistant"), which plans
-//   each command on the board that the commands before it leave, and applies
-//   them all as one step of the origin "assistant", or applies none. Where a
-//   command refuses, the tool returns the command's index, its id and each
-//   failure that the command registry names, and the board stays as it was.
+//   or core's command set_plugin_state for the assistant's plugin, since only
+//   the assistant's chat and loop change its conversations. It refuses a
+//   command that the app does not register as well, with the tool that lists
+//   those that it registers.
+// - It runs the list with core.commands.run(), which plans each command on
+//   the board that the commands before it leave, and applies them all as one
+//   step of the assistant's origin, the id of its plugin class, or applies
+//   none. Where a command refuses, the tool returns the command's index, its
+//   id and each failure that the command registry names, and the board stays
+//   as it was.
 //   Where the command failed its preflight, the tool adds a hint that says
 //   what to check, and on a locked board, that the lock may be why, since a
 //   lock makes some commands fail their preflight
@@ -22,8 +26,8 @@
 //   changed nothing, as where the board held what they set already, the tool
 //   says so.
 // - The tool undo_edit takes back the assistant's last undo step with
-//   core.store.undo("assistant"), which applies the undo as a new edit and
-//   announces it with the origin "assistant". That step may be another
+//   core.store.undo() of the assistant's origin, which applies the undo as a
+//   new edit and announces it with that origin. That step may be another
 //   conversation's. Where the assistant has no undo step left, the tool
 //   changes nothing and says so, which is no error, since nothing failed.
 //   Where the store refuses the undo, as a lock refuses it, the tool returns
@@ -57,30 +61,31 @@
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4#proposal).
 
 import { context } from "@opentelemetry/api";
-import type { CommandError, CoreApi, Json } from "@blockr/core";
-import { assistantCommands, object } from "../commands/index.ts";
+import type { CommandError, CommandId, CoreApi, Json } from "@blockr/core";
+import { object } from "../commands/index.ts";
+import { idForModel, idOf, idSchema } from "../ids/index.ts";
+import type { IdRecord } from "../ids/index.ts";
 import { failureMessage } from "../requests/index.ts";
-import { ASSISTANT } from "../state/index.ts";
-import { hear, ORIGIN } from "./changes.ts";
-import { own } from "./context.ts";
+import { assistantClassId, CLASS, PACKAGE } from "../state/index.ts";
+import { hear } from "./changes.ts";
+import { assistantCommandIds } from "./context.ts";
 import { noCommand } from "./failures.ts";
 import { conditionsNow, reviewCaps, reviewed, stepResult } from "./review.ts";
 import { json, tool } from "./tool.ts";
 import type { Tool, ToolResult } from "./tool.ts";
 
-const OWN = new Set(assistantCommands.map((command) => command.id));
+// Core's command that sets a plugin's state, which the edit tool refuses for
+// the assistant's own.
+const SET_PLUGIN_STATE: IdRecord = { package: "blockr.core", id: "set_plugin_state" };
 
-const SET_PLUGIN_STATE = "blockr.core-set_plugin_state";
-
-const OWN_STATE = `Only the assistant's chat and loop change the assistant's conversations, so an edit sets no state of the plugin "${ASSISTANT}".`;
+const OWN_STATE = `Only the assistant's chat and loop change the assistant's conversations, so an edit sets no state of the plugin "${idForModel({ package: PACKAGE, id: CLASS })}".`;
 
 // What the edit tool's hint says to check where a command failed its
 // preflight, since a preflight says only whether it passed.
 const HINT =
   "Check that each block, link, stack and plugin that the args name is on the board, and each board option is defined, with list_blocks, list_links, list_stacks, list_plugins or list_board_options, and that a block that a new link goes to has a free data input, with describe_block.";
 
-const LOCKED_HINT =
-  "The board is locked, which may be why: on a locked board, blockr.core-set_plugin_state fails its preflight, and a plugin's own commands fail theirs for what the plugin locks.";
+const LOCKED_HINT = `The board is locked, which may be why: on a locked board, ${idForModel(SET_PLUGIN_STATE)} fails its preflight, and a plugin's own commands fail theirs for what the plugin locks.`;
 
 const STOPPED_PREPARING =
   "The user stopped the turn while a command of the list prepared. The commands applied all the same, but the tool reviewed nothing, so do not run them again.";
@@ -97,14 +102,17 @@ const EDIT_DESCRIPTION =
 const UNDO_DESCRIPTION =
   "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. The tool returns a review of what the undo changed, as edit does. The edit that it takes back may come from another of the assistant's conversations, so tell the user what the undo took back, as the review shows it, rather than taking for granted that it was your own last edit. Where the assistant has no edit left to take back, the tool changes nothing and says so. On a locked board, where the lock refuses the undo, tell the user what the lock refuses, rather than trying to take the edit back another way.";
 
+// A command of the list, by its id as the model wrote it, with its args.
 interface Listed {
-  readonly command: string;
+  readonly command: IdRecord;
   readonly args?: Readonly<Record<string, Json>>;
 }
 
 // The edit tool and undo_edit on the CoreApi of the open board, given the
 // signal that core aborts as the next board opens.
 export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
+  const own = assistantCommandIds(core);
+  const origin = assistantClassId(core);
   return [
     tool<{ readonly commands: readonly Listed[] }>({
       name: "edit",
@@ -116,7 +124,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
             minItems: 1,
             items: object(
               {
-                command: { type: "string", description: "The command's id, as list_commands gives it." },
+                command: idSchema("The command's id, as list_commands gives it."),
                 args: {
                   type: "object",
                   description: "The command's args, which the JSON Schema that describe_command gives types. Leave it out for a command that takes none.",
@@ -133,7 +141,7 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
       run: async ({ commands }, signal) => {
         const active = context.active();
         const caps = await reviewCaps(core);
-        const refused = refusedAhead(core, commands);
+        const refused = refusedAhead(core, commands, own);
         if (refused !== undefined) return refused;
         signal.throwIfAborted();
 
@@ -144,8 +152,11 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
         try {
           undoStep = await context.with(active, () =>
             core.commands.run(
-              commands.map(({ command, args }) => (args === undefined ? { id: command } : { id: command, args })),
-              ORIGIN,
+              commands.map(({ command, args }) => {
+                const id = core.id(command.package, command.id);
+                return args === undefined ? { id } : { id, args };
+              }),
+              origin,
               { notifier: dropNotifications },
             ),
           );
@@ -173,13 +184,13 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
         const active = context.active();
         const caps = await reviewCaps(core);
         signal.throwIfAborted();
-        if (!core.store.canUndo(ORIGIN)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
+        if (!core.store.canUndo(origin)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
 
         const before = conditionsNow(core);
         const hearing = hear(core);
         try {
           context.with(active, () => {
-            core.store.undo(ORIGIN, { notifier: dropNotifications });
+            core.store.undo(origin, { notifier: dropNotifications });
           });
         } catch (error) {
           return refusedResult({ applied: false, failures: failuresOf(error) });
@@ -198,19 +209,29 @@ export function editTools(core: CoreApi, board: AbortSignal): Tool[] {
 // The refusal of a list that holds a command that the model may not run: one
 // of the assistant's own, which the app registers but list_commands leaves
 // out, core's command for the assistant's own state, or one that the app does
-// not register.
-function refusedAhead(core: CoreApi, commands: readonly Listed[]): ToolResult | undefined {
+// not register, as one whose id core refuses.
+function refusedAhead(core: CoreApi, commands: readonly Listed[], own: ReadonlySet<CommandId>): ToolResult | undefined {
   const registered = core.commands.registered();
+  const setPluginState = core.id(SET_PLUGIN_STATE.package, SET_PLUGIN_STATE.id);
   for (const [index, { command, args }] of commands.entries()) {
+    const id = idOf(core, command);
     const failure =
-      command === SET_PLUGIN_STATE && args?.plugin === ASSISTANT
+      id === setPluginState && namesAssistant(args?.plugin)
         ? OWN_STATE
-        : OWN.has(command) || own(registered, command) === undefined
+        : id === undefined || own.has(id) || !registered.has(id)
           ? noCommand(command)
           : undefined;
     if (failure !== undefined) return refusedResult({ applied: false, index, command, failures: [failure] });
   }
   return undefined;
+}
+
+// Whether the plugin that the args of set_plugin_state name, as the record
+// that the model wrote, is the assistant's, by its package and its id.
+function namesAssistant(plugin: Json | undefined): boolean {
+  if (typeof plugin !== "object" || plugin === null || Array.isArray(plugin)) return false;
+  const { package: pkg, id } = plugin as Readonly<Record<string, Json>>;
+  return pkg === PACKAGE && id === CLASS;
 }
 
 // What the tool returns where the command registry refused the list: the

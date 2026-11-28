@@ -12,9 +12,13 @@
 //   get_block_state.
 // - The tool get_block_state bounds the state at assistant_state_max_chars,
 //   which its strings spend in order.
+// - The tools list_blocks and describe_block give the registry id of a
+//   block's class as JSON holds it, a record of the class's package and its
+//   id within the package.
 
 import type { Json } from "@blockr/core";
 import { object } from "../commands/index.ts";
+import { idRecord } from "../ids/index.ts";
 import { readToolCap } from "./caps.ts";
 import { own, skillsNaming } from "./context.ts";
 import type { ToolContext } from "./context.ts";
@@ -51,7 +55,7 @@ export function blockTools(context: ToolContext): Tool[] {
             Object.entries(blocks).map(([id, block]) => ({
               id,
               name: block.name,
-              registry_id: block.registry_id,
+              registry_id: idRecord(block.registry_id),
               status: core.scheduler.status(id)?.status ?? null,
             })),
           ),
@@ -81,7 +85,7 @@ export function blockTools(context: ToolContext): Tool[] {
         const described = {
           id,
           name: block.name,
-          registry_id: block.registry_id,
+          registry_id: idRecord(block.registry_id),
           status: status?.status ?? null,
           ...(reason === null ? {} : { reason }),
           ...(unsent === null ? {} : { unsent }),
@@ -89,7 +93,7 @@ export function blockTools(context: ToolContext): Tool[] {
           ...(summary === null ? {} : { summary }),
           conditions: conditionList(status?.conditions ?? []),
           ...(skills.length === 0 ? {} : { skills }),
-          inputs: [...(own(core.blockRegistry(), block.registry_id)?.inputs ?? [])],
+          inputs: [...(core.blockRegistry().get(block.registry_id)?.inputs ?? [])],
           links: Object.entries(board.links)
             .filter(([, link]) => link.to === id)
             .map(([link, { from, input }]) => ({ id: link, from, input })),

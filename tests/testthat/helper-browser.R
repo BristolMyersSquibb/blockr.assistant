@@ -5,9 +5,10 @@
 # status, through `blockrTest` on the page, and each block's latest result,
 # which R exports.
 
-# The id of the assistant's plugin class, under which the board holds the
-# assistant's state.
-assistant_class <- "blockr.assistant-assistant_plugin"
+# The package of the assistant's plugin class and the class's id within it,
+# under which the board holds the assistant's state.
+assistant_package <- "blockr.assistant"
+assistant_class <- "assistant_plugin"
 
 # The JS that finds the chat on the page.
 chat_js <- "document.querySelector('.blockr-assistant-chat')"
@@ -54,7 +55,12 @@ wait_for_chat <- function(app) {
     "window.blockrTest !== undefined && blockrTest.board() !== null"
   )
 
-  app$get_js(paste0("blockrTest.show({ plugin: '", assistant_class, "' })"))
+  app$get_js(
+    paste0(
+      "blockrTest.show({ plugin: { package: '", assistant_package,
+      "', id: '", assistant_class, "' } })"
+    )
+  )
 
   app$wait_for_js(
     paste0(chat_js, "?.querySelector('textarea[aria-label=Message]') != null")
@@ -80,7 +86,8 @@ app_results <- function(app) {
 
 # The conversations that the assistant's state holds, by id.
 app_conversations <- function(app) {
-  app_board(app)[["plugins"]][[assistant_class]][["conversations"]]
+  plugins <- app_board(app)[["plugins"]]
+  plugins[[assistant_package]][[assistant_class]][["conversations"]]
 }
 
 # Who each message of a conversation is from, in order.

@@ -126,6 +126,9 @@ board_locked <- function() {
 # Each skill of the app's packages and of the deployment, in the order that
 # `skill_catalogue()` lists them, with the flags of its frontmatter under the
 # names that the frontmatter gives them.
+# The classes in `blocks` and `plugins` go to the client as records of their
+# `package` and `id`, with a `package` of null for a block class that an app
+# script defines.
 request_list_skills <- function(packages) {
   lapply(unname(skill_catalogue(packages)), skill_reply)
 }

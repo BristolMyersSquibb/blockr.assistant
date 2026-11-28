@@ -29,7 +29,7 @@ skill_catalogue <- function(packages) {
 skill_sources <- function(packages) {
 
   if (!is.character(packages) || anyNA(packages) ||
-        !all(grepl("^[A-Za-z][A-Za-z0-9.]*[A-Za-z0-9]$", packages))) {
+        !all(is_package_name(packages))) {
     blockr_abort(
       "The app's packages are given by their names, in `packages`.",
       class = "invalid_packages"
@@ -210,8 +210,10 @@ parse_skill <- function(dir) {
   }
 
   requires <- parse_requires(meta[["requires"]], name)
+  blocks   <- parse_classes(meta[["blocks"]], "blocks", name, nullable = TRUE)
+  plugins  <- parse_classes(meta[["plugins"]], "plugins", name)
 
-  if (is.null(requires)) {
+  if (is.null(requires) || is.null(blocks) || is.null(plugins)) {
     return(NULL)
   }
 
@@ -229,8 +231,8 @@ parse_skill <- function(dir) {
     name            = name,
     description     = meta[["description"]],
     path            = dir,
-    blocks          = as.character(meta[["blocks"]]),
-    plugins         = as.character(meta[["plugins"]]),
+    blocks          = blocks,
+    plugins         = plugins,
     requires        = requires,
     user_invocable  = user_invocable,
     model_invocable = model_invocable
@@ -292,6 +294,59 @@ parse_requires <- function(x, name) {
 
 requires_entry <- function(match) {
   list(pkg = match[[2L]], op = match[[3L]], version = match[[4L]])
+}
+
+# The classes that a skill names in `blocks:` or `plugins:`, `x`, each a
+# mapping of the package that defines the class and the class's id within the
+# package, as `{package: blockr.core, id: subset_block}`.
+# Only `blocks:` may give a package of null, for a block class that an app
+# script defines.
+# It gives an empty list where the skill names none, and `NULL`, with a
+# warning, where an entry is no such mapping, so that the skill is skipped.
+parse_classes <- function(x, key, name, nullable = FALSE) {
+
+  if (is.null(x)) {
+    return(list())
+  }
+
+  if (!is.list(x) || !is.null(names(x)) ||
+        !all(lgl_ply(x, is_class_entry, nullable = nullable))) {
+    log_warn(
+      "Skill {name} has `{key}` entries that are not mappings of a ",
+      "`package` and an `id`; skipped."
+    )
+    return(NULL)
+  }
+
+  lapply(x, `[`, c("package", "id"))
+}
+
+# Whether `x` is a mapping of exactly a `package`, a package's name, and an
+# `id`, a non-empty string, as a skill names a class. The package may be
+# `NULL` where `nullable` is `TRUE`.
+is_class_entry <- function(x, nullable) {
+
+  if (!is.list(x) || length(x) != 2L ||
+        !setequal(names(x), c("package", "id"))) {
+    return(FALSE)
+  }
+
+  pkg <- x[["package"]]
+
+  pkg_ok <- if (is.null(pkg)) {
+    nullable
+  } else {
+    is_string(pkg) && is_package_name(pkg)
+  }
+
+  pkg_ok && is_string(x[["id"]]) && nzchar(x[["id"]])
+}
+
+# Whether each element of `x` is a string that names a package as R names
+# one: letters, digits and dots, starting with a letter and ending with no
+# dot, as core reads the package of an id.
+is_package_name <- function(x) {
+  is.character(x) & grepl("^[A-Za-z][A-Za-z0-9.]*[A-Za-z0-9]$", x)
 }
 
 skill_available <- function(skill) {

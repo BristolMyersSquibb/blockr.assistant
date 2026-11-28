@@ -13,47 +13,47 @@ async function started(options: StartOptions = {}) {
 }
 
 describe("list_commands", () => {
-  test("gives each command's id and description, and leaves out the assistant's own", async () => {
+  test("gives each command's id, as a record of its package and its id, and its description, and leaves out the assistant's own", async () => {
     const { core, tools } = await started();
-    const ids = Object.keys(core.commands.registered());
+    const ids = [...core.commands.registered().keys()];
 
-    const listed = parsed(await callTool(tools, "list_commands")) as { id: string }[];
+    const listed = parsed(await callTool(tools, "list_commands")) as { id: { package: string; id: string } }[];
 
-    expect(ids).toContain("blockr.assistant-add_message");
-    expect(listed.map(({ id }) => id)).toEqual(ids.filter((id) => !id.startsWith("blockr.assistant-")));
+    expect(ids).toContain(core.id("blockr.assistant", "add_message"));
+    expect(listed.map(({ id }) => id)).toEqual(ids.filter((id) => id.package !== "blockr.assistant").map(({ package: pkg, id }) => ({ package: pkg, id })));
     expect(listed).toContainEqual({
-      id: "blockr.core-change_block",
-      description: core.commands.registered()["blockr.core-change_block"]?.description,
+      id: { package: "blockr.core", id: "change_block" },
+      description: core.commands.registered().get(core.id("blockr.core", "change_block"))?.description,
     });
   });
 
   test("cuts each description at assistant_description_max_chars, pointing at describe_command, and lists a command without one by its label", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_description_max_chars: 90 } });
-    core.commands.register({
-      id: "blockr.test-sort",
+    core.commands.register("blockr.test", {
+      id: "sort",
       label: "Sort",
       description: "Sorts the rows of a block's result by the columns given, each in the order given, the first column first.",
       run: () => [],
     });
-    core.commands.register({ id: "blockr.test-noop", label: "Do nothing", undo: false, run: () => [] });
+    core.commands.register("blockr.test", { id: "noop", label: "Do nothing", undo: false, run: () => [] });
 
     const listed = parsed(await callTool(tools, "list_commands"));
 
     expect(listed).toContainEqual({
-      id: "blockr.test-sort",
+      id: { package: "blockr.test", id: "sort" },
       description: "Sorts the row\n... [+92 chars truncated -- call describe_command for the full description]",
     });
-    expect(listed).toContainEqual({ id: "blockr.test-noop", description: "Do nothing" });
+    expect(listed).toContainEqual({ id: { package: "blockr.test", id: "noop" }, description: "Do nothing" });
   });
 });
 
 describe("describe_command", () => {
   test("gives the command's label, its description in full, the schema of its args, and whether it takes an undo step", async () => {
     const { core, tools } = await started({ blockrOptions: { assistant_description_max_chars: 10 } });
-    const command = core.commands.registered()["blockr.core-change_block"];
+    const command = core.commands.registered().get(core.id("blockr.core", "change_block"));
 
-    expect(parsed(await callTool(tools, "describe_command", { id: "blockr.core-change_block" }))).toEqual({
-      id: "blockr.core-change_block",
+    expect(parsed(await callTool(tools, "describe_command", { id: { package: "blockr.core", id: "change_block" } }))).toEqual({
+      id: { package: "blockr.core", id: "change_block" },
       label: command?.label,
       description: command?.description,
       args: command?.args,
@@ -63,22 +63,26 @@ describe("describe_command", () => {
 
   test("says of a command with `undo: false` and no args that it takes no undo step and no args", async () => {
     const { core, tools } = await started();
-    core.commands.register({ id: "blockr.test-noop", label: "Do nothing", undo: false, run: () => [] });
+    core.commands.register("blockr.test", { id: "noop", label: "Do nothing", undo: false, run: () => [] });
 
-    expect(parsed(await callTool(tools, "describe_command", { id: "blockr.test-noop" }))).toEqual({
-      id: "blockr.test-noop",
+    expect(parsed(await callTool(tools, "describe_command", { id: { package: "blockr.test", id: "noop" } }))).toEqual({
+      id: { package: "blockr.test", id: "noop" },
       label: "Do nothing",
       args: null,
       undo: false,
     });
   });
 
-  test("answers a command of the assistant's own, as one that the app lacks, with the tool that lists the commands", async () => {
+  test("answers a command of the assistant's own, as one that the app lacks or whose id core refuses, with the tool that lists the commands", async () => {
     const { tools } = await started();
 
-    for (const id of ["blockr.assistant-add_message", "blockr.core-fly"]) {
+    for (const id of [
+      { package: "blockr.assistant", id: "add_message" },
+      { package: "blockr.core", id: "fly" },
+      { package: "not a package", id: "fly" },
+    ]) {
       await expect(callTool(tools, "describe_command", { id })).resolves.toEqual({
-        text: `The app registers no command "${id}" that you may run. Call list_commands for those that it registers.`,
+        text: `The app registers no command "${id.package}::${id.id}" that you may run. Call list_commands for those that it registers.`,
         isError: true,
         images: [],
       });

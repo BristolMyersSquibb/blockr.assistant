@@ -9,13 +9,15 @@
 //   assistant's own state alone, so that a reader of a locked board still
 //   chats.
 // - A command that names a conversation fails its preflight where the state
-//   lacks that conversation. Both blockr.assistant-add_conversation and
-//   blockr.assistant-add_message fail theirs for an id that the state holds
-//   already, and so does blockr.assistant-compact_conversation for a summary
-//   whose id a message that it keeps has, which keeps the ids unique, as no
-//   schema can.
+//   lacks that conversation. Both add_conversation and add_message fail
+//   theirs for an id that the state holds already, and so does
+//   compact_conversation for a summary whose id a message that it keeps has,
+//   which keeps the ids unique, as no schema can.
 // - Each that cuts a conversation to `keep` messages drops its oldest
 //   exchanges, as messagesToDrop() counts them (../state/state.ts).
+// Each gives its id within the package, as "add_message", and core registers
+// it under the package of the assistant's plugin class, as
+// core.id("blockr.assistant", "add_message") names it.
 // Their descriptions and the schemas of their args describe them to menus and
 // to the assistant's tools.
 
@@ -63,7 +65,7 @@ function drops(conversation: ConversationId, count: number): Patch[] {
 
 export const assistantCommands: readonly Command<Json, unknown>[] = [
   command<AddConversation>({
-    id: "blockr.assistant-add_conversation",
+    id: "add_conversation",
     label: "Add conversation",
     description:
       "Adds a conversation that holds no message, under the id given, with its title, its pick of the model, or null for the default where that is left out, and its pick of the thinking level, which it lacks where that is null or left out. It fails its preflight for an id that a conversation has already.",
@@ -86,7 +88,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<{ readonly conversation: ConversationId; readonly title: string }>({
-    id: "blockr.assistant-rename_conversation",
+    id: "rename_conversation",
     label: "Rename conversation",
     description: "Gives a conversation a new title.",
     args: schemas.object({ conversation: schemas.conversation, title: schemas.title }, ["conversation", "title"]),
@@ -97,7 +99,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<{ readonly conversation: ConversationId }>({
-    id: "blockr.assistant-remove_conversation",
+    id: "remove_conversation",
     label: "Remove conversation",
     description: "Removes a conversation with its messages.",
     args: schemas.object({ conversation: schemas.conversation }, ["conversation"]),
@@ -106,7 +108,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<AddMessage>({
-    id: "blockr.assistant-add_message",
+    id: "add_message",
     label: "Add message",
     description:
       "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It fails its preflight for a message whose id a message of the conversation has.",
@@ -135,10 +137,10 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<{ readonly keep: number }>({
-    id: "blockr.assistant-trim_conversations",
+    id: "trim_conversations",
     label: "Trim conversations",
     description:
-      "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as blockr.assistant-add_message drops them.",
+      "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as add_message drops them.",
     args: schemas.object({ keep: schemas.keep("How many messages each conversation keeps.") }, ["keep"]),
     preflight: (board) => assistantState(board) !== undefined,
     run: (board, { keep }) => ({
@@ -149,7 +151,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<CompactConversation>({
-    id: "blockr.assistant-compact_conversation",
+    id: "compact_conversation",
     label: "Compact conversation",
     description:
       "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
@@ -177,7 +179,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<AddUsage>({
-    id: "blockr.assistant-add_usage",
+    id: "add_usage",
     label: "Add usage",
     description:
       "Adds a call's input and output tokens to a conversation's count, and keeps `total`, every token of the call, its cached input included, as the conversation's `last`. A call that leaves `total` out, as one that titles the conversation, leaves `last` as it was.",
@@ -200,7 +202,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<{ readonly conversation: ConversationId; readonly model: string | null }>({
-    id: "blockr.assistant-set_model",
+    id: "set_model",
     label: "Set model",
     description:
       "Sets a conversation's pick of the model, or removes it with null, after which the conversation talks to the default.",
@@ -212,7 +214,7 @@ export const assistantCommands: readonly Command<Json, unknown>[] = [
   }),
 
   command<{ readonly conversation: ConversationId; readonly thinking_level: ThinkingLevel | null }>({
-    id: "blockr.assistant-set_thinking_level",
+    id: "set_thinking_level",
     label: "Set thinking level",
     description:
       "Sets a conversation's pick of the thinking level, or removes it with null, after which the conversation's calls reason at the level that the deployment's model settings give the model, or else at the assistant's default.",

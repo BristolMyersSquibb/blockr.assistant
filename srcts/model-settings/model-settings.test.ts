@@ -2,7 +2,8 @@
 // blockr.core's CoreApi for tests, and on a stand-in for what of CoreApi they
 // read where a test needs a reply or a failure that the stub cannot play.
 
-import type { CoreApi, Json, Raised } from "@blockr/core";
+import type { CoreApi, Json, PluginClassId, Raised } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test, vi } from "vitest";
 import { requestNotifications, startAssistant } from "../testing/index.ts";
 import { createModelSettings } from "./index.ts";
@@ -25,17 +26,19 @@ const HELD = new Map([
 const inCatalog = (id: string): boolean => id === "claude-sonnet-5-5" || id === "gpt-5.4";
 
 // What of CoreApi the settings read, whose request() answers as `request` does,
-// and whose notify() records what it raises.
+// whose notify() records what it raises, and whose ids are those that the
+// stubs give, which are core's.
 function standIn(request: () => Promise<Json | Blob>) {
   const raised: Raised[] = [];
   const core = {
     request: vi.fn(request) as unknown as CoreApi["request"],
     notifications: {
-      notify: (_plugin: string, notification: Raised) => {
+      notify: (_plugin: PluginClassId, notification: Raised) => {
         raised.push(notification);
         return () => undefined;
       },
     },
+    id,
   };
   return { core, raised };
 }

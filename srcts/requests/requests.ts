@@ -23,7 +23,7 @@
 //   plugin reads R's error.
 
 import type { CoreApi, Json, Notification, RequestError, RequestOpts } from "@blockr/core";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
 
 // R's answer to one of the assistant's requests, and the notifications of R's
 // reply, which core handed the request's notifier: the messages and warnings
@@ -38,13 +38,13 @@ export interface Reply {
 // CoreApi.request() does, so that a reply of error rejects with its
 // conditions.
 export async function sendRequest(
-  core: { readonly request: CoreApi["request"] },
+  core: { readonly request: CoreApi["request"]; readonly id: CoreApi["id"] },
   name: string,
   args: Readonly<Record<string, Json>>,
   opts: Omit<RequestOpts, "notifier"> = {},
 ): Promise<Reply> {
   let notifications: readonly Notification[] = [];
-  const answer = await core.request(ASSISTANT, name, args, {
+  const answer = await core.request(assistantClassId(core), name, args, {
     ...opts,
     notifier: (given) => {
       notifications = given;
@@ -58,7 +58,7 @@ export async function sendRequest(
 // changes nothing in R, as core sends a request for a blockr option again.
 // It rejects as sendRequest() does otherwise, and once the signal aborts.
 export async function sendUntilReplied(
-  core: { readonly request: CoreApi["request"] },
+  core: { readonly request: CoreApi["request"]; readonly id: CoreApi["id"] },
   name: string,
   args: Readonly<Record<string, Json>>,
   opts: Omit<RequestOpts, "notifier"> = {},

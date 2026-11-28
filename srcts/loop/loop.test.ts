@@ -11,6 +11,7 @@
 // back run on pi's own code for OpenAI's Responses API, through the page's
 // fetch, which they stub.
 
+import { id } from "@blockr/core/stubs";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { Api, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
@@ -980,10 +981,10 @@ describe("the spans of a turn", () => {
     const recorded = recordSpans();
     // A board that holds the block a of a test package's class, which the
     // tool call reads.
-    const data = blockClass("blockr.test-data_block", { category: "input" });
+    const data = blockClass("data_block", { category: "input" });
     const stub = await startAssistant({
       blockClasses: [data],
-      board: { blocks: { a: { registry_id: data.id, state: {}, name: "Iris", locked: null } } },
+      board: { blocks: { a: { registry_id: id(data.package, data.id), state: {}, name: "Iris", locked: null } } },
       answers: { describe_result: ({ reads }) => Object.fromEntries(reads.map(({ block }) => [block, [`The result of ${block}.`]])) },
     });
     await stub.settled();

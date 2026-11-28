@@ -69,10 +69,11 @@
 //   says so at its end.
 // - The command /clear opens none, as the drawer's New does.
 // - The command /undo takes back the assistant's last undo step through
-//   core.store.undo("assistant"), as the tool undo_edit does, with no call to
-//   the model. The store gives that undo the origin assistant, so the chat
-//   runs it inside the notes' asUser(), and the note of what others changed
-//   counts it as the user's (../notes).
+//   core.store.undo() of the assistant's origin, the id of its plugin class,
+//   as the tool undo_edit does, with no call to the model. The store gives
+//   that undo the assistant's origin, so the chat runs it inside the notes'
+//   asUser(), and the note of what others changed counts it as the user's
+//   (../notes).
 // - The command /redo applies again what the last undo took back through
 //   core.store.redo(), as the frontend's Redo does, whoever took the step
 //   back. The store gives a redo the origin user.
@@ -93,9 +94,9 @@ import type { CoreApi } from "@blockr/core";
 import type { Assistant } from "../assistant/index.ts";
 import type { Picks } from "../conversations/index.ts";
 import type { Notes } from "../notes/index.ts";
-import { isNote, joinText } from "../state/index.ts";
+import { assistantClassId, isNote, joinText } from "../state/index.ts";
 import type { Conversation, ConversationId, Message, ThinkingLevel } from "../state/index.ts";
-import { failuresOf, ORIGIN } from "../tools/index.ts";
+import { failuresOf } from "../tools/index.ts";
 import type { Turns } from "../turns/index.ts";
 import { keyOf } from "../visitor-key/index.ts";
 import { addFiles, attachedOf, attachmentAdapter } from "./attach.ts";
@@ -457,10 +458,11 @@ const NO_MESSAGES: readonly Message[] = [];
 // Takes back the assistant's last undo step, as /undo asks, and gives what the
 // chat says of it, if anything.
 function undoAssistant(core: CoreApi, notes: Pick<Notes, "asUser">): string | undefined {
-  if (!core.store.canUndo(ORIGIN)) return "The assistant has no edit left to take back.";
+  const origin = assistantClassId(core);
+  if (!core.store.canUndo(origin)) return "The assistant has no edit left to take back.";
   try {
     notes.asUser(() => {
-      core.store.undo(ORIGIN);
+      core.store.undo(origin);
     });
     return undefined;
   } catch (error) {

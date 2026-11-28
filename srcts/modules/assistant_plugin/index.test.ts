@@ -5,31 +5,25 @@
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#testing).
 
 import type { CoreApi, Json } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import { id, stubCore } from "@blockr/core/stubs";
 import { expectedErrors } from "@blockr/ui/stubs";
 import { act } from "react";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { assistantOf, nextAssistant, openAssistant } from "../../assistant/index.ts";
 import type { AssistantState, Message, Role } from "../../state/index.ts";
-import { storedIn } from "../../testing/index.ts";
+import { HELLO_ASSISTANT, storedIn } from "../../testing/index.ts";
 import { reloadPageKey } from "../../visitor-key/index.ts";
 import * as assistant from "./index.tsx";
 
 // React warns where an update in a test runs outside act().
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ASSISTANT = "blockr.assistant-assistant_plugin";
+// The id of the assistant's plugin class.
+const ASSISTANT = id("blockr.assistant", "assistant_plugin");
 
 // R's reply to hello in an app that runs the assistant beside core's plugins,
 // with where R serves the module of the assistant's class, at version 1.
-const hello = {
-  ...HELLO,
-  packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-  plugins: {
-    ...HELLO.plugins,
-    [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" },
-  },
-};
+const hello = HELLO_ASSISTANT;
 
 // The same reply with a board that holds no block, so that core's basic
 // frontend draws no card, whose block's UI module the test would have to give.
@@ -47,7 +41,7 @@ function withState(state: AssistantState): typeof hello {
       ...empty.board,
       board: {
         ...empty.board.board,
-        plugins: { ...empty.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
+        plugins: { ...empty.board.board.plugins, "blockr.assistant": { assistant_plugin: { state, version: 1 } } },
       },
     },
   };
@@ -75,7 +69,7 @@ const three = withState({
 // gives one, and where R holds the blockr options given. Core stops as the
 // test finishes, and the page forgets the visitor's key, as a reload does.
 async function started(el?: HTMLElement, reply = hello, blockrOptions: Readonly<Record<string, Json>> = {}) {
-  const stubbed = await act(() => stubCore({ hello: reply, modules: { [ASSISTANT]: assistant }, el, blockrOptions }));
+  const stubbed = await act(() => stubCore({ hello: reply, offered: { "blockr.assistant": { assistant_plugin: assistant } }, el, blockrOptions }));
   onTestFinished(() => {
     act(stubbed.stop);
     reloadPageKey();
@@ -99,7 +93,7 @@ describe("the assistant's plugin class", () => {
 
     expect(core.plugins.pluginClass(ASSISTANT).ui).toBe(assistant.default.ui);
     expect(core.plugins.pluginClass(ASSISTANT).state).toBe(assistant.default.state);
-    expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
+    expect(core.store.board().plugins["blockr.assistant"]?.assistant_plugin).toEqual({ conversations: {} });
   });
 
   // The page imports the chat's libraries as the chat first mounts, and the
@@ -157,14 +151,14 @@ describe("the start of the assistant's plugin class", () => {
     const { core, settled } = await started(undefined, three, { chat_save_turns: 4 });
     await act(() => settled());
 
-    expect(conversationIn(core.store.board().plugins[ASSISTANT])).toEqual(["u2", "a2", "u3", "a3"]);
+    expect(conversationIn(core.store.board().plugins["blockr.assistant"]?.assistant_plugin)).toEqual(["u2", "a2", "u3", "a3"]);
   });
 
   test("moves every conversation out of the state where chat_save_turns is 0", async () => {
     const { core, settled } = await started(undefined, three, { chat_save_turns: "0" });
     await act(() => settled());
 
-    expect(core.store.board().plugins[ASSISTANT]).toEqual({ conversations: {} });
+    expect(core.store.board().plugins["blockr.assistant"]?.assistant_plugin).toEqual({ conversations: {} });
   });
 
   test("logs why the board's conversations cannot open, where chat_save_turns holds a value that the cap does not take", async () => {
@@ -172,7 +166,7 @@ describe("the start of the assistant's plugin class", () => {
     const { core, settled, logged } = await started(undefined, three, { chat_save_turns: null });
     await act(() => settled());
 
-    expect(conversationIn(core.store.board().plugins[ASSISTANT])).toHaveLength(6);
+    expect(conversationIn(core.store.board().plugins["blockr.assistant"]?.assistant_plugin)).toHaveLength(6);
     expect(logged.filter((line) => line.package === "blockr.assistant").map((line) => [line.level, line.message])).toEqual([
       ["error", "The blockr option chat_save_turns is null, where it takes a whole number of 0 or more, or -1 for every message."],
     ]);
@@ -192,7 +186,9 @@ describe("the start of the assistant's plugin class", () => {
   });
 
   test("lets the chat wait for the assistant that start opens, which a closed board's assistant does not stand in for", async () => {
-    const stubbed = await act(() => stubCore({ hello: empty, modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } } }));
+    const stubbed = await act(() =>
+      stubCore({ hello: empty, offered: { "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistant.default, start: undefined } } } } }),
+    );
     onTestFinished(() => {
       act(stubbed.stop);
     });

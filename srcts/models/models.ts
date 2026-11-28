@@ -118,7 +118,11 @@ export function resolveModel(offered: Offered, pick: string | null): string | un
   return pick !== null && offered.models.includes(pick) ? pick : offered.models[0];
 }
 
-export function createModels(core: { readonly notifications: Pick<CoreApi["notifications"], "notify"> }, signal: AbortSignal, options: ModelsOptions): Models {
+export function createModels(
+  core: { readonly notifications: Pick<CoreApi["notifications"], "notify">; readonly id: CoreApi["id"] },
+  signal: AbortSignal,
+  options: ModelsOptions,
+): Models {
   const modelsFailed = heldError(core, signal, "assistant_models_failed");
   const fetch: Fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const visitor = options.key;

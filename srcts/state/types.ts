@@ -1,5 +1,5 @@
 // The types of the assistant's state, which the board holds at
-// /plugins/blockr.assistant-assistant_plugin
+// /plugins/blockr.assistant/assistant_plugin
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#the-state).
 // The build generates the JSON Schema of the state from AssistantState and
 // writes it beside the class's module, as inst/js/assistant_plugin.schema.json.

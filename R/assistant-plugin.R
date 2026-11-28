@@ -2,8 +2,10 @@
 #'
 #' The assistant is a plugin whose agent loop runs in the browser.
 #' The constructor `new_assistant_plugin()` makes the plugin, of class
-#' `c("assistant_plugin", "plugin")`, whose plugin class has the id
-#' `blockr.assistant-assistant_plugin` (see [blockr.core::new_plugin()]).
+#' `c("assistant_plugin", "plugin")`, whose plugin class is `assistant_plugin`
+#' of blockr.assistant (see [blockr.core::new_plugin()]).
+#' Its id, as [blockr.core::plugin_class_id()] gives it, is
+#' `list(package = "blockr.assistant", id = "assistant_plugin")`.
 #'
 #' The plugin keeps the assistant's conversations in the board, which saves
 #' them with the rest of the board.
@@ -441,9 +443,11 @@
 #' A skill is a directory that holds a `SKILL.md`.
 #' The file's YAML frontmatter gives the skill's `name`, which is the
 #' directory's, and its `description`.
-#' It may name block classes by their registry ids in `blocks:`, plugin
-#' classes by their ids in `plugins:`, and the packages that the skill needs
-#' in `requires:`.
+#' It may name block classes in `blocks:` and plugin classes in `plugins:`,
+#' each by a mapping of the package that defines the class and the class's id
+#' within it, as `{package: blockr.core, id: subset_block}`.
+#' A block class that an app script defines has a `package` of `null`.
+#' It may name the packages that the skill needs in `requires:`.
 #' It may also set the flags `user-invocable` and `disable-model-invocation`.
 #'
 #' R lists the skills of each of the app's packages, from the package's
@@ -528,7 +532,9 @@ is_conversations <- function(x) {
     (!is.null(ids) && !anyNA(ids) && all(nzchar(ids)) && !anyDuplicated(ids))
 }
 
-# The print gives a line for each conversation, the last updated first, as the
+# The print names the plugin's class in its first line, as core's print of a
+# plugin does, as `assistant_plugin of blockr.assistant`.
+# It then gives a line for each conversation, the last updated first, as the
 # chat's drawer lists them.
 # The method sorts the times in `updated` as strings, by their bytes.
 # That sorts them by time where all of them have one form, such as the form
@@ -544,8 +550,12 @@ format.assistant_plugin <- function(x, ...) {
     order(updated, decreasing = TRUE, method = "radix")
   ]
 
+  class_id <- plugin_class_id(x)
+
   c(
-    paste0("<", class(x)[1L], "> ", plugin_class_id(x)),
+    paste0(
+      "<", class(x)[1L], "> ", class_id[["id"]], " of ", class_id[["package"]]
+    ),
     chr_mply(format_conversation, names(conversations), conversations)
   )
 }

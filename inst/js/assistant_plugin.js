@@ -353,9 +353,13 @@ var assistant_plugin_schema_default = {
 };
 
 // srcts/state/state.ts
-var ASSISTANT = "blockr.assistant-assistant_plugin";
+var PACKAGE = "blockr.assistant";
+var CLASS = "assistant_plugin";
+function assistantClassId(core) {
+  return core.id(PACKAGE, CLASS);
+}
 function assistantState(board) {
-  const state = board.plugins[ASSISTANT];
+  const state = board.plugins[PACKAGE]?.[CLASS];
   return isObject(state) && isObject(state.conversations) ? state : void 0;
 }
 function findConversation(board, id) {
@@ -363,7 +367,7 @@ function findConversation(board, id) {
   return conversations !== void 0 && Object.hasOwn(conversations, id) ? conversations[id] : void 0;
 }
 function at(...segments) {
-  return ["plugins", ASSISTANT, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
+  return ["plugins", PACKAGE, CLASS, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
 }
 var NEW_CONVERSATION = "New conversation";
 function newId() {
@@ -431,7 +435,7 @@ function heldError(core, signal, code, severity = "error") {
     raise(message2) {
       if (signal.aborted) return;
       withdraw?.();
-      withdraw = core.notifications.notify(ASSISTANT, { severity, code, message: message2 });
+      withdraw = core.notifications.notify(assistantClassId(core), { severity, code, message: message2 });
     },
     withdraw() {
       withdraw?.();
@@ -1705,7 +1709,6 @@ async function readCap(core) {
 }
 
 // srcts/conversations/conversations.ts
-var ORIGIN = "assistant";
 function createConversations(core, signal) {
   let cap;
   const memory = /* @__PURE__ */ new Map();
@@ -1756,18 +1759,18 @@ function createConversations(core, signal) {
     return read;
   });
   async function run(id, args) {
-    await core.commands.run(id, args, ORIGIN);
+    await core.commands.run(core.id(PACKAGE, id), args, assistantClassId(core));
   }
   async function open2(read) {
     const conversations = assistantState(core.store.board())?.conversations ?? {};
     if (read === 0) {
       for (const [id, conversation2] of Object.entries(conversations)) memory.set(id, conversation2);
       changed();
-      await Promise.all(Object.keys(conversations).map((id) => run("blockr.assistant-remove_conversation", { conversation: id })));
+      await Promise.all(Object.keys(conversations).map((id) => run("remove_conversation", { conversation: id })));
       return;
     }
     if (!Object.values(conversations).some((conversation2) => messagesToDrop(conversation2.messages, read) > 0)) return;
-    const done = run("blockr.assistant-trim_conversations", { keep: read });
+    const done = run("trim_conversations", { keep: read });
     for (const [id, conversation2] of Object.entries(conversations)) keepCut(id, conversation2.messages);
     await done;
   }
@@ -1838,7 +1841,7 @@ function createConversations(core, signal) {
     },
     async addConversation(id, title2, { model: model2, thinkingLevel: thinkingLevel2 } = { model: null }) {
       if (await capped !== 0) {
-        await run("blockr.assistant-add_conversation", { id, title: title2, model: model2, ...thinkingLevel2 === void 0 ? {} : { thinking_level: thinkingLevel2 } });
+        await run("add_conversation", { id, title: title2, model: model2, ...thinkingLevel2 === void 0 ? {} : { thinking_level: thinkingLevel2 } });
         return;
       }
       if (memory.has(id)) throw new Error(`The plugin's memory holds a conversation "${id}" already.`);
@@ -1847,14 +1850,14 @@ function createConversations(core, signal) {
     },
     async renameConversation(conversation2, title2) {
       if (await capped !== 0) {
-        await run("blockr.assistant-rename_conversation", { conversation: conversation2, title: title2 });
+        await run("rename_conversation", { conversation: conversation2, title: title2 });
         return;
       }
       change(conversation2, (held) => ({ ...held, title: title2 }));
     },
     async removeConversation(conversation2) {
       if (await capped !== 0) {
-        await run("blockr.assistant-remove_conversation", { conversation: conversation2 });
+        await run("remove_conversation", { conversation: conversation2 });
         return;
       }
       if (!memory.delete(conversation2)) throw new Error(`The plugin's memory holds no conversation "${conversation2}".`);
@@ -1867,7 +1870,7 @@ function createConversations(core, signal) {
       try {
         if (read !== 0) {
           const before = findConversation(core.store.board(), conversation2)?.messages ?? [];
-          const done = run("blockr.assistant-add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
+          const done = run("add_message", { conversation: conversation2, message: message2, ...read === Infinity ? {} : { keep: read } });
           keepCut(conversation2, before);
           await done;
         } else {
@@ -1889,7 +1892,7 @@ function createConversations(core, signal) {
       if (read === 0) {
         change(conversation2, (inMemory) => ({ ...inMemory, messages: compacted(inMemory.messages, summary2, from, conversation2) }));
       } else if (held === void 0 || holdsMessage(held, from)) {
-        await run("blockr.assistant-compact_conversation", { conversation: conversation2, summary: summary2, from });
+        await run("compact_conversation", { conversation: conversation2, summary: summary2, from });
         if (older.delete(conversation2)) changed();
       } else {
         const cut2 = older.get(conversation2) ?? [];
@@ -1901,21 +1904,21 @@ function createConversations(core, signal) {
     },
     async addUsage(conversation2, input, output, total) {
       if (await capped !== 0) {
-        await run("blockr.assistant-add_usage", { conversation: conversation2, input, output, ...total === void 0 ? {} : { total } });
+        await run("add_usage", { conversation: conversation2, input, output, ...total === void 0 ? {} : { total } });
         return;
       }
       change(conversation2, (held) => ({ ...held, usage: addedUsage(held.usage, input, output, total) }));
     },
     async setModel(conversation2, model2) {
       if (await capped !== 0) {
-        await run("blockr.assistant-set_model", { conversation: conversation2, model: model2 });
+        await run("set_model", { conversation: conversation2, model: model2 });
         return;
       }
       change(conversation2, (held) => ({ ...held, model: model2 }));
     },
     async setThinkingLevel(conversation2, level2) {
       if (await capped !== 0) {
-        await run("blockr.assistant-set_thinking_level", { conversation: conversation2, thinking_level: level2 });
+        await run("set_thinking_level", { conversation: conversation2, thinking_level: level2 });
         return;
       }
       change(conversation2, (held) => withThinkingLevel(held, level2));
@@ -2806,7 +2809,7 @@ function convertToolResult(result, isError) {
 // srcts/requests/requests.ts
 async function sendRequest(core, name, args, opts = {}) {
   let notifications = [];
-  const answer = await core.request(ASSISTANT, name, args, {
+  const answer = await core.request(assistantClassId(core), name, args, {
     ...opts,
     notifier: (given2) => {
       notifications = given2;
@@ -2971,64 +2974,38 @@ function shown2(value) {
   return JSON.stringify(one(value) ?? value);
 }
 
-// srcts/prompt/describe.ts
-var MODULE = "assistant";
-function createDescribe(core, signal) {
-  const failed2 = /* @__PURE__ */ new Map();
-  const failure = (plugin) => {
-    const held = failed2.get(plugin) ?? heldError(core, signal, "assistant_describe_failed");
-    failed2.set(plugin, held);
-    return held;
-  };
-  return async () => {
-    const plugins2 = Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT);
-    const loaded2 = await Promise.all(plugins2.map(([id]) => offered(core, moduleId(id))));
-    const states = core.store.board().plugins;
-    return plugins2.flatMap(([id, { name }], index) => {
-      const found = loaded2[index];
-      try {
-        const lines = found === void 0 ? [] : linesOf(found, id, Object.hasOwn(states, id) ? states[id] ?? null : null);
-        failed2.get(id)?.withdraw();
-        return lines.length === 0 ? [] : [{ plugin: id, name, lines }];
-      } catch (error) {
-        failure(id).raise(`The Board section leaves out what the plugin ${name} says about its state. ${error instanceof Error ? error.message : String(error)}`);
-        return [];
-      }
-    });
-  };
+// srcts/ids/ids.ts
+function idRecord(id) {
+  return { package: id.package, id: id.id };
 }
-function moduleId(plugin) {
-  return `${plugin.slice(0, plugin.indexOf("-"))}-${MODULE}`;
+function idForModel(id) {
+  return id.package === null ? id.id : `${id.package}::${id.id}`;
 }
-async function offered(core, id) {
+function idText(id) {
+  return id.package === null ? id.id : `${id.id} of ${id.package}`;
+}
+function idOf(core, record2) {
   try {
-    return { id, exports: await core.module(id) };
+    return core.id(record2.package, record2.id);
   } catch (error) {
-    return error instanceof Error && error.name === "ModuleError" ? { id, error } : void 0;
+    if (error instanceof TypeError) return void 0;
+    throw error;
   }
 }
-function linesOf(found, plugin, state) {
-  if ("error" in found) throw found.error;
-  const given2 = isRecord4(found.exports) ? found.exports.default : void 0;
-  const describe = isRecord4(given2) ? given2.describe : void 0;
-  if (typeof describe !== "function") throw new Error(`The module ${found.id} gives no function describe() in its default export.`);
-  let lines;
-  try {
-    lines = describe.call(given2, plugin, state);
-  } catch (error) {
-    throw new Error(`The describe() of the module ${found.id} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-  }
-  if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) {
-    throw new Error(`The describe() of the module ${found.id} returned ${shown3(lines)}, where it returns an array of strings.`);
-  }
-  return lines;
-}
-function shown3(value) {
-  const text3 = JSON.stringify(value) ?? String(value);
-  return text3.length > 100 ? `${text3.slice(0, 100)}\u2026` : text3;
-}
-function isRecord4(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function idSchema(description, nullable = false) {
+  return {
+    type: "object",
+    properties: {
+      package: {
+        type: nullable ? ["string", "null"] : "string",
+        description: nullable ? `The package, as "blockr.core", or null for what the app's script defines.` : 'The package, as "blockr.core".'
+      },
+      id: { type: "string", description: 'The id within the package, as "add_block".' }
+    },
+    required: ["package", "id"],
+    additionalProperties: false,
+    description
+  };
 }
 
 // srcts/tools/caps.ts
@@ -3063,126 +3040,6 @@ async function readToolCap(core, name) {
   if (Number.isInteger(value) && value >= 0) return value;
   throw new RangeError(`The blockr option ${name} is ${JSON.stringify(sent3)}, where it takes a whole number of 0 or more.`);
 }
-
-// srcts/tools/cut.ts
-function cutText(text3, max, hint) {
-  const chars = Array.from(text3);
-  if (chars.length <= max) return text3;
-  const marker = (lost) => `
-... [+${String(lost)} chars truncated${hint === void 0 ? "" : ` -- ${hint}`}]`;
-  const keep2 = Math.max(0, max - Array.from(marker(chars.length)).length);
-  return chars.slice(0, keep2).join("") + marker(chars.length - keep2);
-}
-function leaveOutLong(value, max, hint) {
-  if (typeof value === "string") {
-    return Array.from(JSON.stringify(value)).length > max ? `[${String(Array.from(value).length)} chars omitted -- ${hint}]` : value;
-  }
-  if (Array.isArray(value)) return value.map((item) => leaveOutLong(item, max, hint));
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, leaveOutLong(item, max, hint)]));
-  }
-  return value;
-}
-function bounded(value, max) {
-  let budget = max;
-  const spend = (text3) => {
-    const kept = cutText(text3, Math.max(0, budget));
-    budget -= Array.from(kept).length;
-    return kept;
-  };
-  const walk = (item) => {
-    if (typeof item === "string") return spend(item);
-    if (Array.isArray(item)) return item.map(walk);
-    if (item !== null && typeof item === "object") {
-      return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, walk(inner)]));
-    }
-    const text3 = JSON.stringify(item);
-    if (text3.length <= budget) {
-      budget -= text3.length;
-      return item;
-    }
-    return spend(text3);
-  };
-  return walk(value);
-}
-function skillBlurb(name, description, max) {
-  return cutText(description.replace(/\s+/g, " ").trim(), max, `call read_skill("${name}") for the rest`);
-}
-
-// srcts/tools/context.ts
-function own(record2, key) {
-  return Object.hasOwn(record2, key) ? record2[key] : void 0;
-}
-async function skillsNaming(context6, kind, id) {
-  const [listed3, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
-  return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
-}
-
-// srcts/tools/changes.ts
-var ORIGIN2 = "assistant";
-var OWN_STATE = at();
-function hear(core) {
-  const heard = [];
-  let last = core.store.board();
-  const stop = core.store.subscribe((change, board) => {
-    const before = last;
-    last = board;
-    if (!("delta" in change) || change.origin !== ORIGIN2 || ownStateOnly(change.delta)) return;
-    heard.push({ delta: change.delta, before, after: board });
-  });
-  return { heard: () => heard, stop };
-}
-function changedBlocks(heard) {
-  const changed = /* @__PURE__ */ new Set();
-  const add = (id) => {
-    if (id !== void 0) changed.add(id);
-  };
-  for (const { delta, before, after } of heard) {
-    for (const id of Object.keys(delta.blocks?.add ?? {})) add(id);
-    for (const [id, mod] of Object.entries(delta.blocks?.mod ?? {})) {
-      if (mod.state !== void 0 || mod.unset !== void 0) add(id);
-    }
-    for (const link of Object.values(delta.links?.add ?? {})) add(link.to);
-    for (const id of delta.links?.rm ?? []) add(own(before.links, id)?.to);
-    for (const id of Object.keys(delta.links?.mod ?? {})) {
-      add(own(before.links, id)?.to);
-      add(own(after.links, id)?.to);
-    }
-  }
-  return [...changed];
-}
-function addedAndRemoved(heard) {
-  const first = heard[0];
-  const last = heard.at(-1);
-  if (first === void 0 || last === void 0) return { added: {}, removed: {} };
-  return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
-}
-function missing(board, other) {
-  const ids = {};
-  for (const kind of ["blocks", "links", "stacks"]) {
-    const lacking = Object.keys(board[kind]).filter((id) => !Object.hasOwn(other[kind], id));
-    if (lacking.length > 0) ids[kind] = lacking;
-  }
-  return ids;
-}
-function ownStateOnly(delta) {
-  const patches = delta.patches ?? [];
-  return holds(delta).every((part) => part === "patches") && patches.length > 0 && patches.every(({ path }) => path === OWN_STATE || path.startsWith(`${OWN_STATE}/`));
-}
-function holds(delta) {
-  return Object.entries(delta).filter(([, part]) => holdsChange(part)).map(([key]) => key);
-}
-function holdsChange(part) {
-  if (typeof part === "string") return true;
-  if (Array.isArray(part)) return part.length > 0;
-  if (part === null || typeof part !== "object") return false;
-  return Object.values(part).some(
-    (member) => Array.isArray(member) ? member.length > 0 : member !== null && typeof member === "object" && Object.keys(member).length > 0
-  );
-}
-
-// srcts/tools/edit.ts
-import { context as context4 } from "@opentelemetry/api";
 
 // srcts/commands/command.ts
 function command(definition) {
@@ -3252,7 +3109,7 @@ function referenced(value) {
 }
 
 // srcts/commands/commands.ts
-function holds2(board, conversation2) {
+function holds(board, conversation2) {
   return findConversation(board, conversation2) !== void 0;
 }
 function drops(conversation2, count) {
@@ -3260,7 +3117,7 @@ function drops(conversation2, count) {
 }
 var assistantCommands = [
   command({
-    id: "blockr.assistant-add_conversation",
+    id: "add_conversation",
     label: "Add conversation",
     description: "Adds a conversation that holds no message, under the id given, with its title, its pick of the model, or null for the default where that is left out, and its pick of the thinking level, which it lacks where that is null or left out. It fails its preflight for an id that a conversation has already.",
     args: object(
@@ -3281,25 +3138,25 @@ var assistantCommands = [
     })
   }),
   command({
-    id: "blockr.assistant-rename_conversation",
+    id: "rename_conversation",
     label: "Rename conversation",
     description: "Gives a conversation a new title.",
     args: object({ conversation, title }, ["conversation", "title"]),
-    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2, title: title2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "title"), value: title2 }]
     })
   }),
   command({
-    id: "blockr.assistant-remove_conversation",
+    id: "remove_conversation",
     label: "Remove conversation",
     description: "Removes a conversation with its messages.",
     args: object({ conversation }, ["conversation"]),
-    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2 }) => ({ patches: [{ op: "remove", path: at("conversations", conversation2) }] })
   }),
   command({
-    id: "blockr.assistant-add_message",
+    id: "add_message",
     label: "Add message",
     description: "Adds a finished message at the end of a conversation, and sets the conversation's `updated` to the message's `created`. Where `keep` is given, it then drops the conversation's oldest exchanges until `keep` messages or fewer are left, counting no note of what others changed in the board. An exchange starts at a message that the user sent, or at a summary, and the last exchange is never dropped, however many messages it holds. It fails its preflight for a message whose id a message of the conversation has.",
     args: object(
@@ -3326,9 +3183,9 @@ var assistantCommands = [
     }
   }),
   command({
-    id: "blockr.assistant-trim_conversations",
+    id: "trim_conversations",
     label: "Trim conversations",
-    description: "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as blockr.assistant-add_message drops them.",
+    description: "Drops the oldest exchanges of every conversation until `keep` messages or fewer are left of each, as add_message drops them.",
     args: object({ keep: keep("How many messages each conversation keeps.") }, ["keep"]),
     preflight: (board) => assistantState(board) !== void 0,
     run: (board, { keep: keep2 }) => ({
@@ -3338,7 +3195,7 @@ var assistantCommands = [
     })
   }),
   command({
-    id: "blockr.assistant-compact_conversation",
+    id: "compact_conversation",
     label: "Compact conversation",
     description: "Puts a summary in place of the messages of a conversation before `from`, the first message that it keeps. It fails its preflight where the conversation no longer holds `from`.",
     args: object(
@@ -3364,7 +3221,7 @@ var assistantCommands = [
     }
   }),
   command({
-    id: "blockr.assistant-add_usage",
+    id: "add_usage",
     label: "Add usage",
     description: "Adds a call's input and output tokens to a conversation's count, and keeps `total`, every token of the call, its cached input included, as the conversation's `last`. A call that leaves `total` out, as one that titles the conversation, leaves `last` as it was.",
     args: object(
@@ -3376,7 +3233,7 @@ var assistantCommands = [
       },
       ["conversation", "input", "output"]
     ),
-    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (board, { conversation: conversation2, input, output, total }) => {
       const usage = findConversation(board, conversation2)?.usage ?? { input: 0, output: 0, last: 0 };
       return {
@@ -3385,21 +3242,21 @@ var assistantCommands = [
     }
   }),
   command({
-    id: "blockr.assistant-set_model",
+    id: "set_model",
     label: "Set model",
     description: "Sets a conversation's pick of the model, or removes it with null, after which the conversation talks to the default.",
     args: object({ conversation, model }, ["conversation", "model"]),
-    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (_board, { conversation: conversation2, model: model2 }) => ({
       patches: [{ op: "replace", path: at("conversations", conversation2, "model"), value: model2 }]
     })
   }),
   command({
-    id: "blockr.assistant-set_thinking_level",
+    id: "set_thinking_level",
     label: "Set thinking level",
     description: "Sets a conversation's pick of the thinking level, or removes it with null, after which the conversation's calls reason at the level that the deployment's model settings give the model, or else at the assistant's default.",
     args: object({ conversation, thinking_level: thinkingLevel }, ["conversation", "thinking_level"]),
-    preflight: (board, { conversation: conversation2 }) => holds2(board, conversation2),
+    preflight: (board, { conversation: conversation2 }) => holds(board, conversation2),
     run: (board, { conversation: conversation2, thinking_level: level2 }) => {
       const path = at("conversations", conversation2, "thinking_level");
       if (level2 !== null) return { patches: [{ op: "add", path, value: level2 }] };
@@ -3407,6 +3264,129 @@ var assistantCommands = [
     }
   })
 ];
+
+// srcts/tools/cut.ts
+function cutText(text3, max, hint) {
+  const chars = Array.from(text3);
+  if (chars.length <= max) return text3;
+  const marker = (lost) => `
+... [+${String(lost)} chars truncated${hint === void 0 ? "" : ` -- ${hint}`}]`;
+  const keep2 = Math.max(0, max - Array.from(marker(chars.length)).length);
+  return chars.slice(0, keep2).join("") + marker(chars.length - keep2);
+}
+function leaveOutLong(value, max, hint) {
+  if (typeof value === "string") {
+    return Array.from(JSON.stringify(value)).length > max ? `[${String(Array.from(value).length)} chars omitted -- ${hint}]` : value;
+  }
+  if (Array.isArray(value)) return value.map((item) => leaveOutLong(item, max, hint));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, leaveOutLong(item, max, hint)]));
+  }
+  return value;
+}
+function bounded(value, max) {
+  let budget = max;
+  const spend = (text3) => {
+    const kept = cutText(text3, Math.max(0, budget));
+    budget -= Array.from(kept).length;
+    return kept;
+  };
+  const walk = (item) => {
+    if (typeof item === "string") return spend(item);
+    if (Array.isArray(item)) return item.map(walk);
+    if (item !== null && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, walk(inner)]));
+    }
+    const text3 = JSON.stringify(item);
+    if (text3.length <= budget) {
+      budget -= text3.length;
+      return item;
+    }
+    return spend(text3);
+  };
+  return walk(value);
+}
+function skillBlurb(name, description, max) {
+  return cutText(description.replace(/\s+/g, " ").trim(), max, `call read_skill("${name}") for the rest`);
+}
+
+// srcts/tools/context.ts
+function own(record2, key) {
+  return Object.hasOwn(record2, key) ? record2[key] : void 0;
+}
+function assistantCommandIds(core) {
+  return new Set(assistantCommands.map((command2) => core.id(PACKAGE, command2.id)));
+}
+async function skillsNaming(context6, kind, id) {
+  const [listed3, max] = await Promise.all([context6.skills.list(), readToolCap(context6.core, "assistant_skill_description_max_chars")]);
+  return listed3.filter((skill) => skill.modelInvocable && skill[kind].includes(id)).map((skill) => ({ name: skill.name, description: skillBlurb(skill.name, skill.description, max) }));
+}
+
+// srcts/tools/edit.ts
+import { context as context4 } from "@opentelemetry/api";
+
+// srcts/tools/changes.ts
+var OWN_STATE = at();
+function hear(core) {
+  const heard = [];
+  const origin = assistantClassId(core);
+  let last = core.store.board();
+  const stop = core.store.subscribe((change, board) => {
+    const before = last;
+    last = board;
+    if (!("delta" in change) || change.origin !== origin || ownStateOnly(change.delta)) return;
+    heard.push({ delta: change.delta, before, after: board });
+  });
+  return { heard: () => heard, stop };
+}
+function changedBlocks(heard) {
+  const changed = /* @__PURE__ */ new Set();
+  const add = (id) => {
+    if (id !== void 0) changed.add(id);
+  };
+  for (const { delta, before, after } of heard) {
+    for (const id of Object.keys(delta.blocks?.add ?? {})) add(id);
+    for (const [id, mod] of Object.entries(delta.blocks?.mod ?? {})) {
+      if (mod.state !== void 0 || mod.unset !== void 0) add(id);
+    }
+    for (const link of Object.values(delta.links?.add ?? {})) add(link.to);
+    for (const id of delta.links?.rm ?? []) add(own(before.links, id)?.to);
+    for (const id of Object.keys(delta.links?.mod ?? {})) {
+      add(own(before.links, id)?.to);
+      add(own(after.links, id)?.to);
+    }
+  }
+  return [...changed];
+}
+function addedAndRemoved(heard) {
+  const first = heard[0];
+  const last = heard.at(-1);
+  if (first === void 0 || last === void 0) return { added: {}, removed: {} };
+  return { added: missing(last.after, first.before), removed: missing(first.before, last.after) };
+}
+function missing(board, other) {
+  const ids = {};
+  for (const kind of ["blocks", "links", "stacks"]) {
+    const lacking = Object.keys(board[kind]).filter((id) => !Object.hasOwn(other[kind], id));
+    if (lacking.length > 0) ids[kind] = lacking;
+  }
+  return ids;
+}
+function ownStateOnly(delta) {
+  const patches = delta.patches ?? [];
+  return holds2(delta).every((part) => part === "patches") && patches.length > 0 && patches.every(({ path }) => path === OWN_STATE || path.startsWith(`${OWN_STATE}/`));
+}
+function holds2(delta) {
+  return Object.entries(delta).filter(([, part]) => holdsChange(part)).map(([key]) => key);
+}
+function holdsChange(part) {
+  if (typeof part === "string") return true;
+  if (Array.isArray(part)) return part.length > 0;
+  if (part === null || typeof part !== "object") return false;
+  return Object.values(part).some(
+    (member) => Array.isArray(member) ? member.length > 0 : member !== null && typeof member === "object" && Object.keys(member).length > 0
+  );
+}
 
 // srcts/tools/failures.ts
 function failureText(error) {
@@ -3437,13 +3417,13 @@ function noStack(id) {
   return `The board holds no stack "${id}". Call list_stacks for the stacks that it holds.`;
 }
 function noBlockType(id) {
-  return `The app offers no block class "${id}". Call list_block_types for those that it offers.`;
+  return `The app offers no block class "${idForModel(id)}". Call list_block_types for those that it offers.`;
 }
 function noCommand(id) {
-  return `The app registers no command "${id}" that you may run. Call list_commands for those that it registers.`;
+  return `The app registers no command "${idForModel(id)}" that you may run. Call list_commands for those that it registers.`;
 }
 function noPlugin(id) {
-  return `The app runs no plugin "${id}" that you may read. Call list_plugins for those that it runs.`;
+  return `The app runs no plugin "${idForModel(id)}" that you may read. Call list_plugins for those that it runs.`;
 }
 function noSkill(name) {
   return `No skill named "${name}" is available here. The Skills section of the system prompt lists the skills that name no class, and describe_block_type, describe_block and get_plugin_state list those that name one.`;
@@ -3693,11 +3673,10 @@ function closed(what) {
 }
 
 // srcts/tools/edit.ts
-var OWN = new Set(assistantCommands.map((command2) => command2.id));
-var SET_PLUGIN_STATE = "blockr.core-set_plugin_state";
-var OWN_STATE2 = `Only the assistant's chat and loop change the assistant's conversations, so an edit sets no state of the plugin "${ASSISTANT}".`;
+var SET_PLUGIN_STATE = { package: "blockr.core", id: "set_plugin_state" };
+var OWN_STATE2 = `Only the assistant's chat and loop change the assistant's conversations, so an edit sets no state of the plugin "${idForModel({ package: PACKAGE, id: CLASS })}".`;
 var HINT = "Check that each block, link, stack and plugin that the args name is on the board, and each board option is defined, with list_blocks, list_links, list_stacks, list_plugins or list_board_options, and that a block that a new link goes to has a free data input, with describe_block.";
-var LOCKED_HINT = "The board is locked, which may be why: on a locked board, blockr.core-set_plugin_state fails its preflight, and a plugin's own commands fail theirs for what the plugin locks.";
+var LOCKED_HINT = `The board is locked, which may be why: on a locked board, ${idForModel(SET_PLUGIN_STATE)} fails its preflight, and a plugin's own commands fail theirs for what the plugin locks.`;
 var STOPPED_PREPARING = "The user stopped the turn while a command of the list prepared. The commands applied all the same, but the tool reviewed nothing, so do not run them again.";
 var NOTHING_TO_UNDO = "The assistant has no edit left to take back, so the tool changed nothing. Tell the user that there is nothing to undo.";
 var UNDID_NOTHING = "The undo changed nothing, since what the edit changed is no longer on the board.";
@@ -3705,6 +3684,8 @@ var CHANGED_NOTHING = "The commands changed nothing on the board, so there is no
 var EDIT_DESCRIPTION = "Change the board by running a list of commands, each by its id with its args, as one step: either every command applies, or none does. Apart from undo_edit, this is the only tool that changes the board. List the commands with list_commands, and read the args that one takes with describe_command. Each command is planned on the board that the commands before it leave, so one edit can add a block, link it and show its panel. Make each edit one change that the user would take back as one, since the user's Undo takes back a whole edit, as undo_edit does. Where a command refuses, nothing applies, and the result gives the command's index in the list, counted from 0, its id, why it refused and, where it fails its preflight, what to check. Then change the args or the commands, rather than sending the same list again. On a locked board, where the lock refuses a command, tell the user what the lock refuses, rather than trying to make the change another way. Once the commands apply, the tool evaluates the blocks that the edit added or whose state or links it changed, every block downstream of them and the blocks that feed them, and returns a review of them, the changed blocks first. For each block, the review gives its status, why it is `invalid` or `waiting` where it is, the conditions that appeared since the edit began, what blockr writes about its result, and, for a block that the edit added, its state. Check the review against what the user asked. Where the edit left a block `failed`, `invalid` or `waiting`, correct it with another edit, rather than reporting the change as done. A changed block that produced no result is marked as unverified: do not report it as done. The review names the blocks, links and stacks that the edit added or removed, and says in its notes how many blocks it left out. Where it left blocks out, say that you have not checked them, rather than reporting the change as verified. Its `undo_step` says whether undo_edit can take the edit back. An undo never takes back a board option's value, or what a command whose `undo` is false changes, such as the active view. So an edit that changes nothing else takes no undo step.";
 var UNDO_DESCRIPTION = "Take back the assistant's last edit that took an undo step, when the user asks for that. The undo is a new edit on the board as it is now, so it keeps what the user changed after the edit, but sets back what both the user and the edit changed to its value before the edit. The tool returns a review of what the undo changed, as edit does. The edit that it takes back may come from another of the assistant's conversations, so tell the user what the undo took back, as the review shows it, rather than taking for granted that it was your own last edit. Where the assistant has no edit left to take back, the tool changes nothing and says so. On a locked board, where the lock refuses the undo, tell the user what the lock refuses, rather than trying to take the edit back another way.";
 function editTools(core, board) {
+  const own2 = assistantCommandIds(core);
+  const origin = assistantClassId(core);
   return [
     tool({
       name: "edit",
@@ -3716,7 +3697,7 @@ function editTools(core, board) {
             minItems: 1,
             items: object(
               {
-                command: { type: "string", description: "The command's id, as list_commands gives it." },
+                command: idSchema("The command's id, as list_commands gives it."),
                 args: {
                   type: "object",
                   description: "The command's args, which the JSON Schema that describe_command gives types. Leave it out for a command that takes none."
@@ -3733,7 +3714,7 @@ function editTools(core, board) {
       run: async ({ commands }, signal) => {
         const active = context4.active();
         const caps = await reviewCaps(core);
-        const refused2 = refusedAhead(core, commands);
+        const refused2 = refusedAhead(core, commands, own2);
         if (refused2 !== void 0) return refused2;
         signal.throwIfAborted();
         const before = conditionsNow(core);
@@ -3744,8 +3725,11 @@ function editTools(core, board) {
           undoStep = await context4.with(
             active,
             () => core.commands.run(
-              commands.map(({ command: command2, args }) => args === void 0 ? { id: command2 } : { id: command2, args }),
-              ORIGIN2,
+              commands.map(({ command: command2, args }) => {
+                const id = core.id(command2.package, command2.id);
+                return args === void 0 ? { id } : { id, args };
+              }),
+              origin,
               { notifier: dropNotifications }
             )
           );
@@ -3771,12 +3755,12 @@ function editTools(core, board) {
         const active = context4.active();
         const caps = await reviewCaps(core);
         signal.throwIfAborted();
-        if (!core.store.canUndo(ORIGIN2)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
+        if (!core.store.canUndo(origin)) return json({ applied: false, notes: [NOTHING_TO_UNDO] });
         const before = conditionsNow(core);
         const hearing = hear(core);
         try {
           context4.with(active, () => {
-            core.store.undo(ORIGIN2, { notifier: dropNotifications });
+            core.store.undo(origin, { notifier: dropNotifications });
           });
         } catch (error) {
           return refusedResult({ applied: false, failures: failuresOf(error) });
@@ -3790,13 +3774,20 @@ function editTools(core, board) {
     })
   ];
 }
-function refusedAhead(core, commands) {
+function refusedAhead(core, commands, own2) {
   const registered = core.commands.registered();
+  const setPluginState = core.id(SET_PLUGIN_STATE.package, SET_PLUGIN_STATE.id);
   for (const [index, { command: command2, args }] of commands.entries()) {
-    const failure = command2 === SET_PLUGIN_STATE && args?.plugin === ASSISTANT ? OWN_STATE2 : OWN.has(command2) || own(registered, command2) === void 0 ? noCommand(command2) : void 0;
+    const id = idOf(core, command2);
+    const failure = id === setPluginState && namesAssistant(args?.plugin) ? OWN_STATE2 : id === void 0 || own2.has(id) || !registered.has(id) ? noCommand(command2) : void 0;
     if (failure !== void 0) return refusedResult({ applied: false, index, command: command2, failures: [failure] });
   }
   return void 0;
+}
+function namesAssistant(plugin) {
+  if (typeof plugin !== "object" || plugin === null || Array.isArray(plugin)) return false;
+  const { package: pkg, id } = plugin;
+  return pkg === PACKAGE && id === CLASS;
 }
 function refusedList(core, commands, error, stopped) {
   const notes = stopped ? { notes: ["The user stopped the turn while the commands ran."] } : {};
@@ -3883,8 +3874,8 @@ function blockTypeTools(context6) {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          Object.values(core.blockRegistry()).map((entry) => ({
-            id: entry.id,
+          [...core.blockRegistry()].map(([id, entry]) => ({
+            id: idRecord(id),
             name: entry.name,
             category: entry.category,
             inputs: [...entry.inputs],
@@ -3896,14 +3887,15 @@ function blockTypeTools(context6) {
     tool({
       name: "describe_block_type",
       description: "Describe one block class in full: its name, its category, its description and guidance, its data inputs, the JSON Schema that a block's state has to fit and the skills that name the class. The schema gives the type and the description of each argument of a block's state. A skill named here is more specific than the guidance and wins where the two differ; load one with read_skill.",
-      parameters: object({ id: { type: "string", description: "The registry id of the block class, as list_block_types gives it." } }, ["id"]),
-      run: async ({ id }) => {
-        if (own(core.blockRegistry(), id) === void 0) throw new Error(noBlockType(id));
+      parameters: object({ id: idSchema("The registry id of the block class, as list_block_types gives it.", true) }, ["id"]),
+      run: async ({ id: given2 }) => {
+        const id = idOf(core, given2);
+        if (id === void 0 || !core.blockRegistry().has(id)) throw new Error(noBlockType(given2));
         const skills = await skillsNaming(context6, "blocks", id);
-        const entry = own(core.blockRegistry(), id);
-        if (entry === void 0) throw new Error(noBlockType(id));
+        const entry = core.blockRegistry().get(id);
+        if (entry === void 0) throw new Error(noBlockType(given2));
         const described = {
-          id,
+          id: idRecord(id),
           name: entry.name,
           category: entry.category,
           description: entry.description,
@@ -3940,7 +3932,7 @@ function blockTools(context6) {
             Object.entries(blocks).map(([id, block]) => ({
               id,
               name: block.name,
-              registry_id: block.registry_id,
+              registry_id: idRecord(block.registry_id),
               status: core.scheduler.status(id)?.status ?? null
             }))
           )
@@ -3967,7 +3959,7 @@ function blockTools(context6) {
         const described = {
           id,
           name: block.name,
-          registry_id: block.registry_id,
+          registry_id: idRecord(block.registry_id),
           status: status?.status ?? null,
           ...reason === null ? {} : { reason },
           ...unsent === null ? {} : { unsent },
@@ -3975,7 +3967,7 @@ function blockTools(context6) {
           ...summary2 === null ? {} : { summary: summary2 },
           conditions: conditionList(status?.conditions ?? []),
           ...skills.length === 0 ? {} : { skills },
-          inputs: [...own(core.blockRegistry(), block.registry_id)?.inputs ?? []],
+          inputs: [...core.blockRegistry().get(block.registry_id)?.inputs ?? []],
           links: Object.entries(board.links).filter(([, link]) => link.to === id).map(([link, { from, input }]) => ({ id: link, from, input })),
           state: leaveOutLong(block.state, valueMax, STATE_HINT2)
         };
@@ -4015,9 +4007,9 @@ function blockTools(context6) {
 }
 
 // srcts/tools/commands.ts
-var OWN2 = new Set(assistantCommands.map((command2) => command2.id));
 function commandTools({ core }) {
-  const offered2 = () => Object.values(core.commands.registered()).filter((command2) => !OWN2.has(command2.id));
+  const own2 = assistantCommandIds(core);
+  const offered2 = () => [...core.commands.registered()].filter(([id]) => !own2.has(id));
   return [
     tool({
       name: "list_commands",
@@ -4026,8 +4018,8 @@ function commandTools({ core }) {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          offered2().map((command2) => ({
-            id: command2.id,
+          offered2().map(([id, command2]) => ({
+            id: idRecord(id),
             description: cutText(command2.description ?? command2.label, max, "call describe_command for the full description")
           }))
         );
@@ -4036,13 +4028,14 @@ function commandTools({ core }) {
     tool({
       name: "describe_command",
       description: "Describe one command in full: its label, its description, the JSON Schema of its args, with a description of each arg, and `undo`, which is false where the command takes no undo step.",
-      parameters: object({ id: { type: "string", description: "The command's id, as list_commands gives it." } }, ["id"]),
-      run: ({ id }) => {
-        const command2 = OWN2.has(id) ? void 0 : own(core.commands.registered(), id);
-        if (command2 === void 0) throw new Error(noCommand(id));
+      parameters: object({ id: idSchema("The command's id, as list_commands gives it.") }, ["id"]),
+      run: ({ id: given2 }) => {
+        const id = idOf(core, given2);
+        const command2 = id === void 0 || own2.has(id) ? void 0 : core.commands.registered().get(id);
+        if (id === void 0 || command2 === void 0) throw new Error(noCommand(given2));
         return Promise.resolve(
           json({
-            id,
+            id: idRecord(id),
             label: command2.label,
             ...command2.description === void 0 ? {} : { description: command2.description },
             args: command2.args ?? null,
@@ -4059,7 +4052,7 @@ function optionTools({ core }) {
   return [
     tool({
       name: "list_board_options",
-      description: "List every board option that the app's packages define, such as the rows that a table shows, each with its id, its label, its category and the JSON Schema of its value, and the value that the board holds, where it holds one. The board holds the value of each board option that something on the page uses, its default where nobody set one, and blockr.core-set_option sets any board option, on a locked board too.",
+      description: "List every board option that the app's packages define, such as the rows that a table shows, each with its id, its label, its category and the JSON Schema of its value, and the value that the board holds, where it holds one. The board holds the value of each board option that something on the page uses, its default where nobody set one, and blockr.core::set_option sets any board option, on a locked board too.",
       parameters: object({}, []),
       run: () => Promise.resolve(
         json(
@@ -4083,10 +4076,12 @@ function optionTools({ core }) {
 // srcts/tools/plugins.ts
 function pluginTools(context6) {
   const { core } = context6;
-  const named2 = (id) => {
-    const plugin = id === ASSISTANT ? void 0 : own(core.plugins.appPlugins(), id);
-    if (plugin === void 0) throw new Error(noPlugin(id));
-    return plugin.name;
+  const assistant = assistantClassId(core);
+  const named2 = (given2) => {
+    const id = idOf(core, given2);
+    const plugin = id === void 0 || id === assistant ? void 0 : core.plugins.appPlugins().get(id);
+    if (id === void 0 || plugin === void 0) throw new Error(noPlugin(given2));
+    return { id, name: plugin.name };
   };
   const schema = (id) => core.plugins.pluginClass(id).state?.schema ?? null;
   return [
@@ -4097,10 +4092,10 @@ function pluginTools(context6) {
       run: async () => {
         const max = await readToolCap(core, "assistant_description_max_chars");
         return json(
-          Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT).map(([id, { name }]) => {
+          [...core.plugins.appPlugins()].filter(([id]) => id !== assistant).map(([id, { name }]) => {
             const described = core.plugins.pluginClass(id).state?.schema.description;
             return {
-              id,
+              id: idRecord(id),
               name,
               ...typeof described === "string" ? { description: cutText(described, max, "call get_plugin_state for the full description") } : {}
             };
@@ -4110,16 +4105,16 @@ function pluginTools(context6) {
     }),
     tool({
       name: "get_plugin_state",
-      description: "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core-set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
-      parameters: object({ id: { type: "string", description: "The id of the plugin's class, as list_plugins gives it." } }, ["id"]),
-      run: async ({ id }) => {
-        named2(id);
+      description: "Give one plugin's state, with the JSON Schema that describes it, whose descriptions say what each part means, and the skills that name the plugin's class. The plugin's own commands change its state, and so does blockr.core::set_plugin_state, by that schema. A skill named here says how to use the plugin; load one with read_skill.",
+      parameters: object({ id: idSchema("The id of the plugin's class, as list_plugins gives it.") }, ["id"]),
+      run: async ({ id: given2 }) => {
+        const { id } = named2(given2);
         const [skills, max] = await Promise.all([skillsNaming(context6, "plugins", id), readToolCap(core, "assistant_state_max_chars")]);
-        const name = named2(id);
+        const { name } = named2(given2);
         const described = {
-          id,
+          id: idRecord(id),
           name,
-          state: bounded(own(core.store.board().plugins, id) ?? null, max),
+          state: bounded(own(own(core.store.board().plugins, id.package) ?? {}, id.id) ?? null, max),
           schema: schema(id),
           ...skills.length === 0 ? {} : { skills }
         };
@@ -4234,6 +4229,65 @@ function readTools(core, skills) {
   ];
 }
 
+// srcts/prompt/describe.ts
+var MODULE = "assistant";
+function createDescribe(core, signal) {
+  const failed2 = /* @__PURE__ */ new Map();
+  const failure = (plugin) => {
+    const held = failed2.get(plugin) ?? heldError(core, signal, "assistant_describe_failed");
+    failed2.set(plugin, held);
+    return held;
+  };
+  return async () => {
+    const assistant = assistantClassId(core);
+    const plugins2 = [...core.plugins.appPlugins()].filter(([id]) => id !== assistant);
+    const loaded2 = await Promise.all(plugins2.map(([id]) => offered(core, core.id(id.package, MODULE))));
+    const states = core.store.board().plugins;
+    return plugins2.flatMap(([id, { name }], index) => {
+      const found = loaded2[index];
+      try {
+        const lines = found === void 0 ? [] : linesOf(found, id, own(own(states, id.package) ?? {}, id.id) ?? null);
+        failed2.get(id)?.withdraw();
+        return lines.length === 0 ? [] : [{ plugin: id, name, lines }];
+      } catch (error) {
+        failure(id).raise(`The Board section leaves out what the plugin ${name} says about its state. ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }
+    });
+  };
+}
+async function offered(core, id) {
+  try {
+    return { id, exports: await core.module(id) };
+  } catch (error) {
+    return error instanceof Error && error.name === "ModuleError" ? { id, error } : void 0;
+  }
+}
+function linesOf(found, plugin, state) {
+  if ("error" in found) throw found.error;
+  const named2 = idText(found.id);
+  const given2 = isRecord4(found.exports) ? found.exports.default : void 0;
+  const describe = isRecord4(given2) ? given2.describe : void 0;
+  if (typeof describe !== "function") throw new Error(`The module ${named2} gives no function describe() in its default export.`);
+  let lines;
+  try {
+    lines = describe.call(given2, plugin, state);
+  } catch (error) {
+    throw new Error(`The describe() of the module ${named2} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) {
+    throw new Error(`The describe() of the module ${named2} returned ${shown3(lines)}, where it returns an array of strings.`);
+  }
+  return lines;
+}
+function shown3(value) {
+  const text3 = JSON.stringify(value) ?? String(value);
+  return text3.length > 100 ? `${text3.slice(0, 100)}\u2026` : text3;
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // srcts/prompt/app-preamble.md
 var app_preamble_default = "This message comes from the app, not from the user.\n";
 
@@ -4297,10 +4351,11 @@ function boardSection(core, max, changed = [], plugins2 = []) {
   return lines.join("\n");
 }
 function pluginPart({ plugin, name, lines }) {
+  const id = idForModel(plugin);
   return {
-    heading: `### ${name} (id: ${plugin})`,
+    heading: `### ${name} (id: ${id})`,
     lines,
-    rest: (shown4) => shown4 === lines.length ? void 0 : `${more(lines.length - shown4, shown4, "line")}: get_plugin_state("${plugin}") gives the plugin's state`
+    rest: (shown4) => shown4 === lines.length ? void 0 : `${more(lines.length - shown4, shown4, "line")}: get_plugin_state(${id}) gives the plugin's state`
   };
 }
 function fill(part, room) {
@@ -4362,7 +4417,7 @@ function linksInto(links) {
   return into;
 }
 function blockLine(id, block, status, into) {
-  const line = withMarkers(`- ${id} <${block.registry_id}>${joinNames(Object.keys(block.state))}`, status);
+  const line = withMarkers(`- ${id} <${idForModel(block.registry_id)}>${joinNames(Object.keys(block.state))}`, status);
   if (into.length === 0) return line;
   const fed = into.map(([link, { from, input }]) => `${input === "" ? "" : `${input}: `}${from} (${link})`);
   return `${line} <- ${fed.join(", ")}`;
@@ -4398,9 +4453,10 @@ function focusSection(core) {
     else if (held.length > 0 && seen.length === held.length) lines.push("Every block on the board is on screen.");
     else if (seen.length > 0) lines.push("These blocks are on screen:", ...seen.map((id) => `- ${id}`));
     const plugins2 = core.plugins.appPlugins();
+    const assistant = assistantClassId(core);
     const named2 = [...new Set(shown4.plugins)].flatMap((id) => {
-      const plugin = id === ASSISTANT || !Object.hasOwn(plugins2, id) ? void 0 : plugins2[id];
-      return plugin === void 0 ? [] : [`- ${plugin.name} (id: ${id})`];
+      const plugin = id === assistant ? void 0 : plugins2.get(id);
+      return plugin === void 0 ? [] : [`- ${plugin.name} (id: ${idForModel(id)})`];
     });
     if (named2.length > 0) lines.push("These plugins are on screen:", ...named2);
   }
@@ -4416,20 +4472,21 @@ function pluginsSection(core, max) {
   return parts.length === 0 ? void 0 : ["## Plugins and board options", ...parts].join("\n");
 }
 function pluginLines(core) {
-  return Object.entries(core.plugins.appPlugins()).filter(([id]) => id !== ASSISTANT).flatMap(([id, { name }]) => {
+  const assistant = assistantClassId(core);
+  return [...core.plugins.appPlugins()].filter(([id]) => id !== assistant).flatMap(([id, { name }]) => {
     const described = core.plugins.pluginClass(id).state?.schema.description;
-    const line = `- ${name} (id: ${id})`;
+    const line = `- ${name} (id: ${idForModel(id)})`;
     return typeof described === "string" && described.trim() !== "" ? [line, `  ${described.replace(/\s+/g, " ").trim()}`] : [line];
   });
 }
 function optionLines(core) {
   const options = Object.values(core.options.registered());
   if (options.length === 0) return [];
-  return [...options.map(({ id, category }) => `- ${id} (${category})`), "Current values via list_board_options; change with blockr.core-set_option."];
+  return [...options.map(({ id, category }) => `- ${id} (${category})`), "Current values via list_board_options; change with blockr.core::set_option."];
 }
 
 // srcts/prompt/rules.md
-var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then what the app's plugins say about their state.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
+var rules_default = "## What the app sends you\n\nBefore each of your calls, the app adds a message of its own after the conversation's last message.\nThat message shows the board as it is at that moment, in its Board section, and what the user has on screen, in its Focus section.\n\nThe Board section holds the whole board only where the board fits the section's cap.\nOtherwise it lists first what your call most likely needs: the blocks that failed or are invalid, the block that has focus, the blocks that you or others changed since your previous call, and the blocks on screen.\nThe rest of the blocks follow in the board's order, then the stacks of the blocks listed, and then what the app's plugins say about their state.\nEach block's line ends with the links into it, after `<-`, each as the input that it feeds, the block that it comes from, and its id in parentheses.\nWhere the cap cuts a list, its last line counts what the section left out and names the tool that gives it.\nSo a block that the section does not list may still be on the board: read it with that tool, rather than taking it for absent.\n\nA request that names no block, such as \"this plot\" or \"add a filter here\", is most likely about the block that has focus, and otherwise about a block on screen.\nFocus can be old, so where the request fits that block poorly, or plainly names another, go with the request.\n\nWhere others changed the board's blocks, links or stacks since your previous call, the app also adds a note before that message.\nThe note says what changed, and who changed it: the user, the assistant in another conversation, or a plugin.\nUnlike the board, the note stays in the conversation.\nWhat the user changed is what the user wants.\nSo build on it, rather than putting back what the user removed or took back, unless the user asks for that.\n\n## Ids of classes and commands\n\nThe app names each block class, plugin class and command by the package that gives it and its id within that package.\nA text, such as the Board section, writes the two as `package::id`, as in `blockr.core::head_block`.\nThe tools and the args of a command take and give the same id as an object of the two, as `{\"package\": \"blockr.core\", \"id\": \"head_block\"}`.\nSo write each id that you read in a text as such an object in a call.\nA block class that the app's script defines has no package: a text gives it by its id alone, and an object gives it the package `null`.\n\n## Statuses\n\nA block in the Board section carries a status marker whenever it holds no current result:\n\n- It reads `waiting` where something keeps it from running, such as a data input that no link feeds, or a block upstream that is `failed`, `invalid` or `waiting`.\n- It reads `invalid` where its state is not valid yet, such as a required argument that is not set.\n- It reads `failed` where its evaluation raised an error, or could not be sent to R.\n- It reads `unevaluated` before its first evaluation.\n- It reads `stale` where something that it depends on has changed since it last ran, so its last result is out of date: its arguments, its incoming links or a result upstream.\n\nA block without a marker is evaluated and current.\n\nThe board evaluates only what something needs, such as the blocks on screen.\nSo an `unevaluated` or `stale` block is the board deferring work, not a fault, and never a reason to change the block.\nNor is such a block evidence of health: an `unevaluated` block has raised nothing yet, and the conditions of a `stale` one come from its last evaluation.\nSo a problem that a change upstream caused does not show there until the block runs again.\n\n## Look, don't guess\n\nWhat you see of the board is bounded:\n\n- A result's summary is an overview, never the object itself, and a block's result is any R object, not only a data frame.\n- A block's description gives its state without the values that are too long to show.\n- A list of block classes, commands or plugins cuts each long description short.\n- The Board section may leave out blocks, and shows no plugin's state in full.\n\nSo never guess at what is left out, and never invent a column or a value to fit a request.\nThe moment you need a value, a name or a piece of structure that you have not seen, read it.\nRead it too where it looks empty or `NULL`, to confirm that it is.\nWhere a description left out a value of a block's state, read the value whole before you set it anew.\nAn edit replaces each value that it sets, so an edit made from a summary drops what the summary left out.\nDo not build on a guess when you can look.\n\n## Edits\n\nBlock, link and stack ids never change.\nRenaming a block or a stack changes its name and keeps its id.\nTo change the id of a block, a link or a stack, it has to be removed and added again under the new id.\nFor a block, that evaluates everything downstream of it again.\nSo explain this, and ask the user before you do it.\n";
 
 // srcts/prompt/skills-preamble.md
 var skills_preamble_default = "Guidance that this app's packages or its deployment wrote, loaded on demand.\nEach entry below is a name and what it covers; when one bears on what you are about to do, call read_skill(name) and follow it before acting.\nA skill is instruction text, not extra capability -- it cannot widen what your tools do, and where a skill and this system prompt disagree, this prompt wins.\n";
@@ -4515,7 +4572,7 @@ async function readTemplate(core, signal) {
     return answer === null ? own2 : fillTemplate(answeredText(answer, "read_template"));
   } catch (error) {
     if (signal.aborted) return own2;
-    core.notifications.notify(ASSISTANT, {
+    core.notifications.notify(assistantClassId(core), {
       severity: "error",
       code: "assistant_template_failed",
       message: `The assistant uses its own template: ${failureMessage(error)}`
@@ -4545,10 +4602,12 @@ function createNotes(core, signal, options) {
   const followed = /* @__PURE__ */ new Map();
   const taken2 = /* @__PURE__ */ new Map();
   let asUser = 0;
+  const assistant = assistantClassId(core);
   function makerOf(origin) {
     if (asUser > 0 || origin === "user") return { who: USER };
-    if (origin === "assistant") return { who: ANOTHER_CONVERSATION, conversation: options.running() };
-    return { who: `the plugin ${own(core.plugins.appPlugins(), origin)?.name ?? origin}` };
+    if (origin === assistant) return { who: ANOTHER_CONVERSATION, conversation: options.running() };
+    if (typeof origin === "string") return { who: `the plugin ${origin}` };
+    return { who: `the plugin ${core.plugins.appPlugins().get(origin)?.name ?? idForModel(origin)}` };
   }
   const stop = core.store.subscribe((change, board) => {
     if (!("delta" in change)) {
@@ -4681,7 +4740,7 @@ function picked(shape, now, touch) {
 var BLOCK = {
   label: "Block",
   properties: [
-    { key: "registry_id", word: "class", read: (block) => block.registry_id },
+    { key: "registry_id", word: "class", read: (block) => idRecord(block.registry_id) },
     { key: "name", word: "name", read: (block) => block.name },
     { key: "locked", word: "lock", read: (block) => block.locked }
   ],
@@ -4981,10 +5040,10 @@ function createSkills(core, signal) {
 async function listSkills(core, signal) {
   try {
     const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
-    return skillsOf(answer);
+    return skillsOf(core, answer);
   } catch (error) {
     if (signal.aborted) return [];
-    core.notifications.notify(ASSISTANT, {
+    core.notifications.notify(assistantClassId(core), {
       severity: "error",
       code: "assistant_skills_failed",
       message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`
@@ -4992,7 +5051,7 @@ async function listSkills(core, signal) {
     return [];
   }
 }
-function skillsOf(reply) {
+function skillsOf(core, reply) {
   if (!Array.isArray(reply)) throw new TypeError("R's reply to list_skills is not a list of skills.");
   return reply.map((entry) => {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -5002,12 +5061,30 @@ function skillsOf(reply) {
     return {
       name: one2(fields, "name"),
       description: one2(fields, "description"),
-      blocks: answeredTexts(fields.blocks, "list_skills"),
-      plugins: answeredTexts(fields.plugins, "list_skills"),
+      blocks: classIds(core, fields, "blocks"),
+      plugins: classIds(core, fields, "plugins"),
       userInvocable: flag2(fields, "user-invocable"),
       modelInvocable: !flag2(fields, "disable-model-invocation")
     };
   });
+}
+function classIds(core, fields, name) {
+  const given2 = fields[name];
+  if (!Array.isArray(given2)) {
+    throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(given2 ?? null)}, where it gives a list of classes.`);
+  }
+  return given2.map((entry) => {
+    const record2 = entry !== null && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+    const pkg = record2.package === null && name === "blocks" ? null : single(record2.package);
+    const id = single(record2.id);
+    if (pkg === void 0 || id === void 0 || Object.keys(record2).length !== 2) {
+      throw new TypeError(`R's reply to list_skills gives a class of a skill's ${name} as ${JSON.stringify(entry)}, where it gives the class's package and id.`);
+    }
+    return core.id(pkg, id);
+  });
+}
+function single(value) {
+  return Array.isArray(value) && value.length === 1 && typeof value[0] === "string" ? value[0] : void 0;
 }
 function one2(fields, name) {
   const [value, ...rest] = answeredTexts(fields[name], "list_skills");
@@ -6370,7 +6447,7 @@ function same(a, b) {
 import { useNotified } from "@blockr/core/react";
 import { jsx as jsx7 } from "react/jsx-runtime";
 function Notifications({ core }) {
-  const notifications = useNotified(core, { plugin: ASSISTANT });
+  const notifications = useNotified(core, { plugin: assistantClassId(core) });
   return /* @__PURE__ */ jsx7("div", { className: "blockr-assistant-notifications", "aria-live": "polite", children: notifications.length === 0 ? null : /* @__PURE__ */ jsx7("ul", { "aria-label": "Notifications", children: notifications.map(({ id, severity, message: message2 }) => /* @__PURE__ */ jsx7("li", { className: "blockr-assistant-notification", "data-severity": severity, children: plainText(message2) }, id)) }) });
 }
 var ANSI = /(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
@@ -6538,12 +6615,13 @@ function isShownResult(value) {
 }
 
 // srcts/chat/edit.ts
-function editView(args, text3, error, registered, board) {
-  const commands = listed2(args).map((id) => labelOf(id, registered));
+function editView(args, text3, error, core, board) {
+  const commands = listed2(args).map((id) => labelOf(id, core));
   const result = parsed(text3);
   if (result === void 0) return { commands, blocks: [], refused: void 0 };
   if (result.applied === false && error) {
-    const command2 = typeof result.command === "string" ? labelOf(result.command, registered) : void 0;
+    const refusing = idRecordOf(result.command);
+    const command2 = refusing === void 0 ? void 0 : labelOf(refusing, core);
     return { commands, blocks: [], refused: { command: command2, failures: strings(result.failures) } };
   }
   const blocks = Object.entries(object2(result.blocks)).map(([id, entry]) => {
@@ -6559,12 +6637,18 @@ function listed2(args) {
   const commands = object2(args).commands;
   if (!Array.isArray(commands)) return [];
   return commands.flatMap((entry) => {
-    const id = object2(entry).command;
-    return typeof id === "string" ? [id] : [];
+    const id = idRecordOf(object2(entry).command);
+    return id === void 0 ? [] : [id];
   });
 }
-function labelOf(id, registered) {
-  return Object.hasOwn(registered, id) ? registered[id]?.label ?? id : id;
+function labelOf(record2, core) {
+  const id = idOf(core, record2);
+  const command2 = id === void 0 ? void 0 : core.commands.registered().get(id);
+  return command2?.label ?? idText(record2);
+}
+function idRecordOf(value) {
+  const { package: pkg, id } = object2(value);
+  return typeof pkg === "string" && typeof id === "string" ? { package: pkg, id } : void 0;
 }
 function nameOf(id, board) {
   const block = Object.hasOwn(board.blocks, id) ? board.blocks[id] : void 0;
@@ -6626,7 +6710,7 @@ function ToolRow({ row }) {
 function Edits({ calls }) {
   const { core } = useChatActions();
   const board = useBoard(core);
-  const views = calls.map((call) => editView(call.args, call.result?.text, call.error, core.commands.registered(), board));
+  const views = calls.map((call) => editView(call.args, call.result?.text, call.error, core, board));
   const commands = views.flatMap((view) => view.commands);
   const blocks = /* @__PURE__ */ new Map();
   for (const view of views) for (const block of view.blocks) blocks.set(block.id, block);
@@ -7099,10 +7183,11 @@ function Chat({ core, assistant }) {
 }
 var NO_MESSAGES = [];
 function undoAssistant(core, notes) {
-  if (!core.store.canUndo(ORIGIN2)) return "The assistant has no edit left to take back.";
+  const origin = assistantClassId(core);
+  if (!core.store.canUndo(origin)) return "The assistant has no edit left to take back.";
   try {
     notes.asUser(() => {
-      core.store.undo(ORIGIN2);
+      core.store.undo(origin);
     });
     return void 0;
   } catch (error) {

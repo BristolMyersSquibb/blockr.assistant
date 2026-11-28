@@ -4,22 +4,23 @@
 // feeds the head block b, the subset block d and the scatter block f.
 
 import type { Board, Condition, CoreApi } from "@blockr/core";
+import { id } from "@blockr/core/stubs";
 import { describe, expect, test } from "vitest";
 import { blockClass, callTool, requestNotifications, skillsHolding, startAssistant } from "../testing/index.ts";
 import type { StartOptions } from "../testing/index.ts";
 import { readTools } from "./index.ts";
 
-const DATA = blockClass("blockr.test-data_block", { category: "input" });
-const HEAD = blockClass("blockr.test-head_block", { inputs: ["data"] });
-const SUBSET = blockClass("blockr.test-subset_block", { inputs: ["data"] });
-const SCATTER = blockClass("blockr.test-scatter_block", { inputs: ["data"] });
+const DATA = blockClass("data_block", { category: "input" });
+const HEAD = blockClass("head_block", { inputs: ["data"] });
+const SUBSET = blockClass("subset_block", { inputs: ["data"] });
+const SCATTER = blockClass("scatter_block", { inputs: ["data"] });
 
 const BOARD = {
   blocks: {
-    a: { registry_id: DATA.id, state: {}, name: "Iris", locked: null },
-    b: { registry_id: HEAD.id, state: {}, name: "Head", locked: null },
-    d: { registry_id: SUBSET.id, state: {}, name: "Wide sepals", locked: null },
-    f: { registry_id: SCATTER.id, state: {}, name: "Scatter", locked: null },
+    a: { registry_id: id("blockr.test", "data_block"), state: {}, name: "Iris", locked: null },
+    b: { registry_id: id("blockr.test", "head_block"), state: {}, name: "Head", locked: null },
+    d: { registry_id: id("blockr.test", "subset_block"), state: {}, name: "Wide sepals", locked: null },
+    f: { registry_id: id("blockr.test", "scatter_block"), state: {}, name: "Scatter", locked: null },
   },
   links: {
     ab: { from: "a", to: "b", input: "data" },

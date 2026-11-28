@@ -1,6 +1,6 @@
-// The module of the assistant's plugin class,
-// blockr.assistant-assistant_plugin, which blockr.assistant lists in R with
-// the class's id. Its default export is the class without its id
+// The module of the assistant's plugin class, assistant_plugin of
+// blockr.assistant, which blockr.assistant lists in R with the class's id.
+// Its default export is the class without its id
 // (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#a-plugin).
 // - The class keeps the assistant's state, its conversations, which
 //   ../../state defines. It gives core the schema of the state, which the
@@ -10,7 +10,7 @@
 //   names one of core's objects
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.4.3#the-schema-the-default-and-the-version).
 // - It gives core the assistant's commands, which ../../commands defines and
-//   core registers with the class.
+//   core registers with the class, under the class's package.
 // - Its start opens the assistant of the board that opens (../../assistant),
 //   so that a turn goes on once the panel closes
 //   (https://github.com/BristolMyersSquibb/blockr/wiki/Rewrite-1.1.12#running-a-plugin).

@@ -11,18 +11,32 @@
 //   never drops the last exchange, however many messages that holds. So what
 //   is left starts on a message that the user sent, or on a summary.
 
-import type { Board, Json } from "@blockr/core";
+import type { Board, CoreApi, Json, PluginClassId } from "@blockr/core";
 import type { AssistantState, Conversation, ConversationId, Message, MessageId, ThinkingLevel, Usage } from "./types.ts";
 
-// The id of the assistant's plugin class, under which the board holds the
-// assistant's state, at /plugins/blockr.assistant-assistant_plugin.
-export const ASSISTANT = "blockr.assistant-assistant_plugin";
+// The package of the assistant's plugin class, under which core registers the
+// assistant's commands too.
+export const PACKAGE = "blockr.assistant";
+
+// The id of the assistant's plugin class within its package. The board holds
+// the assistant's state under the package and this id, at
+// /plugins/blockr.assistant/assistant_plugin.
+export const CLASS = "assistant_plugin";
+
+// The id of the assistant's plugin class, as core gives it. It names the
+// assistant's plugin to core, as in notify() and request(), and it is the
+// origin of the assistant's steps, as a plugin names its own steps by the id
+// of its class. Core gives the same object for the pair each time, so ===
+// tells it among the ids that core gives.
+export function assistantClassId(core: Pick<CoreApi, "id">): PluginClassId {
+  return core.id(PACKAGE, CLASS);
+}
 
 // The assistant's state on the board, or undefined where the board holds
 // none, as where the app does not run the assistant. The store has checked
 // the state against its schema.
 export function assistantState(board: Board): AssistantState | undefined {
-  const state = board.plugins[ASSISTANT];
+  const state = board.plugins[PACKAGE]?.[CLASS];
   return isObject(state) && isObject(state.conversations) ? (state as AssistantState) : undefined;
 }
 
@@ -36,7 +50,7 @@ export function findConversation(board: Board, id: ConversationId): Conversation
 // The JSON Pointer from the board's root to the segments given, inside the
 // assistant's state.
 export function at(...segments: string[]): string {
-  return ["plugins", ASSISTANT, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
+  return ["plugins", PACKAGE, CLASS, ...segments].map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
 }
 
 // The title of a conversation that the chat adds, until a model call titles

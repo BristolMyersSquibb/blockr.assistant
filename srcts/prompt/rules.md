@@ -19,6 +19,14 @@ Unlike the board, the note stays in the conversation.
 What the user changed is what the user wants.
 So build on it, rather than putting back what the user removed or took back, unless the user asks for that.
 
+## Ids of classes and commands
+
+The app names each block class, plugin class and command by the package that gives it and its id within that package.
+A text, such as the Board section, writes the two as `package::id`, as in `blockr.core::head_block`.
+The tools and the args of a command take and give the same id as an object of the two, as `{"package": "blockr.core", "id": "head_block"}`.
+So write each id that you read in a text as such an object in a call.
+A block class that the app's script defines has no package: a text gives it by its id alone, and an object gives it the package `null`.
+
 ## Statuses
 
 A block in the Board section carries a status marker whenever it holds no current result:

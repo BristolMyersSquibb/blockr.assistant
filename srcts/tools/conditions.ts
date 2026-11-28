@@ -22,7 +22,7 @@ import { readToolCap } from "./caps.ts";
 import { cutText } from "./cut.ts";
 
 // What of CoreApi a tool's request reads.
-type Core = Pick<CoreApi, "request" | "blockrOption">;
+type Core = Pick<CoreApi, "request" | "blockrOption" | "id">;
 
 // Sends the request `name` of a tool, as sendRequest() does. Where R replies
 // error with warnings or messages, it rejects with R's error followed by them.

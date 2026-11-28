@@ -7,7 +7,7 @@
 // the assistant's class without its start, which would open the board's own.
 
 import type { CoreApi } from "@blockr/core";
-import { HELLO, stubCore } from "@blockr/core/stubs";
+import { stubCore } from "@blockr/core/stubs";
 import { expectedWarnings } from "@blockr/ui/stubs";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
@@ -19,12 +19,11 @@ import { heldError } from "../notifications/index.ts";
 // eslint-disable-next-line no-restricted-imports
 import * as assistant from "../modules/assistant_plugin/index.tsx";
 import type { AssistantState, Conversation, Message, Part } from "../state/index.ts";
-import { FAUX_API, fauxLoop, testCatalogs } from "../testing/index.ts";
+import { FAUX_API, fauxLoop, HELLO_ASSISTANT, testCatalogs } from "../testing/index.ts";
 import { createTurns } from "../turns/index.ts";
 import { createVisitorKey } from "../visitor-key/index.ts";
 import { buildExcerpt, normalizeTitle, TITLE_PROMPT, titleConversations } from "./titles.ts";
 
-const ASSISTANT = "blockr.assistant-assistant_plugin";
 const CREATED = "2026-11-16T08:00:00.000Z";
 
 function message(id: string, role: Message["role"], ...parts: Part[]): Message {
@@ -77,21 +76,19 @@ async function opened(replies: FauxResponseStep[]) {
   };
   const stubbed = await stubCore({
     hello: {
-      ...HELLO,
-      packages: { ...HELLO.packages, "blockr.assistant": "0.2.0" },
-      plugins: { ...HELLO.plugins, [ASSISTANT]: { name: "Assistant", version: 1, module: "blockr.assistant/js/assistant_plugin.js" } },
+      ...HELLO_ASSISTANT,
       board: {
-        ...HELLO.board,
+        ...HELLO_ASSISTANT.board,
         board: {
-          ...HELLO.board.board,
+          ...HELLO_ASSISTANT.board.board,
           blocks: {},
           links: {},
           stacks: {},
-          plugins: { ...HELLO.board.board.plugins, [ASSISTANT]: { state, version: 1 } },
+          plugins: { ...HELLO_ASSISTANT.board.board.plugins, "blockr.assistant": { assistant_plugin: { state, version: 1 } } },
         },
       },
     },
-    modules: { [ASSISTANT]: { api: 1, default: { ...assistant.default, start: undefined } } },
+    offered: { "blockr.assistant": { assistant_plugin: { api: 1, default: { ...assistant.default, start: undefined } } } },
   });
   const controller = new AbortController();
   onTestFinished(() => {
@@ -131,7 +128,7 @@ async function opened(replies: FauxResponseStep[]) {
 }
 
 function inState(core: CoreApi, id: string): Conversation | undefined {
-  return (core.store.board().plugins[ASSISTANT] as AssistantState).conversations[id];
+  return (core.store.board().plugins["blockr.assistant"]?.assistant_plugin as AssistantState).conversations[id];
 }
 
 describe("the titles of the conversations", () => {
@@ -176,7 +173,7 @@ describe("the titles of the conversations", () => {
     await vi.waitFor(() => {
       expect(faux.state.callCount).toBe(2);
     });
-    await core.commands.run("blockr.assistant-rename_conversation", { conversation: "c1", title: "My blocks" }, "user");
+    await core.commands.run(core.id("blockr.assistant", "rename_conversation"), { conversation: "c1", title: "My blocks" }, "user");
     const turn = inState(core, "c1")?.usage;
     titled.release();
     await vi.waitFor(() => {

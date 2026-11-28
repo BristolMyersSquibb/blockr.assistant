@@ -29,19 +29,21 @@
 //    as the next board opens.
 // No read meets a failed list, since the chat then knows no skill to read.
 
-import type { CoreApi, Json } from "@blockr/core";
+import type { CoreApi, Id, Json, PluginClassId, RegistryId } from "@blockr/core";
 import { heldError } from "../notifications/index.ts";
 import { answeredText, answeredTexts, appPackages, failureMessage, sendUntilReplied } from "../requests/index.ts";
-import { ASSISTANT } from "../state/index.ts";
+import { assistantClassId } from "../state/index.ts";
 
 // A skill, as R lists it.
 export interface Skill {
   readonly name: string;
   readonly description: string;
-  // The registry ids of the block classes that the skill names in `blocks:`.
-  readonly blocks: readonly string[];
-  // The ids of the plugin classes that it names in `plugins:`.
-  readonly plugins: readonly string[];
+  // The registry ids of the block classes that the skill names in `blocks:`,
+  // as core gives them.
+  readonly blocks: readonly RegistryId[];
+  // The ids of the plugin classes that it names in `plugins:`, as core gives
+  // them.
+  readonly plugins: readonly PluginClassId[];
   // Whether the user may call the skill, as its flag `user-invocable` has it.
   readonly userInvocable: boolean;
   // Whether the model may read the skill, which its flag
@@ -64,6 +66,7 @@ interface Core {
   readonly request: CoreApi["request"];
   readonly notifications: Pick<CoreApi["notifications"], "notify">;
   readonly store: Pick<CoreApi["store"], "packages">;
+  readonly id: CoreApi["id"];
 }
 
 export function createSkills(core: Core, signal: AbortSignal): Skills {
@@ -88,10 +91,10 @@ export function createSkills(core: Core, signal: AbortSignal): Skills {
 async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Skill[]> {
   try {
     const { answer } = await sendUntilReplied(core, "list_skills", { packages: appPackages(core) }, { signal });
-    return skillsOf(answer);
+    return skillsOf(core, answer);
   } catch (error) {
     if (signal.aborted) return [];
-    core.notifications.notify(ASSISTANT, {
+    core.notifications.notify(assistantClassId(core), {
       severity: "error",
       code: "assistant_skills_failed",
       message: `The assistant goes on without skills, since R could not list them: ${failureMessage(error)}`,
@@ -101,7 +104,7 @@ async function listSkills(core: Core, signal: AbortSignal): Promise<readonly Ski
 }
 
 // The skills of R's reply, which R writes with every vector as an array.
-function skillsOf(reply: Json | Blob): Skill[] {
+function skillsOf(core: Pick<Core, "id">, reply: Json | Blob): Skill[] {
   if (!Array.isArray(reply)) throw new TypeError("R's reply to list_skills is not a list of skills.");
   return (reply as readonly Json[]).map((entry) => {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -111,12 +114,39 @@ function skillsOf(reply: Json | Blob): Skill[] {
     return {
       name: one(fields, "name"),
       description: one(fields, "description"),
-      blocks: answeredTexts(fields.blocks, "list_skills"),
-      plugins: answeredTexts(fields.plugins, "list_skills"),
+      blocks: classIds(core, fields, "blocks"),
+      plugins: classIds(core, fields, "plugins"),
       userInvocable: flag(fields, "user-invocable"),
       modelInvocable: !flag(fields, "disable-model-invocation"),
     };
   });
+}
+
+// The ids of the classes that a skill names in `blocks` or `plugins`, as
+// core gives them for the records of R's reply. Each record holds the class's
+// package and its id, each string as an array of one, and the package of a
+// block class that an app script defines as null, which only `blocks` holds.
+function classIds(core: Pick<Core, "id">, fields: Readonly<Record<string, Json>>, name: "blocks"): RegistryId[];
+function classIds(core: Pick<Core, "id">, fields: Readonly<Record<string, Json>>, name: "plugins"): PluginClassId[];
+function classIds(core: Pick<Core, "id">, fields: Readonly<Record<string, Json>>, name: "blocks" | "plugins"): Id<string | null>[] {
+  const given = fields[name];
+  if (!Array.isArray(given)) {
+    throw new TypeError(`R's reply to list_skills gives a skill's ${name} as ${JSON.stringify(given ?? null)}, where it gives a list of classes.`);
+  }
+  return (given as readonly Json[]).map((entry) => {
+    const record = entry !== null && typeof entry === "object" && !Array.isArray(entry) ? (entry as Readonly<Record<string, Json>>) : {};
+    const pkg = record.package === null && name === "blocks" ? null : single(record.package);
+    const id = single(record.id);
+    if (pkg === undefined || id === undefined || Object.keys(record).length !== 2) {
+      throw new TypeError(`R's reply to list_skills gives a class of a skill's ${name} as ${JSON.stringify(entry)}, where it gives the class's package and id.`);
+    }
+    return core.id(pkg, id);
+  });
+}
+
+// The one string of an array that R wrote, or undefined for anything else.
+function single(value: Json | undefined): string | undefined {
+  return Array.isArray(value) && value.length === 1 && typeof value[0] === "string" ? value[0] : undefined;
 }
 
 function one(fields: Readonly<Record<string, Json>>, name: string): string {
