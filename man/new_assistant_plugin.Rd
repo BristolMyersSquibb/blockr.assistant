@@ -27,8 +27,10 @@ functions by name.
 \description{
 The assistant is a plugin whose agent loop runs in the browser.
 The constructor \code{new_assistant_plugin()} makes the plugin, of class
-\code{c("assistant_plugin", "plugin")}, whose plugin class has the id
-\code{blockr.assistant-assistant_plugin} (see \code{\link[blockr.core:new_plugin]{blockr.core::new_plugin()}}).
+\code{c("assistant_plugin", "plugin")}, whose plugin class is \code{assistant_plugin}
+of blockr.assistant (see \code{\link[blockr.core:new_plugin]{blockr.core::new_plugin()}}).
+Its id, as \code{\link[blockr.core:plugin_class_id]{blockr.core::plugin_class_id()}} gives it, is
+\code{list(package = "blockr.assistant", id = "assistant_plugin")}.
 }
 \details{
 The plugin keeps the assistant's conversations in the board, which saves
@@ -483,9 +485,11 @@ board opens.
 A skill is a directory that holds a \code{SKILL.md}.
 The file's YAML frontmatter gives the skill's \code{name}, which is the
 directory's, and its \code{description}.
-It may name block classes by their registry ids in \verb{blocks:}, plugin
-classes by their ids in \verb{plugins:}, and the packages that the skill needs
-in \verb{requires:}.
+It may name block classes in \verb{blocks:} and plugin classes in \verb{plugins:},
+each by a mapping of the package that defines the class and the class's id
+within it, as \verb{\{package: blockr.core, id: subset_block\}}.
+A block class that an app script defines has a \code{package} of \code{null}.
+It may name the packages that the skill needs in \verb{requires:}.
 It may also set the flags \code{user-invocable} and \code{disable-model-invocation}.
 
 R lists the skills of each of the app's packages, from the package's

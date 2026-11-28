@@ -202,9 +202,9 @@ test_that("list_skills gives each skill with its classes and flags", {
       "name: exposure",
       "description: Exposure tables.",
       "blocks:",
-      "  - blockr.core-dataset_block",
+      "  - {package: blockr.core, id: dataset_block}",
       "plugins:",
-      "  - blockr.dock-dock_plugin",
+      "  - {package: blockr.dock, id: dock_plugin}",
       "user-invocable: true",
       "disable-model-invocation: true"
     )
@@ -216,8 +216,8 @@ test_that("list_skills gives each skill with its classes and flags", {
       list(
         name = "exposure",
         description = "Exposure tables.",
-        blocks = "blockr.core-dataset_block",
-        plugins = "blockr.dock-dock_plugin",
+        blocks = list(list(package = "blockr.core", id = "dataset_block")),
+        plugins = list(list(package = "blockr.dock", id = "dock_plugin")),
         `user-invocable` = TRUE,
         `disable-model-invocation` = TRUE
       )
